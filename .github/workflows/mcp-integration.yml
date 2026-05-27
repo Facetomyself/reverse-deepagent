@@ -1,0 +1,55 @@
+name: MCP Integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: Runner label with Chrome and jsreverser-mcp installed.
+        required: true
+        default: self-hosted
+      profile:
+        description: Fixture profile to test.
+        required: true
+        default: context-navigator
+        type: choice
+        options:
+          - default
+          - sha256
+          - base64
+          - context-localstorage
+          - context-cookie
+          - context-navigator
+      chrome_debug_port:
+        description: Chrome remote debugging port.
+        required: true
+        default: "9461"
+      jsreverser_mcp_path:
+        description: Expected jsreverser-mcp path on the runner.
+        required: true
+        default: /opt/homebrew/bin/jsreverser-mcp
+
+jobs:
+  mcp-fixture-smoke:
+    runs-on: ${{ inputs.runner_label }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify MCP binary
+        run: test -x "${{ inputs.jsreverser_mcp_path }}"
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e .
+      - name: Run MCP fixture smoke
+        run: |
+          reverse-agent-fixture-smoke \
+            --profile "${{ inputs.profile }}" \
+            --runtime mcp \
+            --ensure-chrome \
+            --chrome-debug-port "${{ inputs.chrome_debug_port }}" \
+            --chrome-user-data-dir "$RUNNER_TEMP/reverse-agent-chrome-${{ inputs.chrome_debug_port }}" \
+            --artifact-root "$RUNNER_TEMP/reverse-agent-mcp-${{ inputs.profile }}"

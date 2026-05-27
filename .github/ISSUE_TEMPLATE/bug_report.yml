@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible bug in reverse-deepagent.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include real cookies, private tokens, production payloads, or proprietary target code.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal local reproduction.
+      placeholder: |
+        1. Run ...
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / logs
+      description: Paste relevant logs with secrets removed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 / c2a12a8
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime backend
+      options:
+        - mock
+        - mcp / JSReverser
+        - browser automation
+        - other
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public artifact safety
+      options:
+        - label: I removed secrets, cookies, private tokens, and proprietary target code from this report.
+          required: true

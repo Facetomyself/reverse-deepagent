@@ -1,0 +1,52 @@
+name: Runtime adapter proposal
+description: Propose a new backend or runtime adapter.
+title: "[Adapter]: "
+labels: [adapter, design]
+body:
+  - type: input
+    id: adapter
+    attributes:
+      label: Adapter name
+      placeholder: playwright-cli / cdp / android-frida / mini-program
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Web / browser
+        - Android
+        - iOS
+        - Mini-program
+        - Desktop app
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capabilities
+      description: What can this adapter observe, collect, hook, or replay?
+      placeholder: network requests, source snippets, storage, call stacks, screenshots, function validation...
+    validations:
+      required: true
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Expected artifacts
+      description: Which workspace / report / rebuild artifacts should it produce?
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and setup requirements
+      description: Local binaries, device requirements, OS assumptions, permissions, etc.
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Boundary check
+      options:
+        - label: This proposal can be tested with local fixtures or authorized targets.
+          required: true

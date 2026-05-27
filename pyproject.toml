@@ -39,3 +39,9 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.urls]
+Homepage = "https://github.com/Facetomyself/reverse-deepagent"
+Repository = "https://github.com/Facetomyself/reverse-deepagent"
+Issues = "https://github.com/Facetomyself/reverse-deepagent/issues"
+Changelog = "https://github.com/Facetomyself/reverse-deepagent/blob/main/CHANGELOG.md"

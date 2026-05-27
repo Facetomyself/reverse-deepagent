@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an improvement to the agent, tools, artifacts, or docs.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What workflow pain does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - agent orchestration
+        - runtime adapter
+        - artifact schema
+        - rebuild strategy
+        - fixture / test coverage
+        - documentation
+        - CI / release
+        - other
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This request is about authorized local analysis or project infrastructure, not unauthorized access to a third-party target.
+          required: true

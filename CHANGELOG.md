@@ -1,0 +1,56 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic-ish version tags while it is still in an early research/demo stage.
+
+## [0.1.0] - 2026-05-27
+
+### Added
+
+- Initial public release of `reverse-deepagent`.
+- DeepAgents-based reverse-engineering coordinator scaffold.
+- Router, Web recon, protector, and rebuild delivery subagent wiring.
+- Runtime adapter boundary for JSReverser / MCP-backed browser observation.
+- Managed Chrome debug lifecycle scripts with configurable port, profile, state dir, and extra args.
+- Local deterministic Web sign fixture with profiles:
+  - `default`
+  - `sha256`
+  - `base64`
+  - `context-localstorage`
+  - `context-cookie`
+  - `context-navigator`
+- Function candidate generation from source / request / initiator evidence.
+- Runtime validation and replay readiness summary artifacts.
+- Pure-Python rebuild bundle generation:
+  - `rebuild/sign_rebuild.py`
+  - `rebuild/replay_demo.py`
+  - `rebuild/scrapy_middleware.py`
+- Strategy detection for deterministic fixture, hash, HMAC, base64, and URL encoding flows.
+- Runtime context capture for localStorage, sessionStorage, cookie, navigator, timezone, and related browser environment fields.
+- Context-aware rebuild rendering for:
+  - `localStorage.device_id`
+  - `cookie.device_id`
+  - `navigator.userAgent`
+- `runtime-context-diff.json` single-sample stability artifact.
+- Public CI for mock / pure-Python unit and smoke coverage.
+- Public repository maintenance files: license, contributing guide, security policy, issue templates, and CI workflow.
+
+### Changed
+
+- Replaced local absolute defaults with repo-relative, home-relative, or environment-variable-backed paths.
+- Added fallback route manifests so the public package does not require a local `~/.codex/skills/js-reverse` checkout for basic tests.
+- Made MCP lifecycle tests conditional on local JSReverser MCP availability.
+
+### Verified
+
+- Local full test suite: `python -m unittest discover -s tests -v`.
+- GitHub Actions CI on `main`.
+- Real local MCP fixture smoke for context-aware cookie and navigator profiles before public release.
+
+### Known limitations
+
+- MCP-backed integration tests require a local JSReverser MCP binary and a Chrome-compatible desktop environment.
+- `runtime-context-diff.json` is currently a single-sample summary; multi-sample stability diff is planned.
+- Android / iOS / mini-program adapters are design targets but not implemented in v0.1.0.
+- Generated rebuild scripts intentionally cover recognized strategies only; unknown or heavily obfuscated algorithms still require manual porting or runtime-backed execution.

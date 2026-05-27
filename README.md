@@ -1,10 +1,55 @@
-# reverse_agent
+# reverse-deepagent
 
-当前目录用于搭建基于 `deepagents` 的逆向专用 Agent Demo。
+[![CI](https://github.com/Facetomyself/reverse-deepagent/actions/workflows/ci.yml/badge.svg)](https://github.com/Facetomyself/reverse-deepagent/actions/workflows/ci.yml)
+
+Reverse-engineering oriented DeepAgents demo for Web / JavaScript workflows. The project focuses on local, authorized analysis: route a reverse task, collect Web evidence through runtime adapters, validate candidate signing functions, and generate replay / rebuild artifacts.
+
+> 当前发布线：`v0.1.x` public demo stabilization。详见 [`CHANGELOG.md`](CHANGELOG.md) 与 [`ROADMAP.md`](ROADMAP.md)。
+
+## Quickstart
+
+```bash
+git clone https://github.com/Facetomyself/reverse-deepagent.git
+cd reverse-deepagent
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e .
+```
+
+Run the deterministic mock pipeline:
+
+```bash
+reverse-agent-demo --runtime mock
+```
+
+Run the local sign fixture smoke:
+
+```bash
+reverse-agent-fixture --check
+reverse-agent-fixture-smoke --runtime mock --profile sha256
+```
+
+Run tests:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+MCP-backed browser integration requires a local JSReverser MCP binary and Chrome debug environment. For public CI this is isolated in the manual `MCP Integration` workflow instead of the default CI workflow. Locally, prefer the managed Chrome launcher:
+
+```bash
+reverse-agent-fixture-smoke \
+  --profile context-navigator \
+  --runtime mcp \
+  --ensure-chrome \
+  --chrome-debug-port 9461 \
+  --chrome-user-data-dir "/tmp/reverse-agent-chrome-9461"
+```
 
 ## 环境重建
 
-项目已经补了 `pyproject.toml`，可以用 uv 或现成的 `.venv` 进行重建。
+项目已经补了 `pyproject.toml`，可以用 `pip`、`uv` 或现成的 `.venv` 进行重建。
 
 如果你想在本地重新安装依赖，可以直接执行：
 
