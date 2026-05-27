@@ -1,0 +1,37 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from reverse_deepagent.coordinator import run_reverse_pipeline
+
+
+class CoordinatorTests(unittest.TestCase):
+    def test_run_reverse_pipeline_returns_structured_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = run_reverse_pipeline(
+                task_text="https://example.com/search 找 sign 入口，并给出下一步建议",
+                artifact_root=Path(tmpdir) / "artifacts",
+                runtime_kind="mock",
+            )
+            self.assertEqual(output.final_result.status.value, "success")
+            self.assertIn("workspace_task_card", output.artifacts)
+            self.assertIn("workspace_function_candidates", output.artifacts)
+            self.assertIn("workspace_function_validations", output.artifacts)
+            self.assertIn("workspace_function_validation_summary", output.artifacts)
+            self.assertIn("workspace_rebuild_plan", output.artifacts)
+            self.assertIn("rebuild_sign_rebuild", output.artifacts)
+            self.assertIn("rebuild_replay_demo", output.artifacts)
+            self.assertIn("rebuild_scrapy_middleware", output.artifacts)
+            self.assertTrue(Path(output.artifacts["workspace_function_candidates"]).exists())
+            self.assertTrue(Path(output.artifacts["workspace_function_validations"]).exists())
+            self.assertTrue(Path(output.artifacts["workspace_function_validation_summary"]).exists())
+            self.assertTrue(Path(output.artifacts["workspace_rebuild_plan"]).exists())
+            self.assertTrue(Path(output.artifacts["rebuild_sign_rebuild"]).exists())
+            self.assertTrue(Path(output.artifacts["rebuild_replay_demo"]).exists())
+            self.assertTrue(Path(output.artifacts["rebuild_scrapy_middleware"]).exists())
+            self.assertIsNone(output.chrome_launch)
+            self.assertIsNone(output.chrome_stop)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,581 @@
+# reverse_agent
+
+当前目录用于搭建基于 `deepagents` 的逆向专用 Agent Demo。
+
+## 环境重建
+
+项目已经补了 `pyproject.toml`，可以用 uv 或现成的 `.venv` 进行重建。
+
+如果你想在本地重新安装依赖，可以直接执行：
+
+```bash
+cd "<repo-root>"
+uv pip install --python "<repo-root>/.venv/bin/python" -e .
+```
+
+安装完成后，会生成正式命令：
+
+```bash
+reverse-agent-demo --runtime mock
+```
+
+同时还会生成本地 fixture 相关命令：
+
+```bash
+reverse-agent-fixture --check
+reverse-agent-fixture-smoke --runtime mock
+```
+
+如果你只想沿用当前现成环境，也可以继续直接使用：
+
+```bash
+"<repo-root>/.venv/bin/python" ...
+```
+
+## 目录说明
+
+- `docs/design/`：架构与设计文档
+- `docs/plans/`：规划文档
+- `docs/reference/deepagents/`：本地 deepagents 学习资料
+- `src/reverse_deepagent/`：实现代码骨架与 runtime adapter
+- `src/reverse_deepagent/coordinator.py`：包内协调入口，统一调度 task card、route、recon、artifact 输出
+- `scripts/`：运行与开发脚本
+- `artifacts/`：mock demo 产出物、报告、截图与导出文件
+- `artifacts-mcp-smoke/`：真实 MCP 后端 smoke 产物
+- `tests/`：测试目录
+
+## 当前关键文档
+
+- 设计文档：`<repo-root>/docs/design/reverse-deepagent-architecture.md`
+- 规划文档：`<repo-root>/docs/plans/2026-05-26-deepagents-js-reverse-agent-plan.md`
+
+## 运行最小 Demo（mock runtime）
+
+mock runtime 不依赖真实浏览器，适合验证 schema、route、adapter、artifacts 链路。
+
+`scripts/run_demo.py` 现在只是薄 CLI；真正的协调逻辑在：
+
+- `<repo-root>/src/reverse_deepagent/coordinator.py`
+- 包内入口：`reverse_deepagent.run_reverse_pipeline`
+
+正式命令也可以直接走：
+
+```bash
+reverse-agent-demo --runtime mock
+```
+
+默认会在 `artifacts/` 下生成：
+
+- `workspace/task-card.json`
+- `workspace/route-decision.json`
+- `workspace/recon-result.json`
+- `workspace/final-result.json`
+- `workspace/function-candidates.json`（有候选时）
+- `workspace/function-validations.json`（有验证结果时）
+- `workspace/function-validation-summary.json`（有验证结果时）
+- `workspace/runtime-context.json`（检测到并采集运行时上下文时）
+- `workspace/runtime-context-diff.json`（运行时上下文稳定性摘要）
+- `workspace/rebuild-plan.json`
+- `rebuild/sign_rebuild.py`（可生成纯算策略时）
+- `rebuild/replay_demo.py`（可生成纯算策略时）
+- `rebuild/scrapy_middleware.py`（可生成纯算策略时）
+- `reports/demo-final-result.json`
+- `reports/demo-final-report.md`
+- `exports/artifact-index.json`
+
+## 运行最小 DeepAgents invoke smoke
+
+如果你想验证“主 Agent + route tool（并注册专用子 Agent）”这条深度编排链路，但又不想依赖外部模型或真实浏览器，可以直接跑纯 Python smoke：
+
+```bash
+cd "<repo-root>"
+PYTHONPATH="<repo-root>/src" \
+  "<repo-root>/.venv/bin/python" \
+  "<repo-root>/scripts/run_deepagent_smoke.py" \
+  --artifact-root "<repo-root>/artifacts/deepagents-smoke"
+```
+
+这条 smoke 会：
+
+- 构建 `deepagents` 主 Agent
+- 通过 `route_reverse_task` 工具完成一次真实 invoke
+- 产生 `HumanMessage -> AIMessage -> ToolMessage -> AIMessage` 的完整消息链
+- 打印 route 结果和最终消息摘要
+
+适合用来验证：
+
+- `build_reverse_agent()` 是否和当前 deepagents 版本对齐
+- 工具函数是否具备可包装成 LangChain tool 的元数据
+- 主 Agent 到 route tool 的闭环是否可用
+
+### 子 Agent 委派 smoke
+
+如果你还想验证主 Agent 通过 `task` 工具委派给 general-purpose 子 Agent 的链路，可以再跑这个：
+
+```bash
+cd "<repo-root>"
+PYTHONPATH="<repo-root>/src" \
+  "<repo-root>/.venv/bin/python" \
+  "<repo-root>/scripts/run_deepagent_subagent_smoke.py" \
+  --artifact-root "<repo-root>/artifacts/deepagents-subagent-smoke"
+```
+
+这条 smoke 会验证：
+
+- 主 Agent 生成 `task` tool call
+- deepagents 启动 general-purpose 子 Agent
+- 子 Agent 的单条结果被回收到主线程
+- 消息链完整呈现为 `HumanMessage -> AIMessage -> ToolMessage -> AIMessage`
+
+### Rebuild Delivery smoke
+
+如果你想验证 deepagents 主 Agent 的 rebuild delivery 工具链路，可以跑：
+
+```bash
+cd "<repo-root>"
+PYTHONPATH="<repo-root>/src" \
+  "<repo-root>/.venv/bin/python" \
+  "<repo-root>/scripts/run_deepagent_delivery_smoke.py" \
+  --artifact-root "<repo-root>/artifacts/deepagents-delivery-smoke"
+```
+
+这条 smoke 会验证：
+
+- 先用 mock runtime 准备一份已验证 `FinalResult`
+- 主 Agent 调用 `build_rebuild_delivery`
+- 生成结构化 `RebuildResult`
+- 产出 `workspace/rebuild-plan.json`
+- 产出 `rebuild/sign_rebuild.py`
+- 产出 `rebuild/replay_demo.py`
+- 产出 `rebuild/scrapy_middleware.py`
+
+对应 deepagents 能力已接入：
+
+- tool：`build_rebuild_delivery`
+- subagent：`rebuild_delivery`
+- schema：`RebuildResult`
+
+## 本地 sign fixture 样例
+
+项目内置了一个可重复的 `localhost` Web 逆向样例，用来验证 sign 入口、请求样本和源码命中链路。
+
+相关入口：
+
+- fixture 服务：`reverse-agent-fixture`
+- fixture smoke：`reverse-agent-fixture-smoke`
+- 服务实现：`<repo-root>/src/reverse_deepagent/fixtures/web_sign.py`
+
+快速自检：
+
+```bash
+reverse-agent-fixture --check
+```
+
+启动阻塞式本地服务：
+
+```bash
+reverse-agent-fixture --host 127.0.0.1 --port 8765
+```
+
+指定 fixture profile：
+
+```bash
+reverse-agent-fixture --host 127.0.0.1 --port 8765 --profile sha256
+```
+
+当前支持：
+
+- `default`：`charCodeAt` 求和取模，再输出 `sig_<hex>_<timestamp>`
+- `sha256`：浏览器 `crypto.subtle.digest('SHA-256', ...)`
+- `base64`：`btoa(keyword:timestamp)`
+- `context-localstorage`：依赖 `localStorage.device_id`，用于验证 localStorage context-aware delivery
+- `context-cookie`：依赖 `document.cookie` 中的 `device_id`，用于验证 cookie context-aware delivery
+- `context-navigator`：依赖 `navigator.userAgent`，用于验证浏览器指纹上下文 context-aware delivery
+
+页面与脚本：
+
+- `http://127.0.0.1:8765/`
+- `http://127.0.0.1:8765/app.js`
+- `http://127.0.0.1:8765/api/search`
+
+`app.js` 中包含稳定的入口特征：
+
+- `function buildSign(keyword, timestamp)`
+- `x-sign`
+- `window.reverseFixture.search(...)`
+
+使用 mock runtime 跑 fixture smoke：
+
+```bash
+reverse-agent-fixture-smoke \
+  --profile default \
+  --runtime mock \
+  --artifact-root "<repo-root>/artifacts/fixture-smoke-mock"
+```
+
+使用真实 MCP + 受管 Chrome 跑 fixture smoke：
+
+```bash
+reverse-agent-fixture-smoke \
+  --profile default \
+  --runtime mcp \
+  --ensure-chrome \
+  --chrome-debug-port 9445 \
+  --chrome-user-data-dir "/tmp/reverse-agent-chrome-fixture-smoke" \
+  --artifact-root "<repo-root>/artifacts/fixture-smoke-mcp"
+```
+
+多策略真实 smoke 示例：
+
+```bash
+reverse-agent-fixture-smoke \
+  --profile sha256 \
+  --runtime mcp \
+  --ensure-chrome \
+  --chrome-debug-port 9456 \
+  --chrome-user-data-dir "/tmp/reverse-agent-chrome-sha256" \
+  --artifact-root "<repo-root>/artifacts/fixture-sha256-mcp"
+```
+
+如果要验证运行时上下文采集与 context-aware delivery：
+
+```bash
+reverse-agent-fixture-smoke \
+  --profile context-localstorage \
+  --runtime mcp \
+  --ensure-chrome \
+  --chrome-debug-port 9457 \
+  --chrome-user-data-dir "/tmp/reverse-agent-chrome-context" \
+  --artifact-root "<repo-root>/artifacts/fixture-context-mcp"
+```
+
+Phase 13 还可以直接验证 cookie / navigator 两类上下文：
+
+```bash
+reverse-agent-fixture-smoke \
+  --profile context-cookie \
+  --runtime mcp \
+  --ensure-chrome \
+  --chrome-debug-port 9460 \
+  --chrome-user-data-dir "/tmp/reverse-agent-chrome-phase13-cookie-9460" \
+  --artifact-root "<repo-root>/artifacts/phase13-cookie-mcp"
+
+reverse-agent-fixture-smoke \
+  --profile context-navigator \
+  --runtime mcp \
+  --ensure-chrome \
+  --chrome-debug-port 9461 \
+  --chrome-user-data-dir "/tmp/reverse-agent-chrome-phase13-navigator-9461" \
+  --artifact-root "<repo-root>/artifacts/phase13-navigator-mcp"
+```
+
+预期 `context-localstorage` 会生成：
+
+```json
+{
+  "ready": true,
+  "pure_extraction": {
+    "pure_extractable": false,
+    "context_aware_extractable": true,
+    "runtime_context_required": ["localStorage"],
+    "captured_runtime_context": ["localStorage"]
+  }
+}
+```
+
+并落盘：
+
+- `workspace/runtime-context.json`
+- `workspace/runtime-context-diff.json`
+- `rebuild/sign_rebuild.py`
+- `rebuild/replay_demo.py`
+
+`context-cookie` 的预期是 `runtime_context_required = ["cookie"]`，生成的 `sign_rebuild.py` 会固化 `COOKIE_DEVICE_ID`。
+
+`context-navigator` 的预期是 `runtime_context_required = ["navigator"]`，生成的 `sign_rebuild.py` 会固化 `NAVIGATOR_USER_AGENT` 并完成 `sha256_keyword_timestamp` self-check。
+
+当前已验证真实 MCP smoke 结果：
+
+- `final_result.status = success`
+- `final_result.next_action = extract_pure_logic_and_build_replay`
+- 能观察到 `/api/search` 网络请求样本
+- 能命中 `/app.js` 中的 `buildSign` / `x-sign` 源码位置
+- 能自动晋升请求发起链路证据：
+  - `source = get_request_initiator`
+  - artifact：`virtual://workspace/request-initiators.json`
+- 能自动晋升源码上下文证据：
+  - `source = get_script_source`
+  - artifact：`virtual://workspace/source-contexts.json`
+- 能自动生成候选函数卡片：
+  - `source = function_candidate_card`
+  - artifact：`virtual://workspace/function-candidates.json`
+  - 当前 fixture 可稳定生成 `buildSign` 与 `search` 两张函数卡片
+- 能自动完成候选函数 runtime validation 与 replay 校验：
+  - `source = function_validation_result`
+  - `source = function_validation_summary`
+  - artifact：`virtual://workspace/function-validations.json`
+  - artifact：`virtual://workspace/function-validation-summary.json`
+  - 当前 fixture 可稳定验证 `buildSign` 与 `search` 两张函数卡片，并完成 replay
+- 能自动生成纯算交付包：
+  - `workspace/rebuild-plan.json`：描述候选函数、算法策略、pure extraction 状态、验证状态、replay URL 和输出文件
+  - `rebuild/sign_rebuild.py`：浏览器外纯 Python sign 计算脚本
+  - `rebuild/replay_demo.py`：浏览器外 HTTP replay demo
+  - `rebuild/scrapy_middleware.py`：Scrapy downloader middleware 接入草案
+- workspace 虚拟 artifact 会同步写成真实 JSON 文件：
+  - `workspace/network-requests.json`
+  - `workspace/source-hits.json`
+  - `workspace/request-initiators.json`
+  - `workspace/source-contexts.json`
+  - `workspace/runtime-context.json`
+  - `workspace/runtime-context-diff.json`
+  - `workspace/function-candidates.json`
+  - `workspace/function-validations.json`
+  - `workspace/function-validation-summary.json`
+  - `workspace/rebuild-plan.json`
+- rebuild 交付文件会写入：
+  - `rebuild/sign_rebuild.py`
+  - `rebuild/replay_demo.py`
+  - `rebuild/scrapy_middleware.py`
+- `chrome_launch.ok = true`
+- `chrome_stop.ok = true`
+- 结束后调试端口无残留监听
+
+### 纯算 replay 交付包
+
+真实 MCP fixture smoke 完成后，可以先对生成的 sign 脚本做 sample self-check：
+
+```bash
+"<repo-root>/.venv/bin/python" \
+  "<repo-root>/artifacts/fixture-smoke-mcp/rebuild/sign_rebuild.py"
+```
+
+如果要验证 `replay_demo.py` 的浏览器外复放能力，需要让 fixture 服务保持运行，例如另开一个终端：
+
+```bash
+reverse-agent-fixture --host 127.0.0.1 --port 8765
+```
+
+然后执行：
+
+```bash
+"<repo-root>/.venv/bin/python" \
+  "<repo-root>/artifacts/fixture-smoke-mcp/rebuild/replay_demo.py" \
+  --base-url "http://127.0.0.1:8765" \
+  --keyword "sign"
+```
+
+这一步不需要 Chrome，也不需要 MCP，证明已经进入“纯算 + HTTP replay”的交付形态。
+
+### Pure extraction 策略字段
+
+`workspace/rebuild-plan.json` 现在会显式区分“能纯算”和“需要运行时上下文”：
+
+```json
+{
+  "algorithm_strategy": {
+    "id": "md5_keyword_timestamp",
+    "supported": true,
+    "dependencies": ["python-stdlib:hashlib"],
+    "confidence_reason": "Detected md5 hash marker in source context."
+  },
+  "pure_extraction": {
+    "pure_extractable": true,
+    "manual_port_required": false,
+    "runtime_context_required": [],
+    "dependencies": ["python-stdlib:hashlib"],
+    "confidence_reason": "Detected md5 hash marker in source context."
+  }
+}
+```
+
+当前已支持的策略识别：
+
+- `fixture_seed_mod100000`
+- `sig_keyword_timestamp_template`
+- `md5_keyword_timestamp`
+- `sha1_keyword_timestamp`
+- `sha256_keyword_timestamp`
+- `hmac_sha256_keyword_timestamp`（需要能提取 literal secret）
+- `base64_keyword_timestamp`
+- `urlencode_keyword_timestamp`
+
+当前会阻断 pure extraction 的运行时上下文依赖：
+
+- `document.cookie`
+- `localStorage`
+- `sessionStorage`
+- `navigator`
+- `timezone`
+- `canvas`
+
+如果出现这些依赖，`rebuild-plan.json` 会标记：
+
+```json
+{
+  "ready": false,
+  "pure_extraction": {
+    "pure_extractable": false,
+    "manual_port_required": true,
+    "runtime_context_required": ["localStorage"]
+  }
+}
+```
+
+如果运行时上下文没有采集到，这时候不会强行生成假的纯算交付脚本，而是生成 `rebuild/README.md`，提示需要继续补运行时上下文或人工移植。
+
+如果上下文已经采集到，例如 `context-localstorage` profile 的：
+
+```json
+{
+  "localStorage": {
+    "device_id": "fixture-device"
+  }
+}
+```
+
+则 `rebuild-plan.json` 会升级为：
+
+```json
+{
+  "ready": true,
+  "pure_extraction": {
+    "pure_extractable": false,
+    "context_aware_extractable": true,
+    "runtime_context_required": ["localStorage"],
+    "captured_runtime_context": ["localStorage"]
+  }
+}
+```
+
+生成的 `sign_rebuild.py` 会把采集到的上下文写成默认常量，用于浏览器外 replay。当前 renderer 已覆盖 `localStorage.device_id`、`cookie.device_id` 和 `navigator.userAgent` 三类上下文。
+
+`workspace/runtime-context-diff.json` 当前是单样本稳定性摘要，字段包括 `status=single_sample`、`stable=true`、`stable_keys`、`volatile_keys`、`missing_requirements`。这个 schema 后续可以无痛升级为多次采样 diff。
+
+## Chrome Debug Session 约束
+
+真实 MCP runtime 依赖 `http://127.0.0.1:9222` 这类 Chrome DevTools 端口。
+
+约束：
+
+- Agent 不应该假设 9222 Chrome 已经存在
+- 真实 Web recon 前必须先完成 Chrome debug session 检查
+- 如果没有可用 Chrome：
+  - 显式使用 `--ensure-chrome` 时，通过推荐脚本启动受管 Chrome
+  - 未显式启用时，结构化返回 `status=failed`、`next_action=ensure_browser_session`
+- 启动参数必须可调，不要把端口、profile、Chrome 路径硬写死在 Agent prompt 里
+
+推荐启动脚本：
+
+```bash
+"<repo-root>/scripts/start_chrome_debug.sh"
+```
+
+可调环境变量：
+
+- `CHROME_PATH`，默认 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
+- `DEBUG_PORT`，默认 `9222`
+- `DEBUG_ADDRESS`，默认 `127.0.0.1`
+- `USER_DATA_DIR`，默认 `~/.codex/browser-profiles/chrome-jsreverser`
+- `STATE_DIR`，默认 `~/.codex/run/reverse-deepagent`
+- `START_URL`，默认 `about:blank`
+- `WAIT_SECONDS`，默认 `10`
+- `EXTRA_CHROME_ARGS`，默认空
+
+示例：
+
+```bash
+DEBUG_PORT=9333 \
+USER_DATA_DIR="/tmp/reverse-agent-chrome" \
+START_URL="http://localhost:3000" \
+EXTRA_CHROME_ARGS="--disable-web-security" \
+"<repo-root>/scripts/start_chrome_debug.sh"
+```
+
+停止受管 Chrome：
+
+```bash
+DEBUG_PORT=9333 \
+USER_DATA_DIR="/tmp/reverse-agent-chrome" \
+"<repo-root>/scripts/stop_chrome_debug.sh"
+```
+
+## 运行真实 MCP smoke
+
+先探测真实 `jsreverser-mcp` stdio 协议和工具列表：
+
+```bash
+cd "<repo-root>"
+PYTHONPATH="<repo-root>/src" \
+  "<repo-root>/.venv/bin/python" \
+  "<repo-root>/scripts/probe_jsreverser_mcp.py"
+```
+
+已验证当前本机 `jsreverser-mcp`：
+
+- 协议：stdio JSON-RPC newline framing
+- negotiated protocol version：`2025-03-26`
+- tools/list 可返回 73 个工具
+
+## 运行最小 Demo（真实 MCP runtime）
+
+真实 MCP runtime 会启动 `/opt/homebrew/bin/jsreverser-mcp --browserUrl http://127.0.0.1:9222`。
+
+```bash
+reverse-agent-demo \
+  --runtime mcp \
+  --ensure-chrome \
+  --artifact-root "<repo-root>/artifacts-mcp-smoke"
+```
+
+常用可调参数：
+
+```bash
+--chrome-debug-port 9333 \
+--chrome-user-data-dir "/tmp/reverse-agent-chrome" \
+--chrome-start-url "http://localhost:3000" \
+--chrome-extra-args "--disable-web-security"
+```
+
+如果 `127.0.0.1:9222` 没有可用 Chrome，会得到结构化失败结果：
+
+- `status: failed`
+- `next_action: ensure_browser_session`
+
+这属于预期行为，不是脚本崩溃。
+
+## 真实 Chrome smoke（可调端口）
+
+已验证一条真实 smoke 链路，可以在隔离端口上启动受管 Chrome，再交给 `jsreverser-mcp`：
+
+```bash
+reverse-agent-demo \
+  --runtime mcp \
+  --ensure-chrome \
+  --chrome-debug-port 9445 \
+  --chrome-user-data-dir "/tmp/reverse-agent-chrome-9445" \
+  --chrome-start-url "about:blank" \
+  --task-text "http://localhost 找 sign 入口，并给出下一步建议" \
+  --artifact-root "<repo-root>/artifacts-managed-chrome-smoke"
+```
+
+实测结果：
+
+- `chrome_launch.ok = true`
+- `chrome_stop.ok = true`
+- 端口 9445 在结束后不再保留监听
+- `final_result.status = partial`
+- `final_result.next_action = stabilize_page_and_expand_runtime_observation`
+- `final_result.key_findings.facts` 会包含已连接浏览器、当前活动页面和导航动作
+
+注意：
+
+- `jsreverser-mcp` 的真实输出可能是 Markdown + fenced JSON 的混合文本，适配层已经做了归一化
+- 如果你改了 `--chrome-debug-port`，`reverse-agent-demo` 会把这个端口同步传给 MCP 后端，不会再傻乎乎地默认连 9222
+
+## 测试
+
+```bash
+cd "<repo-root>"
+"<repo-root>/.venv/bin/python" \
+  -m unittest discover -s "<repo-root>/tests" -p "test_*.py"
+```
