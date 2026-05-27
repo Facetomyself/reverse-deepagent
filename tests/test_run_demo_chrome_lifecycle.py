@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+JSREVERSER_MCP_AVAILABLE = Path("/opt/homebrew/bin/jsreverser-mcp").exists()
 
 
 class RunDemoChromeLifecycleTests(unittest.TestCase):
@@ -57,6 +58,7 @@ class RunDemoChromeLifecycleTests(unittest.TestCase):
             self.assertNotIn("chrome_stop", payload)
             self.assertFalse(marker.exists())
 
+    @unittest.skipUnless(JSREVERSER_MCP_AVAILABLE, "jsreverser-mcp is required for MCP lifecycle integration tests")
     def test_mcp_runtime_stops_managed_chrome_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             marker = Path(tmpdir) / "lifecycle.txt"
@@ -71,6 +73,7 @@ class RunDemoChromeLifecycleTests(unittest.TestCase):
             self.assertIn("start:9444|", content)
             self.assertIn("stop:9444|", content)
 
+    @unittest.skipUnless(JSREVERSER_MCP_AVAILABLE, "jsreverser-mcp is required for MCP lifecycle integration tests")
     def test_mcp_runtime_keep_chrome_skips_stop_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             marker = Path(tmpdir) / "lifecycle.txt"
