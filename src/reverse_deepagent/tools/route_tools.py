@@ -80,11 +80,52 @@ def route_from_task_card(task_card: TaskCard, task_text: str | None = None, skil
 def load_route_manifests(skill_root: str | None = None) -> dict[str, Any]:
     root = Path(skill_root) if skill_root else DEFAULT_JS_REVERSE_SKILL_ROOT
     manifest_dir = root / "manifests"
+    intents_path = manifest_dir / "intents.json"
+    modes_path = manifest_dir / "modes.json"
+    stages_path = manifest_dir / "stages.json"
+    if not (intents_path.exists() and modes_path.exists() and stages_path.exists()):
+        return _fallback_manifests()
+    intents = _read_json(intents_path)
     return {
-        "intents": _read_json(manifest_dir / "intents.json").get("intents", []),
-        "default_route": _read_json(manifest_dir / "intents.json").get("default_route", {}),
-        "modes": _read_json(manifest_dir / "modes.json").get("modes", []),
-        "stages": _read_json(manifest_dir / "stages.json").get("stages", []),
+        "intents": intents.get("intents", []),
+        "default_route": intents.get("default_route", {}),
+        "modes": _read_json(modes_path).get("modes", []),
+        "stages": _read_json(stages_path).get("stages", []),
+    }
+
+
+def _fallback_manifests() -> dict[str, Any]:
+    return {
+        "intents": [
+            {
+                "id": "find-sign-entry",
+                "match_any": ["sign", "x-sign", "token", "入口", "签名函数", "在哪生成", "谁生成"],
+                "route": {"mode": ReverseMode.FIND_ENTRY.value, "playbook": "references/playbooks/find-entry.md"},
+            },
+            {
+                "id": "page-automation",
+                "match_any": ["打开页面", "点击", "selector", "截图", "dom"],
+                "route": {"mode": ReverseMode.PAGE_AUTOMATION.value, "playbook": "references/playbooks/page-automation.md"},
+            },
+            {
+                "id": "debug-blocked",
+                "match_any": ["debugger", "console.clear", "反调试", "尺寸检测"],
+                "route": {"mode": ReverseMode.DEBUG_BLOCKED.value, "playbook": "references/playbooks/debug-blocked.md"},
+            },
+        ],
+        "default_route": {"mode": ReverseMode.FULL_WORKFLOW.value, "playbook": "references/playbooks/full-workflow.md"},
+        "modes": [
+            {"id": ReverseMode.FULL_WORKFLOW.value, "start_stage": ReverseStage.CONTEXT.value},
+            {"id": ReverseMode.PAGE_AUTOMATION.value, "start_stage": ReverseStage.PAGE_ACTION.value},
+            {"id": ReverseMode.STEALTH_CONTEXT.value, "start_stage": ReverseStage.DETECTION_TRIAGE.value},
+            {"id": ReverseMode.PARAMETER_WORKFLOW.value, "start_stage": ReverseStage.CONTEXT.value},
+            {"id": ReverseMode.FIND_ENTRY.value, "start_stage": ReverseStage.NETWORK.value},
+            {"id": ReverseMode.EXTRACT_LOGIC.value, "start_stage": ReverseStage.LOGIC_EXTRACT.value},
+            {"id": ReverseMode.AST_DEOBFUSCATE.value, "start_stage": ReverseStage.DEOBFUSCATE.value},
+            {"id": ReverseMode.RUNTIME_OBSERVE.value, "start_stage": ReverseStage.RUNTIME_VERIFY.value},
+            {"id": ReverseMode.DEBUG_BLOCKED.value, "start_stage": ReverseStage.DETECTION_TRIAGE.value},
+        ],
+        "stages": [],
     }
 
 
