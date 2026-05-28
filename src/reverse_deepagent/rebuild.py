@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -213,6 +214,9 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
         "hmac_sha512_keyword_timestamp",
     }:
         hmac_algorithm = str(strategy_id).removeprefix("hmac_").split("_keyword_timestamp", 1)[0]
+        context_binding = _select_runtime_context_binding(runtime_context, extraction)
+        context_constant = f"{context_binding[0]} = {context_binding[1]!r}\n" if context_binding else ""
+        context_value_expression = context_binding[0] if context_binding else "HMAC_SECRET"
         body = f'''import hashlib
 import hmac
 
@@ -221,6 +225,7 @@ HMAC_SECRET = {salt!r}
 HMAC_ALGORITHM = {hmac_algorithm!r}
 SOURCE_TEMPLATE = {template!r}
 SOURCE_SALT = HMAC_SECRET
+{context_constant}
 
 
 def _message(keyword: str, timestamp: int) -> str:
@@ -229,7 +234,7 @@ def _message(keyword: str, timestamp: int) -> str:
     if SOURCE_TEMPLATE == "keyword_timestamp":
         return f"{{keyword}}{{timestamp}}"
     if SOURCE_TEMPLATE == "keyword_colon_timestamp_colon_salt":
-        return f"{{keyword}}:{{timestamp}}:{{SOURCE_SALT}}"
+        return f"{{keyword}}:{{timestamp}}:{{{context_value_expression}}}"
     return f"{{keyword}}:{{timestamp}}"
 
 
@@ -565,6 +570,9 @@ def _build_review_hints(
             for item in extraction.get("runtime_context_required", [])
             if item not in set(extraction.get("captured_runtime_context", []))
         ]
+        missing_bindings: list[str] = []
+        if extraction.get("runtime_context_binding_required") and not extraction.get("runtime_context_binding"):
+            missing_bindings = [str(item) for item in extraction.get("missing_runtime_context_bindings", [])]
         caveats = []
         confidence_payload = strategy.get("confidence_score")
         if isinstance(confidence_payload, dict):
@@ -579,6 +587,8 @@ def _build_review_hints(
                     f"strategy={strategy_id}",
                     f"supported={bool(strategy.get('supported'))}",
                     f"missing_runtime_context={','.join(str(item) for item in missing)}",
+                    f"missing_runtime_context_binding={','.join(missing_bindings)}",
+                    f"multiple_runtime_context_bindings_unsupported={bool(extraction.get('multiple_runtime_context_bindings_unsupported'))}",
                     *[f"caveat={item}" for item in caveats],
                 ],
             )
@@ -664,11 +674,18 @@ def _validation_not_ready_evidence(validation: dict[str, Any]) -> list[str]:
 def _select_runtime_context_binding(runtime_context: dict[str, Any], extraction: dict[str, Any]) -> tuple[str, str, str] | None:
     if not extraction.get("context_aware_extractable") or not isinstance(runtime_context, dict):
         return None
+    binding = extraction.get("runtime_context_binding")
+    if isinstance(binding, dict) and binding.get("constant") and binding.get("value") is not None and binding.get("source"):
+        return (str(binding["constant"]), str(binding["value"]), str(binding["source"]))
     requirements = [str(item) for item in extraction.get("runtime_context_required", [])]
     if "localStorage" in requirements:
         device_id = _extract_mapping_value(runtime_context.get("localStorage"), "device_id")
         if device_id:
             return ("LOCAL_STORAGE_DEVICE_ID", device_id, "localStorage.device_id")
+    if "sessionStorage" in requirements:
+        session_id = _first_mapping_value(runtime_context.get("sessionStorage"), ("session_id", "sessionId", "token", "nonce"))
+        if session_id:
+            return ("SESSION_STORAGE_VALUE", session_id[1], f"sessionStorage.{session_id[0]}")
     if "cookie" in requirements:
         device_id = _extract_cookie_value(runtime_context.get("cookies"), "device_id")
         if device_id:
@@ -678,6 +695,18 @@ def _select_runtime_context_binding(runtime_context: dict[str, Any], extraction:
         user_agent = _extract_mapping_value(navigator, "userAgent")
         if user_agent:
             return ("NAVIGATOR_USER_AGENT", user_agent, "navigator.userAgent")
+    if "timezone" in requirements and "timezoneOffset" in runtime_context:
+        return ("TIMEZONE_OFFSET", str(runtime_context.get("timezoneOffset")), "timezone.timezoneOffset")
+    return None
+
+
+def _first_mapping_value(value: Any, keys: tuple[str, ...]) -> tuple[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    for key in keys:
+        item = value.get(key)
+        if item is not None:
+            return (key, str(item))
     return None
 
 
@@ -768,13 +797,31 @@ def _build_pure_extraction(strategy: dict[str, Any], source_context: str, runtim
     )
     pure_extractable = bool(strategy.get("supported")) and not runtime_context_required
     captured_runtime_context = _captured_runtime_context_requirements(runtime_context, runtime_context_required)
-    context_aware_extractable = bool(strategy.get("supported")) and bool(runtime_context_required) and set(captured_runtime_context) >= set(runtime_context_required)
+    binding_candidates = _runtime_context_binding_candidates(source_context)
+    runtime_context_bindings: list[dict[str, str]] = []
+    missing_runtime_context_bindings = [source for source, _key in binding_candidates]
+    family_context_captured = bool(runtime_context_required) and set(captured_runtime_context) >= set(runtime_context_required)
+    if bool(strategy.get("supported")) and family_context_captured:
+        runtime_context_bindings, missing_runtime_context_bindings = _resolve_runtime_context_bindings(
+            binding_candidates,
+            runtime_context,
+            runtime_context_required,
+        )
+    single_binding_supported = len(binding_candidates) == 1
+    runtime_context_binding = runtime_context_bindings[0] if single_binding_supported and runtime_context_bindings and not missing_runtime_context_bindings else None
+    context_aware_extractable = bool(strategy.get("supported")) and family_context_captured and runtime_context_binding is not None
     return {
         "pure_extractable": pure_extractable,
         "context_aware_extractable": context_aware_extractable,
         "manual_port_required": not (pure_extractable or context_aware_extractable),
         "runtime_context_required": runtime_context_required,
         "captured_runtime_context": captured_runtime_context,
+        "runtime_context_binding": runtime_context_binding,
+        "runtime_context_bindings": runtime_context_bindings,
+        "missing_runtime_context_bindings": missing_runtime_context_bindings,
+        "runtime_context_binding_required": bool(binding_candidates),
+        "runtime_context_binding_candidates": [source for source, _key in binding_candidates],
+        "multiple_runtime_context_bindings_unsupported": len(binding_candidates) > 1,
         "dependencies": strategy.get("dependencies", []),
         "confidence_reason": strategy.get("confidence_reason", ""),
     }
@@ -810,6 +857,128 @@ def _captured_runtime_context_requirements(runtime_context: dict[str, Any], requ
     return result
 
 
+def _resolve_runtime_context_bindings(
+    candidates: list[tuple[str, str]],
+    runtime_context: dict[str, Any],
+    requirements: list[str],
+) -> tuple[list[dict[str, str]], list[str]]:
+    resolved: list[dict[str, str]] = []
+    missing: list[str] = []
+    if not isinstance(runtime_context, dict):
+        return resolved, [source for source, _key in candidates]
+    for source, key in candidates:
+        value = _resolve_runtime_context_value(source, key, runtime_context, requirements)
+        if value is None:
+            missing.append(source)
+            continue
+        resolved.append(
+            {
+                "source": source,
+                "key": key,
+                "constant": _runtime_context_constant_name(source),
+                "value": value,
+            }
+        )
+    return resolved, missing
+
+
+def _resolve_runtime_context_value(source: str, key: str, runtime_context: dict[str, Any], requirements: list[str]) -> str | None:
+    family = source.split(".", 1)[0]
+    if family == "localStorage" and "localStorage" in requirements:
+        return _extract_mapping_value(runtime_context.get("localStorage"), key)
+    if family == "sessionStorage" and "sessionStorage" in requirements:
+        return _extract_mapping_value(runtime_context.get("sessionStorage"), key)
+    if family == "cookie" and "cookie" in requirements:
+        return _extract_cookie_value(runtime_context.get("cookies"), key)
+    if family == "navigator" and "navigator" in requirements:
+        return _extract_mapping_value(runtime_context.get("navigator"), key)
+    if family == "timezone" and "timezone" in requirements and key == "timezoneOffset":
+        return str(runtime_context.get("timezoneOffset")) if "timezoneOffset" in runtime_context else None
+    return None
+
+
+def _runtime_context_binding_candidates(source_context: str) -> list[tuple[str, str]]:
+    patterns: tuple[tuple[str, str], ...] = (
+        ("localStorage", r"(?<![\w$])localStorage\??\.getItem\(\s*['\"`]([^'\"`]+)['\"`]\s*\)"),
+        ("localStorage", r"(?<![\w$])localStorage\??\[['\"`]([^'\"`]+)['\"`]\]"),
+        ("localStorage", r"(?<![\w$])localStorage\.(?!(?:getItem|setItem|removeItem|clear|key|length)\b)([A-Za-z_$][\w$]*)"),
+        ("sessionStorage", r"(?<![\w$])sessionStorage\??\.getItem\(\s*['\"`]([^'\"`]+)['\"`]\s*\)"),
+        ("sessionStorage", r"(?<![\w$])sessionStorage\??\[['\"`]([^'\"`]+)['\"`]\]"),
+        ("sessionStorage", r"(?<![\w$])sessionStorage\.(?!(?:getItem|setItem|removeItem|clear|key|length)\b)([A-Za-z_$][\w$]*)"),
+        ("navigator", r"(?<![\w$])navigator\??\.(userAgent|platform|language|languages|vendor|hardwareConcurrency)"),
+    )
+    candidates: list[tuple[str, str]] = []
+    for family, pattern in patterns:
+        for match in re.finditer(pattern, source_context, flags=re.IGNORECASE):
+            key = match.group(1)
+            candidates.append((f"{family}.{key}", key))
+    for key in _extract_cookie_names(source_context):
+        candidates.append((f"cookie.{key}", key))
+    if "gettimezoneoffset" in source_context.lower() or "timezoneoffset" in source_context.lower():
+        candidates.append(("timezone.timezoneOffset", "timezoneOffset"))
+    return _dedupe_binding_candidates(candidates)
+
+
+def _extract_cookie_names(source_context: str) -> list[str]:
+    names: list[str] = []
+    cookie_patterns = (
+        r"(?<![\w$])document\.cookie\.match\(\s*/[^/]*?([A-Za-z0-9_$.-]+)=",
+        r"(?<![\w$])document\.cookie[^;\n]+?['\"`]([A-Za-z0-9_$.-]+)=",
+        r"(?<![\w$])document\.cookie[\s\S]{0,240}?(?:startsWith|includes)\(\s*['\"`]([A-Za-z0-9_$.-]+)=",
+    )
+    for pattern in cookie_patterns:
+        for match in re.finditer(pattern, source_context, flags=re.IGNORECASE | re.DOTALL):
+            name = match.group(1)
+            if name:
+                names.append(name.replace("\\", ""))
+    return _dedupe_strings(names)
+
+
+def _runtime_context_constant_name(source: str) -> str:
+    family, _separator, key = source.partition(".")
+    family_prefixes = {
+        "localStorage": "LOCAL_STORAGE",
+        "sessionStorage": "SESSION_STORAGE",
+        "cookie": "COOKIE",
+        "navigator": "NAVIGATOR",
+        "timezone": "TIMEZONE",
+    }
+    prefix = family_prefixes.get(family)
+    if prefix and key:
+        key_token = _constant_token(key)
+        if key_token == prefix or key_token.startswith(f"{prefix}_"):
+            return key_token
+        return f"{prefix}_{key_token}"
+    return _constant_token(source) or "RUNTIME_CONTEXT_VALUE"
+
+
+def _constant_token(value: str) -> str:
+    snake = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", value)
+    return re.sub(r"[^A-Z0-9]+", "_", snake.upper()).strip("_")
+
+
+def _dedupe_binding_candidates(candidates: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    seen: set[tuple[str, str]] = set()
+    output: list[tuple[str, str]] = []
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        output.append(candidate)
+    return output
+
+
+def _dedupe_strings(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        output.append(item)
+    return output
+
+
 def _detect_runtime_context_requirements(source_context: str) -> list[str]:
     lowered = source_context.lower()
     markers = {
@@ -817,7 +986,7 @@ def _detect_runtime_context_requirements(source_context: str) -> list[str]:
         "localStorage": ["localstorage"],
         "sessionStorage": ["sessionstorage"],
         "navigator": ["navigator.", "useragent", "platform"],
-        "timezone": ["timezone", "gettimezoneoffset"],
+        "timezone": ["timezoneoffset", "gettimezoneoffset"],
         "canvas": ["canvas", "todataurl", "getimagedata"],
     }
     requirements: list[str] = []

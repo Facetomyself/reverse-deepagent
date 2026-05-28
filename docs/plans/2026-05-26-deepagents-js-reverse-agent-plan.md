@@ -558,6 +558,12 @@ task_card:
 
 当前这版执行结果说明：上述 13 个阶段已经全部落地到可运行状态，后续 do-plan 的重点应切到更真实的 Web 样例、更多算法策略库扩展、运行时上下文自动补全，以及 Android / iOS / 小程序 adapter 预留，而不是继续停在 demo 级脚手架上。
 
+### 后续 12 项顺序推进状态
+
+用户追加的 12 项增强按单项实现、code review、功能测试、全量测试和单独 commit 推进。当前已完成并提交第 1～8 项；第 9 项 `runtime context 自动补全` 本轮补齐实现：rebuild 阶段会从源码自动推断 `localStorage` / `sessionStorage` / `cookie` / `navigator` / `timezone` 的具体 binding key，把命中的单个值写入 `pure_extraction.runtime_context_binding`，同时输出 `runtime_context_bindings` / `missing_runtime_context_bindings` 供 review；源码明确依赖具体 key 但采集缺失、或出现多个显式 context binding 但 renderer 尚不支持多值拼接时，均保持 not-ready，避免生成假成功的 `sign_rebuild.py`。
+
+第 10 项 `完整 Scrapy 集成`、第 11 项 `更真实 Web 样例库`、第 12 项 `MCP self-hosted smoke 持续自动化` 仍按顺序排在第 9 项提交之后执行；当前 `scrapy_middleware.py` 仍只是接入草案，不等价于完整 Scrapy 集成。
+
 新增验证入口：
 
 - `scripts/run_deepagent_smoke.py`：验证 `deepagents` 主 Agent invoke 与 route tool 闭环

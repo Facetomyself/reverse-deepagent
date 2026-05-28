@@ -546,6 +546,201 @@ class RebuildArtifactTests(unittest.TestCase):
             )
             self.assertEqual(result.stdout.strip(), sample_sign)
 
+    def test_localstorage_nonce_context_is_auto_completed(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('nonce');
+  const raw = `${keyword}:${timestamp}:${nonce}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-nonce".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["localStorage"],
+            "captured_requirements": ["localStorage"],
+            "localStorage": {"nonce": "fixture-nonce"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            binding = rebuild.rebuild_plan["pure_extraction"]["runtime_context_binding"]
+            self.assertEqual(binding["source"], "localStorage.nonce")
+            self.assertEqual(binding["value"], "fixture-nonce")
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_specific_runtime_context_key_must_be_captured(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('nonce');
+  const raw = `${keyword}:${timestamp}:${nonce}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-nonce".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["localStorage"],
+            "captured_requirements": ["localStorage"],
+            "localStorage": {"device_id": "fixture-device"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            plan = rebuild.rebuild_plan
+            extraction = plan["pure_extraction"]
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            self.assertFalse(plan["ready"])
+            self.assertFalse(extraction["pure_extractable"])
+            self.assertFalse(extraction["context_aware_extractable"])
+            self.assertTrue(extraction["manual_port_required"])
+            self.assertTrue(extraction["runtime_context_binding_required"])
+            self.assertIn("localStorage.nonce", extraction["runtime_context_binding_candidates"])
+            self.assertIsNone(extraction["runtime_context_binding"])
+            manual_hint = next(hint for hint in plan["review_hints"] if hint["code"] == "manual_port_required")
+            self.assertIn("missing_runtime_context_binding=localStorage.nonce", manual_hint["evidence"])
+            self.assertIn("README", rebuild.generated_files)
+            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+
+    def test_optional_chaining_runtime_context_key_must_be_captured(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const nonce = localStorage?.getItem(`nonce`);
+  const raw = `${keyword}:${timestamp}:${nonce}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-nonce".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["localStorage"],
+            "captured_requirements": ["localStorage"],
+            "localStorage": {"device_id": "fixture-device"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            extraction = rebuild.rebuild_plan["pure_extraction"]
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            self.assertFalse(rebuild.rebuild_plan["ready"])
+            self.assertIn("localStorage.nonce", extraction["runtime_context_binding_candidates"])
+            self.assertEqual(extraction["missing_runtime_context_bindings"], ["localStorage.nonce"])
+            self.assertIsNone(extraction["runtime_context_binding"])
+            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+
+    def test_multiple_runtime_context_bindings_are_not_auto_ported(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('nonce');
+  const match = document.cookie.match(/(?:^|;\\s*)csrf=([^;]+)/);
+  const csrf = match ? decodeURIComponent(match[1]) : '';
+  const raw = `${keyword}:${timestamp}:${nonce}:${csrf}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-nonce:fixture-csrf".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["localStorage", "cookie"],
+            "captured_requirements": ["localStorage", "cookie"],
+            "localStorage": {"nonce": "fixture-nonce"},
+            "cookies": {"document.cookie": "csrf=fixture-csrf; path=/"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            extraction = rebuild.rebuild_plan["pure_extraction"]
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            self.assertFalse(rebuild.rebuild_plan["ready"])
+            self.assertFalse(extraction["context_aware_extractable"])
+            self.assertTrue(extraction["multiple_runtime_context_bindings_unsupported"])
+            self.assertEqual(
+                [item["source"] for item in extraction["runtime_context_bindings"]],
+                ["localStorage.nonce", "cookie.csrf"],
+            )
+            manual_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "manual_port_required")
+            self.assertIn("multiple_runtime_context_bindings_unsupported=True", manual_hint["evidence"])
+            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+
+    def test_missing_one_of_multiple_runtime_context_bindings_blocks_ready(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('nonce');
+  const match = document.cookie.match(/(?:^|;\\s*)csrf=([^;]+)/);
+  const csrf = match ? decodeURIComponent(match[1]) : '';
+  const raw = `${keyword}:${timestamp}:${nonce}:${csrf}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-nonce:fixture-csrf".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["localStorage", "cookie"],
+            "captured_requirements": ["localStorage", "cookie"],
+            "localStorage": {"device_id": "fixture-device"},
+            "cookies": {"document.cookie": "csrf=fixture-csrf; path=/"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            extraction = rebuild.rebuild_plan["pure_extraction"]
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            self.assertFalse(rebuild.rebuild_plan["ready"])
+            self.assertEqual([item["source"] for item in extraction["runtime_context_bindings"]], ["cookie.csrf"])
+            self.assertEqual(extraction["missing_runtime_context_bindings"], ["localStorage.nonce"])
+            manual_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "manual_port_required")
+            self.assertIn("missing_runtime_context_binding=localStorage.nonce", manual_hint["evidence"])
+            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+
+    def test_sessionstorage_token_context_is_auto_completed(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const token = sessionStorage.getItem('token');
+  const raw = `${keyword}:${timestamp}:${token}`;
+  return CryptoJS.SHA256(raw).toString();
+}"""
+        sample_sign = hashlib.sha256("sign:1700000000000:fixture-token".encode("utf-8")).hexdigest()
+        runtime_context = {
+            "detected_requirements": ["sessionStorage"],
+            "captured_requirements": ["sessionStorage"],
+            "sessionStorage": {"token": "fixture-token"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            binding = rebuild.rebuild_plan["pure_extraction"]["runtime_context_binding"]
+            self.assertEqual(binding["source"], "sessionStorage.token")
+            self.assertEqual(binding["value"], "fixture-token")
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_sessionstorage_specific_key_must_be_captured(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const token = sessionStorage.getItem('token');
+  const raw = `${keyword}:${timestamp}:${token}`;
+  return CryptoJS.SHA256(raw).toString();
+}"""
+        sample_sign = hashlib.sha256("sign:1700000000000:fixture-token".encode("utf-8")).hexdigest()
+        runtime_context = {
+            "detected_requirements": ["sessionStorage"],
+            "captured_requirements": ["sessionStorage"],
+            "sessionStorage": {"session_id": "fixture-session"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            plan = rebuild.rebuild_plan
+            extraction = plan["pure_extraction"]
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            self.assertFalse(plan["ready"])
+            self.assertFalse(extraction["context_aware_extractable"])
+            self.assertTrue(extraction["manual_port_required"])
+            self.assertIn("sessionStorage.token", extraction["runtime_context_binding_candidates"])
+            self.assertIsNone(extraction["runtime_context_binding"])
+            manual_hint = next(hint for hint in plan["review_hints"] if hint["code"] == "manual_port_required")
+            self.assertIn("missing_runtime_context_binding=sessionStorage.token", manual_hint["evidence"])
+            self.assertIn("README", rebuild.generated_files)
+            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+
     def test_cookie_runtime_context_enables_context_aware_rebuild(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {
   const match = document.cookie.match(/(?:^|;\\s*)device_id=([^;]+)/);
@@ -566,6 +761,154 @@ class RebuildArtifactTests(unittest.TestCase):
             self.assertTrue(rebuild.rebuild_plan["ready"])
             self.assertTrue(rebuild.rebuild_plan["pure_extraction"]["context_aware_extractable"])
             self.assertIn("cookie", rebuild.rebuild_plan["pure_extraction"]["captured_runtime_context"])
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_cookie_specific_key_must_be_captured(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const match = document.cookie.match(/(?:^|;\\s*)csrf=([^;]+)/);
+  const csrf = match ? decodeURIComponent(match[1]) : '';
+  const raw = `${keyword}:${timestamp}:${csrf}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-csrf".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["cookie"],
+            "captured_requirements": ["cookie"],
+            "cookies": {"document.cookie": "device_id=fixture-device; path=/"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            plan = rebuild.rebuild_plan
+            extraction = plan["pure_extraction"]
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            self.assertFalse(plan["ready"])
+            self.assertFalse(extraction["context_aware_extractable"])
+            self.assertTrue(extraction["manual_port_required"])
+            self.assertIn("cookie.csrf", extraction["runtime_context_binding_candidates"])
+            self.assertIsNone(extraction["runtime_context_binding"])
+            manual_hint = next(hint for hint in plan["review_hints"] if hint["code"] == "manual_port_required")
+            self.assertIn("missing_runtime_context_binding=cookie.csrf", manual_hint["evidence"])
+            self.assertIn("README", rebuild.generated_files)
+            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+
+    def test_cookie_csrf_context_is_auto_completed(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const match = document.cookie.match(/(?:^|;\\s*)csrf=([^;]+)/);
+  const csrf = match ? decodeURIComponent(match[1]) : '';
+  const raw = `${keyword}:${timestamp}:${csrf}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-csrf".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["cookie"],
+            "captured_requirements": ["cookie"],
+            "cookies": {"document.cookie": "csrf=fixture-csrf; path=/"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            binding = rebuild.rebuild_plan["pure_extraction"]["runtime_context_binding"]
+            self.assertEqual(binding["source"], "cookie.csrf")
+            self.assertEqual(binding["value"], "fixture-csrf")
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_cookie_split_startswith_context_is_auto_completed(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const row = document.cookie.split('; ').find((item) => item.startsWith('csrf='));
+  const csrf = row ? decodeURIComponent(row.split('=')[1]) : '';
+  const raw = `${keyword}:${timestamp}:${csrf}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-csrf".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["cookie"],
+            "captured_requirements": ["cookie"],
+            "cookies": {"document.cookie": "csrf=fixture-csrf; path=/"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            binding = rebuild.rebuild_plan["pure_extraction"]["runtime_context_binding"]
+            self.assertEqual(binding["source"], "cookie.csrf")
+            self.assertEqual(binding["value"], "fixture-csrf")
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_timezone_offset_context_is_auto_completed(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const tz = new Date().getTimezoneOffset();
+  const raw = `${keyword}:${timestamp}:${tz}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:-480".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["timezone"],
+            "captured_requirements": ["timezone"],
+            "timezoneOffset": -480,
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            binding = rebuild.rebuild_plan["pure_extraction"]["runtime_context_binding"]
+            self.assertEqual(binding["source"], "timezone.timezoneOffset")
+            self.assertEqual(binding["constant"], "TIMEZONE_OFFSET")
+            self.assertEqual(binding["value"], "-480")
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_hmac_message_context_is_auto_completed(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('nonce');
+  const raw = `${keyword}:${timestamp}:${nonce}`;
+  return CryptoJS.HmacSHA256(raw, 'fixture-secret').toString();
+}"""
+        sample_sign = hmac.new(
+            b"fixture-secret",
+            "sign:1700000000000:fixture-nonce".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        runtime_context = {
+            "detected_requirements": ["localStorage"],
+            "captured_requirements": ["localStorage"],
+            "localStorage": {"nonce": "fixture-nonce"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            self.assertEqual(rebuild.rebuild_plan["algorithm_strategy"]["id"], "hmac_sha256_keyword_timestamp")
+            binding = rebuild.rebuild_plan["pure_extraction"]["runtime_context_binding"]
+            self.assertEqual(binding["source"], "localStorage.nonce")
             sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
             result = subprocess.run(
                 [sys.executable, str(sign_rebuild_path)],

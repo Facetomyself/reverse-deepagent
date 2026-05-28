@@ -692,7 +692,15 @@ WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说
     "pure_extractable": false,
     "context_aware_extractable": true,
     "runtime_context_required": ["localStorage"],
-    "captured_runtime_context": ["localStorage"]
+    "captured_runtime_context": ["localStorage"],
+    "runtime_context_binding": {
+      "source": "localStorage.device_id",
+      "key": "device_id",
+      "constant": "LOCAL_STORAGE_DEVICE_ID",
+      "value": "fixture-device"
+    },
+    "runtime_context_binding_required": true,
+    "runtime_context_binding_candidates": ["localStorage.device_id"]
   },
   "review_hints": [
     {
@@ -706,7 +714,11 @@ WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说
 }
 ```
 
-生成的 `sign_rebuild.py` 会把采集到的上下文写成默认常量，用于浏览器外 replay。当前 renderer 已覆盖 `localStorage.device_id`、`cookie.device_id` 和 `navigator.userAgent` 三类上下文。
+生成的 `sign_rebuild.py` 会把采集到的上下文写成默认常量，用于浏览器外 replay。renderer 会从源码自动识别 `localStorage.getItem('<key>')`、`localStorage['<key>']`、`localStorage.<key>`、`sessionStorage.getItem('<key>')`、`sessionStorage['<key>']`、`sessionStorage.<key>`、`document.cookie` 中的 cookie name、`navigator.<prop>` 和 `timezoneOffset`，再从 `runtime-context.json` 中提取对应值写入 `pure_extraction.runtime_context_binding`。
+
+如果源码已经明确依赖某个具体上下文 key，例如 `localStorage.getItem('nonce')`，但采集结果里只有同 family 的其他值，例如 `localStorage.device_id`，则 `context_aware_extractable` 会保持 `false`，`review_hints` 会输出 `missing_runtime_context_binding=localStorage.nonce`，交付包只生成 `rebuild/README.md`，不会用空 salt 或错误 fallback 生成假成功脚本。
+
+当前自动交付只支持单个 runtime context binding 写入生成脚本；如果源码同时依赖 `localStorage.nonce` 和 `cookie.csrf` 这类多个显式上下文值，即使都已采集，也会标记 `multiple_runtime_context_bindings_unsupported=true` 并保持 not-ready，避免把多输入签名硬塞进单 salt renderer。HMAC 策略会区分 HMAC secret 与 message 里的 runtime context：`CryptoJS.HmacSHA256(raw, 'secret')` 会把 `secret` 作为 HMAC key，把 `nonce` 作为 message binding。
 
 `review_hints` 是给后续人工 review、CI gate 或子智能体复核使用的 machine-readable 提示，不替代 `ready` / `pure_extraction`。当前由 `reverse_deepagent.schemas.ReviewHint` 集中约束，固定字段为 `severity`、`category`、`code`、`message`、`evidence`，会覆盖 pure rebuild、context-aware rebuild、manual port / partial rebuild，以及 volatile runtime context 等风险。
 
