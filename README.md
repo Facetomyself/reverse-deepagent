@@ -465,6 +465,8 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 
 策略库还提供 `STRATEGY_SAMPLE_CORPUS` / `list_strategy_sample_corpus()`，覆盖 fixture reducer、MD5、SHA-1、SHA-256、HMAC-SHA256、Base64 和 URL encoding 的 deterministic samples。测试会用这些样本同时验证 detector 输出和生成的 `sign_rebuild.py` self-check。
 
+WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说成 pure-Python 可移植。对应边界见 [`docs/strategy/wasm-vm-obfuscation-triage.md`](docs/strategy/wasm-vm-obfuscation-triage.md)：这类场景应输出 triage-only / runtime-assisted / partial 计划，并通过 `review_hints` 阻断误导性的纯算交付。
+
 当前会阻断 pure extraction 的运行时上下文依赖：
 
 - `document.cookie`
