@@ -13,6 +13,7 @@ from reverse_deepagent.adapters.jsreverser import JSReverserRuntime
 from reverse_deepagent.coordinator import run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import start_fixture_server
 from reverse_deepagent.rebuild import list_algorithm_strategy_registry, write_rebuild_bundle
+from reverse_deepagent.strategies import detect_algorithm_strategy
 from reverse_deepagent.schemas import (
     ConfidenceLevel,
     EvidenceItem,
@@ -194,15 +195,38 @@ class StrategyRegistryTests(unittest.TestCase):
         registry = list_algorithm_strategy_registry()
         self.assertEqual(
             [item["rule_id"] for item in registry],
-            ["deterministic_fixture", "crypto_hash", "sig_template", "encoding"],
+            ["protected_flow_triage", "deterministic_fixture", "crypto_hash", "sig_template", "encoding"],
         )
         emitted = {strategy_id for item in registry for strategy_id in item["emits"]}
+        self.assertIn("triage_wasm_module", emitted)
+        self.assertIn("triage_vm_obfuscation", emitted)
+        self.assertIn("triage_anti_debug_runtime", emitted)
+        self.assertIn("triage_dynamic_secret", emitted)
+        self.assertIn("triage_wasm_vm_obfuscation", emitted)
         self.assertIn("fixture_seed_mod100000", emitted)
         self.assertIn("md5_keyword_timestamp", emitted)
         self.assertIn("sha1_keyword_timestamp", emitted)
         self.assertIn("sha256_keyword_timestamp", emitted)
         self.assertIn("base64_keyword_timestamp", emitted)
         self.assertIn("urlencode_keyword_timestamp", emitted)
+
+    def test_protected_flow_triage_takes_precedence_over_hash_markers(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """async function buildSign(keyword, timestamp) {
+  debugger;
+  const wasm = await WebAssembly.instantiateStreaming(fetch('/sign.wasm'), {});
+  const digest = CryptoJS.SHA256(`${keyword}:${timestamp}`).toString();
+  return wasm.instance.exports.sign(digest, window.__challenge);
+}"""
+        )
+        self.assertEqual(strategy["id"], "triage_wasm_vm_obfuscation")
+        self.assertFalse(strategy["supported"])
+        self.assertIn("wasm", strategy["triage"]["categories"])
+        self.assertIn("anti_debug", strategy["triage"]["categories"])
+        self.assertIn("dynamic_secret", strategy["triage"]["categories"])
+        self.assertIn("runtime-js-vm", strategy["runtime_context_required"])
+        self.assertIn("wasm-module", strategy["runtime_context_required"])
+        self.assertIn("runtime-assisted execution required", strategy["confidence_score"]["caveats"])
 
 
 class RebuildArtifactTests(unittest.TestCase):
@@ -422,6 +446,40 @@ class RebuildArtifactTests(unittest.TestCase):
             self.assertEqual(manual_hint["category"], "manual_port")
             self.assertIn("missing_runtime_context=localStorage", manual_hint["evidence"])
             self.assertIn("README", rebuild.generated_files)
+
+    def test_wasm_vm_triage_blocks_fake_pure_rebuild(self) -> None:
+        source_context = """async function buildSign(keyword, timestamp) {
+  debugger;
+  const wasm = await WebAssembly.instantiateStreaming(fetch('/sign.wasm'), {});
+  const opcode = wasm.instance.exports.opcode_for('sign');
+  switch (opcode) {
+    case 7:
+      return wasm.instance.exports.sign(keyword, timestamp, window.__challenge);
+    default:
+      return new Function('payload', 'return payload')(keyword);
+  }
+}"""
+        final_result = _final_result_for_source(source_context, "placeholder-sign")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            plan = rebuild.rebuild_plan
+            self.assertFalse(plan["ready"])
+            self.assertEqual(plan["algorithm_strategy"]["id"], "triage_wasm_vm_obfuscation")
+            self.assertFalse(plan["algorithm_strategy"]["supported"])
+            self.assertFalse(plan["pure_extraction"]["pure_extractable"])
+            self.assertFalse(plan["pure_extraction"]["context_aware_extractable"])
+            self.assertTrue(plan["pure_extraction"]["manual_port_required"])
+            self.assertIn("runtime-js-vm", plan["pure_extraction"]["runtime_context_required"])
+            self.assertIn("wasm-module", plan["pure_extraction"]["runtime_context_required"])
+            self.assertTrue(plan["runtime_assisted"]["required"])
+            manual_hint = next(hint for hint in plan["review_hints"] if hint["code"] == "manual_port_required")
+            self.assertEqual(manual_hint["severity"], "risk")
+            self.assertIn("strategy=triage_wasm_vm_obfuscation", manual_hint["evidence"])
+            self.assertIn("README", rebuild.generated_files)
+            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+            readme = Path(rebuild.generated_files["README"]).read_text(encoding="utf-8")
+            self.assertIn("Runtime-assisted triage required", readme)
 
     def test_captured_runtime_context_enables_context_aware_rebuild(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {

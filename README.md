@@ -628,14 +628,17 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 
 当前 strategy detection 通过 `reverse_deepagent.strategies` 包里的 `AlgorithmStrategyRule` registry 管理；`rebuild.py` 只保留兼容代理。strategy 输出保留旧 `confidence` 字符串，同时新增 `confidence_score`，记录数值分数、positive markers 和 caveats。registry metadata 可由 `list_algorithm_strategy_registry()` 读取。当前默认顺序：
 
-1. `deterministic_fixture`：发射 `fixture_seed_mod100000`
-2. `sig_template`：发射 `sig_keyword_timestamp_template`
+1. `protected_flow_triage`：发射 `triage_wasm_module`、`triage_vm_obfuscation`、`triage_anti_debug_runtime`、`triage_dynamic_secret`、`triage_wasm_vm_obfuscation`
+2. `deterministic_fixture`：发射 `fixture_seed_mod100000`
 3. `crypto_hash`：发射 `md5_keyword_timestamp`、`sha1_keyword_timestamp`、`sha256_keyword_timestamp`、`hmac_sha256_keyword_timestamp`（需要能提取 literal secret）
-4. `encoding`：发射 `base64_keyword_timestamp`、`urlencode_keyword_timestamp`
+4. `sig_template`：发射 `sig_keyword_timestamp_template`
+5. `encoding`：发射 `base64_keyword_timestamp`、`urlencode_keyword_timestamp`
+
+`protected_flow_triage` 是阻断型前置 detector，必须保守：普通 `cookie` / `localStorage` / `navigator` / `nonce` / `csrf` 等上下文输入不会仅凭变量名进入 triage-only，除非同时出现 WASM / VM / anti-debug / native bridge / strong runtime challenge 等强保护证据。
 
 策略库还提供 `STRATEGY_SAMPLE_CORPUS` / `list_strategy_sample_corpus()`，覆盖 fixture reducer、MD5、SHA-1、SHA-256、HMAC-SHA256、Base64 和 URL encoding 的 deterministic samples。测试会用这些样本同时验证 detector 输出和生成的 `sign_rebuild.py` self-check。
 
-WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说成 pure-Python 可移植。对应边界见 [`docs/strategy/wasm-vm-obfuscation-triage.md`](docs/strategy/wasm-vm-obfuscation-triage.md)：这类场景应输出 triage-only / runtime-assisted / partial 计划，并通过 `review_hints` 阻断误导性的纯算交付。
+WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说成 pure-Python 可移植。对应边界见 [`docs/strategy/wasm-vm-obfuscation-triage.md`](docs/strategy/wasm-vm-obfuscation-triage.md)：这类场景会优先命中 `protected_flow_triage` detector，输出 triage-only / runtime-assisted / partial 计划，并通过 `review_hints` 阻断误导性的纯算交付。
 
 当前会阻断 pure extraction 的运行时上下文依赖：
 

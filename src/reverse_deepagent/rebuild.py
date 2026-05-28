@@ -84,6 +84,7 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
             "replay_demo": "artifacts/rebuild/replay_demo.py",
             "scrapy_middleware": "artifacts/rebuild/scrapy_middleware.py",
         },
+        "runtime_assisted": _build_runtime_assisted_plan(strategy),
         "limitations": _build_limitations(strategy),
         "review_hints": review_hints,
     }
@@ -473,6 +474,21 @@ class ReverseSignMiddleware:
 
 
 def render_not_ready_readme(plan: dict[str, Any]) -> str:
+    strategy = plan.get("algorithm_strategy") if isinstance(plan.get("algorithm_strategy"), dict) else {}
+    runtime_assisted = plan.get("runtime_assisted") if isinstance(plan.get("runtime_assisted"), dict) else {}
+    if str(strategy.get("id", "")).startswith("triage_"):
+        lines = [
+            "# Runtime-assisted triage required",
+            "",
+            "The captured flow contains WASM / VM / obfuscation / anti-debug or dynamic-secret indicators.",
+            "No pure-Python rebuild files were generated because the portable algorithm is not proven yet.",
+            "",
+            "Recommended next actions:",
+        ]
+        for action in runtime_assisted.get("recommended_actions", []):
+            lines.append(f"- {action}")
+        lines.extend(["", "Full machine-readable plan:", "", "```json", json.dumps(plan, ensure_ascii=False, indent=2), "```", ""])
+        return "\n".join(lines)
     return "# Rebuild bundle not ready\n\n" + json.dumps(plan, ensure_ascii=False, indent=2) + "\n"
 
 
@@ -739,7 +755,10 @@ def _detect_algorithm_strategy(
 
 
 def _build_pure_extraction(strategy: dict[str, Any], source_context: str, runtime_context: dict[str, Any]) -> dict[str, Any]:
-    runtime_context_required = _detect_runtime_context_requirements(source_context)
+    runtime_context_required = _merge_requirements(
+        _detect_runtime_context_requirements(source_context),
+        [str(item) for item in strategy.get("runtime_context_required", []) if item],
+    )
     pure_extractable = bool(strategy.get("supported")) and not runtime_context_required
     captured_runtime_context = _captured_runtime_context_requirements(runtime_context, runtime_context_required)
     context_aware_extractable = bool(strategy.get("supported")) and bool(runtime_context_required) and set(captured_runtime_context) >= set(runtime_context_required)
@@ -752,6 +771,15 @@ def _build_pure_extraction(strategy: dict[str, Any], source_context: str, runtim
         "dependencies": strategy.get("dependencies", []),
         "confidence_reason": strategy.get("confidence_reason", ""),
     }
+
+
+def _merge_requirements(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    for group in groups:
+        for item in group:
+            if item not in merged:
+                merged.append(item)
+    return merged
 
 
 def _captured_runtime_context_requirements(runtime_context: dict[str, Any], requirements: list[str]) -> list[str]:
@@ -824,7 +852,29 @@ def _derive_base_url(value: str) -> str:
     return ""
 
 
+def _build_runtime_assisted_plan(strategy: dict[str, Any]) -> dict[str, Any]:
+    if not str(strategy.get("id", "")).startswith("triage_"):
+        return {}
+    replay_plan = strategy.get("runtime_replay_plan") if isinstance(strategy.get("runtime_replay_plan"), dict) else {}
+    return {
+        "required": True,
+        "mode": replay_plan.get("mode", "runtime-assisted"),
+        "description": replay_plan.get(
+            "description",
+            "Keep the original protected code under an instrumented runtime until portable semantics are proven.",
+        ),
+        "hook_points": [str(item) for item in strategy.get("hook_points", [])],
+        "known_blockers": [str(item) for item in strategy.get("known_blockers", [])],
+        "recommended_actions": [str(item) for item in replay_plan.get("recommended_actions", [])],
+    }
+
+
 def _build_limitations(strategy: dict[str, Any]) -> list[str]:
+    if str(strategy.get("id", "")).startswith("triage_"):
+        return [
+            "检测到 WASM / VM / 混淆 / 反调试 / 动态 secret 标记，当前不生成纯 Python sign_rebuild.py。",
+            "必须保留浏览器或 JS runtime 辅助执行，直到算法语义、动态上下文和 replay 输入都被证明可移植。",
+        ]
     if strategy.get("supported"):
         return [
             "当前脚本只覆盖已验证样本的 sign 纯算与最小 replay。",

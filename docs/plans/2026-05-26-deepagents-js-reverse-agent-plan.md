@@ -181,6 +181,7 @@ task_card:
 - 已新增 deepagents rebuild delivery smoke：可通过主 Agent 的工具调用生成 `RebuildResult`
 - 已增强 pure extraction 策略字段：`pure_extractable`、`manual_port_required`、`runtime_context_required`、`dependencies`、`confidence_reason`
 - 已扩展算法策略识别：`md5`、`sha1`、`sha256`、`hmac-sha256`、`base64`、`urlencode`
+- 已实现 WASM / VM / 混淆 / 反调试 / 动态 secret 的保守 triage detector：优先于 hash / encoding 策略运行，命中后输出 runtime-assisted / partial 计划并阻断假纯算交付
 - 已新增运行时上下文依赖识别：`cookie`、`localStorage`、`sessionStorage`、`navigator`、`timezone`、`canvas`
 - 已完成 fixture profile 矩阵：`default`、`sha256`、`base64`、`context-localstorage`
 - Phase 11 已验证真实 MCP profile smoke：`sha256` / `base64` 可纯算，`context-localstorage` 在未采集上下文时会正确阻断 pure extraction

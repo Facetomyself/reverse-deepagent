@@ -21,7 +21,7 @@ def detect_algorithm_strategy(
     source_context: str,
     registry: tuple[AlgorithmStrategyRule, ...] | None = None,
 ) -> dict[str, Any]:
-    """Detect the best supported rebuild strategy from a JS source snippet."""
+    """Detect the best supported or triage-only rebuild strategy from a JS source snippet."""
 
     for rule in registry or ALGORITHM_STRATEGY_REGISTRY:
         strategy = rule.detector(source_context)
@@ -89,6 +89,61 @@ def _unsupported_strategy() -> dict[str, Any]:
         confidence_reason="No supported hash, hmac, encoding or deterministic template pattern was detected.",
         caveats=["manual port or runtime-backed execution required"],
     )
+
+
+def _detect_protected_flow_triage(source_context: str) -> dict[str, Any] | None:
+    findings = _protected_flow_findings(source_context)
+    if not findings:
+        return None
+
+    categories = {finding["category"] for finding in findings}
+    strategy_id = _triage_strategy_id(categories)
+    positive_markers = [str(finding["marker"]) for finding in findings]
+    runtime_requirements = _triage_runtime_requirements(categories)
+    caveats = ["triage-only", "runtime-assisted execution required"]
+    if "wasm" in categories:
+        caveats.append("wasm module/glue must be inspected before porting")
+    if "vm" in categories:
+        caveats.append("custom bytecode VM semantics are not proven portable")
+    if "anti_debug" in categories:
+        caveats.append("anti-debug or anti-tamper checks can change runtime behavior")
+    if "dynamic_secret" in categories:
+        caveats.append("runtime-only or server-bound secret is not modeled")
+
+    strategy = _strategy(
+        strategy_id,
+        supported=False,
+        confidence="medium",
+        description="WASM / VM / heavy obfuscation indicators were detected; pure-Python rebuild is not safe yet.",
+        dependencies=[],
+        template="unknown",
+        confidence_reason=f"Detected protected runtime markers: {', '.join(positive_markers)}.",
+        positive_markers=positive_markers,
+        caveats=caveats,
+    )
+    strategy.update(
+        {
+            "triage": {
+                "categories": sorted(categories),
+                "findings": findings,
+                "runtime_assisted": True,
+            },
+            "runtime_context_required": runtime_requirements,
+            "runtime_replay_plan": {
+                "mode": "runtime-assisted",
+                "description": "Keep the original JS / WASM / VM flow under an instrumented runtime until portable semantics are proven.",
+                "recommended_actions": [
+                    "capture source snippets around protected markers",
+                    "record request initiator stack and hook timeline",
+                    "inspect WASM imports/exports or VM dispatcher entrypoints when present",
+                    "promote only deterministic, browser-independent semantics to pure rebuild",
+                ],
+            },
+            "hook_points": _triage_hook_points(findings),
+            "known_blockers": caveats,
+        }
+    )
+    return strategy
 
 
 def _detect_crypto_hash_strategy(source_context: str) -> dict[str, Any] | None:
@@ -162,6 +217,18 @@ def _detect_encoding_strategy(source_context: str) -> dict[str, Any] | None:
 
 
 ALGORITHM_STRATEGY_REGISTRY: tuple[AlgorithmStrategyRule, ...] = (
+    AlgorithmStrategyRule(
+        rule_id="protected_flow_triage",
+        emits=(
+            "triage_wasm_module",
+            "triage_vm_obfuscation",
+            "triage_anti_debug_runtime",
+            "triage_dynamic_secret",
+            "triage_wasm_vm_obfuscation",
+        ),
+        detector=_detect_protected_flow_triage,
+        description="Detect WASM, VM, anti-debug, heavy obfuscation, and dynamic-secret flows that must stay triage/runtime-assisted.",
+    ),
     AlgorithmStrategyRule(
         rule_id="deterministic_fixture",
         emits=("fixture_seed_mod100000",),
@@ -248,6 +315,81 @@ def _confidence_score(
         "positive_markers": positive_markers,
         "caveats": caveats,
     }
+
+
+def _protected_flow_findings(source_context: str) -> list[dict[str, str]]:
+    patterns: tuple[tuple[str, str, str], ...] = (
+        ("wasm", "WebAssembly.instantiate", r"\bWebAssembly\.(?:instantiate|compile|instantiateStreaming|compileStreaming)\b"),
+        ("wasm", ".wasm", r"['\"][^'\"]+\.wasm(?:\?[^'\"]*)?['\"]"),
+        ("wasm", "wasm-bindgen", r"\b(?:wasm_bindgen|__wbindgen|wasm-bindgen)\b"),
+        ("wasm", "Emscripten glue", r"\b(?:Module\[['\"]wasmMemory['\"]\]|HEAPU8|asm\.js|Emscripten)\b"),
+        ("vm", "opcode dispatch loop", r"\b(?:opcode|opcodes|bytecode|byteCode|dispatchTable|vm_dispatch|instructionPointer)\b"),
+        ("vm", "switch opcode dispatcher", r"switch\s*\([^)]*(?:opcode|op|instruction|bytecode)[^)]*\)"),
+        ("vm", "encrypted function body", r"\b(?:decrypt|decode)\w*\s*\([^)]*(?:bytecode|payload|cipher|encrypted)[^)]*\)"),
+        ("obfuscation", "control-flow flattening", r"\b(?:controlFlowFlattening|_0x[a-fA-F0-9]{4,}|stringArray|rotateStringArray)\b"),
+        ("obfuscation", "runtime code generation", r"\b(?:eval|Function)\s*\("),
+        ("anti_debug", "debugger trap", r"\bdebugger\b"),
+        ("anti_debug", "DevTools detection", r"\b(?:devtools|__REACT_DEVTOOLS_GLOBAL_HOOK__|outerWidth\s*-\s*innerWidth)\b"),
+        ("anti_debug", "timing probe", r"\b(?:performance\.now|Date\.now)\s*\(\s*\)\s*[+-]\s*(?:performance\.now|Date\.now)\s*\("),
+        ("anti_debug", "function integrity check", r"\.toString\s*\(\s*\)\s*\.\s*(?:includes|indexOf|match)\s*\("),
+        ("dynamic_secret", "runtime challenge", r"\b(?:__challenge|serverNonce|challengeToken|runtimeChallenge)\b"),
+        ("dynamic_secret", "native bridge secret", r"\b(?:nativeBridge|JSBridge|invokeNativeSign|getNativeSecret)\b"),
+    )
+    findings: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for category, marker, pattern in patterns:
+        match = re.search(pattern, source_context, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        key = (category, marker)
+        if key in seen:
+            continue
+        seen.add(key)
+        snippet = re.sub(r"\s+", " ", source_context[max(0, match.start() - 80) : match.end() + 80]).strip()
+        findings.append({"category": category, "marker": marker, "snippet": snippet[:240]})
+    return findings
+
+
+def _triage_strategy_id(categories: set[str]) -> str:
+    if len(categories & {"wasm", "vm", "obfuscation", "anti_debug", "dynamic_secret"}) > 1:
+        return "triage_wasm_vm_obfuscation"
+    if "wasm" in categories:
+        return "triage_wasm_module"
+    if "vm" in categories or "obfuscation" in categories:
+        return "triage_vm_obfuscation"
+    if "anti_debug" in categories:
+        return "triage_anti_debug_runtime"
+    if "dynamic_secret" in categories:
+        return "triage_dynamic_secret"
+    return "triage_wasm_vm_obfuscation"
+
+
+def _triage_runtime_requirements(categories: set[str]) -> list[str]:
+    requirements: list[str] = ["runtime-js-vm"]
+    if "wasm" in categories:
+        requirements.append("wasm-module")
+    if "anti_debug" in categories:
+        requirements.append("anti-debug-runtime")
+    if "dynamic_secret" in categories:
+        requirements.append("dynamic-secret")
+    return requirements
+
+
+def _triage_hook_points(findings: list[dict[str, str]]) -> list[str]:
+    hook_points: list[str] = []
+    for finding in findings:
+        category = finding["category"]
+        marker = finding["marker"]
+        if category == "wasm":
+            hook_points.extend(["WebAssembly.instantiate", "WebAssembly.compile", "fetch(.wasm)"])
+        elif category in {"vm", "obfuscation"}:
+            hook_points.extend(["VM dispatcher", "opcode table", "runtime code generation"])
+        elif category == "anti_debug":
+            hook_points.extend(["debugger/timing checks", "function integrity checks"])
+        elif category == "dynamic_secret":
+            hook_points.extend(["challenge/nonce source", "fingerprint/native bridge source"])
+        hook_points.append(marker)
+    return sorted(set(hook_points))
 
 
 def _detect_message_template(source_context: str) -> str:

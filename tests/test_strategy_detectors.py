@@ -6,8 +6,16 @@ from reverse_deepagent.strategies import detect_algorithm_strategy, list_algorit
 class StrategyDetectorTests(unittest.TestCase):
     def test_registry_metadata_is_ordered_and_serializable(self) -> None:
         registry = list_algorithm_strategy_registry()
-        self.assertEqual([item["rule_id"] for item in registry], ["deterministic_fixture", "crypto_hash", "sig_template", "encoding"])
+        self.assertEqual(
+            [item["rule_id"] for item in registry],
+            ["protected_flow_triage", "deterministic_fixture", "crypto_hash", "sig_template", "encoding"],
+        )
         emitted = {strategy_id for item in registry for strategy_id in item["emits"]}
+        self.assertIn("triage_wasm_module", emitted)
+        self.assertIn("triage_vm_obfuscation", emitted)
+        self.assertIn("triage_anti_debug_runtime", emitted)
+        self.assertIn("triage_dynamic_secret", emitted)
+        self.assertIn("triage_wasm_vm_obfuscation", emitted)
         self.assertIn("fixture_seed_mod100000", emitted)
         self.assertIn("md5_keyword_timestamp", emitted)
         self.assertIn("sha1_keyword_timestamp", emitted)
@@ -114,6 +122,75 @@ class StrategyDetectorTests(unittest.TestCase):
         self.assertEqual(strategy["id"], "hmac_sha256_keyword_timestamp")
         self.assertTrue(strategy["supported"])
         self.assertEqual(strategy["salt"], "fixture-secret")
+
+    def test_client_ip_argument_does_not_trigger_vm_triage(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp, ip) {
+  return CryptoJS.SHA256(`${keyword}:${timestamp}:${ip}`).toString();
+}"""
+        )
+        self.assertEqual(strategy["id"], "sha256_keyword_timestamp")
+
+    def test_storage_nonce_hash_is_not_triage_by_name_only(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('nonce');
+  return CryptoJS.SHA256(`${keyword}:${timestamp}:${nonce}`).toString();
+}"""
+        )
+        self.assertEqual(strategy["id"], "sha256_keyword_timestamp")
+
+    def test_cookie_csrf_hash_is_not_triage_by_name_only(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  const csrf = document.cookie.match(/csrf=([^;]+)/)?.[1];
+  return CryptoJS.SHA256(`${keyword}:${timestamp}:${csrf}`).toString();
+}"""
+        )
+        self.assertEqual(strategy["id"], "sha256_keyword_timestamp")
+
+    def test_wasm_only_triggers_wasm_triage(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """async function buildSign(keyword, timestamp) {
+  const wasm = await WebAssembly.instantiateStreaming(fetch('/sign.wasm'), {});
+  return wasm.instance.exports.sign(keyword, timestamp);
+}"""
+        )
+        self.assertEqual(strategy["id"], "triage_wasm_module")
+        self.assertEqual(strategy["triage"]["categories"], ["wasm"])
+        self.assertIn("wasm-module", strategy["runtime_context_required"])
+
+    def test_vm_only_triggers_vm_triage(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  const opcode = bytecode[instructionPointer++];
+  switch (opcode) {
+    case 7:
+      return dispatchTable[opcode](keyword, timestamp);
+  }
+}"""
+        )
+        self.assertEqual(strategy["id"], "triage_vm_obfuscation")
+        self.assertIn("vm", strategy["triage"]["categories"])
+
+    def test_anti_debug_only_triggers_runtime_triage(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  debugger;
+  return CryptoJS.MD5(`${keyword}:${timestamp}`).toString();
+}"""
+        )
+        self.assertEqual(strategy["id"], "triage_anti_debug_runtime")
+        self.assertIn("anti_debug", strategy["triage"]["categories"])
+
+    def test_strong_dynamic_secret_triggers_dynamic_secret_triage(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  return signWithChallenge(keyword, timestamp, window.__challenge);
+}"""
+        )
+        self.assertEqual(strategy["id"], "triage_dynamic_secret")
+        self.assertIn("dynamic_secret", strategy["triage"]["categories"])
 
 
 if __name__ == "__main__":

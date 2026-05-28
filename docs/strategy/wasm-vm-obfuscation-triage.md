@@ -118,11 +118,15 @@ Recommended subagent responsibilities:
 
 The important bit: the subagent boundary is about truthfulness of the delivery, not about giving up. Triage-only is a valid result when the evidence says so.
 
-## Future hook points
+## Implemented baseline and future hook points
 
-The current public demo does not implement a full WASM / VM detector yet. Future work should add detectors and backend features behind the existing strategy / runtime contracts:
+The current public demo implements a conservative `protected_flow_triage` strategy detector for WASM / VM / anti-debug / heavy-obfuscation / dynamic-secret markers. It runs before supported hash / template detectors, so protected flows stay triage-only even when the same snippet also contains `sha256`, `base64`, or other portable-looking markers.
 
-- Strategy detector rules for `WebAssembly.instantiate`, `.wasm` fetches, Emscripten / wasm-bindgen glue, VM opcode tables, and common obfuscator self-defending patterns.
+This is a marker-level baseline, not a full WASM binary inspector, VM bytecode semantics engine, or anti-debug neutralizer. The detector is intentionally conservative about false positives: ordinary `cookie`, `localStorage`, `navigator`, `nonce`, `csrf`, or business variables such as `ip` should not become protected-flow triage by name alone. They should remain runtime-context / manual-port inputs unless stronger evidence appears, such as WASM / VM structure, anti-debug checks, native bridge calls, volatile context, or a strong runtime challenge marker.
+
+Future work should deepen runtime/backend features behind the existing strategy / runtime contracts:
+
+- More strategy detector rules for obfuscator families, packed chunks, bytecode formats, and common self-defending patterns.
 - Runtime backend capabilities for WebAssembly export inspection and import hook capture.
 - Artifact manifest entries for WASM binaries, hashes, export lists, and hook timelines.
 - Runtime-assisted replay renderer that invokes the original protected code in a controlled browser / JS engine.
