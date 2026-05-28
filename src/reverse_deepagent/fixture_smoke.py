@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Sequence
 
+from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
 from reverse_deepagent.coordinator import run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import FIXTURE_PROFILE_VALUES, start_fixture_server
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT
@@ -32,6 +33,7 @@ def build_fixture_smoke_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chrome-wait-seconds", type=int, default=10, help="Seconds to wait for Chrome debug listener.")
     parser.add_argument("--chrome-start-script", default=DEFAULT_START_SCRIPT, help="Chrome debug launcher script path.")
     parser.add_argument("--chrome-stop-script", default=DEFAULT_STOP_SCRIPT, help="Chrome debug stop script path.")
+    parser.add_argument("--jsreverser-mcp-command", default=DEFAULT_JSREVERSER_MCP_COMMAND, help="Path to the jsreverser-mcp executable.")
     return parser
 
 
@@ -60,6 +62,7 @@ def main_fixture_smoke(argv: Sequence[str] | None = None) -> int:
             chrome_config=chrome_config,
             ensure_chrome=args.ensure_chrome,
             keep_chrome=args.keep_chrome,
+            mcp_command=args.jsreverser_mcp_command,
         )
         payload = {
             "fixture": {

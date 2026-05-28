@@ -5,6 +5,7 @@
 Reverse-engineering oriented DeepAgents demo for Web / JavaScript workflows. The project focuses on local, authorized analysis: route a reverse task, collect Web evidence through runtime adapters, validate candidate signing functions, and generate replay / rebuild artifacts.
 
 > 当前发布线：`v0.1.x` public demo stabilization。详见 [`CHANGELOG.md`](CHANGELOG.md) 与 [`ROADMAP.md`](ROADMAP.md)。
+> MCP runtime 与 self-hosted smoke：[`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)、[`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md)。
 
 ## Quickstart
 
@@ -267,6 +268,7 @@ reverse-agent-fixture-smoke \
   --profile default \
   --runtime mcp \
   --ensure-chrome \
+  --jsreverser-mcp-command "/opt/homebrew/bin/jsreverser-mcp" \
   --chrome-debug-port 9445 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-fixture-smoke" \
   --artifact-root "<repo-root>/artifacts/fixture-smoke-mcp"

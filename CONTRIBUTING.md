@@ -28,7 +28,7 @@ Do not commit generated runtime artifacts. The following paths are intentionally
 
 ## Chrome debug lifecycle
 
-When testing MCP-backed Web recon, first read [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md). Prefer the managed launcher instead of assuming port `9222` is already open:
+When testing MCP-backed Web recon, first read [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md). For self-hosted GitHub Actions smoke runs, also read [`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md). Prefer the managed launcher instead of assuming port `9222` is already open:
 
 ```bash
 reverse-agent-fixture-smoke \

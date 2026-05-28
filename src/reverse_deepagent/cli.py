@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Sequence
 
+from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
 from reverse_deepagent.coordinator import run_reverse_pipeline
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT, DEFAULT_USER_DATA_DIR
 
@@ -52,6 +53,7 @@ def build_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chrome-wait-seconds", type=int, default=10, help="Seconds to wait for Chrome debug listener.")
     parser.add_argument("--chrome-start-script", default=DEFAULT_START_SCRIPT, help="Chrome debug launcher script path.")
     parser.add_argument("--chrome-stop-script", default=DEFAULT_STOP_SCRIPT, help="Chrome debug stop script path.")
+    parser.add_argument("--jsreverser-mcp-command", default=DEFAULT_JSREVERSER_MCP_COMMAND, help="Path to the jsreverser-mcp executable.")
     return parser
 
 
@@ -78,6 +80,7 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
         chrome_config=chrome_config,
         ensure_chrome=args.ensure_chrome,
         keep_chrome=args.keep_chrome,
+        mcp_command=args.jsreverser_mcp_command,
     )
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
     return 0

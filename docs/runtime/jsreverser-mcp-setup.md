@@ -56,6 +56,7 @@ reverse-agent-fixture-smoke \
   --profile context-navigator \
   --runtime mcp \
   --ensure-chrome \
+  --jsreverser-mcp-command "/opt/homebrew/bin/jsreverser-mcp" \
   --chrome-debug-port 9461 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-9461"
 ```
@@ -75,6 +76,7 @@ Important parameters:
 | `--chrome-path` | Chrome executable path. Defaults to the common macOS path. |
 | `--chrome-extra-args` | Extra Chrome flags, passed through the launcher. |
 | `--keep-chrome` | Keep managed Chrome running after the smoke. Default is to stop it. |
+| `--jsreverser-mcp-command` | MCP executable path used by the runtime adapter. Keep this aligned with any CI `jsreverser_mcp_path` input. |
 
 The runtime adapter must pass the same browser URL to JSReverser MCP:
 
@@ -108,6 +110,7 @@ reverse-agent-fixture-smoke \
   --profile context-cookie \
   --runtime mcp \
   --ensure-chrome \
+  --jsreverser-mcp-command "/opt/homebrew/bin/jsreverser-mcp" \
   --chrome-debug-port 9460 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-9460" \
   --artifact-root "artifacts/fixture-context-cookie-mcp"
@@ -157,7 +160,7 @@ Real MCP smoke is isolated in the manual workflow:
 .github/workflows/mcp-integration.yml
 ```
 
-Run it through GitHub Actions `workflow_dispatch` on a self-hosted runner that has Chrome and JSReverser MCP installed.
+Run it through GitHub Actions `workflow_dispatch` on a self-hosted runner that has Chrome and JSReverser MCP installed. For input-level operating instructions, see [`docs/ci/self-hosted-mcp-smoke.md`](../ci/self-hosted-mcp-smoke.md).
 
 ## Self-hosted runner checklist
 

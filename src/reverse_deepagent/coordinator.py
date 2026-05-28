@@ -6,7 +6,11 @@ from typing import Any
 
 from pydantic import Field
 
-from reverse_deepagent.adapters.jsreverser import JSReverserRuntime, create_jsreverser_mcp_runtime
+from reverse_deepagent.adapters.jsreverser import (
+    DEFAULT_JSREVERSER_MCP_COMMAND,
+    JSReverserRuntime,
+    create_jsreverser_mcp_runtime,
+)
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
 from reverse_deepagent.schemas import FinalResult, KeyFindings, ReconResult, RouterResult, SchemaBaseModel, TaskCard
@@ -129,13 +133,20 @@ def build_markdown_report(final_result: FinalResult) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_runtime(runtime_kind: str, browser_url: str | None = None) -> JSReverserRuntime:
+def build_runtime(
+    runtime_kind: str,
+    browser_url: str | None = None,
+    mcp_command: str | None = None,
+) -> JSReverserRuntime:
     """Build a runtime backend for the coordinator pipeline."""
 
     if runtime_kind == "mock":
         return JSReverserRuntime(bridge=MockJSReverserBridge())
     if runtime_kind == "mcp":
-        return create_jsreverser_mcp_runtime(browser_url=browser_url or "http://127.0.0.1:9222")
+        return create_jsreverser_mcp_runtime(
+            command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
+            browser_url=browser_url or "http://127.0.0.1:9222",
+        )
     raise ValueError(f"Unsupported runtime kind: {runtime_kind}")
 
 
@@ -214,6 +225,7 @@ def run_reverse_pipeline(
     chrome_config: ChromeDebugConfig | None = None,
     ensure_chrome: bool = False,
     keep_chrome: bool = False,
+    mcp_command: str | None = None,
     runtime: JSReverserRuntime | None = None,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
@@ -236,7 +248,11 @@ def run_reverse_pipeline(
         should_stop_chrome = not keep_chrome
 
     owns_runtime = runtime is None
-    active_runtime = runtime or build_runtime(runtime_kind, browser_url=chrome_config.browser_url if chrome_config else None)
+    active_runtime = runtime or build_runtime(
+        runtime_kind,
+        browser_url=chrome_config.browser_url if chrome_config else None,
+        mcp_command=mcp_command,
+    )
     try:
         recon_result = active_runtime.run_web_recon(task_card=task_card, route_result=route_result)
         final_result = _final_from_recon(task_card, route_result, recon_result)

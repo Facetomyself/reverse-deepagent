@@ -14,6 +14,8 @@ on:
         type: choice
         options:
           - default
+          - md5
+          - sha1
           - sha256
           - base64
           - context-localstorage
@@ -50,6 +52,7 @@ jobs:
             --profile "${{ inputs.profile }}" \
             --runtime mcp \
             --ensure-chrome \
+            --jsreverser-mcp-command "${{ inputs.jsreverser_mcp_path }}" \
             --chrome-debug-port "${{ inputs.chrome_debug_port }}" \
             --chrome-user-data-dir "$RUNNER_TEMP/reverse-agent-chrome-${{ inputs.chrome_debug_port }}" \
             --artifact-root "$RUNNER_TEMP/reverse-agent-mcp-${{ inputs.profile }}"

@@ -69,6 +69,8 @@ class FixtureCliTests(unittest.TestCase):
                 "sha256",
                 "--runtime",
                 "mock",
+                "--jsreverser-mcp-command",
+                str(REPO_ROOT / "fake-jsreverser-mcp"),
                 "--artifact-root",
                 str(REPO_ROOT / "artifacts/fixture-smoke-profile-test"),
             ],
