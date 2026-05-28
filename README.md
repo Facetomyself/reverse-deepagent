@@ -562,7 +562,10 @@ print(capabilities.model_dump(mode="json"))
 
 每次 pipeline 会额外写出 `workspace/backend-artifact-manifest.json`，用 `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` 描述 artifact key、路径、类别、kind、producer backend、transport 和 target platforms。这个 manifest 是新增索引，不替换现有 `exports/artifact-index.json`。
 
-非 Web 运行时会沿用同一套 capability / manifest 边界，但不能复用 Web-only 的 browser session 语义。Android 方向的第一版接口草案见 [`docs/runtime/android-adapter-interface.md`](docs/runtime/android-adapter-interface.md)。
+非 Web 运行时会沿用同一套 capability / manifest 边界，但不能复用 Web-only 的 browser session 语义。当前接口草案：
+
+- Android: [`docs/runtime/android-adapter-interface.md`](docs/runtime/android-adapter-interface.md)
+- iOS: [`docs/runtime/ios-adapter-interface.md`](docs/runtime/ios-adapter-interface.md)
 
 JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、backend metadata 和 runtime sampling 参数。CLI 里的 `--jsreverser-mcp-command`、Chrome debug port 等参数最终都会汇入这个 config，再创建 MCP runtime。
 
