@@ -37,6 +37,8 @@ class DeepAgentDeliverySmokeTests(unittest.TestCase):
             self.assertTrue(Path(delivery["generated_files"]["sign_rebuild"]).exists())
             self.assertTrue(Path(delivery["generated_files"]["replay_demo"]).exists())
             self.assertTrue(Path(delivery["generated_files"]["scrapy_middleware"]).exists())
+            self.assertTrue(Path(delivery["generated_files"]["scrapy_export_manifest"]).exists())
+            self.assertTrue(Path(delivery["generated_files"]["scrapy_project"]).is_dir())
             self.assertEqual(payload["final_text"], "rebuild delivery completed")
 
 

@@ -176,7 +176,7 @@ task_card:
 - 已新增验证类 workspace artifact：`function-validations.json` 与 `function-validation-summary.json`
 - 已实现纯算导出：从已验证候选生成 `workspace/rebuild-plan.json` 与 `rebuild/sign_rebuild.py`
 - 已实现浏览器外 replay delivery：生成 `rebuild/replay_demo.py`，可脱离 Chrome 直接复放 fixture API
-- 已实现 Scrapy 接入草案：生成 `rebuild/scrapy_middleware.py`
+- 已实现 Scrapy 接入草案：生成 `rebuild/scrapy_middleware.py`；第 10 项升级为完整 `rebuild/scrapy_project/`
 - 已实现 deepagents rebuild delivery 子 Agent / 工具：`build_rebuild_delivery`，支持从 `FinalResult` 直接生成交付包
 - 已新增 deepagents rebuild delivery smoke：可通过主 Agent 的工具调用生成 `RebuildResult`
 - 已增强 pure extraction 策略字段：`pure_extractable`、`manual_port_required`、`runtime_context_required`、`dependencies`、`confidence_reason`
@@ -371,7 +371,7 @@ task_card:
 - 把已验证候选函数提升为可迁移的交付包
 - 生成浏览器外可运行的纯 Python sign 计算脚本
 - 生成可直接对 fixture API 做 HTTP replay 的 demo
-- 生成 Scrapy middleware 草案，为后续采集框架集成预留位置
+- 生成 Scrapy middleware 与完整 Scrapy replay 项目，支持安装 Scrapy 后直接 `crawl`
 
 交付物：
 
@@ -380,6 +380,8 @@ task_card:
 - `rebuild/sign_rebuild.py`
 - `rebuild/replay_demo.py`
 - `rebuild/scrapy_middleware.py`
+- `rebuild/scrapy_project/`
+- `rebuild/scrapy_export_manifest.json`
 - artifact index 中的 `rebuild_artifacts`
 
 验收标准：
@@ -387,7 +389,8 @@ task_card:
 - `rebuild-plan.json` 能描述候选函数、算法策略、验证状态、replay URL 和输出文件
 - `sign_rebuild.py` 能独立完成 sample self-check
 - `replay_demo.py` 能在不依赖浏览器的情况下复放 fixture `/api/search`
-- `scrapy_middleware.py` 不强依赖 Scrapy import，可作为项目接入草案
+- `scrapy_project/` 包含 `scrapy.cfg`、settings、middleware、spider、runner 和 sign adapter
+- `scrapy_middleware.py` 保留为不强依赖 Scrapy import 的兼容单文件
 - 单元测试覆盖“生成 replay demo 并脱离浏览器请求 fixture API”
 - 真实 MCP fixture smoke 能产出 rebuild artifacts，并通过 `sign_rebuild.py` self-check
 
@@ -562,7 +565,7 @@ task_card:
 
 用户追加的 12 项增强按单项实现、code review、功能测试、全量测试和单独 commit 推进。当前已完成并提交第 1～8 项；第 9 项 `runtime context 自动补全` 本轮补齐实现：rebuild 阶段会从源码自动推断 `localStorage` / `sessionStorage` / `cookie` / `navigator` / `timezone` 的具体 binding key，把命中的单个值写入 `pure_extraction.runtime_context_binding`，同时输出 `runtime_context_bindings` / `missing_runtime_context_bindings` 供 review；源码明确依赖具体 key 但采集缺失、或出现多个显式 context binding 但 renderer 尚不支持多值拼接时，均保持 not-ready，避免生成假成功的 `sign_rebuild.py`。
 
-第 10 项 `完整 Scrapy 集成`、第 11 项 `更真实 Web 样例库`、第 12 项 `MCP self-hosted smoke 持续自动化` 仍按顺序排在第 9 项提交之后执行；当前 `scrapy_middleware.py` 仍只是接入草案，不等价于完整 Scrapy 集成。
+第 10 项 `完整 Scrapy 集成` 本轮升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库`、第 12 项 `MCP self-hosted smoke 持续自动化` 仍按顺序排在第 10 项提交之后执行。
 
 新增验证入口：
 
@@ -573,7 +576,7 @@ task_card:
 - `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `get_request_initiator` / `get_script_source` 证据晋升链路
 - `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `function-candidates.json` 候选函数卡片输出
 - `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `function-validations.json` / `function-validation-summary.json` 候选验证与 replay 输出
-- `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `rebuild-plan.json`、`sign_rebuild.py`、`replay_demo.py`、`scrapy_middleware.py` 纯算交付包输出
+- `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `rebuild-plan.json`、`sign_rebuild.py`、`replay_demo.py`、`scrapy_middleware.py` 与 `scrapy_project/` 纯算交付包输出
 - `scripts/run_deepagent_delivery_smoke.py` 当前可验证主 Agent 的 `build_rebuild_delivery` 工具调用闭环
 - `tests/test_rebuild_artifacts.py` 当前还验证 md5 策略 self-check 与 `localStorage` 运行时依赖阻断逻辑
 - `reverse-agent-fixture --profile sha256/base64/context-localstorage` 当前可切换 fixture profile

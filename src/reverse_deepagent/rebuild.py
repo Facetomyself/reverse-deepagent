@@ -84,6 +84,8 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
             "sign_rebuild": "artifacts/rebuild/sign_rebuild.py",
             "replay_demo": "artifacts/rebuild/replay_demo.py",
             "scrapy_middleware": "artifacts/rebuild/scrapy_middleware.py",
+            "scrapy_project": "artifacts/rebuild/scrapy_project/",
+            "scrapy_export_manifest": "artifacts/rebuild/scrapy_export_manifest.json",
         },
         "runtime_assisted": _build_runtime_assisted_plan(strategy),
         "limitations": _build_limitations(strategy),
@@ -95,6 +97,7 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
         files["sign_rebuild.py"] = render_sign_rebuild(plan)
         files["replay_demo.py"] = render_replay_demo(plan)
         files["scrapy_middleware.py"] = render_scrapy_middleware(plan)
+        files.update(render_scrapy_project(plan))
     else:
         files["README.md"] = render_not_ready_readme(plan)
     return plan, files
@@ -126,17 +129,22 @@ def write_rebuild_bundle(base_dir: Path, task_card: TaskCard, final_result: Fina
 
     for filename, content in files.items():
         path = rebuild_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-        key = filename.rsplit(".", 1)[0].replace("-", "_")
+        key = _generated_file_key(filename)
         generated_files[key] = str(path)
         artifacts.append(
             ArtifactRef(
                 path=str(path),
-                kind=ArtifactKind.REBUILD if filename.endswith(".py") else ArtifactKind.MARKDOWN,
+                kind=_artifact_kind_for_generated_file(filename),
                 description=f"Generated rebuild delivery file: {filename}",
                 metadata={"filename": filename},
             )
         )
+    scrapy_project_dir = rebuild_dir / "scrapy_project"
+    if scrapy_project_dir.exists():
+        generated_files["scrapy_project"] = str(scrapy_project_dir)
+
 
     ready = bool(plan.get("ready"))
     return RebuildResult(
@@ -147,6 +155,22 @@ def write_rebuild_bundle(base_dir: Path, task_card: TaskCard, final_result: Fina
         next_action="run_replay_demo_or_integrate_scrapy" if ready else "manual_port_or_expand_source_context",
         confidence=ConfidenceLevel.HIGH if ready else ConfidenceLevel.LOW,
     )
+
+
+def _generated_file_key(filename: str) -> str:
+    stem = filename.rsplit(".", 1)[0]
+    return stem.replace("/", "_").replace("-", "_")
+
+
+def _artifact_kind_for_generated_file(filename: str) -> ArtifactKind:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".py":
+        return ArtifactKind.REBUILD
+    if suffix == ".json":
+        return ArtifactKind.JSON
+    if suffix in {".md", ".markdown"}:
+        return ArtifactKind.MARKDOWN
+    return ArtifactKind.OTHER
 
 
 def render_sign_rebuild(plan: dict[str, Any]) -> str:
@@ -431,57 +455,415 @@ if __name__ == "__main__":
 
 
 def render_scrapy_middleware(plan: dict[str, Any]) -> str:
-    """Render a dependency-light Scrapy middleware sketch."""
+    """Render a dependency-light Scrapy downloader middleware."""
 
-    return '''from __future__ import annotations
+    replay = plan.get("replay") or {}
+    sample_input = (plan.get("validation") or {}).get("sample_input") or {}
+    default_keyword = sample_input.get("keyword", "sign")
+    default_api_url = replay.get("api_url") or "http://127.0.0.1:8765/api/search"
+    default_api_path = urlparse(default_api_url).path or "/api/search"
+    return f'''from __future__ import annotations
 
 import json
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 from sign_rebuild import build_sign, current_millis
 
+DEFAULT_KEYWORD = {default_keyword!r}
+DEFAULT_API_PATH = {default_api_path!r}
+
 
 class ReverseSignMiddleware:
-    """Scrapy downloader middleware sketch for the rebuilt sign flow.
+    """Scrapy downloader middleware for the rebuilt sign flow.
 
     Usage:
-      DOWNLOADER_MIDDLEWARES = {
+      DOWNLOADER_MIDDLEWARES = {{
           "your_project.middlewares.ReverseSignMiddleware": 543,
-      }
+      }}
 
     Expected request.meta fields:
-      - reverse_keyword: keyword to sign, default "sign"
+      - reverse_keyword: keyword to sign, default DEFAULT_KEYWORD
+      - reverse_timestamp: optional fixed timestamp for deterministic replay
+      - reverse_base_url: optional base URL when request.url is only a seed URL
       - reverse_sign_enabled: set False to skip signing
     """
 
-    def process_request(self, request, spider):  # noqa: D401
-        if request.meta.get("reverse_sign_enabled", True) is False:
+    def process_request(self, request, spider=None):  # noqa: D401
+        if request.meta.get("reverse_sign_enabled", True) is False or request.meta.get("reverse_signed") is True:
             return None
 
-        keyword = request.meta.get("reverse_keyword", "sign")
+        keyword = request.meta.get("reverse_keyword", DEFAULT_KEYWORD)
         timestamp = int(request.meta.get("reverse_timestamp") or current_millis())
         sign = build_sign(keyword, timestamp)
-        payload = {
+        payload = {{
             "keyword": keyword,
             "timestamp": timestamp,
             "sign": sign,
             "fixture": "reverse-agent-fixture",
-        }
-        signed_url = request.url
+        }}
+        base_url = request.meta.get("reverse_base_url")
+        signed_url = request.url if not base_url else urljoin(str(base_url).rstrip("/") + "/", DEFAULT_API_PATH.lstrip("/"))
         if "?" not in signed_url:
-            signed_url = f"{signed_url}?{urlencode({'keyword': keyword, 't': timestamp})}"
+            signed_url = f"{{signed_url}}?{{urlencode({{'keyword': keyword, 't': timestamp}})}}"
 
-        return request.replace(
+        signed = request.replace(
             url=signed_url,
             method="POST",
-            headers={
-                **request.headers,
-                b"content-type": b"application/json",
-                b"x-sign": sign.encode("utf-8"),
-                b"x-fixture": b"reverse-agent-fixture",
-            },
             body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         )
+        signed.headers[b"content-type"] = b"application/json"
+        signed.headers[b"x-sign"] = sign.encode("utf-8")
+        signed.headers[b"x-fixture"] = b"reverse-agent-fixture"
+        signed.meta["reverse_signed"] = True
+        return signed
+'''
+
+
+def render_scrapy_project(plan: dict[str, Any]) -> dict[str, str]:
+    """Render a runnable Scrapy project around the rebuilt sign flow."""
+
+    return {
+        "scrapy_export_manifest.json": render_scrapy_export_manifest(plan),
+        "scrapy_project/scrapy.cfg": render_scrapy_cfg(),
+        "scrapy_project/README.md": render_scrapy_project_readme(plan),
+        "scrapy_project/runner.py": render_scrapy_runner(),
+        "scrapy_project/reverse_sign_project/__init__.py": "",
+        "scrapy_project/reverse_sign_project/items.py": render_scrapy_items(),
+        "scrapy_project/reverse_sign_project/middlewares.py": render_scrapy_project_middleware(plan),
+        "scrapy_project/reverse_sign_project/settings.py": render_scrapy_settings(plan),
+        "scrapy_project/reverse_sign_project/sign_adapter.py": render_scrapy_sign_adapter(),
+        "scrapy_project/reverse_sign_project/spiders/__init__.py": "",
+        "scrapy_project/reverse_sign_project/spiders/replay_spider.py": render_scrapy_replay_spider(plan),
+    }
+
+
+def render_scrapy_export_manifest(plan: dict[str, Any]) -> str:
+    replay = plan.get("replay") or {}
+    sample_input = (plan.get("validation") or {}).get("sample_input") or {}
+    payload = {
+        "schema_version": 1,
+        "kind": "scrapy-export",
+        "status": "ready" if plan.get("ready") else "partial",
+        "project_root": "rebuild/scrapy_project",
+        "settings_module": "reverse_sign_project.settings",
+        "spider": "reverse_sign_replay",
+        "middleware": "reverse_sign_project.middlewares.ReverseSignMiddleware",
+        "commands": [
+            "cd rebuild/scrapy_project && scrapy crawl reverse_sign_replay",
+            "cd rebuild/scrapy_project && python runner.py --base-url <target-base-url> --output result.json",
+        ],
+        "default_base_url": replay.get("base_url"),
+        "default_api_url": replay.get("api_url"),
+        "default_keyword": sample_input.get("keyword", "sign"),
+        "generated_files": [
+            "scrapy.cfg",
+            "runner.py",
+            "reverse_sign_project/settings.py",
+            "reverse_sign_project/middlewares.py",
+            "reverse_sign_project/spiders/replay_spider.py",
+            "reverse_sign_project/sign_adapter.py",
+        ],
+        "notes": [
+            "Install with the optional extra: pip install reverse-deepagent[scrapy] or install scrapy in this environment.",
+            "The project imports ../sign_rebuild.py through reverse_sign_project.sign_adapter, so keep the generated Scrapy project next to sign_rebuild.py.",
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def render_scrapy_cfg() -> str:
+    return '''[settings]
+default = reverse_sign_project.settings
+
+[deploy]
+project = reverse_sign_project
+'''
+
+
+def render_scrapy_settings(plan: dict[str, Any]) -> str:
+    replay = plan.get("replay") or {}
+    sample_input = (plan.get("validation") or {}).get("sample_input") or {}
+    default_base_url = replay.get("base_url") or "http://127.0.0.1:8765"
+    default_api_url = replay.get("api_url") or urljoin(default_base_url.rstrip("/") + "/", "/api/search")
+    default_api_path = urlparse(default_api_url).path or "/api/search"
+    default_keyword = sample_input.get("keyword", "sign")
+    return f'''BOT_NAME = "reverse_sign_project"
+
+SPIDER_MODULES = ["reverse_sign_project.spiders"]
+NEWSPIDER_MODULE = "reverse_sign_project.spiders"
+
+ROBOTSTXT_OBEY = False
+LOG_LEVEL = "INFO"
+REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+
+DOWNLOADER_MIDDLEWARES = {{
+    "reverse_sign_project.middlewares.ReverseSignMiddleware": 543,
+}}
+
+REVERSE_SIGN_DEFAULT_BASE_URL = {default_base_url!r}
+REVERSE_SIGN_DEFAULT_API_PATH = {default_api_path!r}
+REVERSE_SIGN_DEFAULT_KEYWORD = {default_keyword!r}
+'''
+
+
+def render_scrapy_sign_adapter() -> str:
+    return '''from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+from typing import Any
+
+
+def _load_sign_module() -> ModuleType:
+    sign_path = Path(__file__).resolve().parents[2] / "sign_rebuild.py"
+    spec = importlib.util.spec_from_file_location("reverse_generated_sign_rebuild", sign_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to import generated sign_rebuild.py from {sign_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_SIGN_MODULE = _load_sign_module()
+
+
+def build_sign(keyword: str, timestamp: int | None = None) -> str:
+    return str(_SIGN_MODULE.build_sign(keyword, timestamp))
+
+
+def current_millis() -> int:
+    return int(_SIGN_MODULE.current_millis())
+
+
+def self_check() -> bool:
+    checker: Any = getattr(_SIGN_MODULE, "self_check", None)
+    return True if checker is None else bool(checker())
+'''
+
+
+def render_scrapy_project_middleware(plan: dict[str, Any]) -> str:
+    replay = plan.get("replay") or {}
+    sample_input = (plan.get("validation") or {}).get("sample_input") or {}
+    default_keyword = sample_input.get("keyword", "sign")
+    default_api_url = replay.get("api_url") or "http://127.0.0.1:8765/api/search"
+    default_api_path = urlparse(default_api_url).path or "/api/search"
+    return f'''from __future__ import annotations
+
+import json
+from urllib.parse import urlencode, urljoin
+
+from .sign_adapter import build_sign, current_millis
+
+DEFAULT_KEYWORD = {default_keyword!r}
+DEFAULT_API_PATH = {default_api_path!r}
+
+
+class ReverseSignMiddleware:
+    """Downloader middleware that signs target replay requests."""
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(
+            default_keyword=crawler.settings.get("REVERSE_SIGN_DEFAULT_KEYWORD", DEFAULT_KEYWORD),
+            default_api_path=crawler.settings.get("REVERSE_SIGN_DEFAULT_API_PATH", DEFAULT_API_PATH),
+        )
+
+    def __init__(self, default_keyword: str = DEFAULT_KEYWORD, default_api_path: str = DEFAULT_API_PATH) -> None:
+        self.default_keyword = default_keyword
+        self.default_api_path = default_api_path
+
+    def process_request(self, request, spider=None):  # noqa: D401
+        if request.meta.get("reverse_sign_enabled", True) is False or request.meta.get("reverse_signed") is True:
+            return None
+        keyword = request.meta.get("reverse_keyword", self.default_keyword)
+        timestamp = int(request.meta.get("reverse_timestamp") or current_millis())
+        sign = build_sign(keyword, timestamp)
+        payload = {{
+            "keyword": keyword,
+            "timestamp": timestamp,
+            "sign": sign,
+            "fixture": "reverse-agent-fixture",
+        }}
+        base_url = request.meta.get("reverse_base_url")
+        signed_url = request.url if not base_url else urljoin(str(base_url).rstrip("/") + "/", self.default_api_path.lstrip("/"))
+        if "?" not in signed_url:
+            signed_url = f"{{signed_url}}?{{urlencode({{'keyword': keyword, 't': timestamp}})}}"
+        signed = request.replace(
+            url=signed_url,
+            method="POST",
+            body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        )
+        signed.headers[b"content-type"] = b"application/json"
+        signed.headers[b"x-sign"] = sign.encode("utf-8")
+        signed.headers[b"x-fixture"] = b"reverse-agent-fixture"
+        signed.meta["reverse_signed"] = True
+        return signed
+'''
+
+
+def render_scrapy_replay_spider(plan: dict[str, Any]) -> str:
+    replay = plan.get("replay") or {}
+    sample_input = (plan.get("validation") or {}).get("sample_input") or {}
+    default_base_url = replay.get("base_url") or "http://127.0.0.1:8765"
+    default_keyword = sample_input.get("keyword", "sign")
+    return f'''from __future__ import annotations
+
+import json
+from typing import Any
+
+try:
+    import scrapy
+except ImportError:  # pragma: no cover - importable without optional dependency
+    scrapy = None
+
+
+BaseSpider = scrapy.Spider if scrapy is not None else object
+
+
+class ReverseSignReplaySpider(BaseSpider):
+    name = "reverse_sign_replay"
+    custom_settings = {{
+        "DOWNLOADER_MIDDLEWARES": {{"reverse_sign_project.middlewares.ReverseSignMiddleware": 543}},
+    }}
+
+    def __init__(self, base_url: str = {default_base_url!r}, keyword: str = {default_keyword!r}, timestamp: str | None = None, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.base_url = base_url
+        self.keyword = keyword
+        self.timestamp = int(timestamp) if timestamp else None
+
+    def _start_request(self):
+        if scrapy is None:
+            raise RuntimeError("Scrapy is not installed. Install with: pip install reverse-deepagent[scrapy]")
+        return scrapy.Request(
+            self.base_url,
+            callback=self.parse,
+            dont_filter=True,
+            meta={{
+                "reverse_base_url": self.base_url,
+                "reverse_keyword": self.keyword,
+                "reverse_timestamp": self.timestamp,
+            }},
+        )
+
+    async def start(self):
+        yield self._start_request()
+
+    def start_requests(self):
+        yield self._start_request()
+
+    def parse(self, response):
+        try:
+            body = json.loads(response.text)
+        except Exception:
+            body = {{"raw": response.text}}
+        yield {{
+            "ok": bool(body.get("ok")) if isinstance(body, dict) else False,
+            "status": response.status,
+            "url": response.url,
+            "body": body,
+        }}
+'''
+
+
+def render_scrapy_items() -> str:
+    return '''from __future__ import annotations
+
+try:
+    import scrapy
+except ImportError:  # pragma: no cover - importable without optional dependency
+    scrapy = None
+
+
+if scrapy is not None:
+    class ReverseReplayItem(scrapy.Item):
+        ok = scrapy.Field()
+        status = scrapy.Field()
+        url = scrapy.Field()
+        body = scrapy.Field()
+else:
+    class ReverseReplayItem(dict):
+        pass
+'''
+
+
+def render_scrapy_runner() -> str:
+    return '''from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run generated Scrapy replay spider.")
+    parser.add_argument("--base-url", default=None)
+    parser.add_argument("--keyword", default=None)
+    parser.add_argument("--timestamp", default=None)
+    parser.add_argument("--output", default=None, help="Optional feed output path passed to Scrapy -O.")
+    args = parser.parse_args()
+    try:
+        from scrapy.cmdline import execute
+    except ImportError as exc:
+        raise SystemExit("Scrapy is not installed. Install with: pip install reverse-deepagent[scrapy]") from exc
+
+    command = ["scrapy", "crawl", "reverse_sign_replay"]
+    if args.base_url:
+        command.extend(["-a", f"base_url={args.base_url}"])
+    if args.keyword:
+        command.extend(["-a", f"keyword={args.keyword}"])
+    if args.timestamp:
+        command.extend(["-a", f"timestamp={args.timestamp}"])
+    if args.output:
+        command.extend(["-O", args.output])
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    execute(command)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def render_scrapy_project_readme(plan: dict[str, Any]) -> str:
+    replay = plan.get("replay") or {}
+    default_base_url = replay.get("base_url") or "http://127.0.0.1:8765"
+    return f'''# Generated Scrapy Replay Project
+
+This directory is a runnable Scrapy project generated by `reverse_deepagent`.
+It reuses `../sign_rebuild.py` through `reverse_sign_project.sign_adapter` and signs outgoing replay requests in `ReverseSignMiddleware`.
+
+## Install
+
+```bash
+pip install reverse-deepagent[scrapy]
+# or install Scrapy manually in the current environment
+pip install scrapy
+```
+
+## Run
+
+```bash
+cd "rebuild/scrapy_project"
+scrapy crawl reverse_sign_replay -a base_url={default_base_url!r}
+```
+
+You can also use the thin runner:
+
+```bash
+python runner.py --base-url {default_base_url!r} --output result.json
+```
+
+## Files
+
+- `scrapy.cfg`: Scrapy settings entrypoint.
+- `reverse_sign_project/settings.py`: generated project settings and middleware registration.
+- `reverse_sign_project/middlewares.py`: signs request URL, headers and JSON body.
+- `reverse_sign_project/spiders/replay_spider.py`: minimal replay spider.
+- `reverse_sign_project/sign_adapter.py`: imports the sibling `../sign_rebuild.py`.
 '''
 
 
@@ -1055,7 +1437,7 @@ def _build_limitations(strategy: dict[str, Any]) -> list[str]:
         return [
             "当前脚本只覆盖已验证样本的 sign 纯算与最小 replay。",
             "真实目标若存在 nonce、cookie、设备指纹或服务端会话绑定，需要继续把这些上下文加入 rebuild plan。",
-            "Scrapy middleware 是交付草案，需要按目标站点的 request/response 结构接入项目。",
+            "已生成 Scrapy replay 项目；真实目标接入前仍需要复核 request/response 字段、headers 和调度策略。",
         ]
     return [
         "尚未识别可安全自动移植的纯算算法。",

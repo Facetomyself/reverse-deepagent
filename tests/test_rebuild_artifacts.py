@@ -321,6 +321,93 @@ class RebuildArtifactTests(unittest.TestCase):
             self.assertIn('DEFAULT_API_PATH = \'/api/custom-sign\'', replay_demo)
             self.assertIn('urljoin(base_url.rstrip("/") + "/", DEFAULT_API_PATH.lstrip("/"))', replay_demo)
 
+    def test_scrapy_project_is_generated_and_middleware_signs_requests(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  return btoa(`${keyword}:${timestamp}`);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000".encode("utf-8")).decode("ascii")
+        final_result = _final_result_for_source(source_context, sample_sign)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            project_dir = Path(rebuild.generated_files["scrapy_project"])
+            self.assertTrue((project_dir / "scrapy.cfg").exists())
+            self.assertTrue((project_dir / "reverse_sign_project" / "settings.py").exists())
+            self.assertTrue((project_dir / "reverse_sign_project" / "middlewares.py").exists())
+            self.assertTrue((project_dir / "reverse_sign_project" / "spiders" / "replay_spider.py").exists())
+            manifest = json.loads(Path(rebuild.generated_files["scrapy_export_manifest"]).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["kind"], "scrapy-export")
+            self.assertEqual(manifest["spider"], "reverse_sign_replay")
+            self.assertEqual(manifest["middleware"], "reverse_sign_project.middlewares.ReverseSignMiddleware")
+            self.assertTrue(any("--output" in command for command in manifest["commands"]))
+            runner = (project_dir / "runner.py").read_text(encoding="utf-8")
+            self.assertIn("--output", runner)
+            self.assertIn('command.extend(["-O", args.output])', runner)
+            subprocess.run(
+                [sys.executable, "-m", "compileall", "-q", str(project_dir)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            probe = subprocess.run(
+                [sys.executable, "-", str(project_dir), sample_sign],
+                input="""
+import json
+import sys
+
+project_dir = sys.argv[1]
+expected_sign = sys.argv[2]
+sys.path.insert(0, project_dir)
+
+from reverse_sign_project.middlewares import ReverseSignMiddleware
+
+
+class FakeRequest:
+    def __init__(self, url, meta=None, headers=None, body=b"", method="GET"):
+        self.url = url
+        self.meta = dict(meta or {})
+        self.headers = dict(headers or {})
+        self.body = body
+        self.method = method
+
+    def replace(self, url=None, method=None, headers=None, body=None):
+        merged_headers = dict(self.headers)
+        if headers:
+            merged_headers.update(headers)
+        return FakeRequest(
+            url or self.url,
+            meta=self.meta,
+            headers=merged_headers,
+            body=self.body if body is None else body,
+            method=method or self.method,
+        )
+
+
+request = FakeRequest(
+    "http://127.0.0.1:8765/seed",
+    meta={"reverse_base_url": "http://127.0.0.1:8765", "reverse_keyword": "sign", "reverse_timestamp": 1700000000000},
+)
+signed = ReverseSignMiddleware(default_keyword="sign", default_api_path="/api/search").process_request(request, None)
+payload = json.loads(signed.body.decode("utf-8"))
+result = {
+    "url": signed.url,
+    "method": signed.method,
+    "x_sign": signed.headers[b"x-sign"].decode("utf-8"),
+    "payload": payload,
+    "matches": signed.headers[b"x-sign"].decode("utf-8") == expected_sign == payload["sign"],
+}
+print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+""",
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            payload = json.loads(probe.stdout)
+            self.assertTrue(payload["matches"])
+            self.assertEqual(payload["method"], "POST")
+            self.assertIn("/api/search?", payload["url"])
+            self.assertEqual(payload["payload"]["keyword"], "sign")
+
     def test_template_variants_generate_self_checking_sign_rebuilds(self) -> None:
         cases = [
             (

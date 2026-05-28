@@ -199,7 +199,9 @@ reverse-agent-demo --runtime mock
 - `workspace/rebuild-plan.json`
 - `rebuild/sign_rebuild.py`（可生成纯算策略时）
 - `rebuild/replay_demo.py`（可生成纯算策略时）
-- `rebuild/scrapy_middleware.py`（可生成纯算策略时）
+- `rebuild/scrapy_middleware.py`（兼容型单文件 middleware）
+- `rebuild/scrapy_project/`（可运行 Scrapy replay 项目，含 settings / middleware / spider / runner）
+- `rebuild/scrapy_export_manifest.json`（Scrapy 交付 manifest）
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
 - `exports/artifact-index.json`
@@ -366,6 +368,7 @@ PYTHONPATH="<repo-root>/src" \
 - 产出 `rebuild/sign_rebuild.py`
 - 产出 `rebuild/replay_demo.py`
 - 产出 `rebuild/scrapy_middleware.py`
+- 产出 `rebuild/scrapy_project/` 与 `rebuild/scrapy_export_manifest.json`
 
 对应 deepagents 能力已接入：
 
@@ -541,7 +544,9 @@ reverse-agent-fixture-smoke \
   - `workspace/rebuild-plan.json`：描述候选函数、算法策略、pure extraction 状态、验证状态、replay URL 和输出文件
   - `rebuild/sign_rebuild.py`：浏览器外纯 Python sign 计算脚本
   - `rebuild/replay_demo.py`：浏览器外 HTTP replay demo
-  - `rebuild/scrapy_middleware.py`：Scrapy downloader middleware 接入草案
+  - `rebuild/scrapy_middleware.py`：兼容型 Scrapy downloader middleware 单文件
+  - `rebuild/scrapy_project/`：可运行 Scrapy replay 项目，包含 `scrapy.cfg`、settings、middleware、spider、runner 和 `sign_adapter.py`
+  - `rebuild/scrapy_export_manifest.json`：Scrapy 项目入口、命令和文件索引
 - workspace 虚拟 artifact 会同步写成真实 JSON 文件：
   - `workspace/network-requests.json`
   - `workspace/source-hits.json`
@@ -558,6 +563,8 @@ reverse-agent-fixture-smoke \
   - `rebuild/sign_rebuild.py`
   - `rebuild/replay_demo.py`
   - `rebuild/scrapy_middleware.py`
+  - `rebuild/scrapy_project/`
+  - `rebuild/scrapy_export_manifest.json`
 - `chrome_launch.ok = true`
 - `chrome_stop.ok = true`
 - 结束后调试端口无残留监听
@@ -587,6 +594,37 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 ```
 
 这一步不需要 Chrome，也不需要 MCP，证明已经进入“纯算 + HTTP replay”的交付形态。
+
+### Scrapy replay 项目
+
+第 10 项开始，ready rebuild 会额外生成完整 Scrapy 项目，而不只是 middleware 草案：
+
+- `rebuild/scrapy_project/scrapy.cfg`
+- `rebuild/scrapy_project/reverse_sign_project/settings.py`
+- `rebuild/scrapy_project/reverse_sign_project/middlewares.py`
+- `rebuild/scrapy_project/reverse_sign_project/spiders/replay_spider.py`
+- `rebuild/scrapy_project/reverse_sign_project/sign_adapter.py`
+- `rebuild/scrapy_project/runner.py`
+- `rebuild/scrapy_export_manifest.json`
+
+Scrapy 是可选依赖，按需安装：
+
+```bash
+pip install "reverse-deepagent[scrapy]"
+# 或者在当前环境里手动安装
+pip install scrapy
+```
+
+运行示例：
+
+```bash
+cd "<repo-root>/artifacts/fixture-smoke-mcp/rebuild/scrapy_project"
+scrapy crawl reverse_sign_replay -a base_url="http://127.0.0.1:8765"
+# 或者
+python runner.py --base-url "http://127.0.0.1:8765" --output result.json
+```
+
+生成项目通过 `reverse_sign_project.sign_adapter` 读取同级上层的 `../sign_rebuild.py`，middleware 会把请求改写为带 `keyword` / `timestamp` / `sign` JSON body 的 POST，并设置 `x-sign` 与 `x-fixture` headers。没有安装 Scrapy 时，middleware 和 adapter 仍可被普通 Python import / compile，用于离线验证签名注入逻辑。
 
 ### Pure extraction 策略字段
 

@@ -29,7 +29,7 @@ def make_build_rebuild_delivery_tool(default_artifact_root: str | Path) -> Rebui
 
     build_rebuild_delivery.__name__ = "build_rebuild_delivery"
     build_rebuild_delivery.__doc__ = (
-        "Generate rebuild-plan.json plus sign_rebuild.py, replay_demo.py, and scrapy_middleware.py. "
+        "Generate rebuild-plan.json plus sign_rebuild.py, replay_demo.py, scrapy_middleware.py, and a runnable Scrapy project. "
         "Inputs must be JSON strings generated from TaskCard and FinalResult. "
         "artifact_root is optional; when omitted, the agent default artifact root is used."
     )

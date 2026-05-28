@@ -7,7 +7,7 @@ from reverse_deepagent.schemas import RebuildResult
 from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool
 
 DELIVERY_SUBAGENT_NAME = "rebuild_delivery"
-DELIVERY_SUBAGENT_DESCRIPTION = "将已验证候选函数交付为 rebuild-plan、纯 Python sign 脚本、HTTP replay demo 与 Scrapy middleware 草案。"
+DELIVERY_SUBAGENT_DESCRIPTION = "将已验证候选函数交付为 rebuild-plan、纯 Python sign 脚本、HTTP replay demo 与可运行 Scrapy replay 项目。"
 
 
 def load_delivery_prompt(prompt_path: str | Path | None = None) -> str:
