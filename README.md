@@ -454,6 +454,8 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 3. `crypto_hash`：发射 `md5_keyword_timestamp`、`sha1_keyword_timestamp`、`sha256_keyword_timestamp`、`hmac_sha256_keyword_timestamp`（需要能提取 literal secret）
 4. `encoding`：发射 `base64_keyword_timestamp`、`urlencode_keyword_timestamp`
 
+策略库还提供 `STRATEGY_SAMPLE_CORPUS` / `list_strategy_sample_corpus()`，覆盖 fixture reducer、MD5、SHA-1、SHA-256、HMAC-SHA256、Base64 和 URL encoding 的 deterministic samples。测试会用这些样本同时验证 detector 输出和生成的 `sign_rebuild.py` self-check。
+
 当前会阻断 pure extraction 的运行时上下文依赖：
 
 - `document.cookie`
