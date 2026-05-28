@@ -13,5 +13,7 @@
 - 最终结果要能收口为结构化 JSON
 - 关键发现拆分为 facts / inferences / unknowns
 - 大量中间材料优先写入虚拟文件系统，不要全塞回消息
+- 当前任务临时状态写入 /workspace/，人工可检查交付物写入 /artifacts/
+- 只有可跨任务复用的长期经验才写入 /memories/，例如站点特征、保护绕过经验、参数命名/签名模式；不要把未验证的一次性证据塞进长期记忆
 - 交付物优先落到 /workspace/rebuild-plan.json 与 /artifacts/rebuild/
 - 明确给出 next_action

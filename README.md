@@ -49,6 +49,45 @@ reverse-agent-fixture-smoke \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-9461"
 ```
 
+## DeepAgents `/memories/` 长期记忆
+
+`build_reverse_agent(...)` 现在默认在 DeepAgents `CompositeBackend` 中启用 `/memories/` 路由：
+
+- `/workspace/`：DeepAgents 默认 `StateBackend`，适合当前任务临时草稿。
+- `/artifacts/`：`FilesystemBackend`，映射到本地 artifact root，适合人工检查的报告和交付物。
+- `/memories/`：`StoreBackend`，适合跨 agent / 跨会话复用的长期逆向经验。
+
+默认开发环境使用进程内 `InMemoryStore`；需要跨 agent 实例共享时，可以显式传入同一个 `memory_store` 和 `memory_namespace`：
+
+```python
+from langgraph.store.memory import InMemoryStore
+from reverse_deepagent.agent import build_reverse_agent
+
+memory_store = InMemoryStore()
+agent = build_reverse_agent(
+    model=model,
+    artifact_root="artifacts/demo",
+    memory_store=memory_store,
+    memory_namespace=("reverse-deepagent", "project-a", "memories"),
+)
+```
+
+`/memories/` 只应该保存可复用经验，例如：
+
+- `/memories/sites/example.com.md`：站点级入口、路由、常见接口命名。
+- `/memories/protections/debugger-loop.md`：已验证的 protection 处理经验。
+- `/memories/patterns/x-sign.md`：参数命名、签名函数命名、上下文依赖模式。
+
+不要把未验证的一次性抓包、候选源码、临时 todo 写入 `/memories/`；这些仍应留在 `/workspace/` 或 `/artifacts/`。
+
+纯 Python smoke：
+
+```bash
+PYTHONPATH="<repo-root>/src" \
+  "<repo-root>/.venv/bin/python" \
+  "<repo-root>/scripts/run_deepagent_memory_smoke.py"
+```
+
 ## 轻量 Web Runtime Backend
 
 除了 `mock` 和 `mcp`，默认 registry 还注册了 3 个轻量 Web backend：

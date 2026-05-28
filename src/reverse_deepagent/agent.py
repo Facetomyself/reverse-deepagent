@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
+from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend, StoreBackend
+from langgraph.store.base import BaseStore
+from langgraph.store.memory import InMemoryStore
 
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.subagents.protector import build_protector_subagent
@@ -15,6 +17,33 @@ from reverse_deepagent.tools.route_tools import DEFAULT_JS_REVERSE_SKILL_ROOT, r
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts"
+DEFAULT_MEMORY_NAMESPACE = ("reverse-deepagent", "default-user", "memories")
+_DEFAULT_MEMORY_STORE: InMemoryStore | None = None
+
+
+def get_default_memory_store() -> InMemoryStore:
+    """Return the process-local default memory store for /memories/ smoke runs."""
+
+    global _DEFAULT_MEMORY_STORE
+    if _DEFAULT_MEMORY_STORE is None:
+        _DEFAULT_MEMORY_STORE = InMemoryStore()
+    return _DEFAULT_MEMORY_STORE
+
+
+def build_memory_namespace(namespace: Sequence[str] | str | None = None) -> tuple[str, ...]:
+    """Normalize a memory namespace into a StoreBackend-compatible tuple."""
+
+    if namespace is None:
+        return DEFAULT_MEMORY_NAMESPACE
+    if isinstance(namespace, str):
+        parts = tuple(part for part in namespace.split("/") if part)
+    else:
+        parts = tuple(str(part) for part in namespace if str(part))
+    if not parts:
+        raise ValueError("memory namespace must not be empty")
+    if any("*" in part for part in parts):
+        raise ValueError("memory namespace must not contain wildcard '*'")
+    return parts
 
 
 def load_coordinator_prompt(prompt_path: str | Path | None = None) -> str:
@@ -22,14 +51,28 @@ def load_coordinator_prompt(prompt_path: str | Path | None = None) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def build_default_backend(artifact_root: str | Path | None = None) -> CompositeBackend:
+def build_default_backend(
+    artifact_root: str | Path | None = None,
+    *,
+    enable_memories: bool = True,
+    memory_store: BaseStore | None = None,
+    memory_namespace: Sequence[str] | str | None = None,
+) -> CompositeBackend:
     root = Path(artifact_root) if artifact_root else DEFAULT_ARTIFACT_ROOT
     root.mkdir(parents=True, exist_ok=True)
+    routes: dict[str, Any] = {
+        "/artifacts/": FilesystemBackend(root_dir=str(root), virtual_mode=True),
+    }
+    if enable_memories:
+        namespace = build_memory_namespace(memory_namespace)
+        store = memory_store or get_default_memory_store()
+        routes["/memories/"] = StoreBackend(
+            store=store,
+            namespace=lambda _runtime, namespace=namespace: namespace,
+        )
     return CompositeBackend(
         default=StateBackend(),
-        routes={
-            "/artifacts/": FilesystemBackend(root_dir=str(root), virtual_mode=True),
-        },
+        routes=routes,
     )
 
 
@@ -41,6 +84,9 @@ def build_reverse_agent(
     skill_root: str | None = None,
     extra_tools: Sequence[Any] | None = None,
     extra_subagents: Sequence[Any] | None = None,
+    enable_memories: bool = True,
+    memory_store: BaseStore | None = None,
+    memory_namespace: Sequence[str] | str | None = None,
     debug: bool = False,
 ):
     """Build the minimal reverse deep agent scaffold.
@@ -78,7 +124,12 @@ def build_reverse_agent(
         tools=tools,
         system_prompt=load_coordinator_prompt(),
         subagents=subagents,
-        backend=build_default_backend(effective_artifact_root),
+        backend=build_default_backend(
+            effective_artifact_root,
+            enable_memories=enable_memories,
+            memory_store=memory_store,
+            memory_namespace=memory_namespace,
+        ),
         debug=debug,
         name="reverse-deepagent-demo",
     )

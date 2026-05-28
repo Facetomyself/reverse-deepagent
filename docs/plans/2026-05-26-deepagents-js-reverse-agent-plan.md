@@ -106,7 +106,7 @@ task_card:
 
 - `/workspace/` -> `StateBackend`
 - `/artifacts/` -> `FilesystemBackend`
-- `/memories/` -> `StoreBackend`（后续阶段启用）
+- `/memories/` -> `StoreBackend`（已启用，支持共享 store 与 namespace 隔离）
 
 ### 4.5 执行抽象策略
 

@@ -338,13 +338,13 @@ sequenceDiagram
 
 - `/workspace/` -> `StateBackend`
 - `/artifacts/` -> `FilesystemBackend`
-- `/memories/` -> `StoreBackend`（后续启用）
+- `/memories/` -> `StoreBackend`（已启用，默认开发环境使用进程内 `InMemoryStore`，可传入共享 store / namespace）
 
 原因：
 
 - `workspace` 适合当前任务临时状态
 - `artifacts` 适合持久化、人工检查
-- `memories` 适合长期复用
+- `memories` 适合长期复用；只沉淀跨任务稳定经验，不保存未验证的一次性证据
 
 ### 7.3 证据晋升机制
 
