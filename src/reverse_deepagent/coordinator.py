@@ -18,6 +18,7 @@ from reverse_deepagent.adapters.jsreverser import (
     create_jsreverser_mcp_runtime,
 )
 from reverse_deepagent.adapters.lightweight_web import LightweightWebRuntimeConfig, create_lightweight_web_runtime
+from reverse_deepagent.evidence import promote_evidence, promotion_workspace_payloads
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.runtime import (
     RuntimeBackendCapabilities,
@@ -680,6 +681,8 @@ def write_outputs(
     _write_json(route_path, route_result.model_dump(mode="json"))
     _write_json(recon_path, recon_result.model_dump(mode="json"))
     _write_json(final_workspace_path, final_result.model_dump(mode="json"))
+    evidence_promotion = promote_evidence(final_result.evidence, final_result.artifacts)
+    evidence_artifact_paths = _write_evidence_promotion_artifacts(workspace_dir, evidence_promotion)
     _write_json(report_json_path, final_result.model_dump(mode="json"))
     report_md_path.write_text(build_markdown_report(final_result), encoding="utf-8")
 
@@ -693,6 +696,7 @@ def write_outputs(
         "index": str(index_path),
     }
     output_paths.update({f"workspace_{key}": value for key, value in workspace_artifact_paths.items()})
+    output_paths.update({f"workspace_{key}": value for key, value in evidence_artifact_paths.items()})
     output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
     if "rebuild_plan" in rebuild_artifact_paths:
         output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
@@ -716,6 +720,8 @@ def write_outputs(
         },
         "runtime_exports": export_bundle,
         "workspace_artifacts": workspace_artifact_paths,
+        "evidence_promotion": evidence_promotion.model_dump(mode="json"),
+        "evidence_artifacts": evidence_artifact_paths,
         "rebuild_artifacts": rebuild_artifact_paths,
         "backend_artifact_manifest": str(manifest_path),
         "rebuild_result": rebuild_result.model_dump(mode="json"),
@@ -765,6 +771,9 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_function_candidates": "source",
     "workspace_function_validations": "trace",
     "workspace_function_validation_summary": "trace",
+    "workspace_evidence_candidates": "evidence",
+    "workspace_evidence_validated": "evidence",
+    "workspace_evidence_promotion": "evidence",
 }
 
 
@@ -973,6 +982,8 @@ def write_platform_outputs(
     _write_json(capabilities_path, runtime_capabilities.model_dump(mode="json"))
     _write_json(export_bundle_path, export_payload)
     _write_json(final_workspace_path, final_result.model_dump(mode="json"))
+    evidence_promotion = promote_evidence(final_result.evidence, final_result.artifacts)
+    evidence_artifact_paths = _write_evidence_promotion_artifacts(workspace_dir, evidence_promotion)
     _write_json(report_json_path, final_result.model_dump(mode="json"))
     report_md_path.write_text(build_platform_markdown_report(final_result, runtime_capabilities), encoding="utf-8")
 
@@ -987,6 +998,7 @@ def write_platform_outputs(
         "index": str(index_path),
         "workspace_backend_artifact_manifest": str(manifest_path),
     }
+    output_paths.update({f"workspace_{key}": value for key, value in evidence_artifact_paths.items()})
     platform_probe_path = _write_platform_tool_probe_if_present(workspace_dir, export_bundle)
     if platform_probe_path is not None:
         output_paths["workspace_platform_tool_probe"] = str(platform_probe_path)
@@ -1011,6 +1023,8 @@ def write_platform_outputs(
             "markdown": str(report_md_path),
         },
         "runtime_exports": export_payload,
+        "evidence_promotion": evidence_promotion.model_dump(mode="json"),
+        "evidence_artifacts": evidence_artifact_paths,
         "backend_artifact_manifest": str(manifest_path),
     }
     _write_json(index_path, artifact_index)
@@ -1217,6 +1231,15 @@ def run_reverse_pipeline(
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_evidence_promotion_artifacts(workspace_dir: Path, evidence_promotion: Any) -> dict[str, str]:
+    paths: dict[str, str] = {}
+    for filename, payload in promotion_workspace_payloads(evidence_promotion).items():
+        path = workspace_dir / filename
+        _write_json(path, payload)
+        paths[filename.removesuffix(".json").replace("-", "_")] = str(path)
+    return paths
 
 
 def _write_workspace_artifacts(workspace_dir: Path, final_result: FinalResult) -> dict[str, str]:

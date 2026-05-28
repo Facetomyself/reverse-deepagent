@@ -186,6 +186,9 @@ reverse-agent-demo --runtime mock
 - `workspace/route-decision.json`
 - `workspace/recon-result.json`
 - `workspace/final-result.json`
+- `workspace/evidence-candidates.json`（通用候选证据索引）
+- `workspace/evidence-validated.json`（通用已验证证据索引）
+- `workspace/evidence-promotion.json`（通用证据晋升摘要）
 - `workspace/function-candidates.json`（有候选时）
 - `workspace/function-validations.json`（有验证结果时）
 - `workspace/function-validation-summary.json`（有验证结果时）
@@ -199,6 +202,25 @@ reverse-agent-demo --runtime mock
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
 - `exports/artifact-index.json`
+
+## 通用 Evidence Promotion
+
+Web pipeline 与平台中立 pipeline 现在都会生成一组平台无关的 evidence promotion artifacts：
+
+- `workspace/evidence-candidates.json`：所有规范化 `EvidenceItem` 的候选索引。
+- `workspace/evidence-validated.json`：通过通用验证门槛的证据索引。
+- `workspace/evidence-promotion.json`：candidate / validated / promoted / rejected 全量记录与摘要。
+
+promotion 不替代 `final-result.json`，也不改变现有 rebuild 所依赖的 `FinalResult.evidence`；它是给 review gate、后续自动门禁、自动交付阻断和人类 code review 使用的机器可读索引。
+
+通用规则保持保守：
+
+- 低置信、工具不可用、`available=false`、unsupported 等信号会阻断晋升。
+- 高置信 source/callstack/runtime/context/function validation 证据更容易进入 `promoted`。
+- `function_validation_summary.replay_ready=true` 和 runtime validation success 会提高晋升分数。
+- 非 Web runtime 也会生成同样结构的 promotion 文件，避免把证据规则写死在 Web recon 里。
+
+这些文件会进入 `workspace/backend-artifact-manifest.json`，category 为 `evidence`。
 
 ## 运行平台中立 Runtime Pipeline
 
@@ -236,6 +258,9 @@ reverse-agent-platform \
 - `workspace/runtime-export-bundle.json`
 - `workspace/platform-tool-probe.json`（backend 暴露 tool probe 时）
 - `workspace/final-result.json`
+- `workspace/evidence-candidates.json`
+- `workspace/evidence-validated.json`
+- `workspace/evidence-promotion.json`
 - `workspace/backend-artifact-manifest.json`
 - `reports/platform-pipeline-result.json`
 - `reports/platform-pipeline-report.md`

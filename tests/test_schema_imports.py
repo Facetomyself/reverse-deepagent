@@ -3,6 +3,8 @@ import unittest
 from reverse_deepagent.schemas import (
     ConfidenceLevel,
     ExecutionStatus,
+    EvidenceItem,
+    EvidenceKind,
     FinalResult,
     KeyFindings,
     RebuildResult,
@@ -13,6 +15,7 @@ from reverse_deepagent.schemas import (
     RouterResult,
     TaskCard,
 )
+from reverse_deepagent.evidence import EvidencePromotionResult, promote_evidence
 from reverse_deepagent.runtime import (
     PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES,
     WEB_ARTIFACT_CATEGORY_ALIASES,
@@ -124,6 +127,20 @@ class SchemaImportTests(unittest.TestCase):
                 evidence=[],
                 unexpected=True,
             )
+
+
+    def test_evidence_promotion_public_api_is_importable(self) -> None:
+        result = promote_evidence([
+            EvidenceItem(
+                summary="源码命中 sign",
+                kind=EvidenceKind.STATIC,
+                source="search_in_sources",
+                details={"count": 1, "sample": [{"line": "sign"}]},
+                confidence=ConfidenceLevel.HIGH,
+            )
+        ])
+        self.assertIsInstance(result, EvidencePromotionResult)
+        self.assertEqual(result.summary["candidate_count"], 1)
 
     def test_platform_neutral_artifact_category_vocab_is_exported(self) -> None:
         self.assertIn("runtime-context", PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES)

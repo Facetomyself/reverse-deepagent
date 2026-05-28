@@ -277,7 +277,7 @@ task_card:
 
 - 能完成浏览器健康检查
 - 能完成页面侦察 / request / source / initiator 基础取证
-- 能生成 `/workspace/recon-notes.md` 与 `/workspace/evidence-candidates.json`
+- 能生成 `/workspace/evidence-candidates.json`、`/workspace/evidence-validated.json` 与 `/workspace/evidence-promotion.json`
 
 ### Phase 5：Protection 与 Artifact 导出
 

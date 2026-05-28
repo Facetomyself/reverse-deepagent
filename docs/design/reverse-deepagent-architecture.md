@@ -350,17 +350,19 @@ sequenceDiagram
 
 中间结果不要一上来就算结论。
 
-建议三段式：
+已实现三段式 artifacts：
 
 1. 候选证据：`/workspace/evidence-candidates.json`
 2. 已验证证据：`/workspace/evidence-validated.json`
-3. 最终结果：`/workspace/final-result.json`
+3. 晋升摘要：`/workspace/evidence-promotion.json`
+4. 最终结果：`/workspace/final-result.json`
 
-晋升条件至少满足以下之一：
+通用晋升规则由 `reverse_deepagent.evidence.promote_evidence(...)` 负责，保持平台中立：
 
-- 动态证据 + 静态源码证据
-- 请求证据 + initiator / 调用栈证据
-- hook 证据 + 二次样本验证
+- 所有 `EvidenceItem` 先进入 candidates。
+- 高置信、有 source / details / sample / count / runtime validation 信号的证据进入 validated。
+- source context、callstack、runtime context、function candidate / validation、platform probe 等关键证据可进入 promoted。
+- 低置信、工具不可用、`available=false`、unsupported 或 failed 信号会进入 rejected 或停留在 candidate。
 
 ## 8. 任务规划与总结机制
 
