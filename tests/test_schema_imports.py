@@ -12,7 +12,13 @@ from reverse_deepagent.schemas import (
     RouterResult,
     TaskCard,
 )
-from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactManifestEntry, RuntimeBackendCapabilities
+from reverse_deepagent.runtime import (
+    PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES,
+    WEB_ARTIFACT_CATEGORY_ALIASES,
+    RuntimeArtifactManifest,
+    RuntimeArtifactManifestEntry,
+    RuntimeBackendCapabilities,
+)
 
 
 class SchemaImportTests(unittest.TestCase):
@@ -97,6 +103,14 @@ class SchemaImportTests(unittest.TestCase):
             ],
         )
         self.assertEqual(manifest.model_dump(mode="json")["entries"][0]["kind"], "json")
+
+    def test_platform_neutral_artifact_category_vocab_is_exported(self) -> None:
+        self.assertIn("runtime-context", PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES)
+        self.assertIn("hook-timeline", PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES)
+        self.assertIn("static-analysis", PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES)
+        self.assertIn("rebuild", PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES)
+        self.assertEqual(WEB_ARTIFACT_CATEGORY_ALIASES["workspace"], "workspace")
+        self.assertEqual(WEB_ARTIFACT_CATEGORY_ALIASES["rebuild"], "rebuild")
 
 
 if __name__ == "__main__":

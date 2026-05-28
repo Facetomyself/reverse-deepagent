@@ -157,6 +157,8 @@ exports/artifact-index.json
 
 Downstream tools should prefer the typed manifest when they need backend-aware artifact routing, and keep using the old artifact index when they need backward compatibility.
 
+The platform-neutral category vocabulary is documented in [`platform-neutral-artifact-categories.md`](platform-neutral-artifact-categories.md). Existing Web categories (`workspace`, `report`, `export`, `rebuild`) remain valid and backward compatible.
+
 ## Coordinator boundary rules
 
 The coordinator and subagents should consume these stable objects:

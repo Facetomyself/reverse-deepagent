@@ -13,6 +13,30 @@ from reverse_deepagent.schemas.router_result import RouterResult
 from reverse_deepagent.schemas.task_card import TaskCard
 
 
+PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES: tuple[str, ...] = (
+    "workspace",
+    "report",
+    "export",
+    "runtime-context",
+    "hook-timeline",
+    "static-analysis",
+    "network",
+    "rebuild",
+    "triage",
+    "source",
+    "trace",
+    "session",
+    "other",
+)
+
+WEB_ARTIFACT_CATEGORY_ALIASES: dict[str, str] = {
+    "workspace": "workspace",
+    "report": "report",
+    "export": "export",
+    "rebuild": "rebuild",
+}
+
+
 class BrowserSessionInfo(SchemaBaseModel):
     """Normalized browser runtime state used by the orchestration layer."""
 
@@ -57,7 +81,10 @@ class RuntimeArtifactManifestEntry(SchemaBaseModel):
 
     artifact_key: str = Field(description="Stable key used by artifact indexes, such as workspace_task_card.")
     path: str = Field(description="Filesystem or virtual artifact path.")
-    category: str = Field(default="other", description="High-level category such as workspace, report, export, or rebuild.")
+    category: str = Field(
+        default="other",
+        description="Platform-neutral artifact category; see PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES.",
+    )
     kind: str = Field(default="other", description="Artifact kind such as json, markdown, rebuild, or export.")
     producer_backend_id: str = Field(description="Runtime backend that produced or orchestrated the artifact.")
     producer_transport: str = Field(default="unknown", description="Runtime transport used by the producer backend.")
