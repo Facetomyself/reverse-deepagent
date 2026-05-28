@@ -573,9 +573,9 @@ task_card:
 
 ### 后续 12 项顺序推进状态
 
-用户追加的 12 项增强按单项实现、code review、功能测试、全量测试和单独 commit 推进。当前已完成并提交第 1～8 项；第 9 项 `runtime context 自动补全` 本轮补齐实现：rebuild 阶段会从源码自动推断 `localStorage` / `sessionStorage` / `cookie` / `navigator` / `timezone` 的具体 binding key，把命中的单个值写入 `pure_extraction.runtime_context_binding`，同时输出 `runtime_context_bindings` / `missing_runtime_context_bindings` 供 review；源码明确依赖具体 key 但采集缺失、或出现多个显式 context binding 但 renderer 尚不支持多值拼接时，均保持 not-ready，避免生成假成功的 `sign_rebuild.py`。
+用户追加的 12 项增强已按单项实现、code review、功能测试、全量测试和单独 commit 推进完成。第 1～8 项分别完成平台 runtime probe、平台中立 pipeline、轻量 Web backend、DeepAgents `/memories/`、通用 evidence promotion、`review_hints` gate、WASM / VM / 混淆 triage 和算法策略库扩展；第 9 项 `runtime context 自动补全` 已补齐实现：rebuild 阶段会从源码自动推断 `localStorage` / `sessionStorage` / `cookie` / `navigator` / `timezone` 的具体 binding key，把命中的单个值写入 `pure_extraction.runtime_context_binding`，同时输出 `runtime_context_bindings` / `missing_runtime_context_bindings` 供 review；源码明确依赖具体 key 但采集缺失、或出现多个显式 context binding 但 renderer 尚不支持多值拼接时，均保持 not-ready，避免生成假成功的 `sign_rebuild.py`。
 
-第 10 项 `完整 Scrapy 集成` 已升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库` 已新增 `webpack-minified`、`token-chain`、`hybrid-context` 三个 profile，分别覆盖打包/压缩形态、bootstrap token 链路和多上下文绑定阻断；第 12 项 `MCP self-hosted smoke 持续自动化` 本轮将 self-hosted workflow 升级为支持 weekly schedule、`profile_set` 批量 smoke、runner preflight、step summary 与 artifact upload 的持续 canary。
+第 10 项 `完整 Scrapy 集成` 已升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库` 已新增 `webpack-minified`、`token-chain`、`hybrid-context` 三个 profile，分别覆盖打包/压缩形态、bootstrap token 链路和多上下文绑定阻断；第 12 项 `MCP self-hosted smoke 持续自动化` 已将 self-hosted workflow 升级为支持 weekly schedule、`profile_set` 批量 smoke、runner preflight、step summary 与 artifact upload 的持续 canary。至此，用户追加的 12 项增强均已完成并提交。
 
 新增验证入口：
 
