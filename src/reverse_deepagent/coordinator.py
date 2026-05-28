@@ -20,6 +20,7 @@ from reverse_deepagent.adapters.jsreverser import (
 from reverse_deepagent.adapters.lightweight_web import LightweightWebRuntimeConfig, create_lightweight_web_runtime
 from reverse_deepagent.evidence import promote_evidence, promotion_workspace_payloads
 from reverse_deepagent.rebuild import write_rebuild_bundle
+from reverse_deepagent.review_gate import evaluate_review_gate, review_gate_workspace_payload
 from reverse_deepagent.runtime import (
     RuntimeBackendCapabilities,
     RuntimeBackendRegistration,
@@ -683,6 +684,8 @@ def write_outputs(
     _write_json(final_workspace_path, final_result.model_dump(mode="json"))
     evidence_promotion = promote_evidence(final_result.evidence, final_result.artifacts)
     evidence_artifact_paths = _write_evidence_promotion_artifacts(workspace_dir, evidence_promotion)
+    review_gate = evaluate_review_gate(rebuild_result, evidence_promotion)
+    review_gate_path = _write_review_gate_artifact(workspace_dir, review_gate)
     _write_json(report_json_path, final_result.model_dump(mode="json"))
     report_md_path.write_text(build_markdown_report(final_result), encoding="utf-8")
 
@@ -697,6 +700,7 @@ def write_outputs(
     }
     output_paths.update({f"workspace_{key}": value for key, value in workspace_artifact_paths.items()})
     output_paths.update({f"workspace_{key}": value for key, value in evidence_artifact_paths.items()})
+    output_paths["workspace_review_gate"] = str(review_gate_path)
     output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
     if "rebuild_plan" in rebuild_artifact_paths:
         output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
@@ -722,6 +726,8 @@ def write_outputs(
         "workspace_artifacts": workspace_artifact_paths,
         "evidence_promotion": evidence_promotion.model_dump(mode="json"),
         "evidence_artifacts": evidence_artifact_paths,
+        "review_gate": review_gate.model_dump(mode="json"),
+        "review_gate_artifact": str(review_gate_path),
         "rebuild_artifacts": rebuild_artifact_paths,
         "backend_artifact_manifest": str(manifest_path),
         "rebuild_result": rebuild_result.model_dump(mode="json"),
@@ -774,6 +780,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_evidence_candidates": "evidence",
     "workspace_evidence_validated": "evidence",
     "workspace_evidence_promotion": "evidence",
+    "workspace_review_gate": "triage",
 }
 
 
@@ -1240,6 +1247,12 @@ def _write_evidence_promotion_artifacts(workspace_dir: Path, evidence_promotion:
         _write_json(path, payload)
         paths[filename.removesuffix(".json").replace("-", "_")] = str(path)
     return paths
+
+
+def _write_review_gate_artifact(workspace_dir: Path, review_gate: Any) -> Path:
+    path = workspace_dir / "review-gate.json"
+    _write_json(path, review_gate_workspace_payload(review_gate))
+    return path
 
 
 def _write_workspace_artifacts(workspace_dir: Path, final_result: FinalResult) -> dict[str, str]:

@@ -364,6 +364,28 @@ sequenceDiagram
 - source context、callstack、runtime context、function candidate / validation、platform probe 等关键证据可进入 promoted。
 - 低置信、工具不可用、`available=false`、unsupported 或 failed 信号会进入 rejected 或停留在 candidate。
 
+### 7.4 Review Gate
+
+`review_hints` 自动 gate 已实现为 `reverse_deepagent.review_gate.evaluate_review_gate(...)`。
+
+输入：
+
+- `RebuildResult.rebuild_plan.ready`
+- `RebuildResult.rebuild_plan.review_hints`
+- `EvidencePromotionResult.summary`
+
+输出：
+
+- `/workspace/review-gate.json`
+
+Gate 规则：
+
+- `risk` hint、`ready=false` 或 validated evidence 缺失会 block。
+- `ready=true` 但 promoted evidence 缺失会 block。
+- warning hint 会 warn，但不自动 block。
+- rejected evidence 存在且无阻断项时会 warn。
+- pass 只表示自动交付门禁允许继续，不代表替代人工最终验收。
+
 ## 8. 任务规划与总结机制
 
 ### 8.1 `write_todos`

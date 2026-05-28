@@ -361,7 +361,7 @@ task_card:
 - fixture 中的 `buildSign` 候选能完成 runtime validation
 - replay 成功时 `next_action` 推进为 `extract_pure_logic_and_build_replay`
 - validation artifact 必须真实落盘，不能只保留虚拟引用
-- 单元测试覆盖验证 evidence / artifact / next_action
+- 单元测试覆盖验证 evidence / artifact / next_action / review-gate
 
 ### Phase 8：纯算导出与 replay delivery
 

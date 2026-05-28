@@ -16,6 +16,7 @@ from reverse_deepagent.schemas import (
     TaskCard,
 )
 from reverse_deepagent.evidence import EvidencePromotionResult, promote_evidence
+from reverse_deepagent.review_gate import ReviewGateResult, evaluate_review_gate
 from reverse_deepagent.runtime import (
     PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES,
     WEB_ARTIFACT_CATEGORY_ALIASES,
@@ -128,6 +129,16 @@ class SchemaImportTests(unittest.TestCase):
                 unexpected=True,
             )
 
+
+    def test_review_gate_public_api_is_importable(self) -> None:
+        rebuild = RebuildResult(
+            status=ExecutionStatus.SUCCESS,
+            rebuild_plan={"ready": False, "review_hints": []},
+            next_action="manual_review",
+        )
+        gate = evaluate_review_gate(rebuild)
+        self.assertIsInstance(gate, ReviewGateResult)
+        self.assertEqual(gate.status, "block")
 
     def test_evidence_promotion_public_api_is_importable(self) -> None:
         result = promote_evidence([

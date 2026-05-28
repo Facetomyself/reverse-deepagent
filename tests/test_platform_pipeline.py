@@ -73,6 +73,10 @@ class PlatformPipelineTests(unittest.TestCase):
             self.assertEqual(manifest_by_key["workspace_runtime_capabilities"]["category"], "runtime-context")
             self.assertEqual(manifest_by_key["workspace_platform_tool_probe"]["category"], "runtime-context")
             self.assertIn("virtual://platform/android-adb/tool-probe.json", manifest_paths)
+            self.assertNotIn("workspace_review_gate", output.artifacts)
+            index = json.loads(Path(output.artifacts["index"]).read_text(encoding="utf-8"))
+            self.assertNotIn("review_gate", index)
+            self.assertNotIn("review_gate_artifact", index)
             self.assertIn(
                 "The platform-neutral pipeline completed without invoking Web-only browser recon methods.",
                 output.final_result.key_findings.inferences,

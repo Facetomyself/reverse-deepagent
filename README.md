@@ -189,6 +189,7 @@ reverse-agent-demo --runtime mock
 - `workspace/evidence-candidates.json`（通用候选证据索引）
 - `workspace/evidence-validated.json`（通用已验证证据索引）
 - `workspace/evidence-promotion.json`（通用证据晋升摘要）
+- `workspace/review-gate.json`（review_hints 自动 gate 结果）
 - `workspace/function-candidates.json`（有候选时）
 - `workspace/function-validations.json`（有验证结果时）
 - `workspace/function-validation-summary.json`（有验证结果时）
@@ -221,6 +222,38 @@ promotion 不替代 `final-result.json`，也不改变现有 rebuild 所依赖�
 - 非 Web runtime 也会生成同样结构的 promotion 文件，避免把证据规则写死在 Web recon 里。
 
 这些文件会进入 `workspace/backend-artifact-manifest.json`，category 为 `evidence`。
+
+## `review_hints` 自动 Gate
+
+Web rebuild delivery 现在会在生成 `workspace/rebuild-plan.json` 后自动评估 `review_hints`，并输出：
+
+- `workspace/review-gate.json`
+
+Gate 输入包括：
+
+- `rebuild_plan.ready`
+- `rebuild_plan.review_hints`
+- `workspace/evidence-promotion.json` 的 validated / promoted / rejected 摘要
+
+Gate 结果字段包括：
+
+- `status`: `pass` / `warn` / `block`
+- `blocked`: 是否阻断自动交付
+- `blocking_hint_codes`: 阻断交付的 `risk` hint code
+- `warning_hint_codes`: 需要人工确认的 warning hint code
+- `evidence_counts`: candidate / validated / promoted / rejected 证据数量
+- `next_action`: `delivery_allowed`、`manual_review_before_delivery` 或 `manual_review_or_expand_evidence`
+
+自动 gate 的基本规则：
+
+- 任意 `severity=risk` 的 `review_hints` 会阻断自动交付。
+- `rebuild_plan.ready=false` 会阻断自动交付。
+- 没有 validated evidence 会阻断自动交付。
+- ready=true 但没有 promoted evidence 会阻断自动交付。
+- warning hints 不阻断，但输出 `status=warn`，要求人工确认后再交付。
+- 存在 rejected evidence 且没有阻断项时输出 `status=warn`，避免把有争议的证据静默放行。
+
+`review-gate.json` 会进入 `workspace/backend-artifact-manifest.json`，category 为 `triage`。平台中立 pipeline 不生成 rebuild bundle，因此不生成 review gate；它继续只输出 evidence promotion。
 
 ## 运行平台中立 Runtime Pipeline
 
