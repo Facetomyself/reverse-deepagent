@@ -36,7 +36,7 @@ Run tests:
 python -m unittest discover -s tests -v
 ```
 
-MCP-backed browser integration requires a local JSReverser MCP binary and Chrome debug environment. For public CI this is isolated in the manual `MCP Integration` workflow instead of the default CI workflow. Locally, prefer the managed Chrome launcher:
+MCP-backed browser integration requires a local JSReverser MCP binary and Chrome debug environment. See [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md) for setup assumptions and troubleshooting. For public CI this is isolated in the manual `MCP Integration` workflow instead of the default CI workflow. Locally, prefer the managed Chrome launcher:
 
 ```bash
 reverse-agent-fixture-smoke \
@@ -545,6 +545,8 @@ USER_DATA_DIR="/tmp/reverse-agent-chrome" \
 ```
 
 ## 运行真实 MCP smoke
+
+完整前置条件和故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。
 
 先探测真实 `jsreverser-mcp` stdio 协议和工具列表：
 
