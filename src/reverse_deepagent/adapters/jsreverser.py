@@ -65,6 +65,8 @@ class JSReverserRuntime(ReverseRuntime):
     bridge: JSReverserBridge
     default_page_size: int = 20
     post_navigation_wait_seconds: float = 0.5
+    runtime_context_sample_count: int = 3
+    runtime_context_sample_interval_seconds: float = 0.05
 
     def ensure_browser_session(self) -> BrowserSessionInfo:
         health_payload = self._safe_invoke("check_browser_health", {})
@@ -367,12 +369,51 @@ class JSReverserRuntime(ReverseRuntime):
             return {}
 
         page_idx = browser.selected_page_idx if browser.selected_page_idx is not None else 0
-        storage_payload = self._optional_invoke("get_storage", {"pageIdx": page_idx, "type": "all"})
-        env_payload = self._optional_invoke(
-            "evaluate_script",
-            {
-                "pageIdx": page_idx,
-                "function": """() => {
+        sample_count = max(1, int(self.runtime_context_sample_count or 1))
+        samples: list[dict[str, Any]] = []
+        storage_raw: Any = None
+        environment_raw: Any = None
+        runtime_context: dict[str, Any] = {"detected_requirements": requirements}
+
+        for sample_index in range(sample_count):
+            storage_payload = self._optional_invoke("get_storage", {"pageIdx": page_idx, "type": "all"})
+            env_payload = self._optional_invoke(
+                "evaluate_script",
+                {"pageIdx": page_idx, "function": self._runtime_context_probe_script()},
+            )
+            if sample_index == 0:
+                storage_raw = storage_payload
+                environment_raw = env_payload
+            sample = self._merge_runtime_context_sample(storage_payload, env_payload)
+            sample["sample_index"] = sample_index
+            sample["collected_at_ms"] = int(time.time() * 1000)
+            samples.append(sample)
+            if sample_index < sample_count - 1 and self.runtime_context_sample_interval_seconds > 0:
+                time.sleep(self.runtime_context_sample_interval_seconds)
+
+        first_sample = samples[0] if samples else {}
+        runtime_context["storage_raw"] = storage_raw
+        runtime_context["environment_raw"] = environment_raw
+        runtime_context["samples"] = samples
+        for key in ("localStorage", "sessionStorage", "cookies", "navigator"):
+            value = first_sample.get(key)
+            if value:
+                runtime_context[key] = value
+        if "timezoneOffset" in first_sample:
+            runtime_context["timezoneOffset"] = first_sample.get("timezoneOffset")
+
+        captured = [
+            requirement
+            for requirement in requirements
+            if self._runtime_context_has_requirement(runtime_context, requirement)
+        ]
+        runtime_context["captured_requirements"] = captured
+        runtime_context["status"] = "complete" if set(captured) >= set(requirements) else "partial"
+        return runtime_context
+
+    @staticmethod
+    def _runtime_context_probe_script() -> str:
+        return """() => {
   const dumpStorage = (storage) => {
     const output = {};
     for (let index = 0; index < storage.length; index += 1) {
@@ -391,77 +432,124 @@ class JSReverserRuntime(ReverseRuntime):
     language: navigator.language
   },
   timezoneOffset: new Date().getTimezoneOffset()
-};}""",
-            },
-        )
+};}"""
 
+    def _merge_runtime_context_sample(self, storage_payload: Any, env_payload: Any) -> dict[str, Any]:
         storage_context = self._normalize_storage_context(storage_payload)
         env_context = self._normalize_evaluate_result(env_payload)
-        runtime_context: dict[str, Any] = {
-            "detected_requirements": requirements,
-            "storage_raw": storage_payload,
-            "environment_raw": env_payload,
-        }
+        sample: dict[str, Any] = {}
         for key in ("localStorage", "sessionStorage", "cookies"):
             value = storage_context.get(key)
             if value:
-                runtime_context[key] = value
+                sample[key] = value
         if isinstance(env_context.get("localStorage"), dict):
-            runtime_context["localStorage"] = {**runtime_context.get("localStorage", {}), **env_context["localStorage"]}
+            sample["localStorage"] = {**sample.get("localStorage", {}), **env_context["localStorage"]}
         if isinstance(env_context.get("sessionStorage"), dict):
-            runtime_context["sessionStorage"] = {**runtime_context.get("sessionStorage", {}), **env_context["sessionStorage"]}
+            sample["sessionStorage"] = {**sample.get("sessionStorage", {}), **env_context["sessionStorage"]}
         if isinstance(env_context.get("navigator"), dict):
-            runtime_context["navigator"] = env_context["navigator"]
-        if env_context.get("cookie") and "cookies" not in runtime_context:
-            runtime_context["cookies"] = {"document.cookie": env_context.get("cookie")}
+            sample["navigator"] = env_context["navigator"]
+        if env_context.get("cookie") and "cookies" not in sample:
+            sample["cookies"] = {"document.cookie": env_context.get("cookie")}
         if "timezoneOffset" in env_context:
-            runtime_context["timezoneOffset"] = env_context.get("timezoneOffset")
-
-        captured = [
-            requirement
-            for requirement in requirements
-            if self._runtime_context_has_requirement(runtime_context, requirement)
-        ]
-        runtime_context["captured_requirements"] = captured
-        runtime_context["status"] = "complete" if set(captured) >= set(requirements) else "partial"
-        return runtime_context
+            sample["timezoneOffset"] = env_context.get("timezoneOffset")
+        return sample
 
     @classmethod
     def _build_runtime_context_diff(cls, runtime_context: dict[str, Any]) -> dict[str, Any]:
-        """Build a conservative runtime context stability summary.
-
-        Phase 13 starts with a single-sample artifact because most backends expose
-        storage/environment through side-effectful browser calls. The schema is
-        intentionally shaped so a later runtime adapter can upgrade it to a
-        multi-sample diff without changing downstream consumers.
-        """
+        """Build a conservative runtime context stability summary."""
 
         if not runtime_context:
             return {}
 
         requirements = [str(item) for item in runtime_context.get("detected_requirements", []) if item]
         captured = [str(item) for item in runtime_context.get("captured_requirements", []) if item]
-        flat = cls._flatten_runtime_context(runtime_context)
-        stable_keys = [
-            key
-            for key in flat
-            if not key.endswith("_raw")
-            and not key.startswith("environment_raw")
-            and not key.startswith("storage_raw")
-            and ".environment_raw" not in key
-            and ".storage_raw" not in key
-        ]
+        missing_requirements = [item for item in requirements if item not in captured]
+        raw_samples = runtime_context.get("samples")
+        samples = [item for item in raw_samples if isinstance(item, dict)] if isinstance(raw_samples, list) else []
+        if len(samples) >= 2:
+            return cls._build_multi_sample_runtime_context_diff(samples, requirements, captured, missing_requirements)
+
+        sample = samples[0] if len(samples) == 1 else runtime_context
+        flat = cls._filter_runtime_context_flattened(cls._flatten_runtime_context(sample))
         return {
             "status": "single_sample",
-            "stable": True,
+            "stable": not missing_requirements,
             "sample_count": 1,
             "requirements": requirements,
             "captured_requirements": captured,
-            "stable_keys": sorted(stable_keys),
+            "stable_keys": sorted(flat),
             "volatile_keys": [],
-            "missing_requirements": [item for item in requirements if item not in captured],
-            "notes": ["single sample only; cross-run diff pending"],
+            "missing_requirements": missing_requirements,
+            "changes": {},
+            "notes": ["single sample only; collect multiple samples to detect volatile context keys"],
         }
+
+    @classmethod
+    def _build_multi_sample_runtime_context_diff(
+        cls,
+        samples: list[dict[str, Any]],
+        requirements: list[str],
+        captured: list[str],
+        missing_requirements: list[str],
+    ) -> dict[str, Any]:
+        flattened_samples = [cls._filter_runtime_context_flattened(cls._flatten_runtime_context(sample)) for sample in samples]
+        all_keys = sorted({key for sample in flattened_samples for key in sample})
+        stable_keys: list[str] = []
+        volatile_keys: list[str] = []
+        changes: dict[str, list[Any]] = {}
+        for key in all_keys:
+            values = [sample.get(key, "__MISSING__") for sample in flattened_samples]
+            comparable = [cls._stable_json(value) for value in values]
+            if len(set(comparable)) == 1:
+                stable_keys.append(key)
+            else:
+                volatile_keys.append(key)
+                unique_values: list[Any] = []
+                seen: set[str] = set()
+                for value, fingerprint in zip(values, comparable, strict=False):
+                    if fingerprint in seen:
+                        continue
+                    seen.add(fingerprint)
+                    unique_values.append(None if value == "__MISSING__" else value)
+                    if len(unique_values) >= 5:
+                        break
+                changes[key] = unique_values
+        return {
+            "status": "multi_sample",
+            "stable": not volatile_keys and not missing_requirements,
+            "sample_count": len(samples),
+            "requirements": requirements,
+            "captured_requirements": captured,
+            "stable_keys": stable_keys,
+            "volatile_keys": volatile_keys,
+            "missing_requirements": missing_requirements,
+            "changes": changes,
+            "notes": [
+                "multi-sample runtime context diff; volatile keys should be treated as runtime-bound inputs",
+                "sample_index and collected_at_ms are metadata and excluded from stability decisions",
+            ],
+        }
+
+    @classmethod
+    def _filter_runtime_context_flattened(cls, flat: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in flat.items()
+            if not key.endswith("_raw")
+            and key not in {"sample_index", "collected_at_ms"}
+            and not key.startswith("environment_raw")
+            and not key.startswith("storage_raw")
+            and not key.startswith("samples.")
+            and ".environment_raw" not in key
+            and ".storage_raw" not in key
+        }
+
+    @staticmethod
+    def _stable_json(value: Any) -> str:
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+        except TypeError:
+            return str(value)
 
     @classmethod
     def _flatten_runtime_context(cls, value: Any, prefix: str = "") -> dict[str, Any]:

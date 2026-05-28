@@ -9,6 +9,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ### Added
 
 - Local Web sign fixture profiles for `md5` and `sha1`, covering `md5_keyword_timestamp` and `sha1_keyword_timestamp` rebuild paths.
+- Multi-sample `runtime-context-diff.json` generation with stable / volatile key classification and change summaries.
 
 ## [0.1.0] - 2026-05-27
 
@@ -57,6 +58,6 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ### Known limitations
 
 - MCP-backed integration tests require a local JSReverser MCP binary and a Chrome-compatible desktop environment.
-- `runtime-context-diff.json` is currently a single-sample summary; multi-sample stability diff is planned.
+- MCP-backed runtime context sampling depends on the target page being stable enough for repeated storage/environment probes.
 - Android / iOS / mini-program adapters are design targets but not implemented in v0.1.0.
 - Generated rebuild scripts intentionally cover recognized strategies only; unknown or heavily obfuscated algorithms still require manual porting or runtime-backed execution.

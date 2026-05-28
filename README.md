@@ -496,7 +496,7 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 
 生成的 `sign_rebuild.py` 会把采集到的上下文写成默认常量，用于浏览器外 replay。当前 renderer 已覆盖 `localStorage.device_id`、`cookie.device_id` 和 `navigator.userAgent` 三类上下文。
 
-`workspace/runtime-context-diff.json` 当前是单样本稳定性摘要，字段包括 `status=single_sample`、`stable=true`、`stable_keys`、`volatile_keys`、`missing_requirements`。这个 schema 后续可以无痛升级为多次采样 diff。
+`workspace/runtime-context-diff.json` 会对运行时上下文做稳定性摘要。默认 runtime 会采集多次样本，字段包括 `status`（`multi_sample` 或 `single_sample` fallback）、`sample_count`、`stable`、`stable_keys`、`volatile_keys`、`missing_requirements` 和 `changes`。其中 `sample_index` / `collected_at_ms` 只作为采样元数据，不参与稳定性判断；`volatile_keys` 应被视为 replay 时仍需要运行时绑定的输入。
 
 ## Chrome Debug Session 约束
 
