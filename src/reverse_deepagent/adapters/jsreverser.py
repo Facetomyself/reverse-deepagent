@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -23,6 +23,7 @@ from reverse_deepagent.schemas import (
     ReconResult,
     ReverseStage,
     RouterResult,
+    SchemaBaseModel,
     TaskCard,
 )
 
@@ -41,28 +42,72 @@ DEFAULT_JSREVERSER_MCP_COMMAND = "/opt/homebrew/bin/jsreverser-mcp"
 DEFAULT_REMOTE_DEBUGGING_URL = "http://127.0.0.1:9222"
 
 
+class JSReverserMcpConfig(SchemaBaseModel):
+    """Serializable configuration for the JSReverser MCP backend."""
+
+    command: str = DEFAULT_JSREVERSER_MCP_COMMAND
+    browser_url: str = DEFAULT_REMOTE_DEBUGGING_URL
+    request_timeout: float = 30.0
+    startup_timeout: float = 15.0
+    backend_id: str = "jsreverser-mcp"
+    display_name: str = "JSReverser MCP"
+    transport: str = "mcp-stdio"
+    default_page_size: int = 20
+    post_navigation_wait_seconds: float = 0.5
+    runtime_context_sample_count: int = 3
+    runtime_context_sample_interval_seconds: float = 0.05
+
+    def bridge_command(self) -> list[str]:
+        return [self.command, "--browserUrl", self.browser_url]
+
+    def debug_summary(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 def create_jsreverser_mcp_runtime(
     *,
-    command: str = DEFAULT_JSREVERSER_MCP_COMMAND,
-    browser_url: str = DEFAULT_REMOTE_DEBUGGING_URL,
-    request_timeout: float = 30.0,
-    startup_timeout: float = 15.0,
-    backend_id: str = "jsreverser-mcp",
-    display_name: str = "JSReverser MCP",
-    transport: str = "mcp-stdio",
+    config: JSReverserMcpConfig | None = None,
+    command: str | None = None,
+    browser_url: str | None = None,
+    request_timeout: float | None = None,
+    startup_timeout: float | None = None,
+    backend_id: str | None = None,
+    display_name: str | None = None,
+    transport: str | None = None,
 ) -> "JSReverserRuntime":
     """Create a JSReverser runtime backed by a real stdio MCP process."""
 
+    config = config or JSReverserMcpConfig()
+    config = config.model_copy(
+        update={
+            key: value
+            for key, value in {
+                "command": command,
+                "browser_url": browser_url,
+                "request_timeout": request_timeout,
+                "startup_timeout": startup_timeout,
+                "backend_id": backend_id,
+                "display_name": display_name,
+                "transport": transport,
+            }.items()
+            if value is not None
+        }
+    )
     bridge = StdioMcpBridge(
-        command=[command, "--browserUrl", browser_url],
-        request_timeout=request_timeout,
-        startup_timeout=startup_timeout,
+        command=config.bridge_command(),
+        request_timeout=config.request_timeout,
+        startup_timeout=config.startup_timeout,
     )
     return JSReverserRuntime(
         bridge=bridge,
-        backend_id=backend_id,
-        display_name=display_name,
-        transport=transport,
+        backend_id=config.backend_id,
+        display_name=config.display_name,
+        transport=config.transport,
+        default_page_size=config.default_page_size,
+        post_navigation_wait_seconds=config.post_navigation_wait_seconds,
+        runtime_context_sample_count=config.runtime_context_sample_count,
+        runtime_context_sample_interval_seconds=config.runtime_context_sample_interval_seconds,
+        backend_config=config.debug_summary(),
     )
 
 
@@ -78,6 +123,7 @@ class JSReverserRuntime(ReverseRuntime):
     post_navigation_wait_seconds: float = 0.5
     runtime_context_sample_count: int = 3
     runtime_context_sample_interval_seconds: float = 0.05
+    backend_config: dict[str, Any] = field(default_factory=dict)
 
     def describe_capabilities(self) -> RuntimeBackendCapabilities:
         """Return capability metadata for the JSReverser-compatible runtime."""
@@ -102,6 +148,7 @@ class JSReverserRuntime(ReverseRuntime):
                 "normalizes mixed MCP / text return shapes before exposing evidence",
             ],
             config={
+                **self.backend_config,
                 "default_page_size": self.default_page_size,
                 "post_navigation_wait_seconds": self.post_navigation_wait_seconds,
                 "runtime_context_sample_count": self.runtime_context_sample_count,

@@ -43,7 +43,7 @@ You can probe this manually:
 command -v jsreverser-mcp || test -x /opt/homebrew/bin/jsreverser-mcp
 ```
 
-If your binary lives elsewhere, pass the explicit command to scripts that expose a command option, or create a wrapper / symlink for local testing. Future runtime adapter work should make this path fully configurable everywhere.
+If your binary lives elsewhere, pass the explicit command to scripts that expose a command option, or create a wrapper / symlink for local testing. The Python runtime now normalizes MCP command, browser URL, timeouts, backend metadata, and sampling settings through `JSReverserMcpConfig`, so CLI / workflow inputs and runtime construction share one configuration shape.
 
 ## Chrome remote debugging lifecycle
 

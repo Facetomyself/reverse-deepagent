@@ -1,6 +1,6 @@
 import unittest
 
-from reverse_deepagent.adapters.jsreverser import JSReverserRuntime
+from reverse_deepagent.adapters.jsreverser import JSReverserMcpConfig, JSReverserRuntime, create_jsreverser_mcp_runtime
 from reverse_deepagent.runtime.base import BrowserSessionInfo
 from reverse_deepagent.schemas import ReverseMode, ReverseStage, RouterResult, TaskCard
 
@@ -70,6 +70,25 @@ class RuntimeAdapterTests(unittest.TestCase):
         self.assertTrue(payload["supports_runtime_context"])
         self.assertTrue(payload["mcp_backed"])
         self.assertIn("web", payload["target_platforms"])
+
+    def test_mcp_config_is_serializable_and_builds_bridge_command(self) -> None:
+        config = JSReverserMcpConfig(
+            command="/tmp/jsreverser-mcp",
+            browser_url="http://127.0.0.1:9444",
+            request_timeout=12.5,
+            startup_timeout=3.5,
+        )
+        payload = config.model_dump(mode="json")
+        self.assertEqual(payload["command"], "/tmp/jsreverser-mcp")
+        self.assertEqual(config.bridge_command(), ["/tmp/jsreverser-mcp", "--browserUrl", "http://127.0.0.1:9444"])
+        runtime = create_jsreverser_mcp_runtime(config=config)
+        try:
+            capabilities = runtime.describe_capabilities().model_dump(mode="json")
+            self.assertEqual(capabilities["config"]["command"], "/tmp/jsreverser-mcp")
+            self.assertEqual(capabilities["config"]["browser_url"], "http://127.0.0.1:9444")
+            self.assertEqual(capabilities["config"]["request_timeout"], 12.5)
+        finally:
+            runtime.close()
 
     def test_run_web_recon_returns_structured_result(self) -> None:
         task_card = TaskCard(

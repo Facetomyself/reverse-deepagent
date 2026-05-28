@@ -23,6 +23,20 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(by_id["mcp"]["transport"], "mcp-stdio")
         self.assertTrue(by_id["mcp"]["mcp_backed"])
 
+    def test_build_runtime_threads_mcp_config_summary(self) -> None:
+        runtime = build_runtime(
+            "mcp",
+            browser_url="http://127.0.0.1:9555",
+            mcp_command="/tmp/jsreverser-mcp",
+        )
+        try:
+            capabilities = runtime.describe_capabilities()
+            self.assertEqual(capabilities.backend_id, "mcp")
+            self.assertEqual(capabilities.config["command"], "/tmp/jsreverser-mcp")
+            self.assertEqual(capabilities.config["browser_url"], "http://127.0.0.1:9555")
+        finally:
+            runtime.close()
+
     def test_run_reverse_pipeline_returns_structured_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output = run_reverse_pipeline(

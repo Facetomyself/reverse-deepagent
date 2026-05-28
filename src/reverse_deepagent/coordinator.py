@@ -8,6 +8,7 @@ from pydantic import Field
 
 from reverse_deepagent.adapters.jsreverser import (
     DEFAULT_JSREVERSER_MCP_COMMAND,
+    JSReverserMcpConfig,
     JSReverserRuntime,
     create_jsreverser_mcp_runtime,
 )
@@ -150,12 +151,15 @@ def _mcp_runtime_factory(
     mcp_command: str | None = None,
     **_: Any,
 ) -> JSReverserRuntime:
-    return create_jsreverser_mcp_runtime(
+    config = JSReverserMcpConfig(
         command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
         browser_url=browser_url or "http://127.0.0.1:9222",
         backend_id="mcp",
         display_name="JSReverser MCP",
         transport="mcp-stdio",
+    )
+    return create_jsreverser_mcp_runtime(
+        config=config,
     )
 
 
