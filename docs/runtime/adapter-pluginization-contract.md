@@ -122,6 +122,8 @@ Future backend examples:
 - `IosFridaConfig`
 - `MiniProgramCliConfig`
 
+The Android planning boundary is documented in [`android-adapter-interface.md`](android-adapter-interface.md). It deliberately treats Android app/process instrumentation as a separate runtime shape instead of overloading Web browser session semantics.
+
 ## Artifact manifest contract
 
 Every pipeline run writes a typed backend artifact manifest:

@@ -22,6 +22,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - `STRATEGY_SAMPLE_CORPUS` covering fixture reducer, hash, HMAC, Base64, and URL encoding strategy samples with generated rebuild self-check coverage.
 - Machine-readable rebuild `review_hints` for pure, context-aware, and manual-port / partial generated artifacts.
 - WASM / VM / heavy obfuscation triage contract documenting when protected flows must remain partial or runtime-assisted instead of fake pure-Python rebuilds.
+- Android runtime adapter interface draft for future ADB / Frida / static APK backends without Web-only browser session assumptions.
 
 ## [0.1.0] - 2026-05-27
 
