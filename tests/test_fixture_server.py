@@ -34,6 +34,8 @@ class FixtureServerTests(unittest.TestCase):
 
     def test_fixture_profiles_expose_strategy_markers(self) -> None:
         expectations = {
+            "md5": "function md5",
+            "sha1": "SHA-1",
             "sha256": "SHA-256",
             "base64": "btoa",
             "context-localstorage": "localStorage",

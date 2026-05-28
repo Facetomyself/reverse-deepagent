@@ -252,6 +252,29 @@ class RebuildArtifactTests(unittest.TestCase):
             )
             self.assertEqual(result.stdout.strip(), sample_sign)
 
+    def test_sha1_strategy_generates_self_checking_sign_rebuild(self) -> None:
+        source_context = """async function buildSign(keyword, timestamp) {
+  const raw = `${keyword}:${timestamp}`;
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(raw));
+  const bytes = Array.from(new Uint8Array(digest));
+  return bytes.map((item) => item.toString(16).padStart(2, '0')).join('');
+}"""
+        sample_sign = hashlib.sha1("sign:1700000000000".encode("utf-8")).hexdigest()
+        final_result = _final_result_for_source(source_context, sample_sign)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            self.assertEqual(rebuild.rebuild_plan["algorithm_strategy"]["id"], "sha1_keyword_timestamp")
+            self.assertTrue(rebuild.rebuild_plan["pure_extraction"]["pure_extractable"])
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
+
     def test_runtime_context_dependency_blocks_pure_extraction(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {
   const device = localStorage.getItem('device_id');

@@ -231,6 +231,8 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765 --profile sha256
 当前支持：
 
 - `default`：`charCodeAt` 求和取模，再输出 `sig_<hex>_<timestamp>`
+- `md5`：fixture 内置纯 JS `md5(keyword:timestamp)`，用于验证 `md5_keyword_timestamp` rebuild
+- `sha1`：浏览器 `crypto.subtle.digest('SHA-1', ...)`，用于验证 `sha1_keyword_timestamp` rebuild
 - `sha256`：浏览器 `crypto.subtle.digest('SHA-256', ...)`
 - `base64`：`btoa(keyword:timestamp)`
 - `context-localstorage`：依赖 `localStorage.device_id`，用于验证 localStorage context-aware delivery

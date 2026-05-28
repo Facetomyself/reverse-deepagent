@@ -12,6 +12,8 @@ from urllib.parse import parse_qs, urlparse
 
 class FixtureProfile(str, Enum):
     DEFAULT = "default"
+    MD5 = "md5"
+    SHA1 = "sha1"
     SHA256 = "sha256"
     BASE64 = "base64"
     CONTEXT_LOCALSTORAGE = "context-localstorage"
@@ -72,6 +74,107 @@ def _build_js(profile: FixtureProfile) -> str:
   const raw = `${keyword}:${timestamp}:${FIXTURE_SEED}`;
   const hash = Array.from(raw).reduce((acc, char) => (acc + char.charCodeAt(0)) % 100000, 0);
   return `sig_${hash.toString(16)}_${timestamp}`;
+}"""
+    elif profile is FixtureProfile.MD5:
+        build_sign = r"""function rotateLeft(value, shift) {
+  return (value << shift) | (value >>> (32 - shift));
+}
+
+function addUnsigned(left, right) {
+  return (left + right) >>> 0;
+}
+
+function wordToHex(value) {
+  let output = '';
+  for (let index = 0; index < 4; index += 1) {
+    output += ((value >>> (index * 8)) & 255).toString(16).padStart(2, '0');
+  }
+  return output;
+}
+
+function utf8Bytes(value) {
+  return Array.from(new TextEncoder().encode(value));
+}
+
+function md5(message) {
+  const bytes = utf8Bytes(message);
+  const bitLength = bytes.length * 8;
+  bytes.push(128);
+  while ((bytes.length % 64) !== 56) {
+    bytes.push(0);
+  }
+  for (let index = 0; index < 8; index += 1) {
+    bytes.push(Math.floor(bitLength / (2 ** (8 * index))) & 255);
+  }
+
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+  const shifts = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+  ];
+  const constants = Array.from({ length: 64 }, (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 2 ** 32) >>> 0);
+
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    const words = [];
+    for (let index = 0; index < 16; index += 1) {
+      const cursor = offset + index * 4;
+      words[index] = (bytes[cursor] | (bytes[cursor + 1] << 8) | (bytes[cursor + 2] << 16) | (bytes[cursor + 3] << 24)) >>> 0;
+    }
+
+    let a = a0;
+    let b = b0;
+    let c = c0;
+    let d = d0;
+
+    for (let index = 0; index < 64; index += 1) {
+      let f;
+      let g;
+      if (index < 16) {
+        f = (b & c) | ((~b) & d);
+        g = index;
+      } else if (index < 32) {
+        f = (d & b) | ((~d) & c);
+        g = (5 * index + 1) % 16;
+      } else if (index < 48) {
+        f = b ^ c ^ d;
+        g = (3 * index + 5) % 16;
+      } else {
+        f = c ^ (b | (~d));
+        g = (7 * index) % 16;
+      }
+      const nextD = c;
+      const nextC = b;
+      const sum = addUnsigned(addUnsigned(a, f), addUnsigned(constants[index], words[g]));
+      b = addUnsigned(b, rotateLeft(sum, shifts[index]));
+      a = d;
+      d = nextD;
+      c = nextC;
+    }
+
+    a0 = addUnsigned(a0, a);
+    b0 = addUnsigned(b0, b);
+    c0 = addUnsigned(c0, c);
+    d0 = addUnsigned(d0, d);
+  }
+
+  return `${wordToHex(a0)}${wordToHex(b0)}${wordToHex(c0)}${wordToHex(d0)}`;
+}
+
+function buildSign(keyword, timestamp) {
+  const raw = `${keyword}:${timestamp}`;
+  return md5(raw);
+}"""
+    elif profile is FixtureProfile.SHA1:
+        build_sign = r"""async function buildSign(keyword, timestamp) {
+  const raw = `${keyword}:${timestamp}`;
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(raw));
+  const bytes = Array.from(new Uint8Array(digest));
+  return bytes.map((item) => item.toString(16).padStart(2, '0')).join('');
 }"""
     elif profile is FixtureProfile.SHA256:
         build_sign = r"""async function buildSign(keyword, timestamp) {

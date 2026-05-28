@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic-ish version tags while it is still in an early research/demo stage.
 
+## [Unreleased]
+
+### Added
+
+- Local Web sign fixture profiles for `md5` and `sha1`, covering `md5_keyword_timestamp` and `sha1_keyword_timestamp` rebuild paths.
+
 ## [0.1.0] - 2026-05-27
 
 ### Added
