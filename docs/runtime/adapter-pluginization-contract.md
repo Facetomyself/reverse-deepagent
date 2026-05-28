@@ -119,10 +119,14 @@ runtime = create_jsreverser_mcp_runtime(config=config)
 - page size and post-navigation wait
 - runtime context sample count / sample interval
 
-Future backend examples:
+Implemented lightweight Web backend examples:
 
-- `PlaywrightCliConfig`
-- `ChromeCdpConfig`
+- `LightweightWebRuntimeConfig` with `transport=playwright-cli`
+- `LightweightWebRuntimeConfig` with `transport=chrome-cdp`
+- `LightweightWebRuntimeConfig` with `transport=browser-cli`
+
+Future platform backend examples:
+
 - `AndroidAdbConfig`
 - `AndroidFridaConfig`
 - `IosFridaConfig`
@@ -235,6 +239,7 @@ The project can then add Android-specific methods or higher-level workflows with
 
 - `run_reverse_pipeline(...)` is still the Web-specific orchestrator and intentionally rejects non-`WebReverseRuntime` adapters.
 - `run_platform_pipeline(...)` / `reverse-agent-platform` now provide the platform-neutral baseline: task card, route decision, capability capture, runtime export bundle, optional platform tool probe, backend manifest, report, and artifact index. It does not yet perform Android/iOS/mini-program-specific hook, static-analysis, or replay-validation workflows.
+- `playwright-cli`, `chrome-cdp`, and `browser-cli` are intentionally lightweight Web backends. They expose Web runtime schemas, but they do not start Chrome, capture live network timelines, or execute page JavaScript validation unless a future transport explicitly implements those operations.
 - `ReverseRuntime` intentionally does not expose mobile-specific operations yet; future adapters should add separate capability layers rather than reusing browser method names.
 - The registry is in-process Python registration, not package entry-point plugin loading.
 - Real MCP smoke still requires a self-hosted runner with Chrome and JSReverser MCP installed.

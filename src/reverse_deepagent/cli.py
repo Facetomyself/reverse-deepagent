@@ -30,9 +30,11 @@ def build_demo_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--runtime",
-        choices=["mock", "mcp"],
         default="mock",
-        help="Runtime backend to use. mock is deterministic; mcp starts jsreverser-mcp over stdio.",
+        help=(
+            "Runtime backend to use. Common values: mock, mcp, playwright-cli, chrome-cdp, browser-cli. "
+            "Aliases are resolved through the runtime registry."
+        ),
     )
     parser.add_argument(
         "--ensure-chrome",
@@ -54,6 +56,10 @@ def build_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chrome-start-script", default=DEFAULT_START_SCRIPT, help="Chrome debug launcher script path.")
     parser.add_argument("--chrome-stop-script", default=DEFAULT_STOP_SCRIPT, help="Chrome debug stop script path.")
     parser.add_argument("--jsreverser-mcp-command", default=DEFAULT_JSREVERSER_MCP_COMMAND, help="Path to the jsreverser-mcp executable.")
+    parser.add_argument("--playwright-command", default=None, help="Playwright CLI command for --runtime playwright-cli.")
+    parser.add_argument("--cdp-browser-url", default=None, help="Existing Chrome DevTools browser URL for --runtime chrome-cdp. Does not launch Chrome.")
+    parser.add_argument("--browser-cli-command", default=None, help="Generic browser CLI command for --runtime browser-cli.")
+    parser.add_argument("--lightweight-request-timeout", type=float, default=None, help="Timeout for lightweight backend command / HTTP probes.")
     return parser
 
 
@@ -81,6 +87,10 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
         ensure_chrome=args.ensure_chrome,
         keep_chrome=args.keep_chrome,
         mcp_command=args.jsreverser_mcp_command,
+        playwright_command=args.playwright_command,
+        cdp_browser_url=args.cdp_browser_url,
+        browser_cli_command=args.browser_cli_command,
+        request_timeout=args.lightweight_request_timeout,
     )
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
     return 0

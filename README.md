@@ -49,6 +49,35 @@ reverse-agent-fixture-smoke \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-9461"
 ```
 
+## 轻量 Web Runtime Backend
+
+除了 `mock` 和 `mcp`，默认 registry 还注册了 3 个轻量 Web backend：
+
+- `playwright-cli`（alias: `playwright`, `pw-cli`）：运行 `playwright --version` 这类 side-effect-light probe，并对目标 URL 做静态 HTML / script source fetch。
+- `chrome-cdp`（alias: `cdp`, `devtools`）：只探测已经存在的 Chrome DevTools endpoint，例如 `http://127.0.0.1:9222/json/version` 和 `/json/list`，不会主动启动 Chrome。
+- `browser-cli`（alias: `cli-browser`, `browser-command`）：给本地浏览器 CLI shim 预留的轻量命令 backend，默认不配置 command，因此会结构化返回不可用。
+
+示例：
+
+```bash
+reverse-agent-demo \
+  --runtime chrome-cdp \
+  --cdp-browser-url "http://127.0.0.1:9222" \
+  --task-text "https://example.com/search 找 sign"
+
+reverse-agent-demo \
+  --runtime playwright-cli \
+  --playwright-command playwright \
+  --task-text "https://example.com/search 找 sign"
+
+reverse-agent-demo \
+  --runtime browser-cli \
+  --browser-cli-command "my-browser-shim" \
+  --task-text "https://example.com/search 找 sign"
+```
+
+这 3 个 backend 复用 `WebReverseRuntime` / `JSReverserRuntime` 的 Web recon schema，但能力是刻意保守的：它们不捕获 live network timeline，不执行页面内 JS runtime validation，不注入 anti-debug preload。工具不可用时会输出 `status=failed`、`next_action=ensure_browser_session` 和 session export artifact，而不是假装完成。
+
 ## 环境重建
 
 项目已经补了 `pyproject.toml`，可以用 `pip`、`uv` 或现成的 `.venv` 进行重建。
@@ -603,6 +632,9 @@ print(capabilities.model_dump(mode="json"))
 
 - `mock`（alias: `in-process`）：公开 CI 和本地 deterministic demo 使用
 - `mcp`（alias: `jsreverser-mcp`）：真实 JSReverser MCP + Chrome DevTools runtime
+- `playwright-cli`（alias: `playwright`, `pw-cli`）：轻量 Playwright CLI probe + static source fetch，不主动启动浏览器
+- `chrome-cdp`（alias: `cdp`, `devtools`）：连接既有 Chrome DevTools endpoint，不主动启动 Chrome
+- `browser-cli`（alias: `cli-browser`, `browser-command`）：通用浏览器 CLI shim backend，默认 command 未配置
 - `android-adb`（alias: `adb`, `android-device`）：Android ADB 工具链探测与平台 artifact export
 - `ios-simulator`（alias: `simctl`, `ios-sim`）：iOS Simulator / `xcrun simctl` 工具链探测与平台 artifact export
 - `mini-program-devtools`（alias: `mp-devtools`, `wechat-devtools`）：小程序 vendor devtools CLI 配置探测与平台 artifact export

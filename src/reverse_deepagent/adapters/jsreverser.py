@@ -40,6 +40,7 @@ class JSReverserBridge(Protocol):
 
 DEFAULT_JSREVERSER_MCP_COMMAND = "/opt/homebrew/bin/jsreverser-mcp"
 DEFAULT_REMOTE_DEBUGGING_URL = "http://127.0.0.1:9222"
+LIGHTWEIGHT_WEB_TRANSPORTS = {"playwright-cli", "chrome-cdp", "browser-cli"}
 
 
 class JSReverserMcpConfig(SchemaBaseModel):
@@ -128,6 +129,7 @@ class JSReverserRuntime(WebReverseRuntime):
     def describe_capabilities(self) -> RuntimeBackendCapabilities:
         """Return capability metadata for the JSReverser-compatible runtime."""
 
+        is_lightweight = self.transport in LIGHTWEIGHT_WEB_TRANSPORTS
         return RuntimeBackendCapabilities(
             backend_id=self.backend_id,
             display_name=self.display_name,
@@ -135,17 +137,24 @@ class JSReverserRuntime(WebReverseRuntime):
             target_platforms=["web"],
             supports_browser_session=True,
             supports_web_recon=True,
-            supports_protection_patch=True,
+            supports_protection_patch=not is_lightweight,
             supports_artifact_export=True,
-            supports_runtime_context=True,
-            supports_replay_validation=True,
-            managed_chrome=self.transport in {"mcp-stdio", "cdp", "browser-cli"},
+            supports_runtime_context=not is_lightweight,
+            supports_replay_validation=not is_lightweight,
+            managed_chrome=self.transport == "mcp-stdio",
             mcp_backed=self.transport == "mcp-stdio",
-            evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
-            artifact_kinds=["json", "export", "rebuild", "markdown"],
+            evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"] if not is_lightweight else ["static", "dynamic", "note"],
+            artifact_kinds=["json", "export", "rebuild", "markdown"] if not is_lightweight else ["json", "export", "source"],
             notes=[
                 "web-first runtime adapter",
                 "normalizes mixed MCP / text return shapes before exposing evidence",
+                *(
+                    [
+                        "lightweight transport: no live network capture, page JS execution, or protection injection",
+                    ]
+                    if is_lightweight
+                    else []
+                ),
             ],
             config={
                 **self.backend_config,
@@ -298,11 +307,29 @@ class JSReverserRuntime(WebReverseRuntime):
 
     def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
         context = context or {}
+        normalized = protection_name.strip().lower()
+        if self.transport in LIGHTWEIGHT_WEB_TRANSPORTS:
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[f"unsupported_lightweight_protection:{protection_name}"],
+                verification=["lightweight Web backends do not inject or patch page runtime state"],
+                status=ExecutionStatus.FAILED,
+                artifacts=[
+                    ArtifactRef(
+                        path=f"virtual://protection/{normalized or 'unknown'}",
+                        kind=ArtifactKind.LOG,
+                        description="Unsupported lightweight protection attempt.",
+                        metadata={"protection_name": protection_name, "transport": self.transport, "context": context},
+                    )
+                ],
+                next_action="switch_to_mcp_or_full_browser_runtime",
+                confidence=ConfidenceLevel.HIGH,
+            )
+
         applied_actions: list[str] = []
         verification: list[str] = []
         artifacts: list[ArtifactRef] = []
 
-        normalized = protection_name.strip().lower()
         status = ExecutionStatus.PARTIAL
         confidence = ConfidenceLevel.MEDIUM
 

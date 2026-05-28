@@ -17,6 +17,7 @@ from reverse_deepagent.adapters.jsreverser import (
     JSReverserRuntime,
     create_jsreverser_mcp_runtime,
 )
+from reverse_deepagent.adapters.lightweight_web import LightweightWebRuntimeConfig, create_lightweight_web_runtime
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.runtime import (
     RuntimeBackendCapabilities,
@@ -360,6 +361,57 @@ def _mini_program_devtools_runtime_factory(
     )
 
 
+def _playwright_cli_runtime_factory(
+    *,
+    playwright_command: str | None = None,
+    request_timeout: float | None = None,
+    **_: Any,
+) -> JSReverserRuntime:
+    config = LightweightWebRuntimeConfig(
+        backend_id="playwright-cli",
+        display_name="Playwright CLI Runtime",
+        transport="playwright-cli",
+        command=playwright_command or "playwright",
+        command_args=["--version"],
+        request_timeout=request_timeout or 10.0,
+    )
+    return create_lightweight_web_runtime(config=config)
+
+
+def _chrome_cdp_runtime_factory(
+    *,
+    browser_url: str | None = None,
+    cdp_browser_url: str | None = None,
+    request_timeout: float | None = None,
+    **_: Any,
+) -> JSReverserRuntime:
+    config = LightweightWebRuntimeConfig(
+        backend_id="chrome-cdp",
+        display_name="Chrome CDP Runtime",
+        transport="chrome-cdp",
+        browser_url=cdp_browser_url or browser_url or "http://127.0.0.1:9222",
+        request_timeout=request_timeout or 10.0,
+    )
+    return create_lightweight_web_runtime(config=config)
+
+
+def _browser_cli_runtime_factory(
+    *,
+    browser_cli_command: str | None = None,
+    request_timeout: float | None = None,
+    **_: Any,
+) -> JSReverserRuntime:
+    config = LightweightWebRuntimeConfig(
+        backend_id="browser-cli",
+        display_name="Generic Browser CLI Runtime",
+        transport="browser-cli",
+        command=browser_cli_command,
+        command_args=["--version"] if browser_cli_command else [],
+        request_timeout=request_timeout or 10.0,
+    )
+    return create_lightweight_web_runtime(config=config)
+
+
 def build_default_runtime_registry() -> RuntimeBackendRegistry:
     """Build the default runtime backend registry without starting external processes."""
 
@@ -408,6 +460,91 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                 artifact_kinds=["json", "export", "rebuild", "markdown"],
                 notes=["requires jsreverser-mcp and a reachable Chrome DevTools endpoint"],
                 config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND},
+            ),
+        )
+    )
+
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="playwright-cli",
+            aliases=("playwright", "pw-cli"),
+            factory=_playwright_cli_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="playwright-cli",
+                display_name="Playwright CLI Runtime",
+                transport="playwright-cli",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=False,
+                supports_artifact_export=True,
+                supports_runtime_context=False,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["static", "dynamic", "note"],
+                artifact_kinds=["json", "export", "source"],
+                notes=[
+                    "lightweight Web backend using side-effect-light Playwright CLI probes",
+                    "does not launch browsers or capture live network traffic",
+                ],
+                config={"default_command": "playwright --version"},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="chrome-cdp",
+            aliases=("cdp", "devtools"),
+            factory=_chrome_cdp_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="chrome-cdp",
+                display_name="Chrome CDP Runtime",
+                transport="chrome-cdp",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=False,
+                supports_artifact_export=True,
+                supports_runtime_context=False,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["static", "dynamic", "note"],
+                artifact_kinds=["json", "export", "source", "session"],
+                notes=[
+                    "lightweight Web backend that probes an existing Chrome DevTools endpoint",
+                    "never starts Chrome; use managed Chrome launcher explicitly if needed",
+                ],
+                config={"default_browser_url": "http://127.0.0.1:9222"},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="browser-cli",
+            aliases=("cli-browser", "browser-command"),
+            factory=_browser_cli_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="browser-cli",
+                display_name="Generic Browser CLI Runtime",
+                transport="browser-cli",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=False,
+                supports_artifact_export=True,
+                supports_runtime_context=False,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["static", "dynamic", "note"],
+                artifact_kinds=["json", "export", "source"],
+                notes=[
+                    "generic command-probed Web backend for portable CLI shims",
+                    "command is not configured by default and must be passed explicitly for a healthy session",
+                ],
+                config={"default_command": None},
             ),
         )
     )
@@ -1014,6 +1151,7 @@ def run_reverse_pipeline(
     keep_chrome: bool = False,
     mcp_command: str | None = None,
     runtime: WebReverseRuntime | None = None,
+    **runtime_kwargs: Any,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
 
@@ -1039,6 +1177,7 @@ def run_reverse_pipeline(
         runtime_kind,
         browser_url=chrome_config.browser_url if chrome_config else None,
         mcp_command=mcp_command,
+        **runtime_kwargs,
     )
     if not isinstance(active_runtime, WebReverseRuntime):
         capabilities = active_runtime.describe_capabilities()

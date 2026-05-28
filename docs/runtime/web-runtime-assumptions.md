@@ -42,7 +42,9 @@ These responsibilities belong to Web backends such as:
 
 - `mock` for deterministic public CI.
 - `mcp` / `jsreverser-mcp` for real JSReverser MCP + Chrome DevTools.
-- future `playwright-cli` or `chrome-cdp` backends.
+- `playwright-cli` for side-effect-light Playwright CLI probes plus static source fetch.
+- `chrome-cdp` for existing Chrome DevTools endpoint probes without launching Chrome.
+- `browser-cli` for generic local browser CLI shims.
 
 They should not be treated as requirements for `android-*`, `ios-*`, or `mini-program-*` backends.
 
