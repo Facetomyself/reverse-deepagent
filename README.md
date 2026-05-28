@@ -414,11 +414,15 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765 --profile sha256
 - `context-localstorage`：依赖 `localStorage.device_id`，用于验证 localStorage context-aware delivery
 - `context-cookie`：依赖 `document.cookie` 中的 `device_id`，用于验证 cookie context-aware delivery
 - `context-navigator`：依赖 `navigator.userAgent`，用于验证浏览器指纹上下文 context-aware delivery
+- `webpack-minified`：模拟 webpack module wrapper 与压缩 helper，验证打包形态下的 SHA-256 sign 识别
+- `token-chain`：先访问 `/api/bootstrap` 获取 token，再用 `sessionStorage.fixture_token` 参与 SHA-256 sign
+- `hybrid-context`：同时依赖 `localStorage.fixture_nonce` 与 `cookie.csrf_token`，用于验证多上下文绑定时不会误报 ready
 
 页面与脚本：
 
 - `http://127.0.0.1:8765/`
 - `http://127.0.0.1:8765/app.js`
+- `http://127.0.0.1:8765/api/bootstrap`（`token-chain` profile 使用）
 - `http://127.0.0.1:8765/api/search`
 
 `app.js` 中包含稳定的入口特征：

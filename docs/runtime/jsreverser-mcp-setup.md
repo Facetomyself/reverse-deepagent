@@ -121,6 +121,10 @@ Try these profiles when checking context-aware rebuild behavior:
 - `context-localstorage`
 - `context-cookie`
 - `context-navigator`
+- `token-chain`
+- `hybrid-context`
+
+Try `webpack-minified` when checking bundled / minified Web source handling without extra runtime context.
 
 Expected important artifacts:
 

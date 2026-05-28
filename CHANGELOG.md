@@ -9,6 +9,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ### Added
 
 - Local Web sign fixture profiles for `md5` and `sha1`, covering `md5_keyword_timestamp` and `sha1_keyword_timestamp` rebuild paths.
+- More realistic Web sign fixture profiles for `webpack-minified`, `token-chain`, and `hybrid-context`, covering bundled source, bootstrap-token, and multi-context binding scenarios.
 - Multi-sample `runtime-context-diff.json` generation with stable / volatile key classification and change summaries.
 - Rebuild strategy registry abstraction with ordered metadata for deterministic fixture, template, crypto hash, and encoding detectors.
 - Self-hosted MCP smoke workflow documentation, fixture profile options, and explicit `--jsreverser-mcp-command` wiring.

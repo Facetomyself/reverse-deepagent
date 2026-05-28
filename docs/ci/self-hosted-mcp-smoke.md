@@ -68,6 +68,9 @@ Supported profiles should match the fixture server profiles:
 - `context-localstorage`
 - `context-cookie`
 - `context-navigator`
+- `webpack-minified`
+- `token-chain`
+- `hybrid-context`
 
 ## How to run from GitHub UI
 

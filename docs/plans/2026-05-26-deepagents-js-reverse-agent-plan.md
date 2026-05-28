@@ -461,9 +461,16 @@ task_card:
 - `reverse-agent-fixture-smoke --profile <name>`
 - profile 覆盖：
   - `default`
+  - `md5`
+  - `sha1`
   - `sha256`
   - `base64`
   - `context-localstorage`
+  - `context-cookie`
+  - `context-navigator`
+  - `webpack-minified`
+  - `token-chain`
+  - `hybrid-context`
 
 验收标准：
 
@@ -471,6 +478,9 @@ task_card:
 - `healthz` 会回传 profile 元数据
 - `sha256` profile 的真实 MCP smoke 可生成 `sha256_keyword_timestamp` rebuild plan
 - `context-localstorage` profile 在没有 runtime context artifact 时会阻断 pure extraction
+- `webpack-minified` profile 能覆盖 webpack-like module wrapper / minified helper 场景并生成 `sha256_keyword_timestamp` rebuild plan
+- `token-chain` profile 能覆盖 bootstrap token + `sessionStorage.fixture_token` 链路并生成 context-aware delivery
+- `hybrid-context` profile 能覆盖 cookie + localStorage 多上下文绑定，并在当前 renderer 不支持多绑定时保持 not-ready
 - unit test / smoke / docs 都要同步更新
 
 ### Phase 12：运行时上下文采集与 context-aware delivery
@@ -565,7 +575,7 @@ task_card:
 
 用户追加的 12 项增强按单项实现、code review、功能测试、全量测试和单独 commit 推进。当前已完成并提交第 1～8 项；第 9 项 `runtime context 自动补全` 本轮补齐实现：rebuild 阶段会从源码自动推断 `localStorage` / `sessionStorage` / `cookie` / `navigator` / `timezone` 的具体 binding key，把命中的单个值写入 `pure_extraction.runtime_context_binding`，同时输出 `runtime_context_bindings` / `missing_runtime_context_bindings` 供 review；源码明确依赖具体 key 但采集缺失、或出现多个显式 context binding 但 renderer 尚不支持多值拼接时，均保持 not-ready，避免生成假成功的 `sign_rebuild.py`。
 
-第 10 项 `完整 Scrapy 集成` 本轮升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库`、第 12 项 `MCP self-hosted smoke 持续自动化` 仍按顺序排在第 10 项提交之后执行。
+第 10 项 `完整 Scrapy 集成` 已升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库` 本轮新增 `webpack-minified`、`token-chain`、`hybrid-context` 三个 profile，分别覆盖打包/压缩形态、bootstrap token 链路和多上下文绑定阻断；第 12 项 `MCP self-hosted smoke 持续自动化` 仍按顺序排在第 11 项提交之后执行。
 
 新增验证入口：
 
@@ -579,7 +589,7 @@ task_card:
 - `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `rebuild-plan.json`、`sign_rebuild.py`、`replay_demo.py`、`scrapy_middleware.py` 与 `scrapy_project/` 纯算交付包输出
 - `scripts/run_deepagent_delivery_smoke.py` 当前可验证主 Agent 的 `build_rebuild_delivery` 工具调用闭环
 - `tests/test_rebuild_artifacts.py` 当前还验证 md5 策略 self-check 与 `localStorage` 运行时依赖阻断逻辑
-- `reverse-agent-fixture --profile sha256/base64/context-localstorage` 当前可切换 fixture profile
+- `reverse-agent-fixture --profile sha256/base64/context-localstorage/webpack-minified/token-chain/hybrid-context` 当前可切换 fixture profile
 - `reverse-agent-fixture-smoke --profile sha256` 当前可走真实 MCP + 受管 Chrome 的 hash 策略 smoke
 - `reverse-agent-fixture-smoke --profile base64` 当前可走真实 MCP + 受管 Chrome 的 encoding 策略 smoke
 - `reverse-agent-fixture-smoke --profile context-localstorage` 当前可采集 runtime context 并生成 context-aware delivery

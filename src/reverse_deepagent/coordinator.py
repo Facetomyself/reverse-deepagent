@@ -126,10 +126,13 @@ class MockJSReverserBridge:
 
     def _network_requests(self) -> list[dict[str, Any]]:
         if self._is_fixture_url():
-            return [
+            requests = [
                 {"id": 101, "url": urljoin(self.active_url.rstrip("/") + "/", "api/search"), "method": "POST"},
                 {"id": 102, "url": urljoin(self.active_url.rstrip("/") + "/", "app.js"), "method": "GET"},
             ]
+            if self._profile() == "token-chain":
+                requests.insert(0, {"id": 100, "url": urljoin(self.active_url.rstrip("/") + "/", "api/bootstrap"), "method": "GET"})
+            return requests
         return [
             {"id": 101, "url": "https://example.com/api/search", "method": "POST"},
             {"id": 102, "url": "https://example.com/api/bootstrap", "method": "GET"},
@@ -204,7 +207,7 @@ class MockJSReverserBridge:
             return hashlib.md5(raw.encode("utf-8")).hexdigest()  # noqa: S324 - deterministic fixture compatibility
         if profile == "sha1":
             return hashlib.sha1(raw.encode("utf-8")).hexdigest()  # noqa: S324 - deterministic fixture compatibility
-        if profile == "sha256":
+        if profile in {"sha256", "webpack-minified"}:
             return hashlib.sha256(raw.encode("utf-8")).hexdigest()
         if profile == "base64":
             return base64.b64encode(raw.encode("utf-8")).decode("ascii")
@@ -214,22 +217,50 @@ class MockJSReverserBridge:
             return base64.b64encode(f"{raw}:fixture-cookie-device".encode("utf-8")).decode("ascii")
         if profile == "context-navigator":
             return hashlib.sha256(f"{raw}:ReverseDeepAgentMock/1.0".encode("utf-8")).hexdigest()
+        if profile == "token-chain":
+            return hashlib.sha256(f"{raw}:fixture-token".encode("utf-8")).hexdigest()
+        if profile == "hybrid-context":
+            return base64.b64encode(f"{raw}:fixture-nonce:fixture-csrf".encode("utf-8")).decode("ascii")
         return f"sig_{keyword}_{timestamp}"
 
     def _storage_payload(self) -> dict[str, Any]:
         profile = self._profile()
+        local_storage: dict[str, str] = {}
+        session_storage: dict[str, str] = {}
+        cookies: dict[str, str] = {}
+        if profile == "context-localstorage":
+            local_storage["device_id"] = "fixture-device"
+        elif profile == "hybrid-context":
+            local_storage["fixture_nonce"] = "fixture-nonce"
+            cookies["csrf_token"] = "fixture-csrf"
+        if profile == "token-chain":
+            session_storage["fixture_token"] = "fixture-token"
+        if profile == "context-cookie":
+            cookies["device_id"] = "fixture-cookie-device"
         return {
-            "localStorage": {"device_id": "fixture-device"} if profile == "context-localstorage" else {},
-            "sessionStorage": {},
-            "cookies": {"device_id": "fixture-cookie-device"} if profile == "context-cookie" else {},
+            "localStorage": local_storage,
+            "sessionStorage": session_storage,
+            "cookies": cookies,
         }
 
     def _runtime_environment(self) -> dict[str, Any]:
         profile = self._profile()
+        cookie = ""
+        local_storage: dict[str, str] = {}
+        session_storage: dict[str, str] = {}
+        if profile == "context-cookie":
+            cookie = "device_id=fixture-cookie-device"
+        elif profile == "context-localstorage":
+            local_storage["device_id"] = "fixture-device"
+        elif profile == "token-chain":
+            session_storage["fixture_token"] = "fixture-token"
+        elif profile == "hybrid-context":
+            cookie = "csrf_token=fixture-csrf"
+            local_storage["fixture_nonce"] = "fixture-nonce"
         return {
-            "cookie": "device_id=fixture-cookie-device" if profile == "context-cookie" else "",
-            "localStorage": {"device_id": "fixture-device"} if profile == "context-localstorage" else {},
-            "sessionStorage": {},
+            "cookie": cookie,
+            "localStorage": local_storage,
+            "sessionStorage": session_storage,
             "navigator": {
                 "userAgent": "ReverseDeepAgentMock/1.0",
                 "platform": "MacIntel",

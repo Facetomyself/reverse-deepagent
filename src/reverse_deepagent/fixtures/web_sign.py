@@ -19,9 +19,94 @@ class FixtureProfile(str, Enum):
     CONTEXT_LOCALSTORAGE = "context-localstorage"
     CONTEXT_COOKIE = "context-cookie"
     CONTEXT_NAVIGATOR = "context-navigator"
+    WEBPACK_MINIFIED = "webpack-minified"
+    TOKEN_CHAIN = "token-chain"
+    HYBRID_CONTEXT = "hybrid-context"
 
 
 FIXTURE_PROFILE_VALUES = [item.value for item in FixtureProfile]
+
+FIXTURE_BOOTSTRAP_TOKEN = "fixture-token"
+FIXTURE_HYBRID_NONCE = "fixture-nonce"
+FIXTURE_HYBRID_CSRF = "fixture-csrf"
+
+
+def _profile_metadata(profile: FixtureProfile) -> dict[str, Any]:
+    metadata: dict[FixtureProfile, dict[str, Any]] = {
+        FixtureProfile.DEFAULT: {
+            "family": "deterministic",
+            "description": "Simple deterministic reducer for baseline smoke.",
+            "expected_strategy": "fixture_seed_mod100000",
+            "realism": ["plain-source"],
+        },
+        FixtureProfile.MD5: {
+            "family": "hash",
+            "description": "MD5 keyword/timestamp flow.",
+            "expected_strategy": "md5_keyword_timestamp",
+            "realism": ["plain-source", "legacy-hash"],
+        },
+        FixtureProfile.SHA1: {
+            "family": "hash",
+            "description": "WebCrypto SHA-1 keyword/timestamp flow.",
+            "expected_strategy": "sha1_keyword_timestamp",
+            "realism": ["webcrypto"],
+        },
+        FixtureProfile.SHA256: {
+            "family": "hash",
+            "description": "WebCrypto SHA-256 keyword/timestamp flow.",
+            "expected_strategy": "sha256_keyword_timestamp",
+            "realism": ["webcrypto"],
+        },
+        FixtureProfile.BASE64: {
+            "family": "encoding",
+            "description": "Base64 keyword/timestamp flow.",
+            "expected_strategy": "base64_keyword_timestamp",
+            "realism": ["browser-encoding"],
+        },
+        FixtureProfile.CONTEXT_LOCALSTORAGE: {
+            "family": "runtime-context",
+            "description": "Base64 flow that depends on localStorage.device_id.",
+            "expected_strategy": "base64_keyword_timestamp",
+            "runtime_context_required": ["localStorage"],
+            "realism": ["storage-context"],
+        },
+        FixtureProfile.CONTEXT_COOKIE: {
+            "family": "runtime-context",
+            "description": "Base64 flow that depends on cookie device_id.",
+            "expected_strategy": "base64_keyword_timestamp",
+            "runtime_context_required": ["cookie"],
+            "realism": ["cookie-context"],
+        },
+        FixtureProfile.CONTEXT_NAVIGATOR: {
+            "family": "runtime-context",
+            "description": "SHA-256 flow that depends on navigator.userAgent.",
+            "expected_strategy": "sha256_keyword_timestamp",
+            "runtime_context_required": ["navigator"],
+            "realism": ["browser-fingerprint"],
+        },
+        FixtureProfile.WEBPACK_MINIFIED: {
+            "family": "bundled",
+            "description": "Webpack-like module wrapper with minified helpers around a SHA-256 sign function.",
+            "expected_strategy": "sha256_keyword_timestamp",
+            "realism": ["webpack-runtime", "minified-helper", "webcrypto"],
+        },
+        FixtureProfile.TOKEN_CHAIN: {
+            "family": "token-chain",
+            "description": "Bootstrap token request followed by sessionStorage-backed SHA-256 signing.",
+            "expected_strategy": "sha256_keyword_timestamp",
+            "runtime_context_required": ["sessionStorage"],
+            "realism": ["bootstrap-request", "session-storage", "multi-request-chain"],
+        },
+        FixtureProfile.HYBRID_CONTEXT: {
+            "family": "runtime-context",
+            "description": "Base64 flow that combines localStorage nonce and CSRF cookie.",
+            "expected_strategy": "base64_keyword_timestamp",
+            "runtime_context_required": ["localStorage", "cookie"],
+            "realism": ["multi-context", "cookie-context", "storage-context"],
+            "expected_delivery": "partial_until_multi_binding_renderer",
+        },
+    }
+    return metadata[profile]
 
 
 def _normalize_profile(profile: str | FixtureProfile) -> FixtureProfile:
@@ -209,6 +294,56 @@ function buildSign(keyword, timestamp) {
   const bytes = Array.from(new Uint8Array(digest));
   return bytes.map((item) => item.toString(16).padStart(2, '0')).join('');
 }"""
+    elif profile is FixtureProfile.WEBPACK_MINIFIED:
+        build_sign = r"""const __webpack_modules__ = {
+  731: (module) => {
+    const enc = new TextEncoder();
+    const hex = (buffer) => Array.from(new Uint8Array(buffer)).map((item) => item.toString(16).padStart(2, '0')).join('');
+    module.exports = {
+      async sign(keyword, timestamp) {
+        const raw = `${keyword}:${timestamp}`;
+        return hex(await crypto.subtle.digest('SHA-256', enc.encode(raw)));
+      },
+    };
+  },
+};
+const __webpack_module_cache__ = {};
+function __webpack_require__(id) {
+  const cached = __webpack_module_cache__[id];
+  if (cached) return cached.exports;
+  const module = (__webpack_module_cache__[id] = { exports: {} });
+  __webpack_modules__[id](module, module.exports, __webpack_require__);
+  return module.exports;
+}
+async function buildSign(keyword, timestamp) {
+  return __webpack_require__(731).sign(keyword, timestamp);
+}"""
+    elif profile is FixtureProfile.TOKEN_CHAIN:
+        build_sign = r"""async function loadFixtureToken(keyword) {
+  const cached = sessionStorage.getItem('fixture_token');
+  if (cached) return cached;
+  const response = await fetch(`/api/bootstrap?keyword=${encodeURIComponent(keyword)}`);
+  const data = await response.json();
+  const token = data.token || 'fixture-token';
+  sessionStorage.setItem('fixture_token', token);
+  return token;
+}
+
+async function buildSign(keyword, timestamp) {
+  const token = await loadFixtureToken(keyword);
+  const raw = `${keyword}:${timestamp}:${token}`;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+  const bytes = Array.from(new Uint8Array(digest));
+  return bytes.map((item) => item.toString(16).padStart(2, '0')).join('');
+}"""
+    elif profile is FixtureProfile.HYBRID_CONTEXT:
+        build_sign = r"""function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('fixture_nonce') || 'fixture-nonce';
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  const csrf = match ? decodeURIComponent(match[1]) : 'fixture-csrf';
+  const raw = `${keyword}:${timestamp}:${nonce}:${csrf}`;
+  return btoa(raw);
+}"""
     else:
         raise ValueError(f"Unsupported fixture profile: {profile}")
 
@@ -217,6 +352,11 @@ function buildSign(keyword, timestamp) {
         setup = "  localStorage.setItem('device_id', 'fixture-device');\n"
     elif profile is FixtureProfile.CONTEXT_COOKIE:
         setup = "  document.cookie = 'device_id=fixture-cookie-device; path=/';\n"
+    elif profile is FixtureProfile.HYBRID_CONTEXT:
+        setup = (
+            f"  localStorage.setItem('fixture_nonce', {json.dumps(FIXTURE_HYBRID_NONCE)});\n"
+            f"  document.cookie = 'csrf_token={FIXTURE_HYBRID_CSRF}; path=/';\n"
+        )
 
     return """window.reverseFixture = (() => {{
   const FIXTURE_PROFILE = {profile_json};
@@ -309,12 +449,27 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             content_type = "application/javascript; charset=utf-8"
             payload = _build_js(getattr(self.server, "fixture_profile", FixtureProfile.DEFAULT))  # type: ignore[attr-defined]
         elif path == "/healthz":
+            profile = getattr(self.server, "fixture_profile", FixtureProfile.DEFAULT)  # type: ignore[attr-defined]
             payload = json.dumps(
                 {
                     "ok": True,
                     "fixture": "reverse-agent-sign",
-                    "profile": getattr(self.server, "fixture_profile", FixtureProfile.DEFAULT).value,  # type: ignore[attr-defined]
+                    "profile": profile.value,
+                    "profile_metadata": _profile_metadata(profile),
                     "profiles": FIXTURE_PROFILE_VALUES,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        elif path == "/api/bootstrap":
+            profile = getattr(self.server, "fixture_profile", FixtureProfile.DEFAULT)  # type: ignore[attr-defined]
+            payload = json.dumps(
+                {
+                    "ok": True,
+                    "profile": profile.value,
+                    "token": FIXTURE_BOOTSTRAP_TOKEN,
+                    "keyword": query.get("keyword", ["sign"])[0],
+                    "ttl_ms": 300000,
                 },
                 ensure_ascii=False,
                 indent=2,

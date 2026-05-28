@@ -21,6 +21,9 @@ on:
           - context-localstorage
           - context-cookie
           - context-navigator
+          - webpack-minified
+          - token-chain
+          - hybrid-context
       chrome_debug_port:
         description: Chrome remote debugging port.
         required: true
