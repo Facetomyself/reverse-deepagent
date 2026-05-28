@@ -503,12 +503,19 @@ Runtime backend 能力通过 `RuntimeBackendCapabilities` 描述，调用方可�
 示例：
 
 ```python
-from reverse_deepagent.coordinator import build_runtime
+from reverse_deepagent.coordinator import build_runtime, list_runtime_backends
+
+print(list_runtime_backends())
 
 runtime = build_runtime("mock")
 capabilities = runtime.describe_capabilities()
 print(capabilities.model_dump(mode="json"))
 ```
+
+`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建 backend，当前默认注册：
+
+- `mock`（alias: `in-process`）：公开 CI 和本地 deterministic demo 使用
+- `mcp`（alias: `jsreverser-mcp`）：真实 JSReverser MCP + Chrome DevTools runtime
 
 核心字段包括：
 

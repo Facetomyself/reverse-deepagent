@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reverse_deepagent.coordinator import build_runtime, run_reverse_pipeline
+from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
 
 
 class CoordinatorTests(unittest.TestCase):
@@ -13,6 +13,14 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(capabilities.transport, "in-process")
         self.assertTrue(capabilities.supports_web_recon)
         self.assertFalse(capabilities.mcp_backed)
+
+    def test_runtime_backend_metadata_lists_mock_and_mcp(self) -> None:
+        metadata = list_runtime_backends()
+        by_id = {item["backend_id"]: item for item in metadata}
+        self.assertIn("mock", by_id)
+        self.assertIn("mcp", by_id)
+        self.assertEqual(by_id["mcp"]["transport"], "mcp-stdio")
+        self.assertTrue(by_id["mcp"]["mcp_backed"])
 
     def test_run_reverse_pipeline_returns_structured_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

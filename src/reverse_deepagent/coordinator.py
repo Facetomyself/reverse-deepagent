@@ -12,6 +12,7 @@ from reverse_deepagent.adapters.jsreverser import (
     create_jsreverser_mcp_runtime,
 )
 from reverse_deepagent.rebuild import write_rebuild_bundle
+from reverse_deepagent.runtime import RuntimeBackendCapabilities, RuntimeBackendRegistration, RuntimeBackendRegistry
 from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
 from reverse_deepagent.schemas import FinalResult, KeyFindings, ReconResult, RouterResult, SchemaBaseModel, TaskCard
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
@@ -133,6 +134,93 @@ def build_markdown_report(final_result: FinalResult) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _mock_runtime_factory(**_: Any) -> JSReverserRuntime:
+    return JSReverserRuntime(
+        bridge=MockJSReverserBridge(),
+        backend_id="mock",
+        display_name="Mock JSReverser Runtime",
+        transport="in-process",
+    )
+
+
+def _mcp_runtime_factory(
+    *,
+    browser_url: str | None = None,
+    mcp_command: str | None = None,
+    **_: Any,
+) -> JSReverserRuntime:
+    return create_jsreverser_mcp_runtime(
+        command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
+        browser_url=browser_url or "http://127.0.0.1:9222",
+        backend_id="mcp",
+        display_name="JSReverser MCP",
+        transport="mcp-stdio",
+    )
+
+
+def build_default_runtime_registry() -> RuntimeBackendRegistry:
+    """Build the default runtime backend registry without starting external processes."""
+
+    registry = RuntimeBackendRegistry()
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="mock",
+            aliases=("in-process",),
+            factory=_mock_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="mock",
+                display_name="Mock JSReverser Runtime",
+                transport="in-process",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=True,
+                evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
+                artifact_kinds=["json", "export", "rebuild", "markdown"],
+                notes=["deterministic in-process backend for tests and public CI"],
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="mcp",
+            aliases=("jsreverser-mcp",),
+            factory=_mcp_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="mcp",
+                display_name="JSReverser MCP",
+                transport="mcp-stdio",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=True,
+                managed_chrome=True,
+                mcp_backed=True,
+                evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
+                artifact_kinds=["json", "export", "rebuild", "markdown"],
+                notes=["requires jsreverser-mcp and a reachable Chrome DevTools endpoint"],
+                config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND},
+            ),
+        )
+    )
+    return registry
+
+
+DEFAULT_RUNTIME_BACKEND_REGISTRY = build_default_runtime_registry()
+
+
+def list_runtime_backends() -> list[dict[str, Any]]:
+    """Return JSON-serializable metadata for known runtime backends."""
+
+    return DEFAULT_RUNTIME_BACKEND_REGISTRY.list_metadata()
+
+
 def build_runtime(
     runtime_kind: str,
     browser_url: str | None = None,
@@ -140,19 +228,11 @@ def build_runtime(
 ) -> JSReverserRuntime:
     """Build a runtime backend for the coordinator pipeline."""
 
-    if runtime_kind == "mock":
-        return JSReverserRuntime(
-            bridge=MockJSReverserBridge(),
-            backend_id="mock",
-            display_name="Mock JSReverser Runtime",
-            transport="in-process",
-        )
-    if runtime_kind == "mcp":
-        return create_jsreverser_mcp_runtime(
-            command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
-            browser_url=browser_url or "http://127.0.0.1:9222",
-        )
-    raise ValueError(f"Unsupported runtime kind: {runtime_kind}")
+    return DEFAULT_RUNTIME_BACKEND_REGISTRY.create(
+        runtime_kind,
+        browser_url=browser_url,
+        mcp_command=mcp_command,
+    )
 
 
 def write_outputs(

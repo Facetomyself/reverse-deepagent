@@ -47,6 +47,9 @@ def create_jsreverser_mcp_runtime(
     browser_url: str = DEFAULT_REMOTE_DEBUGGING_URL,
     request_timeout: float = 30.0,
     startup_timeout: float = 15.0,
+    backend_id: str = "jsreverser-mcp",
+    display_name: str = "JSReverser MCP",
+    transport: str = "mcp-stdio",
 ) -> "JSReverserRuntime":
     """Create a JSReverser runtime backed by a real stdio MCP process."""
 
@@ -55,7 +58,12 @@ def create_jsreverser_mcp_runtime(
         request_timeout=request_timeout,
         startup_timeout=startup_timeout,
     )
-    return JSReverserRuntime(bridge=bridge)
+    return JSReverserRuntime(
+        bridge=bridge,
+        backend_id=backend_id,
+        display_name=display_name,
+        transport=transport,
+    )
 
 
 @dataclass(slots=True)
