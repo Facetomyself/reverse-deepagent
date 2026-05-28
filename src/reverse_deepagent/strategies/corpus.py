@@ -80,6 +80,37 @@ STRATEGY_SAMPLE_CORPUS: tuple[StrategySample, ...] = (
         description="SHA-256 over keyword:timestamp via Web Crypto marker.",
     ),
     StrategySample(
+        sample_id="sha512_keyword_timestamp_subtle",
+        strategy_id="sha512_keyword_timestamp",
+        source_context="""async function buildSign(keyword, timestamp) {
+  const raw = `${keyword}:${timestamp}`;
+  const digest = await crypto.subtle.digest('SHA-512', new TextEncoder().encode(raw));
+  return Array.from(new Uint8Array(digest)).map((item) => item.toString(16).padStart(2, '0')).join('');
+}""",
+        expected_sign=hashlib.sha512(_message().encode("utf-8")).hexdigest(),
+        description="SHA-512 over keyword:timestamp via Web Crypto marker.",
+    ),
+    StrategySample(
+        sample_id="hmac_md5_keyword_timestamp_literal_secret",
+        strategy_id="hmac_md5_keyword_timestamp",
+        source_context="""function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacMD5(`${keyword}:${timestamp}`, secret).toString();
+}""",
+        expected_sign=hmac.new(HMAC_SECRET.encode("utf-8"), _message().encode("utf-8"), hashlib.md5).hexdigest(),
+        description="HMAC-MD5 with literal secret.",
+    ),
+    StrategySample(
+        sample_id="hmac_sha1_keyword_timestamp_literal_secret",
+        strategy_id="hmac_sha1_keyword_timestamp",
+        source_context="""function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacSHA1(`${keyword}:${timestamp}`, secret).toString();
+}""",
+        expected_sign=hmac.new(HMAC_SECRET.encode("utf-8"), _message().encode("utf-8"), hashlib.sha1).hexdigest(),
+        description="HMAC-SHA1 with literal secret.",
+    ),
+    StrategySample(
         sample_id="hmac_sha256_keyword_timestamp_literal_secret",
         strategy_id="hmac_sha256_keyword_timestamp",
         source_context="""function buildSign(keyword, timestamp) {
@@ -88,6 +119,16 @@ STRATEGY_SAMPLE_CORPUS: tuple[StrategySample, ...] = (
 }""",
         expected_sign=hmac.new(HMAC_SECRET.encode("utf-8"), _message().encode("utf-8"), hashlib.sha256).hexdigest(),
         description="HMAC-SHA256 with literal secret.",
+    ),
+    StrategySample(
+        sample_id="hmac_sha512_keyword_timestamp_literal_secret",
+        strategy_id="hmac_sha512_keyword_timestamp",
+        source_context="""function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacSHA512(`${keyword}:${timestamp}`, secret).toString();
+}""",
+        expected_sign=hmac.new(HMAC_SECRET.encode("utf-8"), _message().encode("utf-8"), hashlib.sha512).hexdigest(),
+        description="HMAC-SHA512 with literal secret.",
     ),
     StrategySample(
         sample_id="base64_keyword_timestamp_btoa",

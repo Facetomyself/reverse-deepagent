@@ -207,6 +207,10 @@ class StrategyRegistryTests(unittest.TestCase):
         self.assertIn("md5_keyword_timestamp", emitted)
         self.assertIn("sha1_keyword_timestamp", emitted)
         self.assertIn("sha256_keyword_timestamp", emitted)
+        self.assertIn("sha512_keyword_timestamp", emitted)
+        self.assertIn("hmac_md5_keyword_timestamp", emitted)
+        self.assertIn("hmac_sha1_keyword_timestamp", emitted)
+        self.assertIn("hmac_sha512_keyword_timestamp", emitted)
         self.assertIn("base64_keyword_timestamp", emitted)
         self.assertIn("urlencode_keyword_timestamp", emitted)
 
@@ -336,6 +340,14 @@ class RebuildArtifactTests(unittest.TestCase):
             ),
             (
                 """function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacSHA512(`${keyword}${timestamp}`, secret).toString();
+}""",
+                hmac.new(b"fixture-secret", b"sign1700000000000", hashlib.sha512).hexdigest(),
+                "hmac_sha512_keyword_timestamp",
+            ),
+            (
+                """function buildSign(keyword, timestamp) {
   return encodeURIComponent(`${keyword}${timestamp}`);
 }""",
                 "sign1700000000000",
@@ -357,6 +369,27 @@ class RebuildArtifactTests(unittest.TestCase):
                         capture_output=True,
                     )
                     self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_hmac_sha512_rebuild_ignores_unrelated_sha256_marker(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const marker = CryptoJS.SHA256('probe').toString();
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacSHA512(`${keyword}:${timestamp}`, secret).toString();
+}"""
+        sample_sign = hmac.new(b"fixture-secret", b"sign:1700000000000", hashlib.sha512).hexdigest()
+        final_result = _final_result_for_source(source_context, sample_sign)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            self.assertEqual(rebuild.rebuild_plan["algorithm_strategy"]["id"], "hmac_sha512_keyword_timestamp")
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
 
     def test_failed_validation_blocks_runnable_rebuild(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {

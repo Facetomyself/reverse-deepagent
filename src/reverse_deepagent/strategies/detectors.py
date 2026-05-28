@@ -149,22 +149,25 @@ def _detect_protected_flow_triage(source_context: str) -> dict[str, Any] | None:
 def _detect_crypto_hash_strategy(source_context: str) -> dict[str, Any] | None:
     lowered = source_context.lower()
     template = _detect_message_template(source_context)
-    if "hmac" in lowered and "sha256" in lowered:
-        secret = _extract_literal_secret(source_context)
+    hmac_call = _extract_hmac_call(source_context)
+    if hmac_call is not None:
+        algorithm = hmac_call["algorithm"]
+        secret = _extract_literal_secret_from_argument(source_context, hmac_call["secret_argument"])
+        display_algorithm = algorithm.upper().replace("SHA", "SHA-")
         return _strategy(
-            "hmac_sha256_keyword_timestamp",
+            f"hmac_{algorithm}_keyword_timestamp",
             supported=bool(secret),
             confidence="medium" if secret else "low",
-            description="HMAC-SHA256 over a keyword/timestamp message.",
+            description=f"HMAC-{display_algorithm} over a keyword/timestamp message.",
             dependencies=["python-stdlib:hashlib", "python-stdlib:hmac"],
             template=template,
             salt=secret or "",
-            confidence_reason="Detected HMAC-SHA256 marker." + (" Literal secret was extracted." if secret else " Secret/key is dynamic or unavailable."),
-            positive_markers=["hmac", "sha256"],
+            confidence_reason=f"Detected HMAC-{display_algorithm} marker." + (" Literal secret was extracted." if secret else " Secret/key is dynamic or unavailable."),
+            positive_markers=["hmac", algorithm],
             caveats=[] if secret else ["secret/key is dynamic or unavailable"],
         )
-    for algorithm in ("md5", "sha1", "sha256"):
-        subtle_name = "sha-256" if algorithm == "sha256" else "sha-1" if algorithm == "sha1" else algorithm
+    for algorithm in ("md5", "sha1", "sha256", "sha512"):
+        subtle_name = _webcrypto_algorithm_name(algorithm)
         patterns = [
             rf"\bcryptojs\.{algorithm}\b",
             rf"\bcrypto\.createhash\(['\"]{algorithm}['\"]\)",
@@ -238,10 +241,14 @@ ALGORITHM_STRATEGY_REGISTRY: tuple[AlgorithmStrategyRule, ...] = (
     AlgorithmStrategyRule(
         rule_id="crypto_hash",
         emits=(
+            "hmac_md5_keyword_timestamp",
+            "hmac_sha1_keyword_timestamp",
             "hmac_sha256_keyword_timestamp",
+            "hmac_sha512_keyword_timestamp",
             "md5_keyword_timestamp",
             "sha1_keyword_timestamp",
             "sha256_keyword_timestamp",
+            "sha512_keyword_timestamp",
         ),
         detector=_detect_crypto_hash_strategy,
         description="Detect hashlib / HMAC-compatible JavaScript hash flows.",
@@ -403,6 +410,14 @@ def _detect_message_template(source_context: str) -> str:
     return "keyword_colon_timestamp"
 
 
+def _webcrypto_algorithm_name(algorithm: str) -> str:
+    return {
+        "sha1": "sha-1",
+        "sha256": "sha-256",
+        "sha512": "sha-512",
+    }.get(algorithm, algorithm)
+
+
 def _has_crypto_marker(source_context: str) -> bool:
     lowered = source_context.lower()
     return any(
@@ -417,14 +432,20 @@ def _has_crypto_marker(source_context: str) -> bool:
             "sha-1",
             "sha256",
             "sha-256",
+            "sha512",
+            "sha-512",
         )
     )
 
 
 def _extract_literal_secret(source_context: str) -> str | None:
-    arg = _extract_hmac_second_argument(source_context)
-    if not arg:
+    call = _extract_hmac_call(source_context)
+    if call is None:
         return None
+    return _extract_literal_secret_from_argument(source_context, call["secret_argument"])
+
+
+def _extract_literal_secret_from_argument(source_context: str, arg: str) -> str | None:
     literal = _strip_js_string_literal(arg)
     if literal is not None:
         return literal
@@ -439,15 +460,26 @@ def _extract_literal_secret(source_context: str) -> str | None:
     return None
 
 
-def _extract_hmac_second_argument(source_context: str) -> str | None:
+def _extract_hmac_call(source_context: str) -> dict[str, str] | None:
     match = re.search(
-        r"(?:hmac(?:sha256)?|HmacSHA256)\s*\(\s*(?:`[^`]*`|[^,]+)\s*,\s*([^)]+?)\s*\)",
+        r"(?:CryptoJS\.)?(?P<name>hmac(?:md5|sha1|sha256|sha512)|Hmac(?:MD5|SHA1|SHA256|SHA512))\s*\(\s*(?:`[^`]*`|[^,]+)\s*,\s*(?P<secret>[^)]+?)\s*\)",
         source_context,
         flags=re.IGNORECASE | re.DOTALL,
     )
     if not match:
         return None
-    return match.group(1).strip()
+    algorithm = _hmac_algorithm_from_name(match.group("name"))
+    if not algorithm:
+        return None
+    return {"algorithm": algorithm, "secret_argument": match.group("secret").strip()}
+
+
+def _hmac_algorithm_from_name(name: str) -> str | None:
+    normalized = name.lower()
+    for algorithm in ("sha512", "sha256", "sha1", "md5"):
+        if algorithm in normalized:
+            return algorithm
+    return None
 
 
 def _strip_js_string_literal(value: str) -> str | None:

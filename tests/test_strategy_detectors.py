@@ -20,7 +20,11 @@ class StrategyDetectorTests(unittest.TestCase):
         self.assertIn("md5_keyword_timestamp", emitted)
         self.assertIn("sha1_keyword_timestamp", emitted)
         self.assertIn("sha256_keyword_timestamp", emitted)
+        self.assertIn("sha512_keyword_timestamp", emitted)
+        self.assertIn("hmac_md5_keyword_timestamp", emitted)
+        self.assertIn("hmac_sha1_keyword_timestamp", emitted)
         self.assertIn("hmac_sha256_keyword_timestamp", emitted)
+        self.assertIn("hmac_sha512_keyword_timestamp", emitted)
         self.assertIn("base64_keyword_timestamp", emitted)
         self.assertIn("urlencode_keyword_timestamp", emitted)
 
@@ -49,11 +53,42 @@ class StrategyDetectorTests(unittest.TestCase):
                 "keyword_timestamp",
             ),
             (
+                """async function buildSign(keyword, timestamp) {
+  return crypto.subtle.digest('SHA-512', new TextEncoder().encode(`${keyword}:${timestamp}`));
+}""",
+                "sha512_keyword_timestamp",
+                "keyword_colon_timestamp",
+            ),
+            (
+                """function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacMD5(`${keyword}:${timestamp}`, secret).toString();
+}""",
+                "hmac_md5_keyword_timestamp",
+                "keyword_colon_timestamp",
+            ),
+            (
+                """function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacSHA1(`${keyword}:${timestamp}`, secret).toString();
+}""",
+                "hmac_sha1_keyword_timestamp",
+                "keyword_colon_timestamp",
+            ),
+            (
                 """function buildSign(keyword, timestamp) {
   const secret = 'fixture-secret';
   return hmacSha256(`${keyword}:${timestamp}`, secret);
 }""",
                 "hmac_sha256_keyword_timestamp",
+                "keyword_colon_timestamp",
+            ),
+            (
+                """function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacSHA512(`${keyword}:${timestamp}`, secret).toString();
+}""",
+                "hmac_sha512_keyword_timestamp",
                 "keyword_colon_timestamp",
             ),
             (
@@ -121,6 +156,28 @@ class StrategyDetectorTests(unittest.TestCase):
         )
         self.assertEqual(strategy["id"], "hmac_sha256_keyword_timestamp")
         self.assertTrue(strategy["supported"])
+        self.assertEqual(strategy["salt"], "fixture-secret")
+
+    def test_hmac_sha256_is_not_downgraded_by_unrelated_md5_marker(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  const marker = CryptoJS.MD5('probe').toString();
+  const secret = 'fixture-secret';
+  return hmacSha256(`${keyword}:${timestamp}`, secret);
+}"""
+        )
+        self.assertEqual(strategy["id"], "hmac_sha256_keyword_timestamp")
+        self.assertEqual(strategy["salt"], "fixture-secret")
+
+    def test_hmac_sha512_is_not_downgraded_by_unrelated_sha256_marker(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  const marker = CryptoJS.SHA256('probe').toString();
+  const secret = 'fixture-secret';
+  return CryptoJS.HmacSHA512(`${keyword}:${timestamp}`, secret).toString();
+}"""
+        )
+        self.assertEqual(strategy["id"], "hmac_sha512_keyword_timestamp")
         self.assertEqual(strategy["salt"], "fixture-secret")
 
     def test_client_ip_argument_does_not_trigger_vm_triage(self) -> None:

@@ -179,7 +179,7 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
         timestamp = current_millis()
     return f"sig_{keyword}_{timestamp}"
 '''
-    elif strategy_id in {"md5_keyword_timestamp", "sha1_keyword_timestamp", "sha256_keyword_timestamp"}:
+    elif strategy_id in {"md5_keyword_timestamp", "sha1_keyword_timestamp", "sha256_keyword_timestamp", "sha512_keyword_timestamp"}:
         algorithm = strategy_id.split("_", 1)[0]
         context_binding = _select_runtime_context_binding(runtime_context, extraction)
         context_constant = f"{context_binding[0]} = {context_binding[1]!r}\n" if context_binding else ""
@@ -206,12 +206,19 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
         timestamp = current_millis()
     return getattr(hashlib, HASH_ALGORITHM)(_message(keyword, timestamp).encode("utf-8")).hexdigest()
 '''
-    elif strategy_id == "hmac_sha256_keyword_timestamp":
+    elif strategy_id in {
+        "hmac_md5_keyword_timestamp",
+        "hmac_sha1_keyword_timestamp",
+        "hmac_sha256_keyword_timestamp",
+        "hmac_sha512_keyword_timestamp",
+    }:
+        hmac_algorithm = str(strategy_id).removeprefix("hmac_").split("_keyword_timestamp", 1)[0]
         body = f'''import hashlib
 import hmac
 
 
 HMAC_SECRET = {salt!r}
+HMAC_ALGORITHM = {hmac_algorithm!r}
 SOURCE_TEMPLATE = {template!r}
 SOURCE_SALT = HMAC_SECRET
 
@@ -229,7 +236,7 @@ def _message(keyword: str, timestamp: int) -> str:
 def build_sign(keyword: str, timestamp: int | None = None) -> str:
     if timestamp is None:
         timestamp = current_millis()
-    return hmac.new(HMAC_SECRET.encode("utf-8"), _message(keyword, timestamp).encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(HMAC_SECRET.encode("utf-8"), _message(keyword, timestamp).encode("utf-8"), getattr(hashlib, HMAC_ALGORITHM)).hexdigest()
 '''
     elif strategy_id == "base64_keyword_timestamp":
         context_binding = _select_runtime_context_binding(runtime_context, extraction)
