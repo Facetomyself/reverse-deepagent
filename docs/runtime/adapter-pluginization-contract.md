@@ -122,7 +122,7 @@ Future backend examples:
 - `IosFridaConfig`
 - `MiniProgramCliConfig`
 
-The Android planning boundary is documented in [`android-adapter-interface.md`](android-adapter-interface.md), and the iOS boundary is documented in [`ios-adapter-interface.md`](ios-adapter-interface.md). They deliberately treat app/process instrumentation as separate runtime shapes instead of overloading Web browser session semantics.
+The Android planning boundary is documented in [`android-adapter-interface.md`](android-adapter-interface.md), the iOS boundary is documented in [`ios-adapter-interface.md`](ios-adapter-interface.md), and the mini-program boundary is documented in [`mini-program-adapter-interface.md`](mini-program-adapter-interface.md). They deliberately treat app/process/container instrumentation as separate runtime shapes instead of overloading Web browser session semantics.
 
 ## Artifact manifest contract
 

@@ -24,6 +24,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - WASM / VM / heavy obfuscation triage contract documenting when protected flows must remain partial or runtime-assisted instead of fake pure-Python rebuilds.
 - Android runtime adapter interface draft for future ADB / Frida / static APK backends without Web-only browser session assumptions.
 - iOS runtime adapter interface draft for future Frida / simulator / static IPA backends without Web-only browser session assumptions.
+- Mini-program runtime adapter interface draft for future developer-tool / JSCore / request-bridge backends without normal-browser assumptions.
 
 ## [0.1.0] - 2026-05-27
 
