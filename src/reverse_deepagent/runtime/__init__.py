@@ -2,6 +2,7 @@ from .base import (
     BrowserSessionInfo,
     PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES,
     ReverseRuntime,
+    WebReverseRuntime,
     RuntimeArtifactManifest,
     RuntimeArtifactManifestEntry,
     RuntimeBackendCapabilities,
@@ -29,6 +30,7 @@ __all__ = [
     "RuntimeExportBundle",
     "StdioMcpBridge",
     "WEB_ARTIFACT_CATEGORY_ALIASES",
+    "WebReverseRuntime",
     "ensure_chrome_debug",
     "stop_chrome_debug",
 ]

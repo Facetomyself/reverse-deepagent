@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
-from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ConfidenceLevel, ExecutionStatus, FinalResult, RebuildResult, TaskCard
+from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ConfidenceLevel, ExecutionStatus, FinalResult, RebuildResult, ReviewHint, TaskCard
 from reverse_deepagent.strategies import (
     ALGORITHM_STRATEGY_REGISTRY,
     AlgorithmStrategyRule,
@@ -601,13 +601,13 @@ def _build_review_hints(
 
 
 def _review_hint(*, severity: str, category: str, code: str, message: str, evidence: list[str]) -> dict[str, Any]:
-    return {
-        "severity": severity,
-        "category": category,
-        "code": code,
-        "message": message,
-        "evidence": evidence,
-    }
+    return ReviewHint(
+        severity=severity,
+        category=category,
+        code=code,
+        message=message,
+        evidence=evidence,
+    ).model_dump(mode="json")
 
 
 def _validation_is_ready(validation: dict[str, Any]) -> bool:

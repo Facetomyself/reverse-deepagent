@@ -32,18 +32,24 @@ runtime = build_runtime("mock")
 
 ## Required runtime interface
 
-A backend must implement `ReverseRuntime`:
+A backend must implement the platform-neutral `ReverseRuntime` base contract:
 
 ```python
 class ReverseRuntime(ABC):
     def describe_capabilities(self) -> RuntimeBackendCapabilities: ...
-    def ensure_browser_session(self) -> BrowserSessionInfo: ...
-    def run_web_recon(self, task_card: TaskCard, route_result: RouterResult) -> ReconResult: ...
     def apply_minimal_protection(self, protection_name: str, context: dict | None = None) -> ProtectionResult: ...
     def export_reverse_artifacts(self, final_result: FinalResult | None = None) -> RuntimeExportBundle: ...
 ```
 
-The interface is Web-first today because the implemented recon path is Web / JS. Future Android, iOS, and mini-program backends should still start by filling capability metadata before adding platform-specific orchestration.
+Web/browser backends additionally implement `WebReverseRuntime`:
+
+```python
+class WebReverseRuntime(ReverseRuntime):
+    def ensure_browser_session(self) -> BrowserSessionInfo: ...
+    def run_web_recon(self, task_card: TaskCard, route_result: RouterResult) -> ReconResult: ...
+```
+
+`run_reverse_pipeline(...)` is the Web pipeline entrypoint and rejects non-`WebReverseRuntime` adapters. Android, iOS, and mini-program backends should not overload `ensure_browser_session()` to mean “attach app process” or “open project”; they should stay on `ReverseRuntime` and expose platform-specific orchestration through separate capability layers.
 
 ## Capability metadata
 
@@ -217,7 +223,7 @@ The project can then add Android-specific methods or higher-level workflows with
 ## Implementation checklist for a new backend
 
 1. Define a serializable config object.
-2. Implement or wrap `ReverseRuntime`.
+2. Implement or wrap `ReverseRuntime`; implement `WebReverseRuntime` only for genuine browser/Web backends.
 3. Implement `describe_capabilities()`.
 4. Register the backend in `RuntimeBackendRegistry` with aliases.
 5. Add tests for metadata listing without starting external processes.
@@ -227,7 +233,7 @@ The project can then add Android-specific methods or higher-level workflows with
 
 ## Current limitations
 
-- `run_web_recon(...)` is still Web-specific.
-- `ReverseRuntime` does not yet expose mobile-specific operations.
+- `run_reverse_pipeline(...)` is still the Web-specific orchestrator; platform-neutral pipelines are not implemented yet.
+- `ReverseRuntime` intentionally does not expose mobile-specific operations yet; future adapters should add separate capability layers rather than reusing browser method names.
 - The registry is in-process Python registration, not package entry-point plugin loading.
 - Real MCP smoke still requires a self-hosted runner with Chrome and JSReverser MCP installed.

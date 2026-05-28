@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from reverse_deepagent.runtime.base import ReverseRuntime
+from reverse_deepagent.runtime.base import WebReverseRuntime
 from reverse_deepagent.schemas import ReconResult
 from reverse_deepagent.tools.browser_tools import make_ensure_browser_session_tool
 from reverse_deepagent.tools.recon_tools import make_run_web_recon_tool
@@ -17,7 +17,7 @@ def load_web_recon_prompt(prompt_path: str | Path | None = None) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def build_web_recon_subagent(runtime: ReverseRuntime, prompt_path: str | Path | None = None) -> dict[str, Any]:
+def build_web_recon_subagent(runtime: WebReverseRuntime, prompt_path: str | Path | None = None) -> dict[str, Any]:
     return {
         "name": WEB_RECON_SUBAGENT_NAME,
         "description": WEB_RECON_SUBAGENT_DESCRIPTION,

@@ -1,11 +1,11 @@
 import unittest
 
 from reverse_deepagent.runtime import RuntimeBackendCapabilities, RuntimeBackendRegistration, RuntimeBackendRegistry
-from reverse_deepagent.runtime.base import BrowserSessionInfo, ReverseRuntime, RuntimeExportBundle
+from reverse_deepagent.runtime.base import BrowserSessionInfo, ReverseRuntime, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import ProtectionResult, ReconResult, RouterResult, TaskCard
 
 
-class DummyRuntime(ReverseRuntime):
+class DummyRuntime(WebReverseRuntime):
     def ensure_browser_session(self) -> BrowserSessionInfo:
         return BrowserSessionInfo(healthy=True)
 
@@ -19,7 +19,23 @@ class DummyRuntime(ReverseRuntime):
         return RuntimeExportBundle(final_result=final_result)
 
 
+class NonWebRuntime(ReverseRuntime):
+    def apply_minimal_protection(self, protection_name: str, context: dict | None = None) -> ProtectionResult:
+        raise NotImplementedError
+
+    def export_reverse_artifacts(self, final_result=None) -> RuntimeExportBundle:
+        return RuntimeExportBundle(final_result=final_result)
+
+
 class RuntimeRegistryTests(unittest.TestCase):
+
+    def test_platform_neutral_runtime_does_not_require_browser_methods(self) -> None:
+        runtime = NonWebRuntime()
+        self.assertIsInstance(runtime, ReverseRuntime)
+        self.assertNotIsInstance(runtime, WebReverseRuntime)
+        self.assertFalse(hasattr(runtime, "ensure_browser_session"))
+        self.assertFalse(hasattr(runtime, "run_web_recon"))
+
     def test_registry_resolves_aliases_and_lists_metadata(self) -> None:
         registry = RuntimeBackendRegistry()
         registry.register(

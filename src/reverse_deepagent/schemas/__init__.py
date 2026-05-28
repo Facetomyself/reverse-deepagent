@@ -12,7 +12,7 @@ from .common import (
 )
 from .final_result import FinalResult
 from .protection_result import ProtectionResult
-from .rebuild_result import RebuildResult
+from .rebuild_result import RebuildResult, ReviewHint
 from .recon_result import ReconResult
 from .router_result import RouterResult
 from .task_card import TaskCard
@@ -28,6 +28,7 @@ __all__ = [
     "KeyFindings",
     "ProtectionResult",
     "RebuildResult",
+    "ReviewHint",
     "ReconResult",
     "ReverseMode",
     "ReverseStage",

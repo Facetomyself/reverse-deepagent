@@ -7,12 +7,11 @@ name = "reverse-deepagent"
 version = "0.1.0"
 description = "Reverse-engineering oriented deepagents demo for Web / JS workflows."
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
 requires-python = ">=3.11"
 keywords = ["deepagents", "reverse-engineering", "javascript", "web", "automation"]
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
 ]

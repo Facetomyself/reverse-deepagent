@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
-from reverse_deepagent.runtime.base import BrowserSessionInfo, ReverseRuntime, RuntimeBackendCapabilities, RuntimeExportBundle
+from reverse_deepagent.runtime.base import BrowserSessionInfo, WebReverseRuntime, RuntimeBackendCapabilities, RuntimeExportBundle
 from reverse_deepagent.runtime.mcp_stdio import StdioMcpBridge
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -112,7 +112,7 @@ def create_jsreverser_mcp_runtime(
 
 
 @dataclass(slots=True)
-class JSReverserRuntime(ReverseRuntime):
+class JSReverserRuntime(WebReverseRuntime):
     """Runtime adapter backed by JSReverser capabilities."""
 
     bridge: JSReverserBridge

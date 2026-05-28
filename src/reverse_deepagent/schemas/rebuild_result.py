@@ -1,10 +1,24 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from .common import ArtifactRef, ConfidenceLevel, ExecutionStatus, ReverseStage, SchemaBaseModel
+
+
+class ReviewHint(SchemaBaseModel):
+    """Machine-readable review hint emitted with rebuild plans.
+
+    These hints are consumed by humans, CI gates, and review subagents to block
+    misleading pure-Python delivery when runtime evidence is incomplete.
+    """
+
+    severity: Literal["info", "warning", "risk"] = Field(description="Review severity used by delivery gates.")
+    category: str = Field(description="Stable hint category, such as strategy, replay, runtime_context, or manual_port.")
+    code: str = Field(description="Stable machine-readable hint code.")
+    message: str = Field(description="Human-readable review message.")
+    evidence: list[str] = Field(default_factory=list, description="Short evidence strings supporting the hint.")
 
 
 class RebuildResult(SchemaBaseModel):

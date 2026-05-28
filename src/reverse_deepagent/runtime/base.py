@@ -103,10 +103,12 @@ class RuntimeArtifactManifest(SchemaBaseModel):
 
 
 class ReverseRuntime(ABC):
-    """Stable execution interface consumed by the agent layer.
+    """Platform-neutral execution interface consumed by the agent layer.
 
-    Implementations may use MCP, CLI, CDP, Playwright, or mobile tooling behind the scenes,
-    but orchestration code should only depend on this interface.
+    This base contract intentionally does not require browser concepts. Android,
+    iOS, mini-program, CLI, or static-analysis runtimes can implement this class
+    without pretending that an app process or project workspace is a browser tab.
+    Web-only capabilities live on :class:`WebReverseRuntime`.
     """
 
     def describe_capabilities(self) -> RuntimeBackendCapabilities:
@@ -119,17 +121,26 @@ class ReverseRuntime(ABC):
         )
 
     @abstractmethod
+    def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
+        """Apply a runtime-specific minimal protection patch for a blocked scenario."""
+
+    @abstractmethod
+    def export_reverse_artifacts(self, final_result: FinalResult | None = None) -> RuntimeExportBundle:
+        """Export runtime artifacts such as reports, sessions, or rebuild bundles."""
+
+
+class WebReverseRuntime(ReverseRuntime):
+    """Web/browser-specific runtime contract.
+
+    Only runtimes that genuinely expose browser/CDP/Web recon semantics should
+    implement this interface. Non-Web adapters should stay on ``ReverseRuntime``
+    and provide platform-specific tools through their own capability layer.
+    """
+
+    @abstractmethod
     def ensure_browser_session(self) -> BrowserSessionInfo:
         """Ensure the runtime browser session is reachable and ready."""
 
     @abstractmethod
     def run_web_recon(self, task_card: TaskCard, route_result: RouterResult) -> ReconResult:
         """Run the minimal Web recon flow and return a structured recon result."""
-
-    @abstractmethod
-    def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
-        """Apply the minimal protection patch for a blocked scenario."""
-
-    @abstractmethod
-    def export_reverse_artifacts(self, final_result: FinalResult | None = None) -> RuntimeExportBundle:
-        """Export runtime artifacts such as reports, sessions, or rebuild bundles."""

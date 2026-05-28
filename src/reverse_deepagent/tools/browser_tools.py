@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from reverse_deepagent.runtime.base import ReverseRuntime
+from reverse_deepagent.runtime.base import WebReverseRuntime
 
 
 BrowserTool = Callable[..., dict[str, Any]]
 
 
-def make_ensure_browser_session_tool(runtime: ReverseRuntime) -> BrowserTool:
+def make_ensure_browser_session_tool(runtime: WebReverseRuntime) -> BrowserTool:
     """Create a tool wrapper that exposes normalized browser session state."""
 
     def ensure_browser_session() -> dict[str, Any]:

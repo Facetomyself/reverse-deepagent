@@ -156,7 +156,7 @@ Keychain / Secure Enclave / server-bound flows should default to runtime-assiste
 - iOS runtime evidence must be normalized into `EvidenceItem` objects.
 - Artifacts must flow through `RuntimeArtifactManifest` with `target_platforms=["ios"]`.
 - Generated delivery risks must be represented as `review_hints`.
-- Do not overload `ensure_browser_session()` to mean “attach to iOS app”. Add a platform route or optional runtime method instead.
+- iOS adapters should implement platform-neutral `ReverseRuntime` and expose simulator/device/app operations through iOS-specific capability layers. Do not implement `WebReverseRuntime` or overload `ensure_browser_session()` to mean “attach to iOS app”.
 
 ## Minimal implementation checklist
 

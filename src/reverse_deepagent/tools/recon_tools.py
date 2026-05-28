@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from reverse_deepagent.runtime.base import ReverseRuntime
+from reverse_deepagent.runtime.base import WebReverseRuntime
 from reverse_deepagent.schemas import RouterResult, TaskCard
 
 
 ReconTool = Callable[..., dict[str, Any]]
 
 
-def make_run_web_recon_tool(runtime: ReverseRuntime) -> ReconTool:
+def make_run_web_recon_tool(runtime: WebReverseRuntime) -> ReconTool:
     """Create a tool wrapper that runs Web recon through the runtime adapter."""
 
     def run_web_recon(task_card_json: str, route_result_json: str) -> dict[str, Any]:

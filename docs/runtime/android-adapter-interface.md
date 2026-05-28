@@ -162,7 +162,7 @@ Coordinator code should not call ADB / Frida directly. It should interact throug
 - `RuntimeArtifactManifest` for backend-aware artifacts.
 - `review_hints` for generated delivery risk.
 
-If the current `ReverseRuntime` interface is too Web-shaped for Android, add a higher-level platform route or optional capability method. Do not overload `ensure_browser_session()` to mean “ensure Android app process”.
+Android adapters should implement platform-neutral `ReverseRuntime` and expose app/process operations through Android-specific capability layers. Do not implement `WebReverseRuntime` or overload `ensure_browser_session()` to mean “ensure Android app process”.
 
 ## Minimal implementation checklist
 

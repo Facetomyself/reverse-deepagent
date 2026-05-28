@@ -6,6 +6,7 @@ from reverse_deepagent.schemas import (
     FinalResult,
     KeyFindings,
     RebuildResult,
+    ReviewHint,
     ReconResult,
     ReverseMode,
     ReverseStage,
@@ -103,6 +104,26 @@ class SchemaImportTests(unittest.TestCase):
             ],
         )
         self.assertEqual(manifest.model_dump(mode="json")["entries"][0]["kind"], "json")
+
+
+    def test_review_hint_schema_rejects_extra_fields(self) -> None:
+        hint = ReviewHint(
+            severity="risk",
+            category="replay",
+            code="sample_replay_not_ok",
+            message="Replay evidence is not ready.",
+            evidence=["replay_result.ok=False"],
+        )
+        self.assertEqual(hint.model_dump(mode="json")["severity"], "risk")
+        with self.assertRaises(Exception):
+            ReviewHint(
+                severity="risk",
+                category="replay",
+                code="bad",
+                message="extra field should fail",
+                evidence=[],
+                unexpected=True,
+            )
 
     def test_platform_neutral_artifact_category_vocab_is_exported(self) -> None:
         self.assertIn("runtime-context", PLATFORM_NEUTRAL_ARTIFACT_CATEGORIES)

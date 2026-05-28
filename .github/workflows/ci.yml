@@ -25,3 +25,49 @@ jobs:
           python -m pip install -e .
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+
+  package-smoke:
+    runs-on: macos-latest
+    needs: tests
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build wheel
+        run: |
+          python -m pip install -U pip build
+          python -m build --wheel --outdir dist
+      - name: Install wheel in clean venv
+        run: |
+          python -m venv "$RUNNER_TEMP/reverse-agent-wheel-venv"
+          "$RUNNER_TEMP/reverse-agent-wheel-venv/bin/python" -m pip install -U pip
+          "$RUNNER_TEMP/reverse-agent-wheel-venv/bin/python" -m pip install dist/*.whl
+      - name: Run wheel console smoke
+        run: |
+          VENV="$RUNNER_TEMP/reverse-agent-wheel-venv"
+          "$VENV/bin/reverse-agent-demo" --runtime mock --artifact-root "$RUNNER_TEMP/reverse-agent-wheel-demo"
+          "$VENV/bin/reverse-agent-fixture" --check
+          "$VENV/bin/reverse-agent-fixture-smoke" \
+            --profile base64 \
+            --runtime mock \
+            --artifact-root "$RUNNER_TEMP/reverse-agent-fixture-smoke"
+      - name: Verify packaged resources
+        run: |
+          VENV="$RUNNER_TEMP/reverse-agent-wheel-venv"
+          "$VENV/bin/python" - <<'PY_CHECK'
+          from pathlib import Path
+          from reverse_deepagent.agent import load_coordinator_prompt
+          from reverse_deepagent.runtime.chrome import ChromeDebugConfig
+
+          prompt = load_coordinator_prompt()
+          config = ChromeDebugConfig()
+          assert "Reverse Task Card" in prompt or "任务" in prompt
+          assert Path(config.start_script).exists(), config.start_script
+          assert Path(config.stop_script).exists(), config.stop_script
+          PY_CHECK

@@ -6,7 +6,7 @@ This document isolates assumptions that are intentionally Web-only in the curren
 
 The current public demo is Web / JS first. That is fine, but Web convenience can quietly turn into architecture debt:
 
-- `ensure_browser_session()` sounds universal but really means browser / DevTools readiness.
+- `ensure_browser_session()` now lives on `WebReverseRuntime` and means browser / DevTools readiness only.
 - Chrome debug ports are useful for Web, irrelevant for Android Frida or iOS simulator flows.
 - `document.cookie`, `localStorage`, `navigator`, and replay URL derivation are browser concepts.
 - JSReverser MCP is a concrete Web runtime backend, not the platform abstraction itself.
@@ -17,7 +17,7 @@ The rule: keep Web assumptions inside Web runtime docs, adapters, and paths. Pla
 
 | Assumption | Current location / behavior | Why it is Web-only | Future adapter guidance |
 | --- | --- | --- | --- |
-| Browser session | `ensure_browser_session()` returns `BrowserSessionInfo` with page count, page index, active URL. | Android / iOS app processes and mini-program projects are not browser tabs. | Add platform route or optional methods instead of overloading browser session. |
+| Browser session | `WebReverseRuntime.ensure_browser_session()` returns `BrowserSessionInfo` with page count, page index, active URL. | Android / iOS app processes and mini-program projects are not browser tabs. | Keep non-Web adapters on `ReverseRuntime`; add platform-specific routes instead of overloading browser session. |
 | Chrome debug port | Managed Chrome scripts start/stop a DevTools endpoint for MCP recon. | Mobile and mini-program tooling may use ADB, Frida, simctl, vendor devtools, or JSCore. | Keep transport details in backend config and `producer_transport`. |
 | JSReverser MCP | `mcp` backend normalizes JSReverser MCP tool output. | It is a Web / DevTools-oriented backend. | Other platforms may use CLI, Frida, static analysis, or vendor tool adapters. |
 | DOM / page navigation | Web recon can navigate URLs and inspect pages/scripts. | Native apps and mini-programs use package routes, activities, view controllers, or container pages. | Normalize platform-specific entrypoints as evidence, not fake URLs. |

@@ -154,7 +154,7 @@ Do not confuse “it is JavaScript” with “it is browser JavaScript”. `wx.r
 - Runtime evidence must be normalized into `EvidenceItem` objects.
 - Artifacts must flow through `RuntimeArtifactManifest` with `target_platforms=["mini-program"]`.
 - Generated delivery risks must be represented as `review_hints`.
-- Do not overload `ensure_browser_session()` to mean “open mini-program project”. Add a platform route or optional runtime method instead.
+- Mini-program adapters should implement platform-neutral `ReverseRuntime` and expose project/container operations through mini-program-specific capability layers. Do not implement `WebReverseRuntime` or overload `ensure_browser_session()` to mean “open mini-program project”.
 
 ## Minimal implementation checklist
 

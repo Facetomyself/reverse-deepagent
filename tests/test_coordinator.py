@@ -4,6 +4,16 @@ import json
 from pathlib import Path
 
 from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
+from reverse_deepagent.runtime import ReverseRuntime, RuntimeExportBundle
+from reverse_deepagent.schemas import ProtectionResult
+
+
+class NonWebRuntime(ReverseRuntime):
+    def apply_minimal_protection(self, protection_name: str, context: dict | None = None) -> ProtectionResult:
+        raise NotImplementedError
+
+    def export_reverse_artifacts(self, final_result=None) -> RuntimeExportBundle:
+        return RuntimeExportBundle(final_result=final_result)
 
 
 class CoordinatorTests(unittest.TestCase):
@@ -36,6 +46,17 @@ class CoordinatorTests(unittest.TestCase):
             self.assertEqual(capabilities.config["browser_url"], "http://127.0.0.1:9555")
         finally:
             runtime.close()
+
+
+    def test_web_pipeline_rejects_platform_neutral_non_web_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(TypeError, "does not implement WebReverseRuntime"):
+                run_reverse_pipeline(
+                    task_text="android://demo 找 sign",
+                    artifact_root=Path(tmpdir) / "artifacts",
+                    runtime_kind="mock",
+                    runtime=NonWebRuntime(),
+                )
 
     def test_run_reverse_pipeline_returns_structured_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

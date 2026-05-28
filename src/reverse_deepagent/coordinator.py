@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlparse
+from urllib.request import urlopen
 
 from pydantic import Field
 
@@ -13,7 +17,7 @@ from reverse_deepagent.adapters.jsreverser import (
     create_jsreverser_mcp_runtime,
 )
 from reverse_deepagent.rebuild import write_rebuild_bundle
-from reverse_deepagent.runtime import RuntimeBackendCapabilities, RuntimeBackendRegistration, RuntimeBackendRegistry
+from reverse_deepagent.runtime import RuntimeBackendCapabilities, RuntimeBackendRegistration, RuntimeBackendRegistry, ReverseRuntime, WebReverseRuntime
 from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactManifestEntry
 from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
 from reverse_deepagent.schemas import FinalResult, KeyFindings, ReconResult, RouterResult, SchemaBaseModel, TaskCard
@@ -30,60 +34,43 @@ class ReversePipelineOutput(SchemaBaseModel):
 
 
 class MockJSReverserBridge:
-    """Deterministic JSReverser bridge for local demo and contract validation."""
+    """Deterministic JSReverser bridge for local demo and contract validation.
+
+    The mock backend is intentionally profile-aware for localhost fixture URLs:
+    it reads the fixture ``/app.js`` source, exposes matching network/source
+    evidence, and returns validation samples that agree with the selected
+    fixture profile. Non-fixture demo runs keep the historical static example.
+    """
+
+    def __init__(self, active_url: str = "https://example.com/search") -> None:
+        self.active_url = active_url
+        self._source_cache: dict[str, str] = {}
+        self._health_cache: dict[str, Any] = {}
 
     def invoke(self, tool_name: str, params: dict[str, Any]) -> Any:
         if tool_name == "check_browser_health":
             return {"status": "ok", "connected": True}
         if tool_name == "list_pages":
-            target_url = "https://example.com/search"
-            return {"pages": [{"pageIdx": 0, "url": target_url, "selected": True}]}
+            return {"pages": [{"pageIdx": 0, "url": self.active_url, "selected": True}]}
         if tool_name == "new_page":
-            return {"ok": True, "created": True, "url": params.get("url")}
+            self.active_url = str(params.get("url") or self.active_url)
+            return {"ok": True, "created": True, "url": self.active_url}
         if tool_name == "navigate_page":
-            return {"ok": True, "navigated": True, "url": params.get("url")}
+            self.active_url = str(params.get("url") or self.active_url)
+            return {"ok": True, "navigated": True, "url": self.active_url}
         if tool_name == "network_request":
-            return {
-                "requests": [
-                    {"id": 101, "url": "https://example.com/api/search", "method": "POST"},
-                    {"id": 102, "url": "https://example.com/api/bootstrap", "method": "GET"},
-                ]
-            }
+            return {"requests": self._network_requests()}
         if tool_name == "search_in_sources":
-            query = params.get("query", "unknown-target")
-            return {
-                "results": [
-                    {
-                        "scriptId": "1",
-                        "url": "https://example.com/static/app.js",
-                        "lineNumber": 120,
-                        "preview": f"const token = build('{query}')",
-                    },
-                ]
-            }
+            return {"results": [self._source_hit(params.get("query", "sign"))]}
         if tool_name == "evaluate_script" and "__REVERSE_AGENT_VALIDATE_CANDIDATE__" in str(params.get("function", "")):
-            return {
-                "ok": True,
-                "result": {
-                    "marker": "__REVERSE_AGENT_VALIDATE_CANDIDATE__",
-                    "function_name": "buildSign",
-                    "located": True,
-                    "callable_path": "window.reverseFixture.buildSign",
-                    "invocation_ok": True,
-                    "invocation_result_type": "string",
-                    "sign": "sig_sign_1700000000000",
-                    "sign_shape_ok": True,
-                    "replay_result": {
-                        "attempted": True,
-                        "ok": True,
-                        "status": 200,
-                        "echoed_sign": "sig_sign_1700000000000",
-                    },
-                    "runtime_url": "https://example.com/search",
-                },
-            }
+            return {"ok": True, "result": self._validation_result()}
         if tool_name == "evaluate_script":
-            return {"ok": True, "result": {"readyState": "complete"}}
+            function_source = str(params.get("function", ""))
+            if "dumpStorage" in function_source or "navigator" in function_source:
+                return {"ok": True, "result": self._runtime_environment()}
+            return {"ok": True, "result": {"readyState": "complete", "url": self.active_url}}
+        if tool_name == "get_storage":
+            return self._storage_payload()
         if tool_name == "get_request_initiator":
             return {
                 "requestId": params.get("requestId"),
@@ -95,13 +82,150 @@ class MockJSReverserBridge:
                 "scriptId": params.get("scriptId"),
                 "startLine": params.get("startLine"),
                 "endLine": params.get("endLine"),
-                "source": "function buildSign(keyword, timestamp) {\n  return `sig_${keyword}_${timestamp}`;\n}",
+                "source": self._source_text(),
             }
         if tool_name == "inject_preload_script":
             return {"ok": True}
         if tool_name == "export_session_report":
-            return {"ok": True, "format": params.get("format", "json"), "items": 3}
+            return {"ok": True, "format": params.get("format", "json"), "items": 3, "active_url": self.active_url}
         raise RuntimeError(f"Unsupported mock tool: {tool_name}")
+
+    def _network_requests(self) -> list[dict[str, Any]]:
+        if self._is_fixture_url():
+            return [
+                {"id": 101, "url": urljoin(self.active_url.rstrip("/") + "/", "api/search"), "method": "POST"},
+                {"id": 102, "url": urljoin(self.active_url.rstrip("/") + "/", "app.js"), "method": "GET"},
+            ]
+        return [
+            {"id": 101, "url": "https://example.com/api/search", "method": "POST"},
+            {"id": 102, "url": "https://example.com/api/bootstrap", "method": "GET"},
+        ]
+
+    def _source_hit(self, query: Any) -> dict[str, Any]:
+        source = self._source_text()
+        line_number = self._build_sign_line_number(source)
+        preview = self._line_at(source, line_number) or f"const token = build('{query}')"
+        return {
+            "scriptId": "fixture-app" if self._is_fixture_url() else "1",
+            "url": urljoin(self.active_url.rstrip("/") + "/", "app.js") if self._is_fixture_url() else "https://example.com/static/app.js",
+            "lineNumber": line_number,
+            "preview": preview,
+        }
+
+    def _validation_result(self) -> dict[str, Any]:
+        sign = self._sample_sign()
+        return {
+            "marker": "__REVERSE_AGENT_VALIDATE_CANDIDATE__",
+            "function_name": "buildSign",
+            "located": True,
+            "callable_path": "window.reverseFixture.buildSign",
+            "invocation_ok": True,
+            "invocation_result_type": "string",
+            "sign": sign,
+            "sign_shape_ok": bool(sign),
+            "replay_result": {
+                "attempted": True,
+                "ok": bool(sign),
+                "status": 200,
+                "echoed_sign": sign,
+                "body": {"headers": {"x-sign": sign, "x-fixture-profile": self._profile()}},
+            },
+            "runtime_url": self.active_url,
+        }
+
+    def _source_text(self) -> str:
+        if not self._is_fixture_url():
+            return "function buildSign(keyword, timestamp) {\n  return `sig_${keyword}_${timestamp}`;\n}"
+        app_js_url = urljoin(self.active_url.rstrip("/") + "/", "app.js")
+        if app_js_url not in self._source_cache:
+            self._source_cache[app_js_url] = self._fetch_text(app_js_url)
+        return self._source_cache[app_js_url]
+
+    def _health(self) -> dict[str, Any]:
+        if not self._is_fixture_url():
+            return {}
+        health_url = urljoin(self.active_url.rstrip("/") + "/", "healthz")
+        if health_url not in self._health_cache:
+            try:
+                self._health_cache[health_url] = json.loads(self._fetch_text(health_url))
+            except Exception:
+                self._health_cache[health_url] = {}
+        return self._health_cache[health_url] if isinstance(self._health_cache[health_url], dict) else {}
+
+    def _profile(self) -> str:
+        return str(self._health().get("profile") or "default")
+
+    def _sample_sign(self) -> str:
+        keyword = "sign"
+        timestamp = 1700000000000
+        profile = self._profile()
+        if not self._is_fixture_url():
+            return f"sig_{keyword}_{timestamp}"
+        raw = f"{keyword}:{timestamp}"
+        if profile == "default":
+            seeded = f"{raw}:reverse-agent-fixture"
+            digest = sum(ord(char) for char in seeded) % 100000
+            return f"sig_{digest:x}_{timestamp}"
+        if profile == "md5":
+            return hashlib.md5(raw.encode("utf-8")).hexdigest()  # noqa: S324 - deterministic fixture compatibility
+        if profile == "sha1":
+            return hashlib.sha1(raw.encode("utf-8")).hexdigest()  # noqa: S324 - deterministic fixture compatibility
+        if profile == "sha256":
+            return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        if profile == "base64":
+            return base64.b64encode(raw.encode("utf-8")).decode("ascii")
+        if profile == "context-localstorage":
+            return base64.b64encode(f"{raw}:fixture-device".encode("utf-8")).decode("ascii")
+        if profile == "context-cookie":
+            return base64.b64encode(f"{raw}:fixture-cookie-device".encode("utf-8")).decode("ascii")
+        if profile == "context-navigator":
+            return hashlib.sha256(f"{raw}:ReverseDeepAgentMock/1.0".encode("utf-8")).hexdigest()
+        return f"sig_{keyword}_{timestamp}"
+
+    def _storage_payload(self) -> dict[str, Any]:
+        profile = self._profile()
+        return {
+            "localStorage": {"device_id": "fixture-device"} if profile == "context-localstorage" else {},
+            "sessionStorage": {},
+            "cookies": {"device_id": "fixture-cookie-device"} if profile == "context-cookie" else {},
+        }
+
+    def _runtime_environment(self) -> dict[str, Any]:
+        profile = self._profile()
+        return {
+            "cookie": "device_id=fixture-cookie-device" if profile == "context-cookie" else "",
+            "localStorage": {"device_id": "fixture-device"} if profile == "context-localstorage" else {},
+            "sessionStorage": {},
+            "navigator": {
+                "userAgent": "ReverseDeepAgentMock/1.0",
+                "platform": "MacIntel",
+                "language": "zh-CN",
+            },
+            "timezoneOffset": -480,
+        }
+
+    def _is_fixture_url(self) -> bool:
+        parsed = urlparse(self.active_url)
+        return parsed.scheme in {"http", "https"} and parsed.hostname in {"127.0.0.1", "localhost"}
+
+    @staticmethod
+    def _fetch_text(url: str) -> str:
+        with urlopen(url, timeout=5) as response:  # nosec B310 - local fixture smoke only
+            return response.read().decode("utf-8")
+
+    @staticmethod
+    def _build_sign_line_number(source: str) -> int:
+        for index, line in enumerate(source.splitlines(), start=1):
+            if "function buildSign" in line:
+                return index
+        return 1
+
+    @staticmethod
+    def _line_at(source: str, line_number: int) -> str:
+        lines = source.splitlines()
+        if 1 <= line_number <= len(lines):
+            return lines[line_number - 1].strip()
+        return ""
 
 
 def build_markdown_report(final_result: FinalResult) -> str:
@@ -230,8 +354,8 @@ def build_runtime(
     runtime_kind: str,
     browser_url: str | None = None,
     mcp_command: str | None = None,
-) -> JSReverserRuntime:
-    """Build a runtime backend for the coordinator pipeline."""
+) -> ReverseRuntime:
+    """Build a runtime backend by id or alias."""
 
     return DEFAULT_RUNTIME_BACKEND_REGISTRY.create(
         runtime_kind,
@@ -459,7 +583,7 @@ def run_reverse_pipeline(
     ensure_chrome: bool = False,
     keep_chrome: bool = False,
     mcp_command: str | None = None,
-    runtime: JSReverserRuntime | None = None,
+    runtime: WebReverseRuntime | None = None,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
 
@@ -486,6 +610,12 @@ def run_reverse_pipeline(
         browser_url=chrome_config.browser_url if chrome_config else None,
         mcp_command=mcp_command,
     )
+    if not isinstance(active_runtime, WebReverseRuntime):
+        capabilities = active_runtime.describe_capabilities()
+        raise TypeError(
+            f"Runtime backend {capabilities.backend_id!r} does not implement WebReverseRuntime; "
+            "run_reverse_pipeline is the Web pipeline entrypoint."
+        )
     runtime_capabilities = active_runtime.describe_capabilities()
     try:
         recon_result = active_runtime.run_web_recon(task_card=task_card, route_result=route_result)
@@ -493,7 +623,9 @@ def run_reverse_pipeline(
         export_bundle = active_runtime.export_reverse_artifacts(final_result=final_result).model_dump(mode="json")
     finally:
         if owns_runtime and runtime_kind == "mcp":
-            active_runtime.close()
+            close = getattr(active_runtime, "close", None)
+            if callable(close):
+                close()
         if should_stop_chrome:
             chrome_stop = stop_chrome_debug(chrome_config)
 
