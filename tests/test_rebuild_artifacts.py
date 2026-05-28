@@ -1,6 +1,7 @@
 import json
 import base64
 import hashlib
+import hmac
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,8 @@ def _final_result_for_source(
     sample_sign: str,
     *,
     target_url: str = "http://127.0.0.1:8765/",
+    related_request_url: str | None = None,
+    validation_overrides: dict | None = None,
     runtime_context: dict | None = None,
 ) -> FinalResult:
     task_card = TaskCard(
@@ -51,7 +54,7 @@ def _final_result_for_source(
         "script_id": "script",
         "line_number": 1,
         "source_context": source_context,
-        "related_requests": [{"id": 1, "method": "POST", "url": f"{target_url.rstrip('/')}/api/search"}],
+        "related_requests": [{"id": 1, "method": "POST", "url": related_request_url or f"{target_url.rstrip('/')}/api/search"}],
     }
     validation = {
         "candidate_id": candidate["candidate_id"],
@@ -69,6 +72,8 @@ def _final_result_for_source(
         "sample_output": {"sign": sample_sign, "callable_path": "window.buildSign", "invocation_result_type": "string"},
         "replay_result": {"attempted": True, "ok": True},
     }
+    if validation_overrides:
+        validation.update(validation_overrides)
     evidence = [
         EvidenceItem(
             summary="candidate",
@@ -189,7 +194,7 @@ class StrategyRegistryTests(unittest.TestCase):
         registry = list_algorithm_strategy_registry()
         self.assertEqual(
             [item["rule_id"] for item in registry],
-            ["deterministic_fixture", "sig_template", "crypto_hash", "encoding"],
+            ["deterministic_fixture", "crypto_hash", "sig_template", "encoding"],
         )
         emitted = {strategy_id for item in registry for strategy_id in item["emits"]}
         self.assertIn("fixture_seed_mod100000", emitted)
@@ -270,6 +275,112 @@ class RebuildArtifactTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_replay_demo_preserves_derived_api_path(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  return CryptoJS.MD5(`${keyword}:${timestamp}`).toString();
+}"""
+        sample_sign = hashlib.md5("sign:1700000000000".encode("utf-8")).hexdigest()
+        final_result = _final_result_for_source(
+            source_context,
+            sample_sign,
+            target_url="http://127.0.0.1:8765/",
+            related_request_url="http://127.0.0.1:8765/api/custom-sign",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            replay_demo = Path(rebuild.generated_files["replay_demo"]).read_text(encoding="utf-8")
+            self.assertIn('DEFAULT_API_PATH = \'/api/custom-sign\'', replay_demo)
+            self.assertIn('urljoin(base_url.rstrip("/") + "/", DEFAULT_API_PATH.lstrip("/"))', replay_demo)
+
+    def test_template_variants_generate_self_checking_sign_rebuilds(self) -> None:
+        cases = [
+            (
+                """function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return hmacSha256(`${keyword}${timestamp}`, secret);
+}""",
+                hmac.new(b"fixture-secret", b"sign1700000000000", hashlib.sha256).hexdigest(),
+                "hmac_sha256_keyword_timestamp",
+            ),
+            (
+                """function buildSign(keyword, timestamp) {
+  return btoa(`${keyword}${timestamp}`);
+}""",
+                base64.b64encode("sign1700000000000".encode("utf-8")).decode("ascii"),
+                "base64_keyword_timestamp",
+            ),
+            (
+                """function buildSign(keyword, timestamp) {
+  return encodeURIComponent(`${keyword}${timestamp}`);
+}""",
+                "sign1700000000000",
+                "urlencode_keyword_timestamp",
+            ),
+        ]
+        for source_context, sample_sign, expected_strategy in cases:
+            with self.subTest(expected_strategy=expected_strategy):
+                final_result = _final_result_for_source(source_context, sample_sign)
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+                    self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+                    self.assertEqual(rebuild.rebuild_plan["algorithm_strategy"]["id"], expected_strategy)
+                    sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+                    result = subprocess.run(
+                        [sys.executable, str(sign_rebuild_path)],
+                        check=True,
+                        text=True,
+                        capture_output=True,
+                    )
+                    self.assertEqual(result.stdout.strip(), sample_sign)
+
+    def test_failed_validation_blocks_runnable_rebuild(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  return CryptoJS.MD5(`${keyword}:${timestamp}`).toString();
+}"""
+        sample_sign = hashlib.md5("sign:1700000000000".encode("utf-8")).hexdigest()
+        final_result = _final_result_for_source(
+            source_context,
+            sample_sign,
+            validation_overrides={
+                "validation_status": "failed",
+                "checks": {
+                    "source_complete": True,
+                    "runtime_located": False,
+                    "runtime_invocation_ok": False,
+                    "sign_shape_ok": False,
+                    "replay_attempted": True,
+                    "replay_ok": False,
+                },
+                "replay_result": {"attempted": True, "ok": False},
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            self.assertIn("README", rebuild.generated_files)
+            hint_codes = {hint["code"] for hint in rebuild.rebuild_plan["review_hints"]}
+            self.assertIn("validation_not_ready", hint_codes)
+            self.assertIn("sample_replay_not_ok", hint_codes)
+
+    def test_missing_replay_url_adds_risk_review_hint(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  return CryptoJS.MD5(`${keyword}:${timestamp}`).toString();
+}"""
+        sample_sign = hashlib.md5("sign:1700000000000".encode("utf-8")).hexdigest()
+        final_result = _final_result_for_source(
+            source_context,
+            sample_sign,
+            target_url="/tmp/local-app.js",
+            related_request_url="/tmp/local-api",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
+            missing_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "missing_replay_url")
+            self.assertEqual(missing_hint["severity"], "risk")
+            self.assertEqual(missing_hint["category"], "replay")
+            self.assertIn("README", rebuild.generated_files)
 
     def test_sha1_strategy_generates_self_checking_sign_rebuild(self) -> None:
         source_context = """async function buildSign(keyword, timestamp) {

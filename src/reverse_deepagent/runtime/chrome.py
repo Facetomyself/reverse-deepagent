@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from importlib import resources
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,9 +17,14 @@ DEFAULT_BROWSER_URL = f"http://{DEFAULT_DEBUG_ADDRESS}:{DEFAULT_DEBUG_PORT}"
 DEFAULT_CHROME_PATH = os.environ.get("CHROME_PATH", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 DEFAULT_USER_DATA_DIR = os.environ.get("REVERSE_AGENT_CHROME_USER_DATA_DIR", str(Path.home() / ".codex/browser-profiles/chrome-jsreverser"))
 DEFAULT_STATE_DIR = os.environ.get("REVERSE_AGENT_STATE_DIR", str(Path.home() / ".codex/run/reverse-deepagent"))
-DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_START_SCRIPT = os.environ.get("REVERSE_AGENT_CHROME_START_SCRIPT", str(DEFAULT_REPO_ROOT / "scripts/start_chrome_debug.sh"))
-DEFAULT_STOP_SCRIPT = os.environ.get("REVERSE_AGENT_CHROME_STOP_SCRIPT", str(DEFAULT_REPO_ROOT / "scripts/stop_chrome_debug.sh"))
+
+
+def _packaged_script_path(name: str) -> str:
+    return str(resources.files("reverse_deepagent").joinpath("scripts", name))
+
+
+DEFAULT_START_SCRIPT = os.environ.get("REVERSE_AGENT_CHROME_START_SCRIPT", _packaged_script_path("start_chrome_debug.sh"))
+DEFAULT_STOP_SCRIPT = os.environ.get("REVERSE_AGENT_CHROME_STOP_SCRIPT", _packaged_script_path("stop_chrome_debug.sh"))
 
 
 class ChromeCommandResult(SchemaBaseModel):
@@ -69,7 +75,7 @@ def ensure_chrome_debug(config: ChromeDebugConfig | None = None, timeout: float 
     """Run the recommended Chrome debug launcher with configurable parameters."""
 
     cfg = config or ChromeDebugConfig()
-    command = [cfg.start_script]
+    command = ["bash", cfg.start_script]
     env = os.environ.copy()
     overrides = cfg.env_overrides()
     env.update(overrides)
@@ -96,7 +102,7 @@ def stop_chrome_debug(config: ChromeDebugConfig | None = None, timeout: float | 
     """Run the recommended Chrome debug stop script with configurable parameters."""
 
     cfg = config or ChromeDebugConfig()
-    command = [cfg.stop_script]
+    command = ["bash", cfg.stop_script]
     env = os.environ.copy()
     overrides = cfg.env_overrides()
     env.update(overrides)

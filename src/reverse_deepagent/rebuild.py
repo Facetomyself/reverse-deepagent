@@ -39,12 +39,14 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
     target_request_url = _pick_target_request_url(task_card, best_candidate)
     replay_url = _derive_replay_url(task_card, target_request_url)
     base_url = _derive_base_url(replay_url or task_card.target_url_or_file)
-    ready = bool(best_validation and strategy["supported"] and (extraction["pure_extractable"] or extraction["context_aware_extractable"]) and replay_url)
+    validation_ready = _validation_is_ready(best_validation)
+    ready = bool(validation_ready and strategy["supported"] and (extraction["pure_extractable"] or extraction["context_aware_extractable"]) and replay_url)
     review_hints = _build_review_hints(
         strategy=strategy,
         extraction=extraction,
         runtime_context=runtime_context,
         validation=best_validation,
+        validation_ready=validation_ready,
         replay_url=replay_url,
         ready=ready,
     )
@@ -210,11 +212,16 @@ import hmac
 
 HMAC_SECRET = {salt!r}
 SOURCE_TEMPLATE = {template!r}
+SOURCE_SALT = HMAC_SECRET
 
 
 def _message(keyword: str, timestamp: int) -> str:
     if SOURCE_TEMPLATE == "keyword_colon_timestamp":
         return f"{{keyword}}:{{timestamp}}"
+    if SOURCE_TEMPLATE == "keyword_timestamp":
+        return f"{{keyword}}{{timestamp}}"
+    if SOURCE_TEMPLATE == "keyword_colon_timestamp_colon_salt":
+        return f"{{keyword}}:{{timestamp}}:{{SOURCE_SALT}}"
     return f"{{keyword}}:{{timestamp}}"
 
 
@@ -232,12 +239,15 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
 
 
 SOURCE_TEMPLATE = {template!r}
+SOURCE_SALT = {salt!r}
 {context_constant}
 def _message(keyword: str, timestamp: int) -> str:
     if SOURCE_TEMPLATE == "keyword_colon_timestamp_colon_salt":
         return f"{{keyword}}:{{timestamp}}:{{{context_value_expression}}}"
     if SOURCE_TEMPLATE == "keyword_colon_timestamp":
         return f"{{keyword}}:{{timestamp}}"
+    if SOURCE_TEMPLATE == "keyword_timestamp":
+        return f"{{keyword}}{{timestamp}}"
     return f"{{keyword}}:{{timestamp}}"
 
 
@@ -251,11 +261,16 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
 
 
 SOURCE_TEMPLATE = {template!r}
+SOURCE_SALT = {salt!r}
 
 
 def _message(keyword: str, timestamp: int) -> str:
     if SOURCE_TEMPLATE == "keyword_colon_timestamp":
         return f"{{keyword}}:{{timestamp}}"
+    if SOURCE_TEMPLATE == "keyword_timestamp":
+        return f"{{keyword}}{{timestamp}}"
+    if SOURCE_TEMPLATE == "keyword_colon_timestamp_colon_salt":
+        return f"{{keyword}}:{{timestamp}}:{{SOURCE_SALT}}"
     return f"{{keyword}}:{{timestamp}}"
 
 
@@ -265,15 +280,24 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
     return base64.b64encode(_message(keyword, timestamp).encode("utf-8")).decode("ascii")
 '''
     elif strategy_id == "urlencode_keyword_timestamp":
+        context_binding = _select_runtime_context_binding(runtime_context, extraction)
+        context_constant = f"{context_binding[0]} = {context_binding[1]!r}\n" if context_binding else ""
+        context_value_expression = context_binding[0] if context_binding else "SOURCE_SALT"
         body = f'''from urllib.parse import quote
 
 
 SOURCE_TEMPLATE = {template!r}
+SOURCE_SALT = {salt!r}
+{context_constant}
 
 
 def _message(keyword: str, timestamp: int) -> str:
     if SOURCE_TEMPLATE == "keyword_colon_timestamp":
         return f"{{keyword}}:{{timestamp}}"
+    if SOURCE_TEMPLATE == "keyword_timestamp":
+        return f"{{keyword}}{{timestamp}}"
+    if SOURCE_TEMPLATE == "keyword_colon_timestamp_colon_salt":
+        return f"{{keyword}}:{{timestamp}}:{{{context_value_expression}}}"
     return f"{{keyword}}:{{timestamp}}"
 
 
@@ -323,6 +347,7 @@ def render_replay_demo(plan: dict[str, Any]) -> str:
     replay = plan.get("replay") or {}
     default_base_url = replay.get("base_url") or "http://127.0.0.1:8765"
     default_api_url = replay.get("api_url") or urljoin(default_base_url.rstrip("/") + "/", "/api/search")
+    default_api_path = urlparse(default_api_url).path or "/api/search"
     sample_input = (plan.get("validation") or {}).get("sample_input") or {}
     sample_keyword = sample_input.get("keyword", "sign")
     return f'''from __future__ import annotations
@@ -336,6 +361,7 @@ from sign_rebuild import build_sign, current_millis, self_check
 
 DEFAULT_BASE_URL = {default_base_url!r}
 DEFAULT_API_URL = {default_api_url!r}
+DEFAULT_API_PATH = {default_api_path!r}
 DEFAULT_KEYWORD = {sample_keyword!r}
 
 
@@ -343,7 +369,7 @@ def replay(base_url: str, keyword: str, timestamp: int | None = None) -> dict:
     if timestamp is None:
         timestamp = current_millis()
     sign = build_sign(keyword, timestamp)
-    api_url = urljoin(base_url.rstrip("/") + "/", "/api/search")
+    api_url = urljoin(base_url.rstrip("/") + "/", DEFAULT_API_PATH.lstrip("/"))
     query = urlencode({{"keyword": keyword, "t": timestamp}})
     payload = {{
         "keyword": keyword,
@@ -456,6 +482,7 @@ def _build_review_hints(
     extraction: dict[str, Any],
     runtime_context: dict[str, Any],
     validation: dict[str, Any],
+    validation_ready: bool,
     replay_url: str,
     ready: bool,
 ) -> list[dict[str, Any]]:
@@ -466,6 +493,17 @@ def _build_review_hints(
     confidence_score = strategy.get("confidence_score") if isinstance(strategy.get("confidence_score"), dict) else {}
     confidence_label = str(confidence_score.get("label") or strategy.get("confidence") or "unknown")
     confidence_value = confidence_score.get("score")
+
+    if validation and not validation_ready:
+        hints.append(
+            _review_hint(
+                severity="risk",
+                category="replay",
+                code="validation_not_ready",
+                message="Runtime validation is incomplete or failed; generated runnable replay artifacts must remain partial.",
+                evidence=_validation_not_ready_evidence(validation),
+            )
+        )
 
     if extraction.get("pure_extractable"):
         hints.append(
@@ -498,17 +536,6 @@ def _build_review_hints(
                 ],
             )
         )
-        volatile_keys = runtime_context.get("volatile_keys") if isinstance(runtime_context, dict) else None
-        if volatile_keys:
-            hints.append(
-                _review_hint(
-                    severity="risk",
-                    category="runtime_context",
-                    code="volatile_runtime_context",
-                    message="Runtime context contains volatile keys; bind them dynamically instead of hard-coding generated constants.",
-                    evidence=[f"volatile_keys={','.join(str(item) for item in volatile_keys)}"],
-                )
-            )
     else:
         missing = [
             item
@@ -535,24 +562,39 @@ def _build_review_hints(
         )
 
     replay_result = validation.get("replay_result") if isinstance(validation, dict) else {}
-    if ready and replay_result and not replay_result.get("ok"):
+    if replay_result and not replay_result.get("ok"):
         hints.append(
             _review_hint(
-                severity="warning",
+                severity="risk" if not ready else "warning",
                 category="replay",
                 code="sample_replay_not_ok",
-                message="Generated files are present, but captured replay result was not successful; re-run replay_demo.py against the target fixture.",
+                message="Captured replay result was not successful; re-run validation before treating delivery as ready.",
                 evidence=[f"replay_result={json.dumps(replay_result, ensure_ascii=False, sort_keys=True)}"],
             )
         )
-    if ready and not replay_url:
+    if not replay_url:
         hints.append(
             _review_hint(
-                severity="warning",
+                severity="risk" if not ready else "warning",
                 category="replay",
                 code="missing_replay_url",
-                message="No concrete replay URL was derived; integrate generated sign code manually into the target request path.",
+                message="No concrete replay URL was derived; integrate generated sign code manually into the target request path before delivery.",
                 evidence=["replay_url="],
+            )
+        )
+    volatile_keys = runtime_context.get("volatile_keys") if isinstance(runtime_context, dict) else None
+    if volatile_keys:
+        hints.append(
+            _review_hint(
+                severity="risk",
+                category="runtime_context",
+                code="volatile_runtime_context",
+                message="Runtime context contains volatile keys; bind them dynamically instead of hard-coding generated constants.",
+                evidence=[
+                    f"volatile_keys={','.join(str(item) for item in volatile_keys)}",
+                    f"runtime_context_required={','.join(str(item) for item in extraction.get('runtime_context_required', []))}",
+                    f"captured_runtime_context={','.join(str(item) for item in extraction.get('captured_runtime_context', []))}",
+                ],
             )
         )
     return hints
@@ -566,6 +608,34 @@ def _review_hint(*, severity: str, category: str, code: str, message: str, evide
         "message": message,
         "evidence": evidence,
     }
+
+
+def _validation_is_ready(validation: dict[str, Any]) -> bool:
+    if not validation or validation.get("validation_status") != "success":
+        return False
+    checks = validation.get("checks")
+    if not isinstance(checks, dict):
+        return False
+    required_checks = ("source_complete", "runtime_invocation_ok", "sign_shape_ok")
+    if not all(checks.get(item) is True for item in required_checks):
+        return False
+    if checks.get("replay_attempted") is True:
+        replay_result = validation.get("replay_result")
+        return checks.get("replay_ok") is True and isinstance(replay_result, dict) and replay_result.get("ok") is True
+    return True
+
+
+def _validation_not_ready_evidence(validation: dict[str, Any]) -> list[str]:
+    checks = validation.get("checks") if isinstance(validation, dict) else {}
+    replay_result = validation.get("replay_result") if isinstance(validation, dict) else {}
+    evidence = [f"validation_status={validation.get('validation_status')}"]
+    if isinstance(checks, dict):
+        for key in ("source_complete", "runtime_invocation_ok", "sign_shape_ok", "replay_attempted", "replay_ok"):
+            if key in checks:
+                evidence.append(f"check.{key}={checks.get(key)}")
+    if isinstance(replay_result, dict) and "ok" in replay_result:
+        evidence.append(f"replay_result.ok={replay_result.get('ok')}")
+    return evidence
 
 
 def _select_runtime_context_binding(runtime_context: dict[str, Any], extraction: dict[str, Any]) -> tuple[str, str, str] | None:
@@ -720,34 +790,6 @@ def _detect_runtime_context_requirements(source_context: str) -> list[str]:
         if any(needle in lowered for needle in needles):
             requirements.append(name)
     return requirements
-
-
-def _detect_message_template(source_context: str) -> str:
-    normalized = re.sub(r"\s+", "", source_context.lower())
-    if "keyword}:${timestamp}:" in normalized or "keyword+':'+timestamp+':'" in normalized:
-        return "keyword_colon_timestamp_colon_salt"
-    if "keyword}:${timestamp}" in normalized or "keyword+':'+timestamp" in normalized:
-        return "keyword_colon_timestamp"
-    if "keyword}${timestamp}" in normalized or "keyword+timestamp" in normalized:
-        return "keyword_timestamp"
-    return "keyword_colon_timestamp"
-
-
-def _extract_literal_secret(source_context: str) -> str | None:
-    for pattern in (
-        r"(?:secret|key|salt)\s*=\s*['\"]([^'\"]+)['\"]",
-        r"hmac(?:sha256)?\s*\([^,]+,\s*['\"]([^'\"]+)['\"]",
-        r"HmacSHA256\s*\([^,]+,\s*['\"]([^'\"]+)['\"]",
-    ):
-        match = re.search(pattern, source_context, flags=re.IGNORECASE)
-        if match:
-            return match.group(1)
-    return None
-
-
-def _extract_literal_salt(source_context: str) -> str:
-    match = re.search(r"(?:salt|seed)\s*=\s*['\"]([^'\"]+)['\"]", source_context, flags=re.IGNORECASE)
-    return match.group(1) if match else ""
 
 
 def _pick_target_request_url(task_card: TaskCard, candidate: dict[str, Any]) -> str:

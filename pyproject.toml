@@ -40,6 +40,12 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+reverse_deepagent = [
+  "prompts/*.txt",
+  "scripts/*.sh",
+]
+
 [project.urls]
 Homepage = "https://github.com/Facetomyself/reverse-deepagent"
 Repository = "https://github.com/Facetomyself/reverse-deepagent"

@@ -65,9 +65,17 @@ class CoordinatorTests(unittest.TestCase):
             manifest = json.loads(Path(output.artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
             self.assertEqual(manifest["producer_backend_id"], "mock")
             self.assertEqual(manifest["producer_transport"], "in-process")
-            manifest_keys = {item["artifact_key"] for item in manifest["entries"]}
+            manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
+            manifest_keys = set(manifest_by_key)
+            manifest_paths = {item["path"] for item in manifest["entries"]}
             self.assertIn("workspace_task_card", manifest_keys)
+            self.assertIn("workspace_backend_artifact_manifest", manifest_keys)
             self.assertIn("rebuild_sign_rebuild", manifest_keys)
+            self.assertIn("virtual://exports/session-report.json", manifest_paths)
+            self.assertEqual(manifest_by_key["workspace_network_requests"]["category"], "network")
+            self.assertEqual(manifest_by_key["workspace_source_contexts"]["category"], "source")
+            self.assertEqual(manifest_by_key["workspace_function_validations"]["category"], "trace")
+            self.assertEqual(manifest_by_key["rebuild_sign_rebuild"]["category"], "rebuild")
             self.assertIsNone(output.chrome_launch)
             self.assertIsNone(output.chrome_stop)
 

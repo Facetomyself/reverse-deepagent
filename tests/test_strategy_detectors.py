@@ -6,7 +6,7 @@ from reverse_deepagent.strategies import detect_algorithm_strategy, list_algorit
 class StrategyDetectorTests(unittest.TestCase):
     def test_registry_metadata_is_ordered_and_serializable(self) -> None:
         registry = list_algorithm_strategy_registry()
-        self.assertEqual([item["rule_id"] for item in registry], ["deterministic_fixture", "sig_template", "crypto_hash", "encoding"])
+        self.assertEqual([item["rule_id"] for item in registry], ["deterministic_fixture", "crypto_hash", "sig_template", "encoding"])
         emitted = {strategy_id for item in registry for strategy_id in item["emits"]}
         self.assertIn("fixture_seed_mod100000", emitted)
         self.assertIn("md5_keyword_timestamp", emitted)
@@ -84,6 +84,36 @@ class StrategyDetectorTests(unittest.TestCase):
         self.assertFalse(strategy["supported"])
         self.assertEqual(strategy["confidence"], "low")
         self.assertIn("secret/key is dynamic or unavailable", strategy["confidence_score"]["caveats"])
+
+    def test_sig_template_does_not_shadow_crypto_hash_markers(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  return `sig_${CryptoJS.MD5(`${keyword}:${timestamp}`)}_${timestamp}`;
+}"""
+        )
+        self.assertEqual(strategy["id"], "md5_keyword_timestamp")
+
+    def test_hmac_secret_must_be_bound_to_hmac_argument(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  const apiKey = 'public-key';
+  return hmacSha256(`${keyword}:${timestamp}`, window.dynamicSecret);
+}"""
+        )
+        self.assertEqual(strategy["id"], "hmac_sha256_keyword_timestamp")
+        self.assertFalse(strategy["supported"])
+        self.assertIn("secret/key is dynamic or unavailable", strategy["confidence_score"]["caveats"])
+
+    def test_hmac_literal_variable_argument_is_supported(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  const secret = 'fixture-secret';
+  return hmacSha256(`${keyword}:${timestamp}`, secret);
+}"""
+        )
+        self.assertEqual(strategy["id"], "hmac_sha256_keyword_timestamp")
+        self.assertTrue(strategy["supported"])
+        self.assertEqual(strategy["salt"], "fixture-secret")
 
 
 if __name__ == "__main__":

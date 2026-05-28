@@ -59,7 +59,14 @@ def _detect_fixture_seed_strategy(source_context: str) -> dict[str, Any] | None:
 
 
 def _detect_sig_template_strategy(source_context: str) -> dict[str, Any] | None:
-    if re.search(r"sig_.*keyword.*timestamp", source_context, flags=re.IGNORECASE | re.DOTALL):
+    if _has_crypto_marker(source_context):
+        return None
+    direct_template_patterns = (
+        r"`sig_\$\{keyword\}_\$\{timestamp\}`",
+        r"['\"]sig_['\"]\s*\+\s*keyword\s*\+\s*['\"]_['\"]\s*\+\s*timestamp",
+        r"['\"]sig_['\"]\s*\+\s*keyword\s*\+\s*['\"]_['\"]\s*\+\s*String\(\s*timestamp\s*\)",
+    )
+    if any(re.search(pattern, source_context, flags=re.IGNORECASE | re.DOTALL) for pattern in direct_template_patterns):
         return _strategy(
             "sig_keyword_timestamp_template",
             supported=True,
@@ -135,6 +142,7 @@ def _detect_encoding_strategy(source_context: str) -> dict[str, Any] | None:
             description="Base64 encoding over a keyword/timestamp message.",
             dependencies=["python-stdlib:base64"],
             template=template,
+            salt=_extract_literal_salt(source_context),
             confidence_reason="Detected btoa/base64 marker in source context.",
             positive_markers=["btoa/base64", template],
         )
@@ -146,6 +154,7 @@ def _detect_encoding_strategy(source_context: str) -> dict[str, Any] | None:
             description="URL encoding over a keyword/timestamp message.",
             dependencies=["python-stdlib:urllib.parse"],
             template=template,
+            salt=_extract_literal_salt(source_context),
             confidence_reason="Detected encodeURIComponent/URLSearchParams marker in source context.",
             positive_markers=["encodeURIComponent/URLSearchParams", template],
         )
@@ -160,12 +169,6 @@ ALGORITHM_STRATEGY_REGISTRY: tuple[AlgorithmStrategyRule, ...] = (
         description="Detect the bundled deterministic fixture reducer.",
     ),
     AlgorithmStrategyRule(
-        rule_id="sig_template",
-        emits=("sig_keyword_timestamp_template",),
-        detector=_detect_sig_template_strategy,
-        description="Detect simple sig_<keyword>_<timestamp> template flows.",
-    ),
-    AlgorithmStrategyRule(
         rule_id="crypto_hash",
         emits=(
             "hmac_sha256_keyword_timestamp",
@@ -175,6 +178,12 @@ ALGORITHM_STRATEGY_REGISTRY: tuple[AlgorithmStrategyRule, ...] = (
         ),
         detector=_detect_crypto_hash_strategy,
         description="Detect hashlib / HMAC-compatible JavaScript hash flows.",
+    ),
+    AlgorithmStrategyRule(
+        rule_id="sig_template",
+        emits=("sig_keyword_timestamp_template",),
+        detector=_detect_sig_template_strategy,
+        description="Detect simple sig_<keyword>_<timestamp> template flows.",
     ),
     AlgorithmStrategyRule(
         rule_id="encoding",
@@ -252,15 +261,57 @@ def _detect_message_template(source_context: str) -> str:
     return "keyword_colon_timestamp"
 
 
+def _has_crypto_marker(source_context: str) -> bool:
+    lowered = source_context.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "cryptojs",
+            "subtle.digest",
+            "createhash",
+            "hmac",
+            "md5",
+            "sha1",
+            "sha-1",
+            "sha256",
+            "sha-256",
+        )
+    )
+
+
 def _extract_literal_secret(source_context: str) -> str | None:
-    for pattern in (
-        r"(?:secret|key|salt)\s*=\s*['\"]([^'\"]+)['\"]",
-        r"hmac(?:sha256)?\s*\([^,]+,\s*['\"]([^'\"]+)['\"]",
-        r"HmacSHA256\s*\([^,]+,\s*['\"]([^'\"]+)['\"]",
-    ):
-        match = re.search(pattern, source_context, flags=re.IGNORECASE)
-        if match:
-            return match.group(1)
+    arg = _extract_hmac_second_argument(source_context)
+    if not arg:
+        return None
+    literal = _strip_js_string_literal(arg)
+    if literal is not None:
+        return literal
+    if re.fullmatch(r"[A-Za-z_$][\w$]*", arg):
+        assignment = re.search(
+            rf"(?:const|let|var)?\s*{re.escape(arg)}\s*=\s*['\"]([^'\"]+)['\"]",
+            source_context,
+            flags=re.IGNORECASE,
+        )
+        if assignment:
+            return assignment.group(1)
+    return None
+
+
+def _extract_hmac_second_argument(source_context: str) -> str | None:
+    match = re.search(
+        r"(?:hmac(?:sha256)?|HmacSHA256)\s*\(\s*(?:`[^`]*`|[^,]+)\s*,\s*([^)]+?)\s*\)",
+        source_context,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _strip_js_string_literal(value: str) -> str | None:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
     return None
 
 

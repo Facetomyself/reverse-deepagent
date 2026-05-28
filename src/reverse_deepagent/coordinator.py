@@ -290,11 +290,12 @@ def write_outputs(
     output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
     if "rebuild_plan" in rebuild_artifact_paths:
         output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
+    output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
     capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
-    backend_artifact_manifest = _build_backend_artifact_manifest(capabilities, output_paths)
+    runtime_artifacts = export_bundle.get("artifacts", []) if isinstance(export_bundle, dict) else []
+    backend_artifact_manifest = _build_backend_artifact_manifest(capabilities, output_paths, extra_artifacts=runtime_artifacts)
     _write_json(manifest_path, backend_artifact_manifest.model_dump(mode="json"))
-    output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
     artifact_index = {
         "workspace": {
@@ -320,6 +321,7 @@ def write_outputs(
 def _build_backend_artifact_manifest(
     capabilities: RuntimeBackendCapabilities,
     output_paths: dict[str, str],
+    extra_artifacts: list[dict[str, Any]] | None = None,
 ) -> RuntimeArtifactManifest:
     entries = [
         RuntimeArtifactManifestEntry(
@@ -335,6 +337,7 @@ def _build_backend_artifact_manifest(
         )
         for key, path in sorted(output_paths.items())
     ]
+    entries.extend(_runtime_artifact_manifest_entries(capabilities, extra_artifacts or []))
     return RuntimeArtifactManifest(
         producer_backend_id=capabilities.backend_id,
         producer_transport=capabilities.transport,
@@ -343,7 +346,22 @@ def _build_backend_artifact_manifest(
     )
 
 
+ARTIFACT_CATEGORY_BY_KEY = {
+    "workspace_network_requests": "network",
+    "workspace_source_hits": "source",
+    "workspace_source_contexts": "source",
+    "workspace_request_initiators": "trace",
+    "workspace_runtime_context": "runtime-context",
+    "workspace_runtime_context_diff": "runtime-context",
+    "workspace_function_candidates": "source",
+    "workspace_function_validations": "trace",
+    "workspace_function_validation_summary": "trace",
+}
+
+
 def _artifact_category_from_key(key: str) -> str:
+    if key in ARTIFACT_CATEGORY_BY_KEY:
+        return ARTIFACT_CATEGORY_BY_KEY[key]
     if key.startswith("workspace_"):
         return "workspace"
     if key.startswith("rebuild_"):
@@ -363,6 +381,69 @@ def _artifact_kind_from_path(path: str) -> str:
         return "markdown"
     if suffix == ".py":
         return "rebuild"
+    return "other"
+
+
+def _runtime_artifact_manifest_entries(
+    capabilities: RuntimeBackendCapabilities,
+    artifacts: list[dict[str, Any]],
+) -> list[RuntimeArtifactManifestEntry]:
+    entries: list[RuntimeArtifactManifestEntry] = []
+    for index, artifact in enumerate(artifacts):
+        if not isinstance(artifact, dict):
+            continue
+        path = str(artifact.get("path") or "")
+        if not path:
+            continue
+        metadata = artifact.get("metadata") if isinstance(artifact.get("metadata"), dict) else {}
+        artifact_key = str(
+            artifact.get("artifact_key")
+            or metadata.get("artifact_key")
+            or _artifact_key_from_runtime_path(path, index)
+        )
+        entry_metadata = dict(metadata)
+        entry_metadata.setdefault("path_style", "virtual" if path.startswith("virtual://") else "filesystem")
+        entry_metadata.setdefault("source", "runtime_export_bundle")
+        entries.append(
+            RuntimeArtifactManifestEntry(
+                artifact_key=artifact_key,
+                path=path,
+                category=_artifact_category_from_runtime_artifact(path, artifact, metadata),
+                kind=str(artifact.get("kind") or _artifact_kind_from_path(path)),
+                producer_backend_id=capabilities.backend_id,
+                producer_transport=capabilities.transport,
+                target_platforms=capabilities.target_platforms,
+                description=artifact.get("description"),
+                metadata=entry_metadata,
+            )
+        )
+    return entries
+
+
+def _artifact_key_from_runtime_path(path: str, index: int) -> str:
+    normalized = path
+    for prefix in ("virtual://", "file://"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+            break
+    normalized = normalized.strip("/") or f"artifact_{index}"
+    stem = Path(normalized).with_suffix("").as_posix()
+    safe = "".join(ch if ch.isalnum() else "_" for ch in stem).strip("_")
+    return f"runtime_{safe or f'artifact_{index}'}"
+
+
+def _artifact_category_from_runtime_artifact(path: str, artifact: dict[str, Any], metadata: dict[str, Any]) -> str:
+    explicit_category = artifact.get("category") or metadata.get("category")
+    if explicit_category:
+        return str(explicit_category)
+    if path.startswith("virtual://exports/session"):
+        return "session"
+    if path.startswith("virtual://exports/"):
+        return "export"
+    if path.startswith("virtual://workspace/"):
+        return _artifact_category_from_key(_artifact_key_from_runtime_path(path, 0))
+    if path.startswith("virtual://protection/"):
+        return "triage"
     return "other"
 
 
