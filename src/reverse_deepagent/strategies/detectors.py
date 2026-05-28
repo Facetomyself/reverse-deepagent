@@ -53,6 +53,7 @@ def _detect_fixture_seed_strategy(source_context: str) -> dict[str, Any] | None:
             description="Sum charCodeAt(keyword:timestamp:FIXTURE_SEED) modulo 100000, then emit sig_<hex>_<timestamp>.",
             dependencies=["python-stdlib"],
             confidence_reason="Detected FIXTURE_SEED, charCodeAt reducer and modulo 100000 in source context.",
+            positive_markers=["fixture_seed", "charCodeAt", "modulo 100000"],
         )
     return None
 
@@ -66,6 +67,7 @@ def _detect_sig_template_strategy(source_context: str) -> dict[str, Any] | None:
             description="Simple template sign of the form sig_<keyword>_<timestamp>.",
             dependencies=["python-stdlib"],
             confidence_reason="Detected sig_ template using keyword and timestamp.",
+            positive_markers=["sig_ template", "keyword", "timestamp"],
         )
     return None
 
@@ -78,6 +80,7 @@ def _unsupported_strategy() -> dict[str, Any]:
         description="No safe pure-Python strategy recognized yet; manual port or JS execution backend is required.",
         dependencies=[],
         confidence_reason="No supported hash, hmac, encoding or deterministic template pattern was detected.",
+        caveats=["manual port or runtime-backed execution required"],
     )
 
 
@@ -95,6 +98,8 @@ def _detect_crypto_hash_strategy(source_context: str) -> dict[str, Any] | None:
             template=template,
             salt=secret or "",
             confidence_reason="Detected HMAC-SHA256 marker." + (" Literal secret was extracted." if secret else " Secret/key is dynamic or unavailable."),
+            positive_markers=["hmac", "sha256"],
+            caveats=[] if secret else ["secret/key is dynamic or unavailable"],
         )
     for algorithm in ("md5", "sha1", "sha256"):
         subtle_name = "sha-256" if algorithm == "sha256" else "sha-1" if algorithm == "sha1" else algorithm
@@ -114,6 +119,7 @@ def _detect_crypto_hash_strategy(source_context: str) -> dict[str, Any] | None:
                 template=template,
                 salt=_extract_literal_salt(source_context),
                 confidence_reason=f"Detected {algorithm} hash marker in source context.",
+                positive_markers=[algorithm, template],
             )
     return None
 
@@ -130,6 +136,7 @@ def _detect_encoding_strategy(source_context: str) -> dict[str, Any] | None:
             dependencies=["python-stdlib:base64"],
             template=template,
             confidence_reason="Detected btoa/base64 marker in source context.",
+            positive_markers=["btoa/base64", template],
         )
     if "encodeuricomponent" in lowered or "urlsearchparams" in lowered:
         return _strategy(
@@ -140,6 +147,7 @@ def _detect_encoding_strategy(source_context: str) -> dict[str, Any] | None:
             dependencies=["python-stdlib:urllib.parse"],
             template=template,
             confidence_reason="Detected encodeURIComponent/URLSearchParams marker in source context.",
+            positive_markers=["encodeURIComponent/URLSearchParams", template],
         )
     return None
 
@@ -187,16 +195,49 @@ def _strategy(
     confidence_reason: str,
     template: str = "keyword_colon_timestamp",
     salt: str = "",
+    positive_markers: list[str] | None = None,
+    caveats: list[str] | None = None,
 ) -> dict[str, Any]:
+    confidence_score = _confidence_score(
+        confidence,
+        supported=supported,
+        positive_markers=positive_markers or [],
+        caveats=caveats or [],
+    )
     return {
         "id": strategy_id,
         "supported": supported,
         "confidence": confidence,
+        "confidence_score": confidence_score,
         "description": description,
         "dependencies": dependencies,
         "template": template,
         "salt": salt,
         "confidence_reason": confidence_reason,
+    }
+
+
+def _confidence_score(
+    confidence: str,
+    *,
+    supported: bool,
+    positive_markers: list[str],
+    caveats: list[str],
+) -> dict[str, Any]:
+    base_score = {
+        "high": 0.9,
+        "medium": 0.65,
+        "low": 0.25,
+    }.get(confidence, 0.25)
+    if not supported:
+        base_score = min(base_score, 0.2)
+    if caveats:
+        base_score = max(0.0, base_score - min(0.25, 0.08 * len(caveats)))
+    return {
+        "score": round(base_score, 2),
+        "label": confidence,
+        "positive_markers": positive_markers,
+        "caveats": caveats,
     }
 
 

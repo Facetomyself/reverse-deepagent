@@ -61,12 +61,29 @@ class StrategyDetectorTests(unittest.TestCase):
                 strategy = detect_algorithm_strategy(source_context)
                 self.assertEqual(strategy["id"], expected_id)
                 self.assertEqual(strategy["template"], expected_template)
+                self.assertIn("confidence", strategy)
+                self.assertIn("confidence_score", strategy)
+                self.assertGreater(strategy["confidence_score"]["score"], 0)
+                self.assertEqual(strategy["confidence_score"]["label"], strategy["confidence"])
 
     def test_unsupported_strategy_is_explicit(self) -> None:
         strategy = detect_algorithm_strategy("function buildSign() { return window.someVm.run(); }")
         self.assertEqual(strategy["id"], "unsupported_manual_port_required")
         self.assertFalse(strategy["supported"])
         self.assertEqual(strategy["confidence"], "low")
+        self.assertLessEqual(strategy["confidence_score"]["score"], 0.2)
+        self.assertIn("manual port or runtime-backed execution required", strategy["confidence_score"]["caveats"])
+
+    def test_confidence_score_records_caveats_for_dynamic_hmac_secret(self) -> None:
+        strategy = detect_algorithm_strategy(
+            """function buildSign(keyword, timestamp) {
+  return hmacSha256(`${keyword}:${timestamp}`, window.dynamicSecret);
+}"""
+        )
+        self.assertEqual(strategy["id"], "hmac_sha256_keyword_timestamp")
+        self.assertFalse(strategy["supported"])
+        self.assertEqual(strategy["confidence"], "low")
+        self.assertIn("secret/key is dynamic or unavailable", strategy["confidence_score"]["caveats"])
 
 
 if __name__ == "__main__":
