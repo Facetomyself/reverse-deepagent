@@ -1,25 +1,17 @@
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
 from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ConfidenceLevel, ExecutionStatus, FinalResult, RebuildResult, TaskCard
-
-StrategyDetector = Callable[[str], dict[str, Any] | None]
-
-
-@dataclass(frozen=True, slots=True)
-class AlgorithmStrategyRule:
-    """Registry entry for conservative source-pattern to rebuild-strategy detection."""
-
-    rule_id: str
-    emits: tuple[str, ...]
-    detector: StrategyDetector
-    description: str
+from reverse_deepagent.strategies import (
+    ALGORITHM_STRATEGY_REGISTRY,
+    AlgorithmStrategyRule,
+    detect_algorithm_strategy,
+    list_algorithm_strategy_registry,
+)
 
 
 def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tuple[dict[str, Any], dict[str, str]]:
@@ -546,186 +538,7 @@ def _detect_algorithm_strategy(
     source_context: str,
     registry: tuple[AlgorithmStrategyRule, ...] | None = None,
 ) -> dict[str, Any]:
-    for rule in registry or ALGORITHM_STRATEGY_REGISTRY:
-        strategy = rule.detector(source_context)
-        if strategy:
-            return strategy
-    return _unsupported_strategy()
-
-
-def list_algorithm_strategy_registry() -> list[dict[str, Any]]:
-    """Return metadata for registered strategy detectors.
-
-    The rebuild generator intentionally exposes metadata, not detector callables,
-    so docs / tests / future CLI surfaces can inspect available strategies
-    without coupling to Python function objects.
-    """
-
-    return [
-        {
-            "rule_id": rule.rule_id,
-            "emits": list(rule.emits),
-            "description": rule.description,
-        }
-        for rule in ALGORITHM_STRATEGY_REGISTRY
-    ]
-
-
-def _detect_fixture_seed_strategy(source_context: str) -> dict[str, Any] | None:
-    lowered = source_context.lower()
-    if "fixture_seed" in lowered and "charcodeat" in lowered and "100000" in lowered:
-        return _strategy(
-            "fixture_seed_mod100000",
-            supported=True,
-            confidence="high",
-            description="Sum charCodeAt(keyword:timestamp:FIXTURE_SEED) modulo 100000, then emit sig_<hex>_<timestamp>.",
-            dependencies=["python-stdlib"],
-            confidence_reason="Detected FIXTURE_SEED, charCodeAt reducer and modulo 100000 in source context.",
-        )
-    return None
-
-
-def _detect_sig_template_strategy(source_context: str) -> dict[str, Any] | None:
-    if re.search(r"sig_.*keyword.*timestamp", source_context, flags=re.IGNORECASE | re.DOTALL):
-        return _strategy(
-            "sig_keyword_timestamp_template",
-            supported=True,
-            confidence="medium",
-            description="Simple template sign of the form sig_<keyword>_<timestamp>.",
-            dependencies=["python-stdlib"],
-            confidence_reason="Detected sig_ template using keyword and timestamp.",
-        )
-    return None
-
-
-def _unsupported_strategy() -> dict[str, Any]:
-    return _strategy(
-        "unsupported_manual_port_required",
-        supported=False,
-        confidence="low",
-        description="No safe pure-Python strategy recognized yet; manual port or JS execution backend is required.",
-        dependencies=[],
-        confidence_reason="No supported hash, hmac, encoding or deterministic template pattern was detected.",
-    )
-
-
-def _detect_crypto_hash_strategy(source_context: str) -> dict[str, Any] | None:
-    lowered = source_context.lower()
-    template = _detect_message_template(source_context)
-    if "hmac" in lowered and "sha256" in lowered:
-        secret = _extract_literal_secret(source_context)
-        return _strategy(
-            "hmac_sha256_keyword_timestamp",
-            supported=bool(secret),
-            confidence="medium" if secret else "low",
-            description="HMAC-SHA256 over a keyword/timestamp message.",
-            dependencies=["python-stdlib:hashlib", "python-stdlib:hmac"],
-            template=template,
-            salt=secret or "",
-            confidence_reason="Detected HMAC-SHA256 marker." + (" Literal secret was extracted." if secret else " Secret/key is dynamic or unavailable."),
-        )
-    for algorithm in ("md5", "sha1", "sha256"):
-        subtle_name = "sha-256" if algorithm == "sha256" else "sha-1" if algorithm == "sha1" else algorithm
-        patterns = [
-            rf"\bcryptojs\.{algorithm}\b",
-            rf"\bcrypto\.createhash\(['\"]{algorithm}['\"]\)",
-            rf"subtle\.digest\(['\"]{subtle_name}['\"]",
-            rf"\b{algorithm}\s*\(",
-        ]
-        if any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in patterns):
-            return _strategy(
-                f"{algorithm}_keyword_timestamp",
-                supported=True,
-                confidence="medium",
-                description=f"{algorithm} hash over a keyword/timestamp message.",
-                dependencies=["python-stdlib:hashlib"],
-                template=template,
-                salt=_extract_literal_salt(source_context),
-                confidence_reason=f"Detected {algorithm} hash marker in source context.",
-            )
-    return None
-
-
-def _detect_encoding_strategy(source_context: str) -> dict[str, Any] | None:
-    lowered = source_context.lower()
-    template = _detect_message_template(source_context)
-    if "btoa" in lowered or "base64" in lowered:
-        return _strategy(
-            "base64_keyword_timestamp",
-            supported=True,
-            confidence="medium",
-            description="Base64 encoding over a keyword/timestamp message.",
-            dependencies=["python-stdlib:base64"],
-            template=template,
-            confidence_reason="Detected btoa/base64 marker in source context.",
-        )
-    if "encodeuricomponent" in lowered or "urlsearchparams" in lowered:
-        return _strategy(
-            "urlencode_keyword_timestamp",
-            supported=True,
-            confidence="medium",
-            description="URL encoding over a keyword/timestamp message.",
-            dependencies=["python-stdlib:urllib.parse"],
-            template=template,
-            confidence_reason="Detected encodeURIComponent/URLSearchParams marker in source context.",
-        )
-    return None
-
-
-ALGORITHM_STRATEGY_REGISTRY: tuple[AlgorithmStrategyRule, ...] = (
-    AlgorithmStrategyRule(
-        rule_id="deterministic_fixture",
-        emits=("fixture_seed_mod100000",),
-        detector=_detect_fixture_seed_strategy,
-        description="Detect the bundled deterministic fixture reducer.",
-    ),
-    AlgorithmStrategyRule(
-        rule_id="sig_template",
-        emits=("sig_keyword_timestamp_template",),
-        detector=_detect_sig_template_strategy,
-        description="Detect simple sig_<keyword>_<timestamp> template flows.",
-    ),
-    AlgorithmStrategyRule(
-        rule_id="crypto_hash",
-        emits=(
-            "hmac_sha256_keyword_timestamp",
-            "md5_keyword_timestamp",
-            "sha1_keyword_timestamp",
-            "sha256_keyword_timestamp",
-        ),
-        detector=_detect_crypto_hash_strategy,
-        description="Detect hashlib / HMAC-compatible JavaScript hash flows.",
-    ),
-    AlgorithmStrategyRule(
-        rule_id="encoding",
-        emits=("base64_keyword_timestamp", "urlencode_keyword_timestamp"),
-        detector=_detect_encoding_strategy,
-        description="Detect simple browser encoding flows such as btoa or encodeURIComponent.",
-    ),
-)
-
-
-def _strategy(
-    strategy_id: str,
-    *,
-    supported: bool,
-    confidence: str,
-    description: str,
-    dependencies: list[str],
-    confidence_reason: str,
-    template: str = "keyword_colon_timestamp",
-    salt: str = "",
-) -> dict[str, Any]:
-    return {
-        "id": strategy_id,
-        "supported": supported,
-        "confidence": confidence,
-        "description": description,
-        "dependencies": dependencies,
-        "template": template,
-        "salt": salt,
-        "confidence_reason": confidence_reason,
-    }
+    return detect_algorithm_strategy(source_context, registry=registry)
 
 
 def _build_pure_extraction(strategy: dict[str, Any], source_context: str, runtime_context: dict[str, Any]) -> dict[str, Any]:

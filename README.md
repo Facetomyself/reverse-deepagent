@@ -440,7 +440,7 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 }
 ```
 
-当前 strategy detection 通过 `AlgorithmStrategyRule` registry 管理，registry metadata 可由 `list_algorithm_strategy_registry()` 读取。当前默认顺序：
+当前 strategy detection 通过 `reverse_deepagent.strategies` 包里的 `AlgorithmStrategyRule` registry 管理；`rebuild.py` 只保留兼容代理。registry metadata 可由 `list_algorithm_strategy_registry()` 读取。当前默认顺序：
 
 1. `deterministic_fixture`：发射 `fixture_seed_mod100000`
 2. `sig_template`：发射 `sig_keyword_timestamp_template`

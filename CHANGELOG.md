@@ -17,6 +17,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` schemas and generated `workspace/backend-artifact-manifest.json`.
 - `JSReverserMcpConfig` for serialized MCP command, browser URL, timeout, backend metadata, and sampling configuration.
 - Runtime adapter pluginization contract documentation for current Web backends and future Android / iOS / mini-program expansion.
+- `reverse_deepagent.strategies` package with pluggable detector registry while keeping rebuild output compatible.
 
 ## [0.1.0] - 2026-05-27
 
