@@ -61,6 +61,16 @@ class RuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(browser.page_count, 1)
         self.assertEqual(browser.selected_page_idx, 0)
 
+    def test_runtime_capabilities_are_serializable(self) -> None:
+        capabilities = self.runtime.describe_capabilities()
+        payload = capabilities.model_dump(mode="json")
+        self.assertEqual(payload["backend_id"], "jsreverser-mcp")
+        self.assertEqual(payload["transport"], "mcp-stdio")
+        self.assertTrue(payload["supports_web_recon"])
+        self.assertTrue(payload["supports_runtime_context"])
+        self.assertTrue(payload["mcp_backed"])
+        self.assertIn("web", payload["target_platforms"])
+
     def test_run_web_recon_returns_structured_result(self) -> None:
         task_card = TaskCard(
             target_url_or_file="https://example.com/search",

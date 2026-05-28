@@ -2,10 +2,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reverse_deepagent.coordinator import run_reverse_pipeline
+from reverse_deepagent.coordinator import build_runtime, run_reverse_pipeline
 
 
 class CoordinatorTests(unittest.TestCase):
+    def test_build_runtime_exposes_mock_capabilities(self) -> None:
+        runtime = build_runtime("mock")
+        capabilities = runtime.describe_capabilities()
+        self.assertEqual(capabilities.backend_id, "mock")
+        self.assertEqual(capabilities.transport, "in-process")
+        self.assertTrue(capabilities.supports_web_recon)
+        self.assertFalse(capabilities.mcp_backed)
+
     def test_run_reverse_pipeline_returns_structured_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output = run_reverse_pipeline(

@@ -31,12 +31,42 @@ class RuntimeExportBundle(SchemaBaseModel):
     artifacts: list[dict[str, Any]] = Field(default_factory=list, description="Normalized artifact references represented as plain dictionaries.")
 
 
+class RuntimeBackendCapabilities(SchemaBaseModel):
+    """Serializable capability metadata for a runtime backend."""
+
+    backend_id: str = Field(description="Stable backend identifier, such as mock or jsreverser-mcp.")
+    display_name: str = Field(description="Human-readable backend name.")
+    transport: str = Field(default="unknown", description="Implementation transport, such as in-process or mcp-stdio.")
+    target_platforms: list[str] = Field(default_factory=list, description="Supported target platforms, for example web, android, ios, or mini-program.")
+    supports_browser_session: bool = Field(default=False, description="Whether the backend can inspect or manage a browser session.")
+    supports_web_recon: bool = Field(default=False, description="Whether the backend can run Web recon.")
+    supports_protection_patch: bool = Field(default=False, description="Whether the backend can apply minimal anti-debug / protection patches.")
+    supports_artifact_export: bool = Field(default=False, description="Whether the backend can export runtime/session artifacts.")
+    supports_runtime_context: bool = Field(default=False, description="Whether the backend can capture storage / environment context.")
+    supports_replay_validation: bool = Field(default=False, description="Whether the backend can validate candidate functions at runtime.")
+    managed_chrome: bool = Field(default=False, description="Whether callers can pair the backend with the managed Chrome launcher.")
+    mcp_backed: bool = Field(default=False, description="Whether the backend is backed by an MCP transport.")
+    evidence_kinds: list[str] = Field(default_factory=list, description="Evidence categories the backend commonly emits.")
+    artifact_kinds: list[str] = Field(default_factory=list, description="Artifact categories the backend commonly emits.")
+    notes: list[str] = Field(default_factory=list, description="Operational notes or limitations.")
+    config: dict[str, Any] = Field(default_factory=dict, description="Non-secret config summary useful for debugging.")
+
+
 class ReverseRuntime(ABC):
     """Stable execution interface consumed by the agent layer.
 
     Implementations may use MCP, CLI, CDP, Playwright, or mobile tooling behind the scenes,
     but orchestration code should only depend on this interface.
     """
+
+    def describe_capabilities(self) -> RuntimeBackendCapabilities:
+        """Return conservative capability metadata for this runtime backend."""
+
+        return RuntimeBackendCapabilities(
+            backend_id=self.__class__.__name__,
+            display_name=self.__class__.__name__,
+            notes=["backend did not override capability metadata"],
+        )
 
     @abstractmethod
     def ensure_browser_session(self) -> BrowserSessionInfo:

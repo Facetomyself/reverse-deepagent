@@ -141,7 +141,12 @@ def build_runtime(
     """Build a runtime backend for the coordinator pipeline."""
 
     if runtime_kind == "mock":
-        return JSReverserRuntime(bridge=MockJSReverserBridge())
+        return JSReverserRuntime(
+            bridge=MockJSReverserBridge(),
+            backend_id="mock",
+            display_name="Mock JSReverser Runtime",
+            transport="in-process",
+        )
     if runtime_kind == "mcp":
         return create_jsreverser_mcp_runtime(
             command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,

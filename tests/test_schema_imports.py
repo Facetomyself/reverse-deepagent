@@ -12,6 +12,7 @@ from reverse_deepagent.schemas import (
     RouterResult,
     TaskCard,
 )
+from reverse_deepagent.runtime import RuntimeBackendCapabilities
 
 
 class SchemaImportTests(unittest.TestCase):
@@ -69,6 +70,17 @@ class SchemaImportTests(unittest.TestCase):
             next_action="run_replay_demo_or_integrate_scrapy",
         )
         self.assertTrue(rebuild_result.rebuild_plan["ready"])
+
+        capabilities = RuntimeBackendCapabilities(
+            backend_id="mock",
+            display_name="Mock Runtime",
+            transport="in-process",
+            target_platforms=["web"],
+            supports_web_recon=True,
+        )
+        serialized = capabilities.model_dump(mode="json")
+        self.assertEqual(serialized["backend_id"], "mock")
+        self.assertTrue(serialized["supports_web_recon"])
 
 
 if __name__ == "__main__":

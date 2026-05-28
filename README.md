@@ -496,6 +496,31 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 
 `workspace/runtime-context-diff.json` 会对运行时上下文做稳定性摘要。默认 runtime 会采集多次样本，字段包括 `status`（`multi_sample` 或 `single_sample` fallback）、`sample_count`、`stable`、`stable_keys`、`volatile_keys`、`missing_requirements` 和 `changes`。其中 `sample_index` / `collected_at_ms` 只作为采样元数据，不参与稳定性判断；`volatile_keys` 应被视为 replay 时仍需要运行时绑定的输入。
 
+## Runtime backend capabilities
+
+Runtime backend 能力通过 `RuntimeBackendCapabilities` 描述，调用方可以用 `runtime.describe_capabilities()` 做能力发现，而不是在 coordinator 里硬猜 MCP、Chrome 或 mock backend 的行为。
+
+示例：
+
+```python
+from reverse_deepagent.coordinator import build_runtime
+
+runtime = build_runtime("mock")
+capabilities = runtime.describe_capabilities()
+print(capabilities.model_dump(mode="json"))
+```
+
+核心字段包括：
+
+- `backend_id`：稳定后端标识，例如 `mock`、`jsreverser-mcp`
+- `transport`：实现传输，例如 `in-process`、`mcp-stdio`
+- `target_platforms`：当前目标平台，现阶段主要是 `web`
+- `supports_web_recon` / `supports_runtime_context` / `supports_replay_validation`：能力开关
+- `managed_chrome` / `mcp_backed`：运行时约束提示
+- `evidence_kinds` / `artifact_kinds`：该 backend 常见输出类型
+
+这只是 runtime pluginization 的第一层契约，不代表 Android / iOS / 小程序 backend 已经实现；后续 backend 需要先补 capability metadata，再接入 registry / factory。
+
 ## Chrome Debug Session 约束
 
 真实 MCP runtime 依赖 `http://127.0.0.1:9222` 这类 Chrome DevTools 端口。

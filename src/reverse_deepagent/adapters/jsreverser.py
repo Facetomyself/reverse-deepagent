@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
-from reverse_deepagent.runtime.base import BrowserSessionInfo, ReverseRuntime, RuntimeExportBundle
+from reverse_deepagent.runtime.base import BrowserSessionInfo, ReverseRuntime, RuntimeBackendCapabilities, RuntimeExportBundle
 from reverse_deepagent.runtime.mcp_stdio import StdioMcpBridge
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -63,10 +63,43 @@ class JSReverserRuntime(ReverseRuntime):
     """Runtime adapter backed by JSReverser capabilities."""
 
     bridge: JSReverserBridge
+    backend_id: str = "jsreverser-mcp"
+    display_name: str = "JSReverser MCP"
+    transport: str = "mcp-stdio"
     default_page_size: int = 20
     post_navigation_wait_seconds: float = 0.5
     runtime_context_sample_count: int = 3
     runtime_context_sample_interval_seconds: float = 0.05
+
+    def describe_capabilities(self) -> RuntimeBackendCapabilities:
+        """Return capability metadata for the JSReverser-compatible runtime."""
+
+        return RuntimeBackendCapabilities(
+            backend_id=self.backend_id,
+            display_name=self.display_name,
+            transport=self.transport,
+            target_platforms=["web"],
+            supports_browser_session=True,
+            supports_web_recon=True,
+            supports_protection_patch=True,
+            supports_artifact_export=True,
+            supports_runtime_context=True,
+            supports_replay_validation=True,
+            managed_chrome=self.transport in {"mcp-stdio", "cdp", "browser-cli"},
+            mcp_backed=self.transport == "mcp-stdio",
+            evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
+            artifact_kinds=["json", "export", "rebuild", "markdown"],
+            notes=[
+                "web-first runtime adapter",
+                "normalizes mixed MCP / text return shapes before exposing evidence",
+            ],
+            config={
+                "default_page_size": self.default_page_size,
+                "post_navigation_wait_seconds": self.post_navigation_wait_seconds,
+                "runtime_context_sample_count": self.runtime_context_sample_count,
+                "runtime_context_sample_interval_seconds": self.runtime_context_sample_interval_seconds,
+            },
+        )
 
     def ensure_browser_session(self) -> BrowserSessionInfo:
         health_payload = self._safe_invoke("check_browser_health", {})
