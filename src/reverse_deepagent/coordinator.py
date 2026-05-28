@@ -10,6 +10,7 @@ from urllib.request import urlopen
 
 from pydantic import Field
 
+from reverse_deepagent.adapters.platforms import AndroidAdbRuntime, IosSimulatorRuntime, MiniProgramDevtoolsRuntime
 from reverse_deepagent.adapters.jsreverser import (
     DEFAULT_JSREVERSER_MCP_COMMAND,
     JSReverserMcpConfig,
@@ -287,6 +288,48 @@ def _mcp_runtime_factory(
     )
 
 
+def _android_adb_runtime_factory(
+    *,
+    android_adb_command: str | None = None,
+    android_device_serial: str | None = None,
+    android_package_name: str | None = None,
+    **_: Any,
+) -> AndroidAdbRuntime:
+    return AndroidAdbRuntime(
+        adb_command=android_adb_command or "adb",
+        device_serial=android_device_serial,
+        package_name=android_package_name,
+    )
+
+
+def _ios_simulator_runtime_factory(
+    *,
+    ios_xcrun_command: str | None = None,
+    ios_device_id: str | None = None,
+    ios_bundle_id: str | None = None,
+    **_: Any,
+) -> IosSimulatorRuntime:
+    return IosSimulatorRuntime(
+        xcrun_command=ios_xcrun_command or "xcrun",
+        device_id=ios_device_id,
+        bundle_id=ios_bundle_id,
+    )
+
+
+def _mini_program_devtools_runtime_factory(
+    *,
+    mini_program_devtools_command: str | None = None,
+    mini_program_vendor: str | None = None,
+    mini_program_project_path: str | None = None,
+    **_: Any,
+) -> MiniProgramDevtoolsRuntime:
+    return MiniProgramDevtoolsRuntime(
+        devtools_command=mini_program_devtools_command,
+        vendor=mini_program_vendor or "wechat",
+        project_path=mini_program_project_path,
+    )
+
+
 def build_default_runtime_registry() -> RuntimeBackendRegistry:
     """Build the default runtime backend registry without starting external processes."""
 
@@ -338,6 +381,76 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
             ),
         )
     )
+
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="android-adb",
+            aliases=("adb", "android-device"),
+            factory=_android_adb_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="android-adb",
+                display_name="Android ADB Runtime",
+                transport="adb",
+                target_platforms=["android"],
+                supports_browser_session=False,
+                supports_web_recon=False,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                evidence_kinds=["static", "dynamic", "storage", "network", "note"],
+                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis"],
+                notes=["requires local adb for explicit probes; registry listing is side-effect free"],
+                config={"default_command": "adb", "requires_device": True},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="ios-simulator",
+            aliases=("simctl", "ios-sim"),
+            factory=_ios_simulator_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="ios-simulator",
+                display_name="iOS Simulator Runtime",
+                transport="xcrun-simctl",
+                target_platforms=["ios"],
+                supports_browser_session=False,
+                supports_web_recon=False,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                evidence_kinds=["static", "dynamic", "storage", "network", "note"],
+                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis"],
+                notes=["requires local xcrun/simctl for explicit probes; registry listing is side-effect free"],
+                config={"default_command": "xcrun simctl", "requires_simulator": True},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="mini-program-devtools",
+            aliases=("mp-devtools", "wechat-devtools"),
+            factory=_mini_program_devtools_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="mini-program-devtools",
+                display_name="Mini-program Developer Tools Runtime",
+                transport="vendor-devtools-cli",
+                target_platforms=["mini-program"],
+                supports_browser_session=False,
+                supports_web_recon=False,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                evidence_kinds=["static", "dynamic", "hook", "storage", "network", "note"],
+                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis", "package-metadata"],
+                notes=["requires configured vendor devtools CLI for explicit probes; registry listing is side-effect free"],
+                config={"vendor": "wechat", "requires_gui_tool": "depends-on-vendor"},
+            ),
+        )
+    )
     return registry
 
 
@@ -354,6 +467,7 @@ def build_runtime(
     runtime_kind: str,
     browser_url: str | None = None,
     mcp_command: str | None = None,
+    **runtime_kwargs: Any,
 ) -> ReverseRuntime:
     """Build a runtime backend by id or alias."""
 
@@ -361,6 +475,7 @@ def build_runtime(
         runtime_kind,
         browser_url=browser_url,
         mcp_command=mcp_command,
+        **runtime_kwargs,
     )
 
 

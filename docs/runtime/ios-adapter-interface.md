@@ -1,6 +1,6 @@
 # iOS runtime adapter interface draft
 
-This document sketches the iOS runtime adapter boundary for future `reverse-deepagent` work. It is a planning contract, not a production iOS backend implementation.
+This document defines the iOS runtime adapter boundary for `reverse-deepagent`. The repository now includes a minimal `ios-simulator` backend for registry metadata, explicit `xcrun simctl` probing, and artifact export; production app instrumentation workflows are still future work.
 
 The design goal is the same as the Android draft: keep platform runtime support behind stable capability / evidence / artifact schemas instead of forcing iOS workflows through Web-only browser session assumptions.
 
@@ -21,7 +21,7 @@ Recommended backend ids and aliases:
 | `ios-simulator` | `simctl`, `ios-sim` | `xcrun-simctl` | Simulator app inspection, logs, and controlled local experiments. |
 | `ios-static` | `ipa-static`, `macho-static` | `filesystem` | Offline IPA / Mach-O / symbol / class metadata extraction. |
 
-Real backend construction should happen only when explicitly requested. Registry / capability listing must stay side-effect free.
+The current `ios-simulator` backend keeps registry / capability listing side-effect free. Explicit `build_runtime("ios-simulator")` construction can run local `xcrun simctl` probes.
 
 ## Capability metadata
 
@@ -56,7 +56,7 @@ Example capability payload:
 
 ## Configuration object
 
-Future implementation should collect settings in a serializable config object, for example:
+The current implementation collects settings in a serializable config object equivalent to:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -160,7 +160,7 @@ Keychain / Secure Enclave / server-bound flows should default to runtime-assiste
 
 ## Minimal implementation checklist
 
-A future iOS adapter PR should include:
+The current minimal iOS backend covers metadata registration, config, explicit probe, and artifact export. Future iOS adapter PRs should include:
 
 1. `IosRuntimeConfig` or equivalent serializable config.
 2. Side-effect-free capability metadata tests.

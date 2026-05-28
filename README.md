@@ -559,6 +559,9 @@ print(capabilities.model_dump(mode="json"))
 
 - `mock`（alias: `in-process`）：公开 CI 和本地 deterministic demo 使用
 - `mcp`（alias: `jsreverser-mcp`）：真实 JSReverser MCP + Chrome DevTools runtime
+- `android-adb`（alias: `adb`, `android-device`）：Android ADB 工具链探测与平台 artifact export
+- `ios-simulator`（alias: `simctl`, `ios-sim`）：iOS Simulator / `xcrun simctl` 工具链探测与平台 artifact export
+- `mini-program-devtools`（alias: `mp-devtools`, `wechat-devtools`）：小程序 vendor devtools CLI 配置探测与平台 artifact export
 
 每次 pipeline 会额外写出 `workspace/backend-artifact-manifest.json`，用 `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` 描述 artifact key、路径、类别、kind、producer backend、transport 和 target platforms。这个 manifest 是新增索引，不替换现有 `exports/artifact-index.json`。跨平台 artifact category 词表见 [`docs/runtime/platform-neutral-artifact-categories.md`](docs/runtime/platform-neutral-artifact-categories.md)。
 
@@ -581,7 +584,7 @@ JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `comm
 - `managed_chrome` / `mcp_backed`：运行时约束提示
 - `evidence_kinds` / `artifact_kinds`：该 backend 常见输出类型
 
-这只是 runtime pluginization 的第一层契约，不代表 Android / iOS / 小程序 backend 已经实现；后续 backend 需要先补 capability metadata，再接入 registry / factory。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
+当前 Android / iOS / 小程序 backend 已具备 registry / factory / capability metadata / side-effect-light tool probe / artifact export 基础层；但还不包含真实 hook、静态分析、平台 pipeline 或 replay validation。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
 ## Chrome Debug Session 约束
 

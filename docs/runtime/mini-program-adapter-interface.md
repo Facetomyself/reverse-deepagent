@@ -1,6 +1,6 @@
 # Mini-program runtime adapter interface draft
 
-This document sketches the mini-program runtime adapter boundary for future `reverse-deepagent` work. It covers WeChat-style / Alipay-style / similar mini-program environments at the architecture level, without committing to one vendor SDK or developer tool.
+This document defines the mini-program runtime adapter boundary for `reverse-deepagent`. The repository now includes a minimal `mini-program-devtools` backend for registry metadata, configurable vendor-devtools probing, and artifact export, without committing to one vendor SDK or developer tool.
 
 Mini-program support must not be treated as normal Web recon. The runtime may use JavaScript, but the execution model, storage APIs, request bridge, native container, package format, and debugging transport differ from a browser page.
 
@@ -21,7 +21,7 @@ Recommended backend ids and aliases:
 | `mini-program-jscore` | `mp-jscore`, `jscore-bridge` | `js-engine`, `container-bridge` | JSCore / embedded runtime execution or bridge-assisted validation. |
 | `mini-program-static` | `mp-static`, `wxapkg-static` | `filesystem` | Offline package / source / config metadata extraction. |
 
-The registry should expose these capabilities without starting vendor tools. Real runtime setup belongs behind explicit runtime construction and local environment checks.
+The registry exposes these capabilities without starting vendor tools. Real runtime setup belongs behind explicit runtime construction and local environment checks; the current backend reports unavailable until a vendor devtools command is configured.
 
 ## Capability metadata
 
@@ -56,7 +56,7 @@ Example capability payload:
 
 ## Configuration object
 
-Future implementation should collect vendor/tooling settings in a serializable config object, for example:
+The current implementation collects vendor/tooling settings in a serializable config object equivalent to:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -158,7 +158,7 @@ Do not confuse “it is JavaScript” with “it is browser JavaScript”. `wx.r
 
 ## Minimal implementation checklist
 
-A future mini-program adapter PR should include:
+The current minimal mini-program backend covers metadata registration, config, explicit probe, and artifact export. Future mini-program adapter PRs should include:
 
 1. `MiniProgramRuntimeConfig` or equivalent serializable config.
 2. Side-effect-free capability metadata tests.

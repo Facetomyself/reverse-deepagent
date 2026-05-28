@@ -1,6 +1,6 @@
 # Android runtime adapter interface draft
 
-This document sketches the Android runtime adapter boundary for future `reverse-deepagent` work. It is a planning contract, not a production Android backend implementation.
+This document defines the Android runtime adapter boundary for `reverse-deepagent`. The repository now includes a minimal `android-adb` backend for registry metadata, explicit ADB tool probing, and artifact export; production hook/static-analysis workflows are still future work.
 
 The goal is to keep Android support compatible with the existing runtime adapter / artifact manifest architecture without forcing Android workflows through Web-only concepts such as Chrome pages, DOM scripts, or browser storage APIs.
 
@@ -21,7 +21,7 @@ Recommended backend ids and aliases:
 | `android-frida` | `frida-adb`, `android-hook` | `frida-adb` | Hook Java / JNI / native functions and capture runtime evidence. |
 | `android-static` | `apk-static` | `filesystem` | Offline APK / dex / native library metadata extraction. |
 
-The first implementation can be metadata-only. Real runtime construction should happen only through `build_runtime(...)`, not through registry listing.
+The current `android-adb` implementation is a side-effect-light backend: registry listing is metadata-only, while explicit `build_runtime("android-adb")` construction can run local ADB probes such as `adb version` and `adb devices -l`.
 
 ## Capability metadata
 
@@ -58,7 +58,7 @@ Important: `supports_browser_session=false` is not a weakness. It prevents coord
 
 ## Configuration object
 
-Future implementation should collect Android settings in a serializable config object, for example:
+The current implementation collects Android settings in a serializable config object equivalent to:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -166,7 +166,7 @@ Android adapters should implement platform-neutral `ReverseRuntime` and expose a
 
 ## Minimal implementation checklist
 
-A future Android adapter PR should include:
+The current minimal Android backend covers items 1-3 and 6 below. Future Android adapter PRs should complete the remaining device/hook workflow items:
 
 1. `AndroidRuntimeConfig` or equivalent serializable config.
 2. Capability metadata tests that do not require a device.
