@@ -13,6 +13,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Multi-sample `runtime-context-diff.json` generation with stable / volatile key classification and change summaries.
 - Rebuild strategy registry abstraction with ordered metadata for deterministic fixture, template, crypto hash, and encoding detectors.
 - Self-hosted MCP smoke workflow documentation, fixture profile options, and explicit `--jsreverser-mcp-command` wiring.
+- Self-hosted MCP smoke continuous canary support with scheduled runs, profile sets, runner preflight, step summaries, and artifact upload.
 - `RuntimeBackendCapabilities` schema and `describe_capabilities()` runtime metadata for mock and JSReverser MCP backends.
 - `RuntimeBackendRegistry` factory with `mock` / `mcp` backend registrations and JSON-serializable metadata listing.
 - `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` schemas and generated `workspace/backend-artifact-manifest.json`.

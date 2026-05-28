@@ -6,6 +6,7 @@ Reverse-engineering oriented DeepAgents demo for Web / JavaScript workflows. The
 
 > 当前发布线：`v0.1.x` public demo stabilization。详见 [`CHANGELOG.md`](CHANGELOG.md) 与 [`ROADMAP.md`](ROADMAP.md)。
 > MCP runtime 与 self-hosted smoke：[`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)、[`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md)。
+> Self-hosted MCP workflow 当前支持手动 `profile`、批量 `profile_set`、weekly canary、runner preflight、step summary 与 artifact upload。
 > Runtime adapter contract：[`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
 ## Quickstart

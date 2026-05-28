@@ -8,7 +8,7 @@ on:
         required: true
         default: self-hosted
       profile:
-        description: Fixture profile to test.
+        description: Fixture profile to test when profile_set=selected.
         required: true
         default: context-navigator
         type: choice
@@ -24,18 +24,44 @@ on:
           - webpack-minified
           - token-chain
           - hybrid-context
+      profile_set:
+        description: Profile batch for continuous self-hosted smoke.
+        required: true
+        default: selected
+        type: choice
+        options:
+          - selected
+          - core
+          - context
+          - realistic
+          - all
       chrome_debug_port:
         description: Chrome remote debugging port.
         required: true
         default: "9461"
+      chrome_path:
+        description: Chrome executable path on the runner.
+        required: true
+        default: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
       jsreverser_mcp_path:
         description: Expected jsreverser-mcp path on the runner.
         required: true
         default: /opt/homebrew/bin/jsreverser-mcp
+  schedule:
+    # Weekly self-hosted canary. Keep this off the default hosted CI path.
+    - cron: "17 20 * * 0"
 
 jobs:
   mcp-fixture-smoke:
-    runs-on: ${{ inputs.runner_label }}
+    runs-on: ${{ inputs.runner_label || 'self-hosted' }}
+    env:
+      SELECTED_PROFILE: ${{ inputs.profile || 'context-navigator' }}
+      PROFILE_SET: ${{ inputs.profile_set || 'core' }}
+      CHROME_DEBUG_PORT: ${{ inputs.chrome_debug_port || '9461' }}
+      CHROME_PATH: ${{ inputs.chrome_path || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' }}
+      JSREVERSER_MCP_PATH: ${{ inputs.jsreverser_mcp_path || '/opt/homebrew/bin/jsreverser-mcp' }}
+      MCP_ARTIFACT_ROOT: ${{ runner.temp }}/reverse-agent-mcp
+      CHROME_USER_DATA_ROOT: ${{ runner.temp }}/reverse-agent-chrome
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,19 +69,79 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Verify MCP binary
-        run: test -x "${{ inputs.jsreverser_mcp_path }}"
-      - name: Install package
+      - name: Preflight self-hosted dependencies
+        shell: bash
         run: |
+          set -euo pipefail
+          python --version
+          test -x "$JSREVERSER_MCP_PATH"
+          test -x "$CHROME_PATH"
+          mkdir -p "$MCP_ARTIFACT_ROOT" "$CHROME_USER_DATA_ROOT"
+          {
+            echo "## MCP self-hosted preflight"
+            echo "- profile_set: $PROFILE_SET"
+            echo "- selected_profile: $SELECTED_PROFILE"
+            echo "- chrome_debug_port: $CHROME_DEBUG_PORT"
+            echo "- chrome_path: $CHROME_PATH"
+            echo "- jsreverser_mcp_path: $JSREVERSER_MCP_PATH"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Install package
+        shell: bash
+        run: |
+          set -euo pipefail
           python -m pip install -U pip
           python -m pip install -e .
-      - name: Run MCP fixture smoke
+      - name: Run MCP fixture smoke profile set
+        shell: bash
         run: |
-          reverse-agent-fixture-smoke \
-            --profile "${{ inputs.profile }}" \
-            --runtime mcp \
-            --ensure-chrome \
-            --jsreverser-mcp-command "${{ inputs.jsreverser_mcp_path }}" \
-            --chrome-debug-port "${{ inputs.chrome_debug_port }}" \
-            --chrome-user-data-dir "$RUNNER_TEMP/reverse-agent-chrome-${{ inputs.chrome_debug_port }}" \
-            --artifact-root "$RUNNER_TEMP/reverse-agent-mcp-${{ inputs.profile }}"
+          set -euo pipefail
+          case "$PROFILE_SET" in
+            selected)
+              profiles=("$SELECTED_PROFILE")
+              ;;
+            core)
+              profiles=(default sha256 base64 context-navigator)
+              ;;
+            context)
+              profiles=(context-localstorage context-cookie context-navigator token-chain hybrid-context)
+              ;;
+            realistic)
+              profiles=(webpack-minified token-chain hybrid-context)
+              ;;
+            all)
+              profiles=(default md5 sha1 sha256 base64 context-localstorage context-cookie context-navigator webpack-minified token-chain hybrid-context)
+              ;;
+            *)
+              echo "Unsupported PROFILE_SET=$PROFILE_SET" >&2
+              exit 2
+              ;;
+          esac
+
+          echo "## MCP fixture smoke results" >> "$GITHUB_STEP_SUMMARY"
+          for index in "${!profiles[@]}"; do
+            profile="${profiles[$index]}"
+            port=$((CHROME_DEBUG_PORT + index))
+            artifact_root="$MCP_ARTIFACT_ROOT/$profile"
+            chrome_user_data_dir="$CHROME_USER_DATA_ROOT/$profile-$port"
+            echo "Running profile=$profile port=$port artifact_root=$artifact_root"
+            reverse-agent-fixture-smoke \
+              --profile "$profile" \
+              --runtime mcp \
+              --ensure-chrome \
+              --jsreverser-mcp-command "$JSREVERSER_MCP_PATH" \
+              --chrome-debug-port "$port" \
+              --chrome-path "$CHROME_PATH" \
+              --chrome-user-data-dir "$chrome_user_data_dir" \
+              --artifact-root "$artifact_root" \
+              > "$artifact_root-smoke.json"
+            echo "- $profile: ok, artifact_root=$artifact_root" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Upload MCP smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reverse-agent-mcp-smoke-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/reverse-agent-mcp
+            ${{ runner.temp }}/reverse-agent-mcp/*-smoke.json
+          if-no-files-found: warn

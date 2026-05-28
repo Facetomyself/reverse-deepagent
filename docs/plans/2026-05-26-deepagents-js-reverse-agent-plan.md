@@ -575,7 +575,7 @@ task_card:
 
 用户追加的 12 项增强按单项实现、code review、功能测试、全量测试和单独 commit 推进。当前已完成并提交第 1～8 项；第 9 项 `runtime context 自动补全` 本轮补齐实现：rebuild 阶段会从源码自动推断 `localStorage` / `sessionStorage` / `cookie` / `navigator` / `timezone` 的具体 binding key，把命中的单个值写入 `pure_extraction.runtime_context_binding`，同时输出 `runtime_context_bindings` / `missing_runtime_context_bindings` 供 review；源码明确依赖具体 key 但采集缺失、或出现多个显式 context binding 但 renderer 尚不支持多值拼接时，均保持 not-ready，避免生成假成功的 `sign_rebuild.py`。
 
-第 10 项 `完整 Scrapy 集成` 已升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库` 本轮新增 `webpack-minified`、`token-chain`、`hybrid-context` 三个 profile，分别覆盖打包/压缩形态、bootstrap token 链路和多上下文绑定阻断；第 12 项 `MCP self-hosted smoke 持续自动化` 仍按顺序排在第 11 项提交之后执行。
+第 10 项 `完整 Scrapy 集成` 已升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库` 已新增 `webpack-minified`、`token-chain`、`hybrid-context` 三个 profile，分别覆盖打包/压缩形态、bootstrap token 链路和多上下文绑定阻断；第 12 项 `MCP self-hosted smoke 持续自动化` 本轮将 self-hosted workflow 升级为支持 weekly schedule、`profile_set` 批量 smoke、runner preflight、step summary 与 artifact upload 的持续 canary。
 
 新增验证入口：
 
@@ -595,6 +595,7 @@ task_card:
 - `reverse-agent-fixture-smoke --profile context-localstorage` 当前可采集 runtime context 并生成 context-aware delivery
 - `reverse-agent-fixture-smoke --profile context-cookie` 当前可采集 cookie context 并生成 context-aware delivery
 - `reverse-agent-fixture-smoke --profile context-navigator` 当前可采集 navigator context 并生成 context-aware delivery
+- `.github/workflows/mcp-integration.yml` 当前支持 self-hosted weekly canary、`profile_set=selected/core/context/realistic/all`、逐 profile 端口递增、artifact upload 与 step summary
 - `workspace/runtime-context-diff.json` 当前可输出单样本稳定性摘要，后续可升级多采样 diff
 
 ## 8. 风险与控制项

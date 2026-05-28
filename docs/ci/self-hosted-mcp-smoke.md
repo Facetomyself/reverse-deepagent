@@ -1,6 +1,6 @@
 # Self-hosted MCP smoke workflow
 
-This document describes how to run the manual GitHub Actions workflow for real JSReverser MCP + Chrome smoke coverage.
+This document describes how to run and maintain the self-hosted GitHub Actions workflow for real JSReverser MCP + Chrome smoke coverage. The workflow supports both manual dispatch and a weekly scheduled canary on a self-hosted runner.
 
 The workflow lives at:
 
@@ -16,9 +16,11 @@ The `MCP Integration` workflow runs `reverse-agent-fixture-smoke` against the bu
 
 - real `runtime=mcp`
 - managed Chrome remote-debugging lifecycle via `--ensure-chrome`
-- a selected fixture profile
+- a selected fixture profile or a named `profile_set` batch
 - a temporary Chrome user-data directory under `$RUNNER_TEMP`
 - a temporary artifact root under `$RUNNER_TEMP`
+- artifact upload for generated smoke output and JSON summaries
+- `$GITHUB_STEP_SUMMARY` entries for preflight and per-profile results
 
 A successful run verifies that the runner can:
 
@@ -54,8 +56,10 @@ If the MCP binary is not at `/opt/homebrew/bin/jsreverser-mcp`, pass the correct
 | Input | Default | Purpose |
 | --- | --- | --- |
 | `runner_label` | `self-hosted` | GitHub Actions runner label. Use a more specific label if you have multiple self-hosted runners. |
-| `profile` | `context-navigator` | Fixture profile used by `reverse-agent-fixture-smoke`. |
-| `chrome_debug_port` | `9461` | Chrome remote debugging port used by the managed launcher and MCP backend. |
+| `profile` | `context-navigator` | Fixture profile used when `profile_set=selected`. |
+| `profile_set` | `selected` manually, `core` on schedule | Profile batch to run: `selected`, `core`, `context`, `realistic`, or `all`. |
+| `chrome_debug_port` | `9461` | Base Chrome remote debugging port; batch runs increment this port per profile. |
+| `chrome_path` | `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` | Absolute path to the Chrome executable on the runner. |
 | `jsreverser_mcp_path` | `/opt/homebrew/bin/jsreverser-mcp` | Absolute path to the MCP executable on the runner. |
 
 Supported profiles should match the fixture server profiles:
@@ -72,15 +76,23 @@ Supported profiles should match the fixture server profiles:
 - `token-chain`
 - `hybrid-context`
 
+Profile sets:
+
+- `selected`: run only the `profile` input.
+- `core`: run `default`, `sha256`, `base64`, and `context-navigator`. This is the scheduled default.
+- `context`: run context-heavy profiles: `context-localstorage`, `context-cookie`, `context-navigator`, `token-chain`, and `hybrid-context`.
+- `realistic`: run `webpack-minified`, `token-chain`, and `hybrid-context`.
+- `all`: run every fixture profile.
+
 ## How to run from GitHub UI
 
 1. Open the repository Actions tab.
 2. Select `MCP Integration`.
 3. Click `Run workflow`.
-4. Choose a self-hosted runner label and fixture profile.
-5. Pick a free `chrome_debug_port`.
-6. Set `jsreverser_mcp_path` if the runner does not use `/opt/homebrew/bin/jsreverser-mcp`.
-7. Start the workflow and inspect the logs for generated artifact paths.
+4. Choose a self-hosted runner label, fixture profile, and `profile_set`.
+5. Pick a free `chrome_debug_port`; profile-set runs increment the port from this base.
+6. Set `chrome_path` and `jsreverser_mcp_path` if the runner does not use the documented defaults.
+7. Start the workflow and inspect the step summary plus uploaded artifacts.
 
 ## How to run with GitHub CLI
 
@@ -89,7 +101,9 @@ gh workflow run "MCP Integration" \
   --repo "Facetomyself/reverse-deepagent" \
   -f runner_label="self-hosted" \
   -f profile="context-navigator" \
+  -f profile_set="selected" \
   -f chrome_debug_port="9461" \
+  -f chrome_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   -f jsreverser_mcp_path="/opt/homebrew/bin/jsreverser-mcp"
 ```
 
@@ -105,8 +119,11 @@ gh run watch <run-id> --repo "Facetomyself/reverse-deepagent" --exit-status
 The workflow writes smoke artifacts under:
 
 ```text
-$RUNNER_TEMP/reverse-agent-mcp-<profile>
+$RUNNER_TEMP/reverse-agent-mcp/<profile>
+$RUNNER_TEMP/reverse-agent-mcp/<profile>-smoke.json
 ```
+
+The `Upload MCP smoke artifacts` step uploads these paths as `reverse-agent-mcp-smoke-<run-id>` even when a later profile fails.
 
 Important files include:
 
@@ -170,6 +187,6 @@ Volatile keys are not safe to freeze into generated pure-Python replay code with
 
 ## Maintenance notes
 
-- Keep the workflow profile options in sync with `FIXTURE_PROFILE_VALUES` in `src/reverse_deepagent/fixtures/web_sign.py`.
+- Keep the workflow profile options and profile-set shell arrays in sync with `FIXTURE_PROFILE_VALUES` in `src/reverse_deepagent/fixtures/web_sign.py`.
 - Do not upload generated artifacts from real third-party targets unless they are sanitized.
 - Keep MCP-specific assumptions inside runtime docs and adapter code; do not leak raw MCP response parsing into the DeepAgents coordinator.
