@@ -116,6 +116,8 @@ User Task
 - Chrome DevTools 协议
 - Frida / mitmproxy / ADB / iOS device 工具链
 
+当前执行层里的浏览器会话、Chrome debug port、JSReverser MCP、Web storage 和 replay URL 推导都属于 Web-only 假设，统一记录在 `docs/runtime/web-runtime-assumptions.md`。Android / iOS / 小程序 adapter 应通过各自的 runtime interface 和 capability metadata 接入，不应把 app process、Frida session 或 vendor devtools project 伪装成 browser session。
+
 ## 4. 多 Agent 协同设计
 
 首版建议 **1 个主 Agent + 3 个专用子 Agent**。

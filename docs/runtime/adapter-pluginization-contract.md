@@ -124,6 +124,8 @@ Future backend examples:
 
 The Android planning boundary is documented in [`android-adapter-interface.md`](android-adapter-interface.md), the iOS boundary is documented in [`ios-adapter-interface.md`](ios-adapter-interface.md), and the mini-program boundary is documented in [`mini-program-adapter-interface.md`](mini-program-adapter-interface.md). They deliberately treat app/process/container instrumentation as separate runtime shapes instead of overloading Web browser session semantics.
 
+Web-only assumptions are isolated in [`web-runtime-assumptions.md`](web-runtime-assumptions.md). New platform adapters should treat that document as a list of assumptions to avoid inheriting unless they explicitly implement a Web backend.
+
 ## Artifact manifest contract
 
 Every pipeline run writes a typed backend artifact manifest:

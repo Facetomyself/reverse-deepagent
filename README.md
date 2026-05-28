@@ -568,6 +568,8 @@ print(capabilities.model_dump(mode="json"))
 - iOS: [`docs/runtime/ios-adapter-interface.md`](docs/runtime/ios-adapter-interface.md)
 - Mini-program: [`docs/runtime/mini-program-adapter-interface.md`](docs/runtime/mini-program-adapter-interface.md)
 
+当前 Web 路径的浏览器会话、Chrome debug port、JSReverser MCP、Web storage、URL replay 推导等假设统一收口在 [`docs/runtime/web-runtime-assumptions.md`](docs/runtime/web-runtime-assumptions.md)，后续平台 adapter 不应默认继承这些语义。
+
 JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、backend metadata 和 runtime sampling 参数。CLI 里的 `--jsreverser-mcp-command`、Chrome debug port 等参数最终都会汇入这个 config，再创建 MCP runtime。
 
 核心字段包括：
