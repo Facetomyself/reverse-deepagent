@@ -443,7 +443,16 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
     "runtime_context_required": [],
     "dependencies": ["python-stdlib:hashlib"],
     "confidence_reason": "Detected md5 hash marker in source context."
-  }
+  },
+  "review_hints": [
+    {
+      "severity": "info",
+      "category": "strategy",
+      "code": "pure_strategy_detected",
+      "message": "Supported pure-Python rebuild strategy detected; review generated sign_rebuild.py against the captured sample before reuse.",
+      "evidence": ["strategy=md5_keyword_timestamp", "runtime_context_required=[]"]
+    }
+  ]
 }
 ```
 
@@ -474,7 +483,16 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
     "pure_extractable": false,
     "manual_port_required": true,
     "runtime_context_required": ["localStorage"]
-  }
+  },
+  "review_hints": [
+    {
+      "severity": "risk",
+      "category": "manual_port",
+      "code": "manual_port_required",
+      "message": "No complete automatic rebuild is available; expand source/runtime evidence or keep a JS runtime backend for this flow.",
+      "evidence": ["strategy=sha256_keyword_timestamp", "missing_runtime_context=localStorage"]
+    }
+  ]
 }
 ```
 
@@ -500,11 +518,22 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
     "context_aware_extractable": true,
     "runtime_context_required": ["localStorage"],
     "captured_runtime_context": ["localStorage"]
-  }
+  },
+  "review_hints": [
+    {
+      "severity": "warning",
+      "category": "runtime_context",
+      "code": "context_aware_rebuild",
+      "message": "Generated rebuild depends on captured browser/runtime context; verify these values are stable before running at scale.",
+      "evidence": ["runtime_context_required=localStorage", "captured_runtime_context=localStorage"]
+    }
+  ]
 }
 ```
 
 生成的 `sign_rebuild.py` 会把采集到的上下文写成默认常量，用于浏览器外 replay。当前 renderer 已覆盖 `localStorage.device_id`、`cookie.device_id` 和 `navigator.userAgent` 三类上下文。
+
+`review_hints` 是给后续人工 review、CI gate 或子智能体复核使用的 machine-readable 提示，不替代 `ready` / `pure_extraction`。当前固定字段为 `severity`、`category`、`code`、`message`、`evidence`，会覆盖 pure rebuild、context-aware rebuild、manual port / partial rebuild，以及 volatile runtime context 等风险。
 
 `workspace/runtime-context-diff.json` 会对运行时上下文做稳定性摘要。默认 runtime 会采集多次样本，字段包括 `status`（`multi_sample` 或 `single_sample` fallback）、`sample_count`、`stable`、`stable_keys`、`volatile_keys`、`missing_requirements` 和 `changes`。其中 `sample_index` / `collected_at_ms` 只作为采样元数据，不参与稳定性判断；`volatile_keys` 应被视为 replay 时仍需要运行时绑定的输入。
 

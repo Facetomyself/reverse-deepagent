@@ -40,6 +40,14 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
     replay_url = _derive_replay_url(task_card, target_request_url)
     base_url = _derive_base_url(replay_url or task_card.target_url_or_file)
     ready = bool(best_validation and strategy["supported"] and (extraction["pure_extractable"] or extraction["context_aware_extractable"]) and replay_url)
+    review_hints = _build_review_hints(
+        strategy=strategy,
+        extraction=extraction,
+        runtime_context=runtime_context,
+        validation=best_validation,
+        replay_url=replay_url,
+        ready=ready,
+    )
 
     plan = {
         "ready": ready,
@@ -75,6 +83,7 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
             "scrapy_middleware": "artifacts/rebuild/scrapy_middleware.py",
         },
         "limitations": _build_limitations(strategy),
+        "review_hints": review_hints,
     }
 
     files: dict[str, str] = {}
@@ -439,6 +448,124 @@ class ReverseSignMiddleware:
 
 def render_not_ready_readme(plan: dict[str, Any]) -> str:
     return "# Rebuild bundle not ready\n\n" + json.dumps(plan, ensure_ascii=False, indent=2) + "\n"
+
+
+def _build_review_hints(
+    *,
+    strategy: dict[str, Any],
+    extraction: dict[str, Any],
+    runtime_context: dict[str, Any],
+    validation: dict[str, Any],
+    replay_url: str,
+    ready: bool,
+) -> list[dict[str, Any]]:
+    """Build machine-readable hints for reviewing generated rebuild artifacts."""
+
+    hints: list[dict[str, Any]] = []
+    strategy_id = str(strategy.get("id") or "unknown")
+    confidence_score = strategy.get("confidence_score") if isinstance(strategy.get("confidence_score"), dict) else {}
+    confidence_label = str(confidence_score.get("label") or strategy.get("confidence") or "unknown")
+    confidence_value = confidence_score.get("score")
+
+    if extraction.get("pure_extractable"):
+        hints.append(
+            _review_hint(
+                severity="info",
+                category="strategy",
+                code="pure_strategy_detected",
+                message="Supported pure-Python rebuild strategy detected; review generated sign_rebuild.py against the captured sample before reuse.",
+                evidence=[
+                    f"strategy={strategy_id}",
+                    f"confidence={confidence_label}",
+                    f"score={confidence_value}",
+                    "runtime_context_required=[]",
+                ],
+            )
+        )
+    elif extraction.get("context_aware_extractable"):
+        required = [str(item) for item in extraction.get("runtime_context_required", [])]
+        captured = [str(item) for item in extraction.get("captured_runtime_context", [])]
+        hints.append(
+            _review_hint(
+                severity="warning",
+                category="runtime_context",
+                code="context_aware_rebuild",
+                message="Generated rebuild depends on captured browser/runtime context; verify these values are stable before running at scale.",
+                evidence=[
+                    f"strategy={strategy_id}",
+                    f"runtime_context_required={','.join(required)}",
+                    f"captured_runtime_context={','.join(captured)}",
+                ],
+            )
+        )
+        volatile_keys = runtime_context.get("volatile_keys") if isinstance(runtime_context, dict) else None
+        if volatile_keys:
+            hints.append(
+                _review_hint(
+                    severity="risk",
+                    category="runtime_context",
+                    code="volatile_runtime_context",
+                    message="Runtime context contains volatile keys; bind them dynamically instead of hard-coding generated constants.",
+                    evidence=[f"volatile_keys={','.join(str(item) for item in volatile_keys)}"],
+                )
+            )
+    else:
+        missing = [
+            item
+            for item in extraction.get("runtime_context_required", [])
+            if item not in set(extraction.get("captured_runtime_context", []))
+        ]
+        caveats = []
+        confidence_payload = strategy.get("confidence_score")
+        if isinstance(confidence_payload, dict):
+            caveats = [str(item) for item in confidence_payload.get("caveats", [])]
+        hints.append(
+            _review_hint(
+                severity="risk",
+                category="manual_port",
+                code="manual_port_required",
+                message="No complete automatic rebuild is available; expand source/runtime evidence or keep a JS runtime backend for this flow.",
+                evidence=[
+                    f"strategy={strategy_id}",
+                    f"supported={bool(strategy.get('supported'))}",
+                    f"missing_runtime_context={','.join(str(item) for item in missing)}",
+                    *[f"caveat={item}" for item in caveats],
+                ],
+            )
+        )
+
+    replay_result = validation.get("replay_result") if isinstance(validation, dict) else {}
+    if ready and replay_result and not replay_result.get("ok"):
+        hints.append(
+            _review_hint(
+                severity="warning",
+                category="replay",
+                code="sample_replay_not_ok",
+                message="Generated files are present, but captured replay result was not successful; re-run replay_demo.py against the target fixture.",
+                evidence=[f"replay_result={json.dumps(replay_result, ensure_ascii=False, sort_keys=True)}"],
+            )
+        )
+    if ready and not replay_url:
+        hints.append(
+            _review_hint(
+                severity="warning",
+                category="replay",
+                code="missing_replay_url",
+                message="No concrete replay URL was derived; integrate generated sign code manually into the target request path.",
+                evidence=["replay_url="],
+            )
+        )
+    return hints
+
+
+def _review_hint(*, severity: str, category: str, code: str, message: str, evidence: list[str]) -> dict[str, Any]:
+    return {
+        "severity": severity,
+        "category": category,
+        "code": code,
+        "message": message,
+        "evidence": evidence,
+    }
 
 
 def _select_runtime_context_binding(runtime_context: dict[str, Any], extraction: dict[str, Any]) -> tuple[str, str, str] | None:

@@ -259,6 +259,9 @@ class RebuildArtifactTests(unittest.TestCase):
             self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
             self.assertEqual(rebuild.rebuild_plan["algorithm_strategy"]["id"], "md5_keyword_timestamp")
             self.assertTrue(rebuild.rebuild_plan["pure_extraction"]["pure_extractable"])
+            hints = rebuild.rebuild_plan["review_hints"]
+            self.assertIn("pure_strategy_detected", {hint["code"] for hint in hints})
+            self.assertEqual({hint["severity"] for hint in hints}, {"info"})
             sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
             result = subprocess.run(
                 [sys.executable, str(sign_rebuild_path)],
@@ -303,6 +306,10 @@ class RebuildArtifactTests(unittest.TestCase):
             self.assertFalse(rebuild.rebuild_plan["ready"])
             self.assertFalse(rebuild.rebuild_plan["pure_extraction"]["pure_extractable"])
             self.assertIn("localStorage", rebuild.rebuild_plan["pure_extraction"]["runtime_context_required"])
+            manual_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "manual_port_required")
+            self.assertEqual(manual_hint["severity"], "risk")
+            self.assertEqual(manual_hint["category"], "manual_port")
+            self.assertIn("missing_runtime_context=localStorage", manual_hint["evidence"])
             self.assertIn("README", rebuild.generated_files)
 
     def test_captured_runtime_context_enables_context_aware_rebuild(self) -> None:
@@ -324,6 +331,10 @@ class RebuildArtifactTests(unittest.TestCase):
             self.assertTrue(rebuild.rebuild_plan["ready"])
             self.assertFalse(rebuild.rebuild_plan["pure_extraction"]["pure_extractable"])
             self.assertTrue(rebuild.rebuild_plan["pure_extraction"]["context_aware_extractable"])
+            context_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "context_aware_rebuild")
+            self.assertEqual(context_hint["severity"], "warning")
+            self.assertEqual(context_hint["category"], "runtime_context")
+            self.assertIn("runtime_context_required=localStorage", context_hint["evidence"])
             sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
             result = subprocess.run(
                 [sys.executable, str(sign_rebuild_path)],
