@@ -16,6 +16,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - `RuntimeBackendRegistry` factory with `mock` / `mcp` backend registrations and JSON-serializable metadata listing.
 - `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` schemas and generated `workspace/backend-artifact-manifest.json`.
 - `JSReverserMcpConfig` for serialized MCP command, browser URL, timeout, backend metadata, and sampling configuration.
+- Runtime adapter pluginization contract documentation for current Web backends and future Android / iOS / mini-program expansion.
 
 ## [0.1.0] - 2026-05-27
 

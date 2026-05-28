@@ -6,6 +6,7 @@ Reverse-engineering oriented DeepAgents demo for Web / JavaScript workflows. The
 
 > 当前发布线：`v0.1.x` public demo stabilization。详见 [`CHANGELOG.md`](CHANGELOG.md) 与 [`ROADMAP.md`](ROADMAP.md)。
 > MCP runtime 与 self-hosted smoke：[`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)、[`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md)。
+> Runtime adapter contract：[`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
 ## Quickstart
 
@@ -532,7 +533,7 @@ JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `comm
 - `managed_chrome` / `mcp_backed`：运行时约束提示
 - `evidence_kinds` / `artifact_kinds`：该 backend 常见输出类型
 
-这只是 runtime pluginization 的第一层契约，不代表 Android / iOS / 小程序 backend 已经实现；后续 backend 需要先补 capability metadata，再接入 registry / factory。
+这只是 runtime pluginization 的第一层契约，不代表 Android / iOS / 小程序 backend 已经实现；后续 backend 需要先补 capability metadata，再接入 registry / factory。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
 ## Chrome Debug Session 约束
 
