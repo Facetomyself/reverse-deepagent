@@ -2,11 +2,24 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urljoin, urlparse, urlunparse
 
 from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ConfidenceLevel, ExecutionStatus, FinalResult, RebuildResult, TaskCard
+
+StrategyDetector = Callable[[str], dict[str, Any] | None]
+
+
+@dataclass(frozen=True, slots=True)
+class AlgorithmStrategyRule:
+    """Registry entry for conservative source-pattern to rebuild-strategy detection."""
+
+    rule_id: str
+    emits: tuple[str, ...]
+    detector: StrategyDetector
+    description: str
 
 
 def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tuple[dict[str, Any], dict[str, str]]:
@@ -529,7 +542,36 @@ def _match_candidate(best_validation: dict[str, Any], candidates: list[dict[str,
     return candidates[0] if candidates else {}
 
 
-def _detect_algorithm_strategy(source_context: str) -> dict[str, Any]:
+def _detect_algorithm_strategy(
+    source_context: str,
+    registry: tuple[AlgorithmStrategyRule, ...] | None = None,
+) -> dict[str, Any]:
+    for rule in registry or ALGORITHM_STRATEGY_REGISTRY:
+        strategy = rule.detector(source_context)
+        if strategy:
+            return strategy
+    return _unsupported_strategy()
+
+
+def list_algorithm_strategy_registry() -> list[dict[str, Any]]:
+    """Return metadata for registered strategy detectors.
+
+    The rebuild generator intentionally exposes metadata, not detector callables,
+    so docs / tests / future CLI surfaces can inspect available strategies
+    without coupling to Python function objects.
+    """
+
+    return [
+        {
+            "rule_id": rule.rule_id,
+            "emits": list(rule.emits),
+            "description": rule.description,
+        }
+        for rule in ALGORITHM_STRATEGY_REGISTRY
+    ]
+
+
+def _detect_fixture_seed_strategy(source_context: str) -> dict[str, Any] | None:
     lowered = source_context.lower()
     if "fixture_seed" in lowered and "charcodeat" in lowered and "100000" in lowered:
         return _strategy(
@@ -540,6 +582,10 @@ def _detect_algorithm_strategy(source_context: str) -> dict[str, Any]:
             dependencies=["python-stdlib"],
             confidence_reason="Detected FIXTURE_SEED, charCodeAt reducer and modulo 100000 in source context.",
         )
+    return None
+
+
+def _detect_sig_template_strategy(source_context: str) -> dict[str, Any] | None:
     if re.search(r"sig_.*keyword.*timestamp", source_context, flags=re.IGNORECASE | re.DOTALL):
         return _strategy(
             "sig_keyword_timestamp_template",
@@ -549,12 +595,10 @@ def _detect_algorithm_strategy(source_context: str) -> dict[str, Any]:
             dependencies=["python-stdlib"],
             confidence_reason="Detected sig_ template using keyword and timestamp.",
         )
-    crypto_strategy = _detect_crypto_hash_strategy(source_context)
-    if crypto_strategy:
-        return crypto_strategy
-    encoding_strategy = _detect_encoding_strategy(source_context)
-    if encoding_strategy:
-        return encoding_strategy
+    return None
+
+
+def _unsupported_strategy() -> dict[str, Any]:
     return _strategy(
         "unsupported_manual_port_required",
         supported=False,
@@ -626,6 +670,39 @@ def _detect_encoding_strategy(source_context: str) -> dict[str, Any] | None:
             confidence_reason="Detected encodeURIComponent/URLSearchParams marker in source context.",
         )
     return None
+
+
+ALGORITHM_STRATEGY_REGISTRY: tuple[AlgorithmStrategyRule, ...] = (
+    AlgorithmStrategyRule(
+        rule_id="deterministic_fixture",
+        emits=("fixture_seed_mod100000",),
+        detector=_detect_fixture_seed_strategy,
+        description="Detect the bundled deterministic fixture reducer.",
+    ),
+    AlgorithmStrategyRule(
+        rule_id="sig_template",
+        emits=("sig_keyword_timestamp_template",),
+        detector=_detect_sig_template_strategy,
+        description="Detect simple sig_<keyword>_<timestamp> template flows.",
+    ),
+    AlgorithmStrategyRule(
+        rule_id="crypto_hash",
+        emits=(
+            "hmac_sha256_keyword_timestamp",
+            "md5_keyword_timestamp",
+            "sha1_keyword_timestamp",
+            "sha256_keyword_timestamp",
+        ),
+        detector=_detect_crypto_hash_strategy,
+        description="Detect hashlib / HMAC-compatible JavaScript hash flows.",
+    ),
+    AlgorithmStrategyRule(
+        rule_id="encoding",
+        emits=("base64_keyword_timestamp", "urlencode_keyword_timestamp"),
+        detector=_detect_encoding_strategy,
+        description="Detect simple browser encoding flows such as btoa or encodeURIComponent.",
+    ),
+)
 
 
 def _strategy(

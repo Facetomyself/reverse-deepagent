@@ -11,7 +11,7 @@ from typing import Any
 from reverse_deepagent.adapters.jsreverser import JSReverserRuntime
 from reverse_deepagent.coordinator import run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import start_fixture_server
-from reverse_deepagent.rebuild import write_rebuild_bundle
+from reverse_deepagent.rebuild import list_algorithm_strategy_registry, write_rebuild_bundle
 from reverse_deepagent.schemas import (
     ConfidenceLevel,
     EvidenceItem,
@@ -182,6 +182,22 @@ class FixtureRebuildBridge:
         if tool_name == "export_session_report":
             return {"ok": True}
         raise AssertionError(f"unexpected tool: {tool_name}")
+
+
+class StrategyRegistryTests(unittest.TestCase):
+    def test_strategy_registry_exposes_ordered_metadata(self) -> None:
+        registry = list_algorithm_strategy_registry()
+        self.assertEqual(
+            [item["rule_id"] for item in registry],
+            ["deterministic_fixture", "sig_template", "crypto_hash", "encoding"],
+        )
+        emitted = {strategy_id for item in registry for strategy_id in item["emits"]}
+        self.assertIn("fixture_seed_mod100000", emitted)
+        self.assertIn("md5_keyword_timestamp", emitted)
+        self.assertIn("sha1_keyword_timestamp", emitted)
+        self.assertIn("sha256_keyword_timestamp", emitted)
+        self.assertIn("base64_keyword_timestamp", emitted)
+        self.assertIn("urlencode_keyword_timestamp", emitted)
 
 
 class RebuildArtifactTests(unittest.TestCase):

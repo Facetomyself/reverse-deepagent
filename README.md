@@ -435,16 +435,12 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765
 }
 ```
 
-当前已支持的策略识别：
+当前 strategy detection 通过 `AlgorithmStrategyRule` registry 管理，registry metadata 可由 `list_algorithm_strategy_registry()` 读取。当前默认顺序：
 
-- `fixture_seed_mod100000`
-- `sig_keyword_timestamp_template`
-- `md5_keyword_timestamp`
-- `sha1_keyword_timestamp`
-- `sha256_keyword_timestamp`
-- `hmac_sha256_keyword_timestamp`（需要能提取 literal secret）
-- `base64_keyword_timestamp`
-- `urlencode_keyword_timestamp`
+1. `deterministic_fixture`：发射 `fixture_seed_mod100000`
+2. `sig_template`：发射 `sig_keyword_timestamp_template`
+3. `crypto_hash`：发射 `md5_keyword_timestamp`、`sha1_keyword_timestamp`、`sha256_keyword_timestamp`、`hmac_sha256_keyword_timestamp`（需要能提取 literal secret）
+4. `encoding`：发射 `base64_keyword_timestamp`、`urlencode_keyword_timestamp`
 
 当前会阻断 pure extraction 的运行时上下文依赖：
 
