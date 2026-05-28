@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
@@ -34,6 +35,7 @@ class CoordinatorTests(unittest.TestCase):
             self.assertIn("workspace_function_candidates", output.artifacts)
             self.assertIn("workspace_function_validations", output.artifacts)
             self.assertIn("workspace_function_validation_summary", output.artifacts)
+            self.assertIn("workspace_backend_artifact_manifest", output.artifacts)
             self.assertIn("workspace_rebuild_plan", output.artifacts)
             self.assertIn("rebuild_sign_rebuild", output.artifacts)
             self.assertIn("rebuild_replay_demo", output.artifacts)
@@ -41,10 +43,17 @@ class CoordinatorTests(unittest.TestCase):
             self.assertTrue(Path(output.artifacts["workspace_function_candidates"]).exists())
             self.assertTrue(Path(output.artifacts["workspace_function_validations"]).exists())
             self.assertTrue(Path(output.artifacts["workspace_function_validation_summary"]).exists())
+            self.assertTrue(Path(output.artifacts["workspace_backend_artifact_manifest"]).exists())
             self.assertTrue(Path(output.artifacts["workspace_rebuild_plan"]).exists())
             self.assertTrue(Path(output.artifacts["rebuild_sign_rebuild"]).exists())
             self.assertTrue(Path(output.artifacts["rebuild_replay_demo"]).exists())
             self.assertTrue(Path(output.artifacts["rebuild_scrapy_middleware"]).exists())
+            manifest = json.loads(Path(output.artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["producer_backend_id"], "mock")
+            self.assertEqual(manifest["producer_transport"], "in-process")
+            manifest_keys = {item["artifact_key"] for item in manifest["entries"]}
+            self.assertIn("workspace_task_card", manifest_keys)
+            self.assertIn("rebuild_sign_rebuild", manifest_keys)
             self.assertIsNone(output.chrome_launch)
             self.assertIsNone(output.chrome_stop)
 

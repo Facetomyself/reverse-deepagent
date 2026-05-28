@@ -52,6 +52,29 @@ class RuntimeBackendCapabilities(SchemaBaseModel):
     config: dict[str, Any] = Field(default_factory=dict, description="Non-secret config summary useful for debugging.")
 
 
+class RuntimeArtifactManifestEntry(SchemaBaseModel):
+    """Typed manifest entry for one artifact produced by a runtime pipeline."""
+
+    artifact_key: str = Field(description="Stable key used by artifact indexes, such as workspace_task_card.")
+    path: str = Field(description="Filesystem or virtual artifact path.")
+    category: str = Field(default="other", description="High-level category such as workspace, report, export, or rebuild.")
+    kind: str = Field(default="other", description="Artifact kind such as json, markdown, rebuild, or export.")
+    producer_backend_id: str = Field(description="Runtime backend that produced or orchestrated the artifact.")
+    producer_transport: str = Field(default="unknown", description="Runtime transport used by the producer backend.")
+    target_platforms: list[str] = Field(default_factory=list, description="Target platforms associated with the producer backend.")
+    description: str | None = Field(default=None, description="Human-readable artifact description.")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional machine-readable artifact metadata.")
+
+
+class RuntimeArtifactManifest(SchemaBaseModel):
+    """Typed manifest for artifacts emitted by a runtime pipeline run."""
+
+    producer_backend_id: str = Field(description="Runtime backend that produced or orchestrated this manifest.")
+    producer_transport: str = Field(default="unknown", description="Runtime transport used by the producer backend.")
+    target_platforms: list[str] = Field(default_factory=list, description="Target platforms associated with this run.")
+    entries: list[RuntimeArtifactManifestEntry] = Field(default_factory=list, description="Artifact entries in stable key order.")
+
+
 class ReverseRuntime(ABC):
     """Stable execution interface consumed by the agent layer.
 

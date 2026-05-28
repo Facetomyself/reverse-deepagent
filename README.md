@@ -121,6 +121,7 @@ reverse-agent-demo --runtime mock
 - `workspace/function-validation-summary.json`（有验证结果时）
 - `workspace/runtime-context.json`（检测到并采集运行时上下文时）
 - `workspace/runtime-context-diff.json`（运行时上下文稳定性摘要）
+- `workspace/backend-artifact-manifest.json`（backend 输出 manifest）
 - `workspace/rebuild-plan.json`
 - `rebuild/sign_rebuild.py`（可生成纯算策略时）
 - `rebuild/replay_demo.py`（可生成纯算策略时）
@@ -380,6 +381,7 @@ reverse-agent-fixture-smoke \
   - `workspace/function-candidates.json`
   - `workspace/function-validations.json`
   - `workspace/function-validation-summary.json`
+  - `workspace/backend-artifact-manifest.json`
   - `workspace/rebuild-plan.json`
 - rebuild 交付文件会写入：
   - `rebuild/sign_rebuild.py`
@@ -516,6 +518,8 @@ print(capabilities.model_dump(mode="json"))
 
 - `mock`（alias: `in-process`）：公开 CI 和本地 deterministic demo 使用
 - `mcp`（alias: `jsreverser-mcp`）：真实 JSReverser MCP + Chrome DevTools runtime
+
+每次 pipeline 会额外写出 `workspace/backend-artifact-manifest.json`，用 `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` 描述 artifact key、路径、类别、kind、producer backend、transport 和 target platforms。这个 manifest 是新增索引，不替换现有 `exports/artifact-index.json`。
 
 核心字段包括：
 

@@ -13,6 +13,7 @@ from reverse_deepagent.adapters.jsreverser import (
 )
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.runtime import RuntimeBackendCapabilities, RuntimeBackendRegistration, RuntimeBackendRegistry
+from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactManifestEntry
 from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
 from reverse_deepagent.schemas import FinalResult, KeyFindings, ReconResult, RouterResult, SchemaBaseModel, TaskCard
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
@@ -242,6 +243,7 @@ def write_outputs(
     recon_result: ReconResult,
     final_result: FinalResult,
     export_bundle: dict[str, Any],
+    runtime_capabilities: RuntimeBackendCapabilities | None = None,
 ) -> dict[str, str]:
     """Persist the standard workspace/report/export artifact set."""
 
@@ -258,6 +260,7 @@ def write_outputs(
     final_workspace_path = workspace_dir / "final-result.json"
     report_json_path = reports_dir / "demo-final-result.json"
     report_md_path = reports_dir / "demo-final-report.md"
+    manifest_path = workspace_dir / "backend-artifact-manifest.json"
     index_path = exports_dir / "artifact-index.json"
     workspace_artifact_paths = _write_workspace_artifacts(workspace_dir, final_result)
     rebuild_result = write_rebuild_bundle(base_dir, task_card, final_result)
@@ -269,6 +272,25 @@ def write_outputs(
     _write_json(final_workspace_path, final_result.model_dump(mode="json"))
     _write_json(report_json_path, final_result.model_dump(mode="json"))
     report_md_path.write_text(build_markdown_report(final_result), encoding="utf-8")
+
+    output_paths = {
+        "workspace_task_card": str(task_card_path),
+        "workspace_route": str(route_path),
+        "workspace_recon": str(recon_path),
+        "workspace_final": str(final_workspace_path),
+        "json": str(report_json_path),
+        "markdown": str(report_md_path),
+        "index": str(index_path),
+    }
+    output_paths.update({f"workspace_{key}": value for key, value in workspace_artifact_paths.items()})
+    output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
+    if "rebuild_plan" in rebuild_artifact_paths:
+        output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
+
+    capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
+    backend_artifact_manifest = _build_backend_artifact_manifest(capabilities, output_paths)
+    _write_json(manifest_path, backend_artifact_manifest.model_dump(mode="json"))
+    output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
     artifact_index = {
         "workspace": {
@@ -284,23 +306,64 @@ def write_outputs(
         "runtime_exports": export_bundle,
         "workspace_artifacts": workspace_artifact_paths,
         "rebuild_artifacts": rebuild_artifact_paths,
+        "backend_artifact_manifest": str(manifest_path),
         "rebuild_result": rebuild_result.model_dump(mode="json"),
     }
     _write_json(index_path, artifact_index)
-    output_paths = {
-        "workspace_task_card": str(task_card_path),
-        "workspace_route": str(route_path),
-        "workspace_recon": str(recon_path),
-        "workspace_final": str(final_workspace_path),
-        "json": str(report_json_path),
-        "markdown": str(report_md_path),
-        "index": str(index_path),
-    }
-    output_paths.update({f"workspace_{key}": value for key, value in workspace_artifact_paths.items()})
-    output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
-    if "rebuild_plan" in rebuild_artifact_paths:
-        output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
     return output_paths
+
+
+def _build_backend_artifact_manifest(
+    capabilities: RuntimeBackendCapabilities,
+    output_paths: dict[str, str],
+) -> RuntimeArtifactManifest:
+    entries = [
+        RuntimeArtifactManifestEntry(
+            artifact_key=key,
+            path=path,
+            category=_artifact_category_from_key(key),
+            kind=_artifact_kind_from_path(path),
+            producer_backend_id=capabilities.backend_id,
+            producer_transport=capabilities.transport,
+            target_platforms=capabilities.target_platforms,
+            description=_artifact_description_from_key(key),
+            metadata={"path_style": "virtual" if path.startswith("virtual://") else "filesystem"},
+        )
+        for key, path in sorted(output_paths.items())
+    ]
+    return RuntimeArtifactManifest(
+        producer_backend_id=capabilities.backend_id,
+        producer_transport=capabilities.transport,
+        target_platforms=capabilities.target_platforms,
+        entries=entries,
+    )
+
+
+def _artifact_category_from_key(key: str) -> str:
+    if key.startswith("workspace_"):
+        return "workspace"
+    if key.startswith("rebuild_"):
+        return "rebuild"
+    if key in {"json", "markdown"}:
+        return "report"
+    if key == "index":
+        return "export"
+    return "other"
+
+
+def _artifact_kind_from_path(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    if suffix == ".json":
+        return "json"
+    if suffix in {".md", ".markdown"}:
+        return "markdown"
+    if suffix == ".py":
+        return "rebuild"
+    return "other"
+
+
+def _artifact_description_from_key(key: str) -> str:
+    return key.replace("_", " ")
 
 
 def run_reverse_pipeline(
@@ -338,6 +401,7 @@ def run_reverse_pipeline(
         browser_url=chrome_config.browser_url if chrome_config else None,
         mcp_command=mcp_command,
     )
+    runtime_capabilities = active_runtime.describe_capabilities()
     try:
         recon_result = active_runtime.run_web_recon(task_card=task_card, route_result=route_result)
         final_result = _final_from_recon(task_card, route_result, recon_result)
@@ -348,7 +412,15 @@ def run_reverse_pipeline(
         if should_stop_chrome:
             chrome_stop = stop_chrome_debug(chrome_config)
 
-    paths = write_outputs(artifact_root, task_card, route_result, recon_result, final_result, export_bundle)
+    paths = write_outputs(
+        artifact_root,
+        task_card,
+        route_result,
+        recon_result,
+        final_result,
+        export_bundle,
+        runtime_capabilities=runtime_capabilities,
+    )
     return ReversePipelineOutput(
         final_result=final_result,
         artifacts=paths,

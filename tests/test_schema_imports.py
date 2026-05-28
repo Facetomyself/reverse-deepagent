@@ -12,7 +12,7 @@ from reverse_deepagent.schemas import (
     RouterResult,
     TaskCard,
 )
-from reverse_deepagent.runtime import RuntimeBackendCapabilities
+from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactManifestEntry, RuntimeBackendCapabilities
 
 
 class SchemaImportTests(unittest.TestCase):
@@ -81,6 +81,22 @@ class SchemaImportTests(unittest.TestCase):
         serialized = capabilities.model_dump(mode="json")
         self.assertEqual(serialized["backend_id"], "mock")
         self.assertTrue(serialized["supports_web_recon"])
+
+        manifest = RuntimeArtifactManifest(
+            producer_backend_id="mock",
+            producer_transport="in-process",
+            target_platforms=["web"],
+            entries=[
+                RuntimeArtifactManifestEntry(
+                    artifact_key="workspace_task_card",
+                    path="/tmp/workspace/task-card.json",
+                    category="workspace",
+                    kind="json",
+                    producer_backend_id="mock",
+                )
+            ],
+        )
+        self.assertEqual(manifest.model_dump(mode="json")["entries"][0]["kind"], "json")
 
 
 if __name__ == "__main__":
