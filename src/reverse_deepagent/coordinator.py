@@ -18,10 +18,31 @@ from reverse_deepagent.adapters.jsreverser import (
     create_jsreverser_mcp_runtime,
 )
 from reverse_deepagent.rebuild import write_rebuild_bundle
-from reverse_deepagent.runtime import RuntimeBackendCapabilities, RuntimeBackendRegistration, RuntimeBackendRegistry, ReverseRuntime, WebReverseRuntime
+from reverse_deepagent.runtime import (
+    RuntimeBackendCapabilities,
+    RuntimeBackendRegistration,
+    RuntimeBackendRegistry,
+    RuntimeExportBundle,
+    ReverseRuntime,
+    WebReverseRuntime,
+)
 from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactManifestEntry
 from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
-from reverse_deepagent.schemas import FinalResult, KeyFindings, ReconResult, RouterResult, SchemaBaseModel, TaskCard
+from reverse_deepagent.schemas import (
+    ArtifactKind,
+    ArtifactRef,
+    ConfidenceLevel,
+    EvidenceItem,
+    EvidenceKind,
+    ExecutionStatus,
+    FinalResult,
+    KeyFindings,
+    ReconResult,
+    ReverseStage,
+    RouterResult,
+    SchemaBaseModel,
+    TaskCard,
+)
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
 
 
@@ -32,6 +53,15 @@ class ReversePipelineOutput(SchemaBaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict, description="Generated artifact path index.")
     chrome_launch: ChromeCommandResult | None = Field(default=None, description="Chrome launch command result, if used.")
     chrome_stop: ChromeCommandResult | None = Field(default=None, description="Chrome stop command result, if used.")
+
+
+class PlatformPipelineOutput(SchemaBaseModel):
+    """Platform-neutral pipeline result for any ReverseRuntime backend."""
+
+    final_result: FinalResult = Field(description="Final structured platform-neutral result.")
+    artifacts: dict[str, str] = Field(default_factory=dict, description="Generated artifact path index.")
+    runtime_capabilities: RuntimeBackendCapabilities = Field(description="Runtime backend capability snapshot used for routing.")
+    runtime_export_bundle: RuntimeExportBundle = Field(description="Raw runtime export bundle emitted by the backend.")
 
 
 class MockJSReverserBridge:
@@ -592,6 +622,9 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_request_initiators": "trace",
     "workspace_runtime_context": "runtime-context",
     "workspace_runtime_context_diff": "runtime-context",
+    "workspace_runtime_capabilities": "runtime-context",
+    "workspace_runtime_export_bundle": "export",
+    "workspace_platform_tool_probe": "runtime-context",
     "workspace_function_candidates": "source",
     "workspace_function_validations": "trace",
     "workspace_function_validation_summary": "trace",
@@ -689,6 +722,288 @@ def _artifact_category_from_runtime_artifact(path: str, artifact: dict[str, Any]
 def _artifact_description_from_key(key: str) -> str:
     return key.replace("_", " ")
 
+
+
+def build_platform_markdown_report(final_result: FinalResult, capabilities: RuntimeBackendCapabilities) -> str:
+    """Build a human-readable Markdown report for the platform-neutral pipeline."""
+
+    findings = final_result.key_findings
+    lines = [
+        "# Reverse DeepAgent Platform Pipeline Report",
+        "",
+        "## Runtime",
+        f"- backend_id: {capabilities.backend_id}",
+        f"- display_name: {capabilities.display_name}",
+        f"- transport: {capabilities.transport}",
+        f"- target_platforms: {', '.join(capabilities.target_platforms) or '(unknown)'}",
+        f"- supports_browser_session: {capabilities.supports_browser_session}",
+        f"- supports_web_recon: {capabilities.supports_web_recon}",
+        f"- supports_artifact_export: {capabilities.supports_artifact_export}",
+        "",
+        "## Task Card",
+        f"- target_url_or_file: {final_result.task_card.target_url_or_file}",
+        f"- target_param_or_api: {final_result.task_card.target_param_or_api}",
+        f"- goal: {final_result.task_card.goal}",
+        f"- boundaries: {final_result.task_card.boundaries}",
+        f"- sample_request: {final_result.task_card.sample_request or ''}",
+        f"- protection_hints: {', '.join(final_result.task_card.protection_hints)}",
+        "",
+        "## Result",
+        f"- mode: {final_result.mode.value}",
+        f"- stage: {final_result.stage.value}",
+        f"- status: {final_result.status.value}",
+        f"- confidence: {final_result.confidence.value}",
+        f"- next_action: {final_result.next_action}",
+        "",
+        "## Facts",
+    ]
+    lines.extend([f"- {item}" for item in findings.facts] or ["- (none)"])
+    lines.extend(["", "## Inferences"])
+    lines.extend([f"- {item}" for item in findings.inferences] or ["- (none)"])
+    lines.extend(["", "## Unknowns"])
+    lines.extend([f"- {item}" for item in findings.unknowns] or ["- (none)"])
+    return "\n".join(lines) + "\n"
+
+
+def run_platform_pipeline(
+    task_text: str,
+    artifact_root: Path,
+    runtime_kind: str = "android-adb",
+    runtime: ReverseRuntime | None = None,
+    **runtime_kwargs: Any,
+) -> PlatformPipelineOutput:
+    """Run a platform-neutral runtime pipeline without assuming browser/Web recon semantics.
+
+    The pipeline performs task normalization, route selection, capability capture,
+    runtime artifact export, and standard artifact persistence for any
+    :class:`ReverseRuntime`. It intentionally does not call Web-only methods such
+    as ``ensure_browser_session`` or ``run_web_recon``.
+    """
+
+    task_card = normalize_task_card(task_text)
+    route_result = route_from_task_card(task_card, task_text=task_text)
+    active_runtime = runtime or build_runtime(runtime_kind, **runtime_kwargs)
+    capabilities = active_runtime.describe_capabilities()
+    export_bundle = active_runtime.export_reverse_artifacts(final_result=None)
+    final_result = _final_from_runtime_export(task_card, route_result, capabilities, export_bundle)
+    export_bundle = export_bundle.model_copy(update={"final_result": final_result})
+    paths = write_platform_outputs(
+        artifact_root,
+        task_card,
+        route_result,
+        final_result,
+        capabilities,
+        export_bundle,
+    )
+    return PlatformPipelineOutput(
+        final_result=final_result,
+        artifacts=paths,
+        runtime_capabilities=capabilities,
+        runtime_export_bundle=export_bundle,
+    )
+
+
+def write_platform_outputs(
+    base_dir: Path,
+    task_card: TaskCard,
+    route_result: RouterResult,
+    final_result: FinalResult,
+    runtime_capabilities: RuntimeBackendCapabilities,
+    export_bundle: RuntimeExportBundle,
+) -> dict[str, str]:
+    """Persist the platform-neutral workspace/report/export artifact set."""
+
+    workspace_dir = base_dir / "workspace"
+    reports_dir = base_dir / "reports"
+    exports_dir = base_dir / "exports"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+
+    task_card_path = workspace_dir / "task-card.json"
+    route_path = workspace_dir / "route-decision.json"
+    capabilities_path = workspace_dir / "runtime-capabilities.json"
+    export_bundle_path = workspace_dir / "runtime-export-bundle.json"
+    final_workspace_path = workspace_dir / "final-result.json"
+    manifest_path = workspace_dir / "backend-artifact-manifest.json"
+    report_json_path = reports_dir / "platform-pipeline-result.json"
+    report_md_path = reports_dir / "platform-pipeline-report.md"
+    index_path = exports_dir / "artifact-index.json"
+
+    export_payload = export_bundle.model_dump(mode="json")
+    _write_json(task_card_path, task_card.model_dump(mode="json"))
+    _write_json(route_path, route_result.model_dump(mode="json"))
+    _write_json(capabilities_path, runtime_capabilities.model_dump(mode="json"))
+    _write_json(export_bundle_path, export_payload)
+    _write_json(final_workspace_path, final_result.model_dump(mode="json"))
+    _write_json(report_json_path, final_result.model_dump(mode="json"))
+    report_md_path.write_text(build_platform_markdown_report(final_result, runtime_capabilities), encoding="utf-8")
+
+    output_paths = {
+        "workspace_task_card": str(task_card_path),
+        "workspace_route": str(route_path),
+        "workspace_runtime_capabilities": str(capabilities_path),
+        "workspace_runtime_export_bundle": str(export_bundle_path),
+        "workspace_final": str(final_workspace_path),
+        "json": str(report_json_path),
+        "markdown": str(report_md_path),
+        "index": str(index_path),
+        "workspace_backend_artifact_manifest": str(manifest_path),
+    }
+    platform_probe_path = _write_platform_tool_probe_if_present(workspace_dir, export_bundle)
+    if platform_probe_path is not None:
+        output_paths["workspace_platform_tool_probe"] = str(platform_probe_path)
+
+    manifest = _build_backend_artifact_manifest(
+        runtime_capabilities,
+        output_paths,
+        extra_artifacts=export_payload.get("artifacts", []),
+    )
+    _write_json(manifest_path, manifest.model_dump(mode="json"))
+    artifact_index = {
+        "workspace": {
+            "task_card": str(task_card_path),
+            "route_decision": str(route_path),
+            "runtime_capabilities": str(capabilities_path),
+            "runtime_export_bundle": str(export_bundle_path),
+            "final_result": str(final_workspace_path),
+            "platform_tool_probe": str(platform_probe_path) if platform_probe_path is not None else None,
+        },
+        "reports": {
+            "json": str(report_json_path),
+            "markdown": str(report_md_path),
+        },
+        "runtime_exports": export_payload,
+        "backend_artifact_manifest": str(manifest_path),
+    }
+    _write_json(index_path, artifact_index)
+    return output_paths
+
+
+def _write_platform_tool_probe_if_present(workspace_dir: Path, export_bundle: RuntimeExportBundle) -> Path | None:
+    for item in export_bundle.exports:
+        if not isinstance(item, dict):
+            continue
+        if item.get("tool") != "platform_tool_probe":
+            continue
+        path = workspace_dir / "platform-tool-probe.json"
+        _write_json(path, item.get("payload", {}))
+        return path
+    return None
+
+
+
+def _artifact_refs_from_runtime_export(export_bundle: RuntimeExportBundle) -> list[ArtifactRef]:
+    artifact_refs: list[ArtifactRef] = []
+    for artifact in export_bundle.artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        path = artifact.get("path")
+        if not path:
+            continue
+        artifact_refs.append(
+            ArtifactRef(
+                path=str(path),
+                kind=artifact.get("kind") or ArtifactKind.OTHER,
+                description=artifact.get("description"),
+                metadata=artifact.get("metadata") if isinstance(artifact.get("metadata"), dict) else {},
+            )
+        )
+    return artifact_refs
+
+def _final_from_runtime_export(
+    task_card: TaskCard,
+    route_result: RouterResult,
+    capabilities: RuntimeBackendCapabilities,
+    export_bundle: RuntimeExportBundle,
+) -> FinalResult:
+    probe = _platform_tool_probe_from_export(export_bundle)
+    artifacts = _artifact_refs_from_runtime_export(export_bundle)
+    export_count = len(export_bundle.exports)
+    artifact_count = len(export_bundle.artifacts)
+    facts = [
+        f"Runtime backend '{capabilities.backend_id}' uses transport '{capabilities.transport}'.",
+        f"Target platforms: {', '.join(capabilities.target_platforms) or 'unknown'}.",
+        f"Runtime export emitted {export_count} export payload(s) and {artifact_count} artifact reference(s).",
+    ]
+    evidence_details: dict[str, Any] = {
+        "capabilities": capabilities.model_dump(mode="json"),
+        "export_count": export_count,
+        "artifact_count": artifact_count,
+    }
+    status = ExecutionStatus.SUCCESS if artifact_count or export_count else ExecutionStatus.PARTIAL
+    confidence = ConfidenceLevel.MEDIUM
+    next_action = "inspect_runtime_export_bundle"
+    unknowns: list[str] = []
+    inferences = [
+        "The platform-neutral pipeline completed without invoking Web-only browser recon methods.",
+    ]
+    if probe is not None:
+        available = bool(probe.get("available"))
+        facts.append(f"Platform toolchain available: {available}.")
+        evidence_details["platform_tool_probe"] = probe
+        if available:
+            next_action = "continue_with_platform_specific_recon_or_hooking"
+            confidence = ConfidenceLevel.MEDIUM
+        else:
+            status = ExecutionStatus.PARTIAL
+            next_action = "install_or_configure_platform_tooling"
+            confidence = ConfidenceLevel.LOW
+            unknowns.append("Runtime-specific recon/hooking cannot proceed until the local platform toolchain is available.")
+    elif not capabilities.supports_artifact_export and not (artifact_count or export_count):
+        status = ExecutionStatus.PARTIAL
+        confidence = ConfidenceLevel.LOW
+        unknowns.append("Runtime does not advertise artifact export support; only capability metadata was captured.")
+
+    evidence = [
+        EvidenceItem(
+            summary=f"Captured capability metadata for runtime backend {capabilities.backend_id}.",
+            kind=EvidenceKind.NOTE,
+            source="runtime_capabilities",
+            anchor=capabilities.backend_id,
+            details=capabilities.model_dump(mode="json"),
+            confidence=ConfidenceLevel.HIGH,
+        ),
+        EvidenceItem(
+            summary=f"Captured runtime export bundle with {export_count} export payload(s).",
+            kind=EvidenceKind.OTHER,
+            source="runtime_export_bundle",
+            anchor=capabilities.backend_id,
+            details=evidence_details,
+            confidence=confidence,
+        ),
+    ]
+    if probe is not None:
+        evidence.append(
+            EvidenceItem(
+                summary="Captured side-effect-light platform toolchain probe.",
+                kind=EvidenceKind.DYNAMIC,
+                source="platform_tool_probe",
+                anchor=capabilities.backend_id,
+                details=probe,
+                confidence=ConfidenceLevel.MEDIUM if probe.get("available") else ConfidenceLevel.LOW,
+            )
+        )
+    return FinalResult(
+        task_card=task_card,
+        mode=route_result.selected_mode,
+        stage=ReverseStage.CONTEXT,
+        status=status,
+        key_findings=KeyFindings(facts=facts, inferences=inferences, unknowns=unknowns),
+        evidence=evidence,
+        artifacts=artifacts,
+        next_action=next_action,
+        confidence=confidence,
+    )
+
+
+def _platform_tool_probe_from_export(export_bundle: RuntimeExportBundle) -> dict[str, Any] | None:
+    for item in export_bundle.exports:
+        if not isinstance(item, dict):
+            continue
+        if item.get("tool") == "platform_tool_probe" and isinstance(item.get("payload"), dict):
+            return item["payload"]
+    return None
 
 def run_reverse_pipeline(
     task_text: str,

@@ -66,9 +66,10 @@ uv pip install --python "<repo-root>/.venv/bin/python" -e .
 reverse-agent-demo --runtime mock
 ```
 
-同时还会生成本地 fixture 相关命令：
+同时还会生成平台中立 runtime pipeline 命令和本地 fixture 相关命令：
 
 ```bash
+reverse-agent-platform --runtime mini-program-devtools
 reverse-agent-fixture --check
 reverse-agent-fixture-smoke --runtime mock
 ```
@@ -130,6 +131,49 @@ reverse-agent-demo --runtime mock
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
 - `exports/artifact-index.json`
+
+## 运行平台中立 Runtime Pipeline
+
+`run_reverse_pipeline(...)` 仍然是 Web 专用入口，会要求 backend 实现 `WebReverseRuntime` 并执行 Web recon；非 Web runtime 统一走 `run_platform_pipeline(...)` / `reverse-agent-platform`。这个入口只依赖平台中立的 `ReverseRuntime` contract：task normalize、route、capability capture、runtime artifact export、manifest/index/report 落盘，不会调用 `ensure_browser_session()` 或 `run_web_recon()`。
+
+最小 smoke：
+
+```bash
+reverse-agent-platform \
+  --runtime mini-program-devtools \
+  --task-text "mini-program://demo 找 sign"
+```
+
+Android / iOS 可以传本地工具链参数：
+
+```bash
+reverse-agent-platform \
+  --runtime android-adb \
+  --android-adb-command adb \
+  --android-device-serial "<device-serial>" \
+  --android-package-name "com.example.app"
+
+reverse-agent-platform \
+  --runtime ios-simulator \
+  --ios-xcrun-command xcrun \
+  --ios-device-id "<simulator-udid>" \
+  --ios-bundle-id "com.example.app"
+```
+
+默认会在 artifact root 下生成：
+
+- `workspace/task-card.json`
+- `workspace/route-decision.json`
+- `workspace/runtime-capabilities.json`
+- `workspace/runtime-export-bundle.json`
+- `workspace/platform-tool-probe.json`（backend 暴露 tool probe 时）
+- `workspace/final-result.json`
+- `workspace/backend-artifact-manifest.json`
+- `reports/platform-pipeline-result.json`
+- `reports/platform-pipeline-report.md`
+- `exports/artifact-index.json`
+
+工具链不可用时不会伪装成功：pipeline 会结构化返回 `status=partial` 和 `next_action=install_or_configure_platform_tooling`，同时仍然保留 probe 证据，方便后续平台专用子流程接手。
 
 ## 运行最小 DeepAgents invoke smoke
 
@@ -584,7 +628,7 @@ JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `comm
 - `managed_chrome` / `mcp_backed`：运行时约束提示
 - `evidence_kinds` / `artifact_kinds`：该 backend 常见输出类型
 
-当前 Android / iOS / 小程序 backend 已具备 registry / factory / capability metadata / side-effect-light tool probe / artifact export 基础层；但还不包含真实 hook、静态分析、平台 pipeline 或 replay validation。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
+当前 Android / iOS / 小程序 backend 已具备 registry / factory / capability metadata / side-effect-light tool probe / artifact export 基础层，并可通过平台中立 `reverse-agent-platform` pipeline 落盘 capabilities、probe、export bundle、manifest 与报告；但还不包含真实 hook、静态分析或 replay validation。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
 ## Chrome Debug Session 约束
 

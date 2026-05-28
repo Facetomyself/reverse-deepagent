@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
-from reverse_deepagent.coordinator import run_reverse_pipeline
+from reverse_deepagent.coordinator import run_platform_pipeline, run_reverse_pipeline
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT, DEFAULT_USER_DATA_DIR
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -81,6 +81,63 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
         ensure_chrome=args.ensure_chrome,
         keep_chrome=args.keep_chrome,
         mcp_command=args.jsreverser_mcp_command,
+    )
+    print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
+    return 0
+
+
+def build_platform_parser() -> argparse.ArgumentParser:
+    """Build the parser for the platform-neutral runtime pipeline."""
+
+    parser = argparse.ArgumentParser(description="Run the Reverse DeepAgent platform-neutral runtime pipeline.")
+    parser.add_argument(
+        "--task-text",
+        default="android://demo 找 sign 入口，并给出平台 runtime 下一步建议",
+        help="Free-form reverse task description.",
+    )
+    parser.add_argument(
+        "--artifact-root",
+        default=str(DEFAULT_ARTIFACT_ROOT),
+        help="Artifact output root directory.",
+    )
+    parser.add_argument(
+        "--runtime",
+        default="android-adb",
+        help="Runtime backend id or alias, such as android-adb, ios-simulator, or mini-program-devtools.",
+    )
+    parser.add_argument("--android-adb-command", default=None, help="ADB command path/name for android-adb runtime.")
+    parser.add_argument("--android-device-serial", default=None, help="Optional Android device serial.")
+    parser.add_argument("--android-package-name", default=None, help="Optional Android package name.")
+    parser.add_argument("--ios-xcrun-command", default=None, help="xcrun command path/name for ios-simulator runtime.")
+    parser.add_argument("--ios-device-id", default=None, help="Optional iOS simulator/device id.")
+    parser.add_argument("--ios-bundle-id", default=None, help="Optional iOS bundle id.")
+    parser.add_argument("--mini-program-devtools-command", default=None, help="Optional vendor mini-program devtools CLI path/name.")
+    parser.add_argument("--mini-program-vendor", default=None, help="Mini-program vendor, for example wechat or alipay.")
+    parser.add_argument("--mini-program-project-path", default=None, help="Optional mini-program local project path.")
+    return parser
+
+
+def main_platform(argv: Sequence[str] | None = None) -> int:
+    """Console entrypoint for the platform-neutral runtime pipeline."""
+
+    parser = build_platform_parser()
+    args = parser.parse_args(argv)
+    runtime_kwargs = {
+        "android_adb_command": args.android_adb_command,
+        "android_device_serial": args.android_device_serial,
+        "android_package_name": args.android_package_name,
+        "ios_xcrun_command": args.ios_xcrun_command,
+        "ios_device_id": args.ios_device_id,
+        "ios_bundle_id": args.ios_bundle_id,
+        "mini_program_devtools_command": args.mini_program_devtools_command,
+        "mini_program_vendor": args.mini_program_vendor,
+        "mini_program_project_path": args.mini_program_project_path,
+    }
+    output = run_platform_pipeline(
+        task_text=args.task_text,
+        artifact_root=Path(args.artifact_root),
+        runtime_kind=args.runtime,
+        **runtime_kwargs,
     )
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
     return 0

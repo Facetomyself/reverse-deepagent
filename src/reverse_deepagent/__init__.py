@@ -1,8 +1,10 @@
 """Reverse DeepAgent package."""
 
-from .coordinator import ReversePipelineOutput, run_reverse_pipeline
+from .coordinator import PlatformPipelineOutput, ReversePipelineOutput, run_platform_pipeline, run_reverse_pipeline
 
 __all__ = [
+    "PlatformPipelineOutput",
     "ReversePipelineOutput",
+    "run_platform_pipeline",
     "run_reverse_pipeline",
 ]
