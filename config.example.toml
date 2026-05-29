@@ -1,0 +1,11 @@
+# 复制为 config.toml 后用于本机真实 API 冒烟测试。
+# 不要提交 config.toml，它可以包含密钥。
+
+[openai]
+api_key = "sk-..."
+model = "gpt-5.5"
+timeout = 120
+max_retries = 2
+# temperature = 0.2
+# base_url = "https://api.openai.com/v1"
+# organization = "org_..."
