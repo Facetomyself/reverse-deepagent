@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
-from reverse_deepagent.browser.collectors import CDPEnhancedCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
+from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
 from reverse_deepagent.browser.providers import CloakBrowserConfig, CloakBrowserProvider, PlaywrightChromiumConfig, PlaywrightChromiumProvider
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
@@ -111,8 +111,10 @@ class NativeWebRuntime(WebReverseRuntime):
         page = session.get_active_page() or session.new_page()
         console = ConsoleCollector()
         network = NetworkCollector()
+        cdp_events = CDPEventCacheCollector()
         console.attach(page)
         network.attach(page)
+        cdp_events.attach(page)
         navigation_events: list[str] = []
         if self._looks_like_url(task_card.target_url_or_file) and page.url != task_card.target_url_or_file:
             page.goto(task_card.target_url_or_file)
@@ -124,7 +126,8 @@ class NativeWebRuntime(WebReverseRuntime):
         source_hits = ScriptCollector().search(script_inventory, task_card.target_param_or_api)
         network_snapshot = network.snapshot()
         console_snapshot = console.snapshot()
-        cdp_snapshot = CDPEnhancedCollector().collect(page, network_snapshot)
+        cdp_event_snapshot = cdp_events.snapshot()
+        cdp_snapshot = CDPEnhancedCollector().collect(page, network_snapshot, cdp_event_snapshot)
 
         evidence = self._build_evidence(dom, storage, script_inventory, source_hits, network_snapshot, console_snapshot, navigation_events, cdp_snapshot)
         artifacts = self._build_artifacts(network_snapshot, source_hits, storage, dom, console_snapshot, cdp_snapshot)

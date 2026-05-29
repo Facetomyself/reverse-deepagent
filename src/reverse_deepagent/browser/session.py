@@ -14,6 +14,12 @@ class PlaywrightCDPSessionAdapter:
     def send(self, method: str, params: dict[str, Any] | None = None) -> Any:
         return self._session.send(method, params or {})
 
+    def on(self, event_name: str, handler: Any) -> None:
+        on = getattr(self._session, "on", None)
+        if not callable(on):
+            raise RuntimeError("CDP session does not support event subscription")
+        on(event_name, handler)
+
 
 class PlaywrightBrowserPageAdapter:
     """BrowserPage adapter for Playwright-compatible page objects."""

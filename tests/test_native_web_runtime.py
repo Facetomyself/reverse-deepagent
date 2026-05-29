@@ -10,9 +10,21 @@ from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, 
 
 
 class FakeCDPSession:
+    def __init__(self) -> None:
+        self.handlers = {}
+
+    def on(self, event_name, handler):
+        self.handlers.setdefault(event_name, []).append(handler)
+
+    def emit(self, event_name, payload):
+        for handler in self.handlers.get(event_name, []):
+            handler(payload)
+
     def send(self, method, params=None):
         if method == "Network.getResponseBody":
             return {"body": '{"native":true}', "base64Encoded": False}
+        if method == "Debugger.getScriptSource":
+            return {"scriptSource": "function buildSign(){ return 'x-sign'; }"}
         return {}
 
 
@@ -21,6 +33,7 @@ class FakeRawPage:
         self.context = context
         self.url = "about:blank"
         self.handlers = {}
+        self._cdp_session = FakeCDPSession()
 
     def on(self, event, handler):
         self.handlers.setdefault(event, []).append(handler)
@@ -31,6 +44,20 @@ class FakeRawPage:
 
     def goto(self, url, **kwargs):
         self.url = url
+        self._cdp_session.emit(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "req-1",
+                "loaderId": "loader-1",
+                "type": "XHR",
+                "request": {"url": url.rstrip("/") + "/api/search", "method": "GET"},
+                "initiator": {"type": "script", "stack": {"callFrames": [{"functionName": "buildSign"}]}},
+                "timestamp": 1.0,
+                "wallTime": 2.0,
+            },
+        )
+        self._cdp_session.emit("Debugger.scriptParsed", {"scriptId": "script-1", "url": url.rstrip("/") + "/assets/app.js", "startLine": 0, "endLine": 4, "hash": "abc"})
+        self._cdp_session.emit("Network.webSocketFrameReceived", {"requestId": "ws-1", "timestamp": 3.0, "response": {"opcode": 1, "mask": False, "payloadData": "hello"}})
         request = FakeRequest(url.rstrip("/") + "/api/search")
         self.emit("request", request)
         self.emit("response", FakeResponse(request))
@@ -68,7 +95,7 @@ class FakeRawPage:
         }
 
     def cdp_session(self):
-        return FakeCDPSession()
+        return self._cdp_session
 
     def screenshot(self, **kwargs):
         return b"png"
@@ -220,8 +247,10 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(request_initiators["count"], 1)
         self.assertEqual(response_bodies["status"], "success")
         self.assertEqual(response_bodies["items"][0]["preview"], '{"native":true}')
-        self.assertEqual(source_contexts["status"], "unsupported")
-        self.assertEqual(websocket_frames["status"], "unsupported")
+        self.assertEqual(source_contexts["status"], "success")
+        self.assertIn("buildSign", source_contexts["items"][0]["sourcePreview"])
+        self.assertEqual(websocket_frames["status"], "success")
+        self.assertEqual(websocket_frames["items"][0]["payloadPreview"], "hello")
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")

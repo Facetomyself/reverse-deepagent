@@ -1,6 +1,6 @@
 import unittest
 
-from reverse_deepagent.browser.collectors.cdp import CDPEnhancedCollector
+from reverse_deepagent.browser.collectors.cdp import CDPEnhancedCollector, CDPEventCacheCollector
 
 
 class NoCDPPage:
@@ -13,11 +13,21 @@ class NoCDPPage:
 class FakeCDPSession:
     def __init__(self) -> None:
         self.calls = []
+        self.handlers = {}
+
+    def on(self, event_name, handler):
+        self.handlers.setdefault(event_name, []).append(handler)
+
+    def emit(self, event_name, payload):
+        for handler in self.handlers.get(event_name, []):
+            handler(payload)
 
     def send(self, method, params=None):
         self.calls.append((method, params or {}))
         if method == "Network.getResponseBody":
             return {"body": '{"ok":true}', "base64Encoded": False}
+        if method == "Debugger.getScriptSource":
+            return {"scriptSource": "function buildSign(){ return 'x-sign'; }"}
         return {}
 
 
@@ -76,6 +86,51 @@ class CDPEnhancedCollectorTests(unittest.TestCase):
         self.assertEqual(payload["script_sources"]["status"], "unsupported")
         self.assertEqual(payload["websocket_frames"]["status"], "unsupported")
         self.assertIn(("Network.getResponseBody", {"requestId": "req-1"}), page.session.calls)
+
+    def test_event_cache_collects_request_script_and_websocket_events(self) -> None:
+        page = FakeCDPPage()
+        cache = CDPEventCacheCollector()
+        self.assertTrue(cache.attach(page))
+        page.session.emit(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "req-evt-1",
+                "loaderId": "loader-1",
+                "type": "Fetch",
+                "request": {"url": "https://example.test/api/sign", "method": "POST"},
+                "initiator": {"type": "script", "stack": {"callFrames": [{"functionName": "buildSign"}]}},
+                "timestamp": 1.0,
+                "wallTime": 2.0,
+            },
+        )
+        page.session.emit(
+            "Debugger.scriptParsed",
+            {"scriptId": "script-1", "url": "https://example.test/app.js", "startLine": 0, "endLine": 10, "hash": "abc"},
+        )
+        page.session.emit(
+            "Network.webSocketFrameReceived",
+            {"requestId": "ws-1", "timestamp": 3.0, "response": {"opcode": 1, "mask": False, "payloadData": "hello"}},
+        )
+        snapshot = cache.snapshot()
+        self.assertEqual(snapshot["request_initiators"]["status"], "success")
+        self.assertEqual(snapshot["request_initiators"]["items"][0]["requestId"], "req-evt-1")
+        self.assertEqual(snapshot["script_sources"]["status"], "success")
+        self.assertIn("buildSign", snapshot["script_sources"]["items"][0]["sourcePreview"])
+        self.assertEqual(snapshot["websocket_frames"]["status"], "success")
+        self.assertEqual(snapshot["websocket_frames"]["items"][0]["payloadPreview"], "hello")
+
+    def test_enhanced_collector_prefers_event_cache_over_performance_fallback(self) -> None:
+        page = FakeCDPPage()
+        event_snapshot = {
+            "request_initiators": {"status": "success", "count": 1, "items": [{"requestId": "req-evt-1", "url": "https://example.test/api/sign"}]},
+            "script_sources": {"status": "success", "count": 1, "items": [{"scriptId": "script-1", "sourcePreview": "function buildSign(){}"}]},
+            "websocket_frames": {"status": "success", "count": 1, "items": [{"requestId": "ws-1", "payloadPreview": "hello"}]},
+        }
+        payload = CDPEnhancedCollector().collect(page, {"requests": []}, event_snapshot)
+        self.assertEqual(payload["request_initiators"]["items"][0]["requestId"], "req-evt-1")
+        self.assertEqual(payload["response_bodies"]["status"], "success")
+        self.assertEqual(payload["script_sources"]["status"], "success")
+        self.assertEqual(payload["websocket_frames"]["status"], "success")
 
 
 if __name__ == "__main__":

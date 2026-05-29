@@ -288,7 +288,18 @@ The native runtime should preserve current artifact semantics:
 
 Downstream rebuild/replay/report code should not care whether evidence came from MCP, Playwright, CloakBrowser, or remote CDP.
 
-Native BrowserProvider-backed manifest entries should include non-secret `browser_provider` and `browser_provider_transport` metadata when available. CDP-enhanced collectors may emit `unsupported` payloads when a provider lacks CDP or when event-backed caches are not implemented; this is preferred over silently omitting artifact files.
+Native BrowserProvider-backed manifest entries should include non-secret `browser_provider` and `browser_provider_transport` metadata when available. CDP-enhanced collectors subscribe before navigation and may emit `unsupported` payloads when a provider lacks CDP or when no matching event is captured; this is preferred over silently omitting artifact files.
+
+## 11.1 CDP-enhanced collector status
+
+Current CDP event cache support:
+
+- `Network.requestWillBeSent` -> `workspace/request-initiators.json`.
+- `Network.getResponseBody` -> `workspace/response-bodies.json` when a CDP request id is available.
+- `Debugger.scriptParsed` + `Debugger.getScriptSource` -> `workspace/source-contexts.json`.
+- `Network.webSocketFrameSent` / `Network.webSocketFrameReceived` -> `workspace/websocket-frames.json`.
+
+The collector attaches before navigation in `NativeWebRuntime` so event-backed caches can observe page load and runtime activity. Real browser smoke remains provider/environment gated.
 
 ## 12. Implementation status
 

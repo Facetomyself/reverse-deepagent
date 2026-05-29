@@ -4,8 +4,14 @@ from reverse_deepagent.browser import BrowserPage, BrowserSession, PlaywrightBro
 
 
 class FakeCDPSession:
+    def __init__(self) -> None:
+        self.handlers = {}
+
     def send(self, method, params=None):
         return {"method": method, "params": params or {}}
+
+    def on(self, event_name, handler):
+        self.handlers.setdefault(event_name, []).append(handler)
 
 
 class FakeContext:
@@ -84,7 +90,10 @@ class PlaywrightSessionTests(unittest.TestCase):
         self.assertEqual(page.evaluate("1 + 1"), {"evaluated": "1 + 1"})
         self.assertEqual(page.screenshot(), b"png")
         self.assertIsNone(page.screenshot(path="/tmp/example.png"))
-        self.assertEqual(page.cdp_session().send("Runtime.enable"), {"method": "Runtime.enable", "params": {}})
+        cdp = page.cdp_session()
+        self.assertEqual(cdp.send("Runtime.enable"), {"method": "Runtime.enable", "params": {}})
+        cdp.on("Network.requestWillBeSent", lambda payload: payload)
+        self.assertIn("Network.requestWillBeSent", cdp._session.handlers)
 
     def test_session_adapter_lists_pages_creates_pages_and_closes_resources(self) -> None:
         context = FakeContext()
