@@ -32,7 +32,6 @@ artifacts-*/
 .env
 .env.*
 !.env.example
-/config.toml
 .DS_Store
 .idea/
 .vscode/

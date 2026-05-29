@@ -168,7 +168,7 @@ reverse-agent-fixture-smoke --runtime mock
 
 ## 配置真实 OpenAI API 验证
 
-仓库默认测试仍走 mock 运行时，避免公开 CI 或本地单元测试误消耗 API 额度。要用真实 OpenAI API 验证 DeepAgents 编排，可以安装 `llm` 可选依赖，并通过本机 `config.toml` 或环境变量提供配置。
+仓库默认测试仍走 mock 运行时，避免公开 CI 或本地单元测试误消耗 API 额度。要用真实 OpenAI API 验证 DeepAgents 编排，可以安装 `llm` 可选依赖并设置环境变量。
 
 安装可选依赖：
 
@@ -177,46 +177,17 @@ cd "<repo-root>"
 uv pip install --python "<repo-root>/.venv/bin/python" -e ".[llm]"
 ```
 
-推荐使用本机 `config.toml`。先复制示例文件：
-
-```bash
-cd "<repo-root>"
-cp "config.example.toml" "config.toml"
-```
-
-然后编辑 `config.toml`：
-
-```toml
-[openai]
-api_key = "sk-..."
-model = "gpt-5.5"
-timeout = 120
-max_retries = 2
-# temperature = 0.2
-# base_url = "https://api.openai.com/v1"
-# organization = "org_..."
-```
-
-`config.toml` 已在 `.gitignore` 中忽略，不要把真实 key 写进 README、代码或 Git 历史。
-
-也可以继续使用环境变量，环境变量会覆盖 `config.toml` 中的同名配置：
+设置 API key。不要把 key 写进 `.env`、README、代码或 Git 历史里；推荐只放当前 shell、系统 keychain 或 CI secret：
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 export OPENAI_MODEL="gpt-5.5"
 ```
 
-真实 OpenAI-backed DeepAgents 冒烟测试的配置优先级为：
-
-```text
-命令行参数 > 环境变量 > config.toml > 默认值
-```
-
 运行真实 OpenAI-backed DeepAgents 冒烟测试：
 
 ```bash
 reverse-agent-openai-smoke \
-  --config "<repo-root>/config.toml" \
   --task-text "http://localhost 找 sign 入口，并给出下一步建议。先调用 route_reverse_task 工具完成路由。" \
   --artifact-root "<repo-root>/artifacts/openai-smoke"
 ```
@@ -225,13 +196,13 @@ reverse-agent-openai-smoke \
 
 ```bash
 "<repo-root>/.venv/bin/python" -m reverse_deepagent.openai_smoke \
-  --config "<repo-root>/config.toml" \
+  --model "${OPENAI_MODEL:-gpt-5.5}" \
   --artifact-root "<repo-root>/artifacts/openai-smoke"
 ```
 
 这个 smoke 只验证真实模型能驱动 DeepAgents 主 Agent、调用 `route_reverse_task` 工具并返回结构化摘要；它不默认启动 Chrome，也不默认调用 MCP。真实 Web runtime 仍按后文 `reverse-agent-demo --runtime mcp --ensure-chrome` 或 `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 配置。
 
-如果你的账号暂时没有 `gpt-5.5` 权限，可以把 `config.toml` 里的 `model` 改成账号可用的模型，或用 `--model` 临时覆盖。
+如果你的账号暂时没有 `gpt-5.5` 权限，可以把 `OPENAI_MODEL` 改成账号可用的模型。
 
 ## 运行最小演示（mock 运行时）
 
