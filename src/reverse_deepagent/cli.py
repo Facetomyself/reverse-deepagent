@@ -33,14 +33,15 @@ def build_demo_parser() -> argparse.ArgumentParser:
         "--runtime",
         default="mock",
         help=(
-            "Runtime backend to use. Common values: mock, native-web, mcp, playwright-cli, chrome-cdp, browser-cli. "
+            "Runtime backend to use. Common values: mock, native-web, legacy-mcp, playwright-cli, chrome-cdp, browser-cli. "
+            "The old mcp value remains a compatibility alias for legacy-mcp. "
             "Aliases are resolved through the runtime registry."
         ),
     )
     parser.add_argument(
         "--ensure-chrome",
         action="store_true",
-        help="Before using --runtime mcp, run the recommended parameterized Chrome debug launcher.",
+        help="Before using --runtime legacy-mcp or the old mcp alias, run the recommended parameterized Chrome debug launcher.",
     )
     parser.add_argument(
         "--keep-chrome",

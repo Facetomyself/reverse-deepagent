@@ -63,11 +63,11 @@ Current compatibility flow:
 
 ```bash
 reverse-agent-demo \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome
 ```
 
-`legacy-mcp` is the planned explicit backend name for Phase 10; `mcp` remains the current runnable compatibility id until that alias is implemented.
+`legacy-mcp` is the explicit backend id; `mcp` and `jsreverser-mcp` remain runnable compatibility aliases for the transition window.
 
 ## Milestones
 
@@ -306,6 +306,8 @@ Acceptance:
 - Hook output is emitted as normalized evidence and artifact files.
 
 ### Phase 10: MCP legacy downgrade
+
+Status: implemented locally. `legacy-mcp` is the canonical backend id; `mcp` and `jsreverser-mcp` remain compatibility aliases. Doctor now supports `--legacy-mcp`, and native-web remains the README quickstart recommendation.
 
 Deliverables:
 

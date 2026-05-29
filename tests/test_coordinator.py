@@ -42,13 +42,15 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(capabilities.supports_web_recon)
         self.assertFalse(capabilities.mcp_backed)
 
-    def test_runtime_backend_metadata_lists_mock_and_mcp(self) -> None:
+    def test_runtime_backend_metadata_lists_mock_and_legacy_mcp(self) -> None:
         metadata = list_runtime_backends()
         by_id = {item["backend_id"]: item for item in metadata}
         self.assertIn("mock", by_id)
-        self.assertIn("mcp", by_id)
-        self.assertEqual(by_id["mcp"]["transport"], "mcp-stdio")
-        self.assertTrue(by_id["mcp"]["mcp_backed"])
+        self.assertIn("legacy-mcp", by_id)
+        self.assertNotIn("mcp", by_id)
+        self.assertEqual(by_id["legacy-mcp"]["transport"], "mcp-stdio")
+        self.assertTrue(by_id["legacy-mcp"]["mcp_backed"])
+        self.assertIn("mcp", by_id["legacy-mcp"]["config"]["aliases"])
 
     def test_workspace_artifact_payloads_include_breakpoint_manager(self) -> None:
         final_result = FinalResult(
@@ -79,19 +81,25 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["breakpoints.json"], {"status": "success", "count": 1})
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
 
-    def test_build_runtime_threads_mcp_config_summary(self) -> None:
+    def test_build_runtime_threads_legacy_mcp_config_summary_and_alias(self) -> None:
         runtime = build_runtime(
-            "mcp",
+            "legacy-mcp",
             browser_url="http://127.0.0.1:9555",
             mcp_command="/tmp/jsreverser-mcp",
         )
         try:
             capabilities = runtime.describe_capabilities()
-            self.assertEqual(capabilities.backend_id, "mcp")
+            self.assertEqual(capabilities.backend_id, "legacy-mcp")
             self.assertEqual(capabilities.config["command"], "/tmp/jsreverser-mcp")
             self.assertEqual(capabilities.config["browser_url"], "http://127.0.0.1:9555")
         finally:
             runtime.close()
+
+        alias_runtime = build_runtime("mcp", browser_url="http://127.0.0.1:9555", mcp_command="/tmp/jsreverser-mcp")
+        try:
+            self.assertEqual(alias_runtime.describe_capabilities().backend_id, "legacy-mcp")
+        finally:
+            alias_runtime.close()
 
 
     def test_web_pipeline_rejects_platform_neutral_non_web_runtime(self) -> None:

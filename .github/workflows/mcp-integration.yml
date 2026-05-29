@@ -126,7 +126,7 @@ jobs:
             echo "Running profile=$profile port=$port artifact_root=$artifact_root"
             reverse-agent-fixture-smoke \
               --profile "$profile" \
-              --runtime mcp \
+              --runtime legacy-mcp \
               --ensure-chrome \
               --jsreverser-mcp-command "$JSREVERSER_MCP_PATH" \
               --chrome-debug-port "$port" \

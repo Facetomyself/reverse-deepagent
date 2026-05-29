@@ -58,7 +58,7 @@ class RuntimeExportBundle(SchemaBaseModel):
 class RuntimeBackendCapabilities(SchemaBaseModel):
     """Serializable capability metadata for a runtime backend."""
 
-    backend_id: str = Field(description="Stable backend identifier, such as mock or jsreverser-mcp.")
+    backend_id: str = Field(description="Stable backend identifier, such as mock, native-web, or legacy-mcp.")
     display_name: str = Field(description="Human-readable backend name.")
     transport: str = Field(default="unknown", description="Implementation transport, such as in-process or mcp-stdio.")
     target_platforms: list[str] = Field(default_factory=list, description="Supported target platforms, for example web, android, ios, or mini-program.")

@@ -93,12 +93,12 @@ reverse-agent-doctor \
   --browser-smoke-url "about:blank"
 ```
 
-现阶段基于 MCP 的浏览器集成仍可用于真实 smoke，需要本机 JSReverser MCP 可执行文件和 Chrome 调试环境。环境假设与故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。公开 CI 不默认运行真实 MCP 链路，而是隔离在手动 `MCP Integration` 工作流中。本地建议优先使用受管 Chrome 启动器：
+legacy MCP 浏览器集成仍可用于真实 smoke，需要本机 JSReverser MCP 可执行文件和 Chrome 调试环境。环境假设与故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。公开 CI 不默认运行 legacy MCP 链路，而是隔离在手动 `MCP Integration` 工作流中。本地建议优先使用受管 Chrome 启动器：
 
 ```bash
 reverse-agent-fixture-smoke \
   --profile context-navigator \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --chrome-debug-port 9461 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-9461"
@@ -145,7 +145,7 @@ PYTHONPATH="<repo-root>/src" \
 
 ## 轻量 Web 运行时后端
 
-除了 `mock` 和 `mcp`，默认 registry 还注册了 3 个轻量 Web 后端：
+除了 `mock`、`native-web` 和 `legacy-mcp`，默认 registry 还注册了 3 个轻量 Web 后端：
 
 - `playwright-cli`（别名：`playwright`, `pw-cli`）：运行 `playwright --version` 这类轻副作用探测，并对目标 URL 做静态 HTML / 脚本源码拉取。
 - `chrome-cdp`（别名：`cdp`, `devtools`）：只探测已经存在的 Chrome DevTools 端点，例如 `http://127.0.0.1:9222/json/version` 和 `/json/list`，不会主动启动 Chrome。
@@ -212,7 +212,7 @@ reverse-agent-fixture-smoke --runtime mock
 - `src/reverse_deepagent/coordinator.py`：包内协调入口，统一调度 task card、route、recon、artifact 输出
 - `scripts/`：运行与开发脚本
 - `artifacts/`：mock demo 产出物、报告、截图与导出文件
-- `artifacts-mcp-smoke/`：真实 MCP 后端 smoke 产物
+- `artifacts-mcp-smoke/`：legacy MCP 后端 smoke 产物
 - `tests/`：测试目录
 
 ## 当前关键文档
@@ -254,7 +254,7 @@ reverse-agent-openai-smoke \
   --artifact-root "<repo-root>/artifacts/openai-smoke"
 ```
 
-这个 smoke 只验证真实模型能驱动 DeepAgents 主 Agent、调用 `route_reverse_task` 工具并返回结构化摘要；它不默认启动 Chrome，也不默认调用 MCP。真实 Web runtime 仍按后文 `reverse-agent-demo --runtime mcp --ensure-chrome` 或 `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 配置。
+这个 smoke 只验证真实模型能驱动 DeepAgents 主 Agent、调用 `route_reverse_task` 工具并返回结构化摘要；它不默认启动 Chrome，也不默认调用 MCP。真实 Web runtime 仍按后文 `reverse-agent-demo --runtime legacy-mcp --ensure-chrome` 或 `reverse-agent-fixture-smoke --runtime legacy-mcp --ensure-chrome` 配置。
 
 如果你的账号暂时没有 `gpt-5.5` 权限，可以把 `OPENAI_MODEL` 改成账号可用的模型。
 
@@ -533,12 +533,12 @@ reverse-agent-fixture-smoke \
   --artifact-root "<repo-root>/artifacts/fixture-smoke-mock"
 ```
 
-使用真实 MCP + 受管 Chrome 跑 fixture 冒烟测试：
+使用 legacy MCP + 受管 Chrome 跑 fixture 冒烟测试：
 
 ```bash
 reverse-agent-fixture-smoke \
   --profile default \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --jsreverser-mcp-command "/opt/homebrew/bin/jsreverser-mcp" \
   --chrome-debug-port 9445 \
@@ -551,7 +551,7 @@ reverse-agent-fixture-smoke \
 ```bash
 reverse-agent-fixture-smoke \
   --profile sha256 \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --chrome-debug-port 9456 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-sha256" \
@@ -563,7 +563,7 @@ reverse-agent-fixture-smoke \
 ```bash
 reverse-agent-fixture-smoke \
   --profile context-localstorage \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --chrome-debug-port 9457 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-context" \
@@ -575,7 +575,7 @@ reverse-agent-fixture-smoke \
 ```bash
 reverse-agent-fixture-smoke \
   --profile context-cookie \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --chrome-debug-port 9460 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-phase13-cookie-9460" \
@@ -583,7 +583,7 @@ reverse-agent-fixture-smoke \
 
 reverse-agent-fixture-smoke \
   --profile context-navigator \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --chrome-debug-port 9461 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-phase13-navigator-9461" \
@@ -615,7 +615,7 @@ reverse-agent-fixture-smoke \
 
 `context-navigator` 的预期是 `runtime_context_required = ["navigator"]`，生成的 `sign_rebuild.py` 会固化 `NAVIGATOR_USER_AGENT` 并完成 `sha256_keyword_timestamp` 自检。
 
-当前已验证真实 MCP 冒烟测试结果：
+当前已验证 legacy MCP 冒烟测试结果：
 
 - `final_result.status = success`
 - `final_result.next_action = extract_pure_logic_and_build_replay`
@@ -668,7 +668,7 @@ reverse-agent-fixture-smoke \
 
 ### 纯算 replay 交付包
 
-真实 MCP fixture 冒烟测试完成后，可以先对生成的 sign 脚本做 sample 自检：
+legacy MCP fixture 冒烟测试完成后，可以先对生成的 sign 脚本做 sample 自检：
 
 ```bash
 "<repo-root>/.venv/bin/python" \
@@ -879,7 +879,7 @@ print(capabilities.model_dump(mode="json"))
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
 - `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium` skeleton 和 optional `cloakbrowser` provider skeleton
-- `mcp`（别名：`jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 运行时，过渡期保留
+- `legacy-mcp`（别名：`mcp`, `jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 兼容运行时，`mcp` 仅作为旧命令 alias 保留
 - `playwright-cli`（别名：`playwright`, `pw-cli`）：轻量 Playwright CLI 探测与静态源码拉取，不主动启动浏览器
 - `chrome-cdp`（别名：`cdp`, `devtools`）：连接既有 Chrome DevTools 端点，不主动启动 Chrome
 - `browser-cli`（别名：`cli-browser`, `browser-command`）：通用浏览器 CLI 适配命令 backend，默认 command 未配置
@@ -897,11 +897,11 @@ print(capabilities.model_dump(mode="json"))
 
 当前 Web 路径的浏览器会话、Chrome 调试端口、JSReverser MCP、Web 存储、URL replay 推导等假设统一收口在 [`docs/runtime/web-runtime-assumptions.md`](docs/runtime/web-runtime-assumptions.md)，后续平台适配器不应默认继承这些语义。BrowserProvider 新架构见 [`docs/runtime/browser-provider-architecture.md`](docs/runtime/browser-provider-architecture.md)。
 
-JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、后端元数据和运行时采样参数。CLI 里的 `--jsreverser-mcp-command`、Chrome 调试端口等参数最终都会汇入这个配置，再创建 MCP 运行时。该后端后续应改名或文档化为 `legacy-mcp`。
+JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、后端元数据和运行时采样参数。CLI 里的 `--jsreverser-mcp-command`、Chrome 调试端口等参数最终都会汇入这个配置，再创建 `legacy-mcp` 运行时。
 
 核心字段包括：
 
-- `backend_id`：稳定后端标识，例如 `mock`、`jsreverser-mcp`
+- `backend_id`：稳定后端标识，例如 `mock`、`native-web`、`legacy-mcp`
 - `transport`：实现传输，例如 `in-process`、`mcp-stdio`
 - `target_platforms`：当前目标平台，现阶段主要是 `web`
 - `supports_web_recon` / `supports_runtime_context` / `supports_replay_validation`：能力开关
@@ -912,7 +912,7 @@ JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `comm
 
 ## Chrome 调试会话约束
 
-真实 MCP 运行时依赖 `http://127.0.0.1:9222` 这类 Chrome DevTools 端口。
+legacy MCP 运行时依赖 `http://127.0.0.1:9222` 这类 Chrome DevTools 端口。
 
 约束：
 
@@ -958,20 +958,20 @@ USER_DATA_DIR="/tmp/reverse-agent-chrome" \
 "<repo-root>/scripts/stop_chrome_debug.sh"
 ```
 
-## 运行真实 MCP 冒烟测试
+## 运行 legacy MCP 冒烟测试
 
 完整前置条件和故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。
 
-推荐先运行浏览器 / MCP doctor，确认本机 Chrome、调试端口、`jsreverser-mcp` 和 console script 入口是否就绪：
+推荐先运行浏览器 / legacy MCP doctor，确认本机 Chrome、调试端口、`jsreverser-mcp` 和 console script 入口是否就绪：
 
 ```bash
-reverse-agent-doctor --ensure-chrome --check-mcp
+reverse-agent-doctor --ensure-chrome --legacy-mcp
 ```
 
 如果当前 shell 没有激活虚拟环境，可以使用绝对路径：
 
 ```bash
-"<repo-root>/.venv/bin/reverse-agent-doctor" --ensure-chrome --check-mcp
+"<repo-root>/.venv/bin/reverse-agent-doctor" --ensure-chrome --legacy-mcp
 ```
 
 默认情况下，`reverse-agent-doctor --ensure-chrome` 会在检查后停止受管 Chrome；如果你需要保留调试会话，显式添加 `--keep-chrome`。
@@ -991,13 +991,13 @@ PYTHONPATH="<repo-root>/src" \
 - 协商协议版本：`2025-03-26`
 - tools/list 可返回 73 个工具
 
-## 运行最小演示（真实 MCP 运行时）
+## 运行最小演示（legacy MCP 运行时）
 
-真实 MCP 运行时会启动 `/opt/homebrew/bin/jsreverser-mcp --browserUrl http://127.0.0.1:9222`。
+legacy MCP 运行时会启动 `/opt/homebrew/bin/jsreverser-mcp --browserUrl http://127.0.0.1:9222`。
 
 ```bash
 reverse-agent-demo \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --artifact-root "<repo-root>/artifacts-mcp-smoke"
 ```
@@ -1024,7 +1024,7 @@ reverse-agent-demo \
 
 ```bash
 reverse-agent-demo \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --chrome-debug-port 9445 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-9445" \

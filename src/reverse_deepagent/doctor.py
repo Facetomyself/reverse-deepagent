@@ -29,8 +29,8 @@ DEFAULT_BROWSER_URL = "http://127.0.0.1:9222"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Diagnose Reverse DeepAgent browser / MCP runtime readiness.")
-    parser.add_argument("--browser-url", default=DEFAULT_BROWSER_URL, help="Chrome DevTools browser URL used by MCP.")
+    parser = argparse.ArgumentParser(description="Diagnose Reverse DeepAgent browser / legacy MCP runtime readiness.")
+    parser.add_argument("--browser-url", default=DEFAULT_BROWSER_URL, help="Chrome DevTools browser URL used by the legacy MCP backend.")
     parser.add_argument("--chrome-debug-port", type=int, default=9222, help="Chrome remote debugging port.")
     parser.add_argument("--chrome-debug-address", default="127.0.0.1", help="Chrome remote debugging bind address.")
     parser.add_argument("--chrome-path", default=DEFAULT_CHROME_PATH, help="Chrome executable path.")
@@ -43,7 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jsreverser-mcp-command", default=DEFAULT_JSREVERSER_MCP_COMMAND, help="Path to the jsreverser-mcp executable.")
     parser.add_argument("--ensure-chrome", action="store_true", help="Start the managed Chrome debug listener before checks.")
     parser.add_argument("--keep-chrome", action="store_true", help="Keep Chrome running when --ensure-chrome starts it.")
-    parser.add_argument("--check-mcp", action="store_true", help="Start jsreverser-mcp over stdio and call list_tools/check_browser_health.")
+    parser.add_argument("--check-mcp", action="store_true", help="Compatibility alias for --legacy-mcp.")
+    parser.add_argument("--legacy-mcp", action="store_true", help="Start legacy jsreverser-mcp over stdio and call list_tools/check_browser_health.")
     parser.add_argument("--browser", default=None, help="BrowserProvider id to diagnose, such as playwright-chromium or cloakbrowser. Does not launch by default.")
     parser.add_argument("--browser-profile-dir", default=None, help="Optional BrowserProvider persistent profile directory for metadata/smoke checks.")
     parser.add_argument("--browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Run BrowserProvider in headless mode during --launch-browser-smoke when supported.")
@@ -152,7 +153,7 @@ def _check_browser_provider(args: argparse.Namespace) -> dict[str, Any]:
 
     payload: dict[str, Any] = {
         "ok": bool(available),
-        "browser": args.browser,
+        "browser": args.browser or "playwright-chromium",
         "available": bool(available),
         "launched": False,
         "launch_requested": bool(args.launch_browser_smoke),
@@ -246,6 +247,7 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         },
         "port_before": _port_status(args.browser_url),
     }
+    payload["legacy_mcp"] = payload["mcp"]
 
     should_stop = False
     if args.ensure_chrome:
@@ -254,18 +256,22 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         should_stop = launch.ok and not args.keep_chrome
     payload["port_after_launch"] = _port_status(args.browser_url)
 
-    if args.browser:
+    check_legacy_mcp = bool(getattr(args, "legacy_mcp", False) or args.check_mcp)
+    check_browser_provider = bool(args.browser or (not args.ensure_chrome and not check_legacy_mcp))
+
+    if check_browser_provider:
         payload["browser_provider"] = _check_browser_provider(args)
 
-    if args.check_mcp:
-        payload["mcp_check"] = _check_mcp(args)
+    if check_legacy_mcp:
+        payload["legacy_mcp_check"] = _check_mcp(args)
+        payload["mcp_check"] = payload["legacy_mcp_check"]
 
     if should_stop:
         stop = stop_chrome_debug(chrome_config)
         payload["chrome_stop"] = stop.model_dump(mode="json")
         payload["port_after_stop"] = _port_status(args.browser_url)
 
-    browser_only_check = bool(args.browser and not args.ensure_chrome and not args.check_mcp)
+    browser_only_check = bool(check_browser_provider and not args.ensure_chrome and not check_legacy_mcp)
     if browser_only_check:
         required_ok = [bool(payload.get("browser_provider", {}).get("ok"))]
     else:
@@ -277,10 +283,10 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         ]
         if args.ensure_chrome:
             required_ok.append(bool(payload.get("chrome_launch", {}).get("ok")))
-        if args.browser:
+        if check_browser_provider:
             required_ok.append(bool(payload.get("browser_provider", {}).get("ok")))
-        if args.check_mcp:
-            required_ok.append(bool(payload.get("mcp_check", {}).get("ok")))
+        if check_legacy_mcp:
+            required_ok.append(bool(payload.get("legacy_mcp_check", {}).get("ok")))
     payload["ok"] = all(required_ok)
     return payload
 

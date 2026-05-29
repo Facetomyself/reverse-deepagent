@@ -40,6 +40,7 @@ class DoctorTests(unittest.TestCase):
             "ensure_chrome": False,
             "keep_chrome": False,
             "check_mcp": False,
+            "legacy_mcp": False,
             "browser": None,
             "browser_profile_dir": None,
             "browser_headless": None,
@@ -59,12 +60,62 @@ class DoctorTests(unittest.TestCase):
         values.update(overrides)
         return argparse.Namespace(**values)
 
+    def write_fake_mcp_wrapper(self, tmpdir: Path) -> Path:
+        fake_mcp = tmpdir / "fake_mcp_server.py"
+        fake_mcp.write_text(
+            textwrap.dedent(
+                '''
+                import json
+                import sys
+
+                def write_message(message):
+                    sys.stdout.write(json.dumps(message) + '\\n')
+                    sys.stdout.flush()
+
+                for line in sys.stdin.buffer:
+                    message = json.loads(line.decode('utf-8'))
+                    if message.get('method') == 'initialize':
+                        write_message({'jsonrpc': '2.0', 'id': message['id'], 'result': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'serverInfo': {'name': 'fake', 'version': '0.1'}}})
+                    elif message.get('method') == 'notifications/initialized':
+                        continue
+                    elif message.get('method') == 'tools/list':
+                        write_message({'jsonrpc': '2.0', 'id': message['id'], 'result': {'tools': [{'name': 'check_browser_health'}]}})
+                    elif message.get('method') == 'tools/call':
+                        write_message({'jsonrpc': '2.0', 'id': message['id'], 'result': {'content': [{'type': 'text', 'text': json.dumps({'healthy': True})}]}})
+                '''
+            ),
+            encoding="utf-8",
+        )
+        wrapper = tmpdir / "fake_mcp.sh"
+        wrapper.write_text(f"#!/usr/bin/env bash\nexec \"{sys.executable}\" \"{fake_mcp}\" \"$@\"\n", encoding="utf-8")
+        wrapper.chmod(0o755)
+        return wrapper
+
     def test_doctor_reports_static_browser_and_mcp_paths(self) -> None:
+        class FakeCapabilities:
+            def model_dump(self, mode: str = "json") -> dict[str, object]:
+                return {"provider_id": "fake-provider", "config": {}}
+
+        class FakeProvider:
+            def describe(self) -> FakeCapabilities:
+                return FakeCapabilities()
+
+            def is_available(self) -> bool:
+                return True
+
+            def stop(self) -> None:
+                pass
+
+        class FakeRuntime:
+            browser_provider = FakeProvider()
+
         with tempfile.TemporaryDirectory() as tmp:
-            payload = run_doctor(self.make_args(Path(tmp)))
+            with patch("reverse_deepagent.doctor.create_native_web_runtime", return_value=FakeRuntime()):
+                payload = run_doctor(self.make_args(Path(tmp)))
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["chrome"]["path"]["exists"])
         self.assertTrue(payload["mcp"]["command"]["exists"])
+        self.assertTrue(payload["browser_provider"]["ok"])
         self.assertIn("reverse-agent-demo", payload["console_scripts"]["repo_venv_scripts"])
 
     def test_doctor_help_does_not_require_chrome_or_mcp(self) -> None:
@@ -76,37 +127,13 @@ class DoctorTests(unittest.TestCase):
         )
         self.assertIn("--ensure-chrome", result.stdout)
         self.assertIn("--check-mcp", result.stdout)
+        self.assertIn("--legacy-mcp", result.stdout)
         self.assertIn("--browser", result.stdout)
         self.assertIn("--launch-browser-smoke", result.stdout)
 
     def test_doctor_can_check_fake_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmpdir = Path(tmp)
-            fake_mcp = tmpdir / "fake_mcp_server.py"
-            fake_mcp.write_text(
-                textwrap.dedent(
-                    '''
-                    import json
-                    import sys
-
-                    def write_message(message):
-                        sys.stdout.write(json.dumps(message) + '\\n')
-                        sys.stdout.flush()
-
-                    for line in sys.stdin.buffer:
-                        message = json.loads(line.decode('utf-8'))
-                        if message.get('method') == 'initialize':
-                            write_message({'jsonrpc': '2.0', 'id': message['id'], 'result': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'serverInfo': {'name': 'fake', 'version': '0.1'}}})
-                        elif message.get('method') == 'notifications/initialized':
-                            continue
-                        elif message.get('method') == 'tools/list':
-                            write_message({'jsonrpc': '2.0', 'id': message['id'], 'result': {'tools': [{'name': 'check_browser_health'}]}})
-                        elif message.get('method') == 'tools/call':
-                            write_message({'jsonrpc': '2.0', 'id': message['id'], 'result': {'content': [{'type': 'text', 'text': json.dumps({'healthy': True})}]}})
-                    '''
-                ),
-                encoding="utf-8",
-            )
             args = self.make_args(
                 tmpdir,
                 jsreverser_mcp_command=sys.executable,
@@ -114,14 +141,22 @@ class DoctorTests(unittest.TestCase):
             )
             # Python itself is executable, but the doctor expects the MCP command as one binary.
             # Use a wrapper to keep command semantics identical to jsreverser-mcp.
-            wrapper = tmpdir / "fake_mcp.sh"
-            wrapper.write_text(f"#!/usr/bin/env bash\nexec \"{sys.executable}\" \"{fake_mcp}\" \"$@\"\n", encoding="utf-8")
-            wrapper.chmod(0o755)
+            wrapper = self.write_fake_mcp_wrapper(tmpdir)
             args.jsreverser_mcp_command = str(wrapper)
             payload = run_doctor(args)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["mcp_check"]["ok"])
+        self.assertTrue(payload["legacy_mcp_check"]["ok"])
         self.assertIn("check_browser_health", payload["mcp_check"]["tool_sample"])
+
+    def test_doctor_legacy_mcp_flag_checks_fake_mcp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            wrapper = self.write_fake_mcp_wrapper(tmpdir)
+            payload = run_doctor(self.make_args(tmpdir, jsreverser_mcp_command=str(wrapper), legacy_mcp=True))
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["legacy_mcp_check"]["ok"])
+        self.assertTrue(payload["mcp_check"]["ok"])
 
     def test_doctor_can_check_playwright_provider_without_launching(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

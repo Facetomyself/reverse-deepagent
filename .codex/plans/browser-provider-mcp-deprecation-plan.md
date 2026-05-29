@@ -30,11 +30,11 @@
 | 7. Native artifact parity | 已完成 | DOM、console、script inventory、navigation events 已落盘，manifest 带 BrowserProvider metadata，63 项相关测试通过 |
 | 8. CDP-enhanced collectors | 已完成 | requestWillBeSent、response body metadata、Debugger.scriptParsed source cache、WebSocket frame cache 已实现并测试；真实浏览器 smoke 待后续 |
 | 9. Hook / breakpoint migration | 已完成（真实浏览器 smoke 待后续） | fetch/xhr、cookie、anti-debug hook baseline 已实现；BreakpointManager 通过 CDP capability gate 接入 `apply_minimal_protection`，`breakpoints.json` artifact ref 与 evidence 映射已补齐 |
-| 10. MCP legacy downgrade | 下一步 | `legacy-mcp` 文档化，`mcp` 保留临时 alias |
+| 10. MCP legacy downgrade | 已完成 | `legacy-mcp` canonical backend 已实现，`mcp` / `jsreverser-mcp` 保留 alias；doctor 支持 `--legacy-mcp`；README / runtime docs 默认推荐 `native-web` |
 
 ## 阶段执行记录与剩余顺序
 
-当前下一步：Step 10 MCP legacy downgrade。Step 5.1 到 Step 9 保留为已执行阶段记录，便于 review 和回溯。
+当前下一步：Phase 0-10 已完成，后续进入 README / docs 终扫、真实 BrowserProvider smoke 和最终 code review。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
 
 ### Step 5.1：完成 CloakBrowser provider skeleton
 

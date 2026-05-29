@@ -152,10 +152,10 @@ task_card:
 - `web_recon / protection / artifact` 工具包装已通过测试
 - `scripts/run_demo.py` 可运行，并能生成 JSON / Markdown / artifact index
 - `StdioMcpBridge` 已完成真实 `jsreverser-mcp` stdio 协议探测，`initialize -> tools/list` 已验证通过
-- `scripts/run_demo.py --runtime mcp` 已能启动真实 MCP 后端；当 9222 Chrome 不可用时会结构化返回 `status=failed` 和 `next_action=ensure_browser_session`
-- 已新增可调 Chrome debug 启停脚本，并接入 `run_demo.py --runtime mcp --ensure-chrome`
+- `scripts/run_demo.py --runtime legacy-mcp` 已能启动legacy MCP 后端；当 9222 Chrome 不可用时会结构化返回 `status=failed` 和 `next_action=ensure_browser_session`
+- 已新增可调 Chrome debug 启停脚本，并接入 `run_demo.py --runtime legacy-mcp --ensure-chrome`
 - 已完成真实 Chrome smoke：`--chrome-debug-port 9445` + `--chrome-user-data-dir /tmp/reverse-agent-chrome-9445` 可成功拉起、接入并自动收尾，端口不再残留监听
-- 已补齐真实 MCP 返回形态归一化：适配层能解析 `check_browser_health` / `list_pages` 的 Markdown + fenced JSON 输出，并对页面列表去重
+- 已补齐legacy MCP 返回形态归一化：适配层能解析 `check_browser_health` / `list_pages` 的 Markdown + fenced JSON 输出，并对页面列表去重
 - 已修正 `build_reverse_agent()` 与当前 deepagents API 的版本偏差：不再向 `create_deep_agent()` 传入不存在的 `profile` 参数
 - 已新增纯 Python `deepagents` invoke smoke：`scripts/run_deepagent_smoke.py` 可在不依赖外部模型与真实浏览器的情况下验证主 Agent -> route tool -> ToolMessage 闭环
 - 已新增纯 Python 子 Agent 委派 smoke：`scripts/run_deepagent_subagent_smoke.py` 可验证主 Agent -> `task` tool -> general-purpose 子 Agent -> ToolMessage 闭环
@@ -167,10 +167,10 @@ task_card:
 - 已验证 `reverse-agent-demo --runtime mock` 可直接运行并生成标准 artifacts
 - 已新增本地 Web sign fixture：`reverse-agent-fixture` 提供 `/app.js`、`buildSign()`、`x-sign` 和 `/api/search`
 - 已新增 fixture smoke 命令：`reverse-agent-fixture-smoke`
-- 已验证真实 MCP + 受管 Chrome 对 fixture smoke 可达到 `status=success`、`next_action=move_to_source_analysis`
-- 已增强 `JSReverserRuntime` 对真实 MCP Markdown 输出的解析：支持 `network_request` 的 `reqid=...` 行和 `search_in_sources` 的 `[script] url:line` 行
+- 已验证legacy MCP + 受管 Chrome 对 fixture smoke 可达到 `status=success`、`next_action=move_to_source_analysis`
+- 已增强 `JSReverserRuntime` 对legacy MCP Markdown 输出的解析：支持 `network_request` 的 `reqid=...` 行和 `search_in_sources` 的 `[script] url:line` 行
 - 已实现证据晋升：从目标请求自动调用 `get_request_initiator`，从源码命中自动调用 `get_script_source`
-- 已验证真实 MCP fixture smoke 产出 `request-initiators.json` 与 `source-contexts.json` artifact 引用
+- 已验证legacy MCP fixture smoke 产出 `request-initiators.json` 与 `source-contexts.json` artifact 引用
 - 已实现候选函数卡片：从 source context、source hit、related request、initiator 合并生成 `function-candidates.json`
 - 已让 workspace 虚拟 artifact 真实落盘，当前会写入 network/source/initiator/context/function-candidates 等 JSON 文件
 - 已实现候选函数 runtime validation：从候选函数卡片进入页面运行时，验证函数可定位、可调用、源码片段完整性与 sign 输出形态
@@ -186,11 +186,11 @@ task_card:
 - 已实现 WASM / VM / 混淆 / 反调试 / 动态 secret 的保守 triage detector：优先于 hash / encoding 策略运行，命中后输出 runtime-assisted / partial 计划并阻断假纯算交付
 - 已新增运行时上下文依赖识别：`cookie`、`localStorage`、`sessionStorage`、`navigator`、`timezone`、`canvas`
 - 已完成 fixture profile 矩阵：`default`、`sha256`、`base64`、`context-localstorage`
-- Phase 11 已验证真实 MCP profile smoke：`sha256` / `base64` 可纯算，`context-localstorage` 在未采集上下文时会正确阻断 pure extraction
+- Phase 11 已验证legacy MCP profile smoke：`sha256` / `base64` 可纯算，`context-localstorage` 在未采集上下文时会正确阻断 pure extraction
 - 当前全量验证结果：`python -m unittest discover -s <repo-root>/tests -v` 通过，36 个测试全部成功
 - 已实现运行时上下文采集：`runtime-context.json`
 - 已实现 context-aware delivery：`context-localstorage` profile 可采集 `localStorage.device_id` 并生成交付包
-- 已验证真实 MCP profile smoke：`context-localstorage` 现在可生成 context-aware `sign_rebuild.py` 与 `replay_demo.py`
+- 已验证legacy MCP profile smoke：`context-localstorage` 现在可生成 context-aware `sign_rebuild.py` 与 `replay_demo.py`
 - 当前全量验证结果：`python -m unittest discover -s <repo-root>/tests -v` 通过，37 个测试全部成功
 
 ## 6. execution 模式实施计划
@@ -329,13 +329,13 @@ task_card:
 - editable 安装后可直接执行 `reverse-agent-demo`
 - 能对一个 Web 测试目标产出结构化结果
 - 输出包含 `facts / inferences / unknowns / next_action / confidence`
-- 真实 MCP smoke 可在可调端口上完成 `ensure-chrome -> recon -> stop-chrome` 闭环
-- 真实 MCP 返回的 Markdown 形态不会打穿适配层
+- legacy MCP smoke 可在可调端口上完成 `ensure-chrome -> recon -> stop-chrome` 闭环
+- legacy MCP 返回的 Markdown 形态不会打穿适配层
 - `build_reverse_agent()` 可成功构建当前版本 deepagents 图，并通过 mock tool-calling model 完成一次 `agent.invoke()`
 - 主 Agent 可通过 deepagents 内置 `task` 工具委派 general-purpose 子 Agent，并把子 Agent 结果回收到主线程消息链
 - 包可通过 uv editable 安装，测试命令不再依赖手动 `PYTHONPATH`
-- 本地 sign fixture 可自检并可作为真实 MCP smoke 目标
-- 真实 MCP fixture smoke 能同时产生网络请求证据与源码命中证据
+- 本地 sign fixture 可自检并可作为legacy MCP smoke 目标
+- legacy MCP fixture smoke 能同时产生网络请求证据与源码命中证据
 - Web recon 能把网络/源码命中晋升为请求发起链路和源码上下文证据
 - Web recon 能生成候选 sign 函数卡片，fixture 当前稳定生成 `buildSign` 和 `search`
 - artifact 引用必须有对应真实文件，不能只停留在 `virtual://workspace/...`
@@ -394,7 +394,7 @@ task_card:
 - `scrapy_project/` 包含 `scrapy.cfg`、settings、middleware、spider、runner 和 sign adapter
 - `scrapy_middleware.py` 保留为不强依赖 Scrapy import 的兼容单文件
 - 单元测试覆盖“生成 replay demo 并脱离浏览器请求 fixture API”
-- 真实 MCP fixture smoke 能产出 rebuild artifacts，并通过 `sign_rebuild.py` self-check
+- legacy MCP fixture smoke 能产出 rebuild artifacts，并通过 `sign_rebuild.py` self-check
 
 ### Phase 9：deepagents rebuild delivery 编排增强
 
@@ -478,7 +478,7 @@ task_card:
 
 - `app.js` 会按 profile 生成不同的 buildSign 逻辑
 - `healthz` 会回传 profile 元数据
-- `sha256` profile 的真实 MCP smoke 可生成 `sha256_keyword_timestamp` rebuild plan
+- `sha256` profile 的legacy MCP smoke 可生成 `sha256_keyword_timestamp` rebuild plan
 - `context-localstorage` profile 在没有 runtime context artifact 时会阻断 pure extraction
 - `webpack-minified` profile 能覆盖 webpack-like module wrapper / minified helper 场景并生成 `sha256_keyword_timestamp` rebuild plan
 - `token-chain` profile 能覆盖 bootstrap token + `sessionStorage.fixture_token` 链路并生成 context-aware delivery
@@ -533,8 +533,8 @@ task_card:
 
 验证结果：
 
-- `context-cookie` 真实 MCP smoke：`ready=true`，`context_aware_extractable=true`，`runtime_context_required=["cookie"]`，`captured_runtime_context=["cookie"]`，`sign_rebuild.py` self-check 通过
-- `context-navigator` 真实 MCP smoke：`ready=true`，`context_aware_extractable=true`，`runtime_context_required=["navigator"]`，`captured_runtime_context=["navigator"]`，`sign_rebuild.py` self-check 通过
+- `context-cookie` legacy MCP smoke：`ready=true`，`context_aware_extractable=true`，`runtime_context_required=["cookie"]`，`captured_runtime_context=["cookie"]`，`sign_rebuild.py` self-check 通过
+- `context-navigator` legacy MCP smoke：`ready=true`，`context_aware_extractable=true`，`runtime_context_required=["navigator"]`，`captured_runtime_context=["navigator"]`，`sign_rebuild.py` self-check 通过
 - 全量单测：`Ran 40 tests ... OK`
 
 ### 里程碑状态
@@ -583,17 +583,17 @@ task_card:
 
 - `scripts/run_deepagent_smoke.py`：验证 `deepagents` 主 Agent invoke 与 route tool 闭环
 - `scripts/run_deepagent_subagent_smoke.py`：验证 `deepagents` 子 Agent 委派闭环
-- `scripts/run_demo.py --runtime mcp --ensure-chrome`：验证真实 Chrome + MCP runtime 闭环
-- `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome`：验证本地 sign fixture 的真实 Web 逆向闭环
-- `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `get_request_initiator` / `get_script_source` 证据晋升链路
-- `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `function-candidates.json` 候选函数卡片输出
-- `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `function-validations.json` / `function-validation-summary.json` 候选验证与 replay 输出
-- `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 当前还验证 `rebuild-plan.json`、`sign_rebuild.py`、`replay_demo.py`、`scrapy_middleware.py` 与 `scrapy_project/` 纯算交付包输出
+- `scripts/run_demo.py --runtime legacy-mcp --ensure-chrome`：验证真实 Chrome + MCP runtime 闭环
+- `reverse-agent-fixture-smoke --runtime legacy-mcp --ensure-chrome`：验证本地 sign fixture 的真实 Web 逆向闭环
+- `reverse-agent-fixture-smoke --runtime legacy-mcp --ensure-chrome` 当前还验证 `get_request_initiator` / `get_script_source` 证据晋升链路
+- `reverse-agent-fixture-smoke --runtime legacy-mcp --ensure-chrome` 当前还验证 `function-candidates.json` 候选函数卡片输出
+- `reverse-agent-fixture-smoke --runtime legacy-mcp --ensure-chrome` 当前还验证 `function-validations.json` / `function-validation-summary.json` 候选验证与 replay 输出
+- `reverse-agent-fixture-smoke --runtime legacy-mcp --ensure-chrome` 当前还验证 `rebuild-plan.json`、`sign_rebuild.py`、`replay_demo.py`、`scrapy_middleware.py` 与 `scrapy_project/` 纯算交付包输出
 - `scripts/run_deepagent_delivery_smoke.py` 当前可验证主 Agent 的 `build_rebuild_delivery` 工具调用闭环
 - `tests/test_rebuild_artifacts.py` 当前还验证 md5 策略 self-check 与 `localStorage` 运行时依赖阻断逻辑
 - `reverse-agent-fixture --profile sha256/base64/context-localstorage/webpack-minified/token-chain/hybrid-context` 当前可切换 fixture profile
-- `reverse-agent-fixture-smoke --profile sha256` 当前可走真实 MCP + 受管 Chrome 的 hash 策略 smoke
-- `reverse-agent-fixture-smoke --profile base64` 当前可走真实 MCP + 受管 Chrome 的 encoding 策略 smoke
+- `reverse-agent-fixture-smoke --profile sha256` 当前可走legacy MCP + 受管 Chrome 的 hash 策略 smoke
+- `reverse-agent-fixture-smoke --profile base64` 当前可走legacy MCP + 受管 Chrome 的 encoding 策略 smoke
 - `reverse-agent-fixture-smoke --profile context-localstorage` 当前可采集 runtime context 并生成 context-aware delivery
 - `reverse-agent-fixture-smoke --profile context-cookie` 当前可采集 cookie context 并生成 context-aware delivery
 - `reverse-agent-fixture-smoke --profile context-navigator` 当前可采集 navigator context 并生成 context-aware delivery

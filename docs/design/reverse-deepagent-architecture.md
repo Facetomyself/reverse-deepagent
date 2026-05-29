@@ -136,11 +136,11 @@ CloakBrowser 应作为 `BrowserProvider` 实现之一接入，而不是替代整
 - 安装后可直接使用 console script：`reverse-agent-demo`
 - `reverse-agent-fixture` / `reverse-agent-fixture-smoke`
 - 本地 sign fixture 已落地，可提供 `/app.js` 中的 `buildSign` / `x-sign` 入口和 `/api/search` 网络请求样本
-- 真实 MCP + 受管 Chrome 对 fixture smoke 已验证 `status=success`、`next_action=move_to_source_analysis`
+- legacy MCP + 受管 Chrome 对 fixture smoke 已验证 `status=success`、`next_action=move_to_source_analysis`
 - Web recon 已支持证据晋升：从 source hit 自动调用 `get_script_source` 拉源码上下文，从 request hit 自动调用 `get_request_initiator` 拉请求发起链路
 - Web recon 已支持候选函数卡片：把 source context、source hit、related request、initiator 合并为 `function-candidates.json`
 - workspace 虚拟 artifact 已同步落盘，避免只有 `virtual://workspace/...` 引用而没有真实文件
-- `scripts/run_demo.py --runtime mcp --ensure-chrome --chrome-debug-port 9445`
+- `scripts/run_demo.py --runtime legacy-mcp --ensure-chrome --chrome-debug-port 9445`
 - 使用隔离 profile `/tmp/reverse-agent-chrome-9445`
 - 能完成受管 Chrome 启动、MCP 接入、Web recon 结构化输出与自动停止
 - 未使用 `--keep-chrome` 时，执行结束后不应残留该端口监听

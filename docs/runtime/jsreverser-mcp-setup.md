@@ -54,7 +54,7 @@ Prefer the managed launcher:
 ```bash
 reverse-agent-fixture-smoke \
   --profile context-navigator \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --jsreverser-mcp-command "/opt/homebrew/bin/jsreverser-mcp" \
   --chrome-debug-port 9461 \
@@ -108,7 +108,7 @@ artifacts/exports/jsreverser-mcp-probe.json
 ```bash
 reverse-agent-fixture-smoke \
   --profile context-cookie \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --jsreverser-mcp-command "/opt/homebrew/bin/jsreverser-mcp" \
   --chrome-debug-port 9460 \
@@ -198,7 +198,7 @@ Fix:
 
 - Install JSReverser MCP locally.
 - Or pass the correct binary path where the command supports it.
-- Or skip MCP integration and use `--runtime mock` for public demo verification.
+- Or skip MCP integration and use `--runtime native-web` or `--runtime mock` for public demo verification.
 
 ### Chrome debug port is not reachable
 

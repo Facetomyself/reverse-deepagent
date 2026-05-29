@@ -49,6 +49,9 @@ from reverse_deepagent.schemas import (
 )
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
 
+LEGACY_MCP_BACKEND_ID = "legacy-mcp"
+LEGACY_MCP_ALIASES = ("mcp", "jsreverser-mcp")
+
 
 class ReversePipelineOutput(SchemaBaseModel):
     """Complete result returned by the deterministic coordinator pipeline."""
@@ -344,8 +347,8 @@ def _mcp_runtime_factory(
     config = JSReverserMcpConfig(
         command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
         browser_url=browser_url or "http://127.0.0.1:9222",
-        backend_id="mcp",
-        display_name="JSReverser MCP",
+        backend_id=LEGACY_MCP_BACKEND_ID,
+        display_name="Legacy JSReverser MCP",
         transport="mcp-stdio",
     )
     return create_jsreverser_mcp_runtime(
@@ -495,12 +498,12 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
     )
     registry.register(
         RuntimeBackendRegistration(
-            backend_id="mcp",
-            aliases=("jsreverser-mcp",),
+            backend_id=LEGACY_MCP_BACKEND_ID,
+            aliases=LEGACY_MCP_ALIASES,
             factory=_mcp_runtime_factory,
             capabilities=RuntimeBackendCapabilities(
-                backend_id="mcp",
-                display_name="JSReverser MCP",
+                backend_id=LEGACY_MCP_BACKEND_ID,
+                display_name="Legacy JSReverser MCP",
                 transport="mcp-stdio",
                 target_platforms=["web"],
                 supports_browser_session=True,
@@ -513,8 +516,12 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                 mcp_backed=True,
                 evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
                 artifact_kinds=["json", "export", "rebuild", "markdown"],
-                notes=["requires jsreverser-mcp and a reachable Chrome DevTools endpoint"],
-                config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND},
+                notes=[
+                    "legacy compatibility backend backed by jsreverser-mcp",
+                    "requires jsreverser-mcp and a reachable Chrome DevTools endpoint",
+                    "mcp and jsreverser-mcp remain temporary compatibility aliases",
+                ],
+                config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND, "aliases": list(LEGACY_MCP_ALIASES)},
             ),
         )
     )
@@ -1291,7 +1298,7 @@ def run_reverse_pipeline(
     chrome_launch = None
     chrome_stop = None
     should_stop_chrome = False
-    if runtime_kind == "mcp" and ensure_chrome:
+    if _is_legacy_mcp_runtime_kind(runtime_kind) and ensure_chrome:
         chrome_launch = ensure_chrome_debug(chrome_config)
         if not chrome_launch.ok:
             raise RuntimeError(f"Failed to ensure Chrome debug session: {chrome_launch.stderr or chrome_launch.stdout}")
@@ -1338,6 +1345,10 @@ def run_reverse_pipeline(
         chrome_launch=chrome_launch,
         chrome_stop=chrome_stop,
     )
+
+
+def _is_legacy_mcp_runtime_kind(runtime_kind: str) -> bool:
+    return runtime_kind in {LEGACY_MCP_BACKEND_ID, *LEGACY_MCP_ALIASES}
 
 
 def _write_json(path: Path, payload: Any) -> None:

@@ -14,7 +14,7 @@ It is intentionally **not** part of the default public CI path. Public hosted ru
 
 The `MCP Integration` workflow runs `reverse-agent-fixture-smoke` against the bundled localhost sign fixture with:
 
-- real `runtime=mcp`
+- real `runtime=legacy-mcp`
 - managed Chrome remote-debugging lifecycle via `--ensure-chrome`
 - a selected fixture profile or a named `profile_set` batch
 - a temporary Chrome user-data directory under `$RUNNER_TEMP`
