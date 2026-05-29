@@ -5,7 +5,7 @@ from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
 from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
-from reverse_deepagent.browser.hooks import BrowserHookManager
+from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, BrowserHookManager
 from reverse_deepagent.browser.providers import CloakBrowserConfig, CloakBrowserProvider, PlaywrightChromiumConfig, PlaywrightChromiumProvider
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
@@ -45,7 +45,7 @@ class NativeWebRuntime(WebReverseRuntime):
             target_platforms=["web"],
             supports_browser_session=True,
             supports_web_recon=True,
-            supports_protection_patch=False,
+            supports_protection_patch=True,
             supports_artifact_export=True,
             supports_runtime_context=True,
             supports_replay_validation=False,
@@ -178,6 +178,45 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
             )
+        if self._is_breakpoint_request(protection_name, context):
+            spec = BreakpointSpec.from_context(context)
+            result = BreakpointManager().set_breakpoint(page, spec)
+            status = ExecutionStatus.SUCCESS
+            if result.status == "partial":
+                status = ExecutionStatus.PARTIAL
+            elif result.status in {"failed", "unsupported"}:
+                status = ExecutionStatus.FAILED
+            pattern = spec.url_pattern if spec else "<missing>"
+            verification = [
+                f"breakpoint_status={result.status}",
+                f"breakpoint_supported={result.supported}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"breakpoint_reason={result.reason}")
+            if result.error:
+                verification.append(f"breakpoint_error={result.error}")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[f"set_breakpoint_by_url:{pattern}"] if result.supported else [],
+                verification=verification,
+                status=status,
+                artifacts=[
+                    ArtifactRef(
+                        path="virtual://workspace/breakpoints.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime breakpoint manager result.",
+                        metadata={
+                            "status": result.status,
+                            "supported": result.supported,
+                            "count": len(result.breakpoints),
+                            "protection_name": protection_name,
+                        },
+                    )
+                ],
+                next_action="wait_for_breakpoint" if result.status in {"success", "partial"} else "ensure_cdp_breakpoint_capability",
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"success", "partial"} else ConfidenceLevel.LOW,
+            )
         hooks = BrowserHookManager()
         install = hooks.install(page)
         snapshot = hooks.snapshot(page)
@@ -237,6 +276,13 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _looks_like_url(value: str) -> bool:
         return value.startswith("http://") or value.startswith("https://")
+
+    @staticmethod
+    def _is_breakpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"breakpoint", "set-breakpoint", "debugger-breakpoint"}:
+            return True
+        return any(key in context for key in ("url_pattern", "script_url", "line_number", "lineNumber"))
 
     @staticmethod
     def _build_evidence(

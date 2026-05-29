@@ -3,9 +3,26 @@ import unittest
 import json
 from pathlib import Path
 
-from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
+from reverse_deepagent.coordinator import (
+    _artifact_category_from_key,
+    _extract_workspace_artifact_payloads,
+    build_runtime,
+    list_runtime_backends,
+    run_reverse_pipeline,
+)
 from reverse_deepagent.runtime import ReverseRuntime, RuntimeExportBundle
-from reverse_deepagent.schemas import ProtectionResult
+from reverse_deepagent.schemas import (
+    ConfidenceLevel,
+    EvidenceItem,
+    EvidenceKind,
+    ExecutionStatus,
+    FinalResult,
+    KeyFindings,
+    ProtectionResult,
+    ReverseMode,
+    ReverseStage,
+    TaskCard,
+)
 
 
 class NonWebRuntime(ReverseRuntime):
@@ -32,6 +49,35 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn("mcp", by_id)
         self.assertEqual(by_id["mcp"]["transport"], "mcp-stdio")
         self.assertTrue(by_id["mcp"]["mcp_backed"])
+
+    def test_workspace_artifact_payloads_include_breakpoint_manager(self) -> None:
+        final_result = FinalResult(
+            task_card=TaskCard(
+                target_url_or_file="https://example.test",
+                target_param_or_api="sign",
+                goal="set breakpoint",
+                boundaries="unit test",
+            ),
+            mode=ReverseMode.DEBUG_BLOCKED,
+            stage=ReverseStage.BREAKPOINT,
+            status=ExecutionStatus.SUCCESS,
+            key_findings=KeyFindings(),
+            evidence=[
+                EvidenceItem(
+                    summary="Native breakpoint manager result",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="breakpoint_manager",
+                    details={"status": "success", "count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                )
+            ],
+            artifacts=[],
+            next_action="wait_for_breakpoint",
+            confidence=ConfidenceLevel.MEDIUM,
+        )
+        payloads = _extract_workspace_artifact_payloads(final_result)
+        self.assertEqual(payloads["breakpoints.json"], {"status": "success", "count": 1})
+        self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
 
     def test_build_runtime_threads_mcp_config_summary(self) -> None:
         runtime = build_runtime(

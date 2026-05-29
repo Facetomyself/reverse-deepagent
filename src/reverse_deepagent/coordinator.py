@@ -531,7 +531,7 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                 target_platforms=["web"],
                 supports_browser_session=True,
                 supports_web_recon=True,
-                supports_protection_patch=False,
+                supports_protection_patch=True,
                 supports_artifact_export=True,
                 supports_runtime_context=True,
                 supports_replay_validation=False,
@@ -855,6 +855,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_response_bodies": "network",
     "workspace_websocket_frames": "network",
     "workspace_hook_timeline": "hook-timeline",
+    "workspace_breakpoints": "trace",
     "workspace_request_initiators": "trace",
     "workspace_navigation_events": "trace",
     "workspace_runtime_context": "runtime-context",
@@ -1393,6 +1394,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["websocket-frames.json"] = evidence.details
         elif evidence.source == "runtime_hook_timeline":
             payloads["hook-timeline.json"] = evidence.details
+        elif evidence.source == "breakpoint_manager":
+            payloads["breakpoints.json"] = evidence.details
         elif evidence.source == "runtime_context":
             payloads["runtime-context.json"] = evidence.details
         elif evidence.source == "dom_snapshot":

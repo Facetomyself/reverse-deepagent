@@ -226,9 +226,9 @@ Hooks and debugging should also be project-owned:
 | `CookieHook` | Observe cookie writes and auth-related mutations. |
 | `WebSocketHook` | Capture app-level WebSocket send/receive when CDP frame data is insufficient. |
 | `AntiDebugPatch` | Minimal patches for `debugger`, `console.clear`, redirect traps, and DevTools-size checks. |
-| `BreakpointManager` | CDP-backed breakpoints and callframe evaluation when provider supports debugger APIs. |
+| `BreakpointManager` | Provider-neutral CDP breakpoint setup behind capability checks; callframe evaluation remains a later debugger-scope extension. |
 
-Phase 1 does not need full breakpoint parity. Basic recon should land first.
+Current baseline supports explicit `apply_minimal_protection` breakpoint requests and returns `breakpoints.json` artifact refs; default recon must not set breakpoints implicitly.
 
 ## 10. NativeWebRuntime target
 

@@ -12,6 +12,7 @@ from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, 
 class FakeCDPSession:
     def __init__(self) -> None:
         self.handlers = {}
+        self.calls = []
 
     def on(self, event_name, handler):
         self.handlers.setdefault(event_name, []).append(handler)
@@ -21,10 +22,13 @@ class FakeCDPSession:
             handler(payload)
 
     def send(self, method, params=None):
+        self.calls.append((method, params or {}))
         if method == "Network.getResponseBody":
             return {"body": '{"native":true}', "base64Encoded": False}
         if method == "Debugger.getScriptSource":
             return {"scriptSource": "function buildSign(){ return 'x-sign'; }"}
+        if method == "Debugger.setBreakpointByUrl":
+            return {"breakpointId": "bp-native-1", "locations": [{"scriptId": "script-1", "lineNumber": params.get("lineNumber", 0)}]}
         return {}
 
 
@@ -203,11 +207,13 @@ class NativeWebRuntimeTests(unittest.TestCase):
         metadata = {item["backend_id"]: item for item in list_runtime_backends()}
         self.assertIn("native-web", metadata)
         self.assertFalse(metadata["native-web"]["mcp_backed"])
+        self.assertTrue(metadata["native-web"]["supports_protection_patch"])
         self.assertEqual(metadata["native-web"]["config"]["default_browser_provider"], "playwright-chromium")
 
         runtime = build_runtime("native-web")
         capabilities = runtime.describe_capabilities().model_dump(mode="json")
         self.assertEqual(capabilities["backend_id"], "native-web")
+        self.assertTrue(capabilities["supports_protection_patch"])
         self.assertEqual(capabilities["config"]["provider"]["provider_id"], "playwright-chromium")
 
     def test_native_web_runtime_pipeline_writes_core_artifacts_without_mcp(self) -> None:
@@ -279,6 +285,18 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("install_hook:fetch_xhr", result.applied_actions)
         self.assertEqual(result.next_action, "resume_recon")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/hook-timeline.json")
+
+    def test_native_web_runtime_apply_minimal_protection_sets_breakpoint(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection("set-breakpoint", {"url_pattern": ".*app\\.js$", "line_number": 4})
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["set_breakpoint_by_url:.*app\\.js$"])
+        self.assertEqual(result.next_action, "wait_for_breakpoint")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/breakpoints.json")
+        self.assertIn(("Debugger.enable", {}), page._cdp_session.calls)
+        self.assertIn(("Debugger.setBreakpointByUrl", {"urlRegex": ".*app\\.js$", "lineNumber": 4}), page._cdp_session.calls)
 
 
 if __name__ == "__main__":

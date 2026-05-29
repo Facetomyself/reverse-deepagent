@@ -287,21 +287,22 @@ Acceptance:
 
 ### Phase 9: Hook and breakpoint migration
 
-Status: hook baseline implemented locally for fetch/xhr, cookie writes, and minimal anti-debug instrumentation; breakpoint manager remains pending.
+Status: hook baseline and provider-neutral BreakpointManager baseline are implemented and tested locally; real browser breakpoint smoke remains pending.
 
 Deliverables:
 
 - `hooks/fetch_xhr.py`
 - `hooks/cookie.py`
 - `hooks/anti_debug.py`
-- `hooks/breakpoint.py`
+- `hooks/breakpoints.py`
+- `virtual://workspace/breakpoints.json` protection artifact ref / evidence mapping
 - runtime-observe playbook integration.
 
 Acceptance:
 
 - Fetch/XHR hook can capture request parameters before app encryption/signing wrappers send them.
 - Anti-debug patches are minimal and auditable.
-- Breakpoint features are behind provider capability checks.
+- Breakpoint features are behind provider capability checks and only run for explicit protection/debug requests.
 - Hook output is emitted as normalized evidence and artifact files.
 
 ### Phase 10: MCP legacy downgrade
