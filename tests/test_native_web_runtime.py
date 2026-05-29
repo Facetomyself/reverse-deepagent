@@ -34,6 +34,8 @@ class FakeRawPage:
         self.url = "about:blank"
         self.handlers = {}
         self._cdp_session = FakeCDPSession()
+        self.hook_installed = False
+        self.hook_events = []
 
     def on(self, event, handler):
         self.handlers.setdefault(event, []).append(handler)
@@ -74,6 +76,12 @@ class FakeRawPage:
         """
 
     def evaluate(self, expression):
+        if "__reverseDeepAgentHooks" in expression and "namespace:" in expression:
+            self.hook_installed = True
+            self.hook_events.append({"type": "fetch", "payload": {"url": self.url.rstrip("/") + "/api/search", "method": "GET"}})
+            return {"ok": True, "installed": {"fetch_xhr": True, "cookie": True, "anti_debug": True}, "eventCount": len(self.hook_events)}
+        if "not_installed" in expression:
+            return {"ok": self.hook_installed, "installed": {"fetch_xhr": self.hook_installed, "cookie": self.hook_installed, "anti_debug": self.hook_installed}, "events": list(self.hook_events), "eventCount": len(self.hook_events)}
         if "performance.getEntriesByType" in expression:
             return [
                 {
@@ -233,6 +241,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
             response_bodies = json.loads(Path(artifacts["workspace_response_bodies"]).read_text(encoding="utf-8"))
             source_contexts = json.loads(Path(artifacts["workspace_source_contexts"]).read_text(encoding="utf-8"))
             websocket_frames = json.loads(Path(artifacts["workspace_websocket_frames"]).read_text(encoding="utf-8"))
+            hook_timeline = json.loads(Path(artifacts["workspace_hook_timeline"]).read_text(encoding="utf-8"))
             manifest = json.loads(Path(artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
 
         self.assertEqual(provider.started, 1)
@@ -251,12 +260,25 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("buildSign", source_contexts["items"][0]["sourcePreview"])
         self.assertEqual(websocket_frames["status"], "success")
         self.assertEqual(websocket_frames["items"][0]["payloadPreview"], "hello")
+        self.assertTrue(hook_timeline["install"]["ok"])
+        self.assertEqual(hook_timeline["snapshot"]["eventCount"], 1)
+        self.assertEqual(hook_timeline["snapshot"]["events"][0]["type"], "fetch")
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")
         self.assertEqual(manifest_by_key["workspace_navigation_events"]["category"], "trace")
         self.assertEqual(manifest_by_key["workspace_response_bodies"]["category"], "network")
         self.assertEqual(manifest_by_key["workspace_websocket_frames"]["category"], "network")
+        self.assertEqual(manifest_by_key["workspace_hook_timeline"]["category"], "hook-timeline")
+
+    def test_native_web_runtime_apply_minimal_protection_installs_hooks(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection("console.clear", {"reason": "unit-test"})
+        self.assertEqual(result.status.value, "success")
+        self.assertIn("install_hook:fetch_xhr", result.applied_actions)
+        self.assertEqual(result.next_action, "resume_recon")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/hook-timeline.json")
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@
 | 6. Browser doctor provider mode | 已完成 | `reverse-agent-doctor --browser ...` 已实现，39 项相关测试通过，待网络恢复后 push |
 | 7. Native artifact parity | 已完成 | DOM、console、script inventory、navigation events 已落盘，manifest 带 BrowserProvider metadata，63 项相关测试通过 |
 | 8. CDP-enhanced collectors | 已完成 | requestWillBeSent、response body metadata、Debugger.scriptParsed source cache、WebSocket frame cache 已实现并测试；真实浏览器 smoke 待后续 |
-| 9. Hook / breakpoint migration | 未开始 | fetch/xhr、cookie、anti-debug、breakpoint manager |
+| 9. Hook / breakpoint migration | 进行中 | fetch/xhr、cookie、anti-debug hook baseline 已实现；breakpoint manager 待后续 |
 | 10. MCP legacy downgrade | 未开始 | `legacy-mcp` 文档化，`mcp` 保留临时 alias |
 
 ## 下一步执行顺序

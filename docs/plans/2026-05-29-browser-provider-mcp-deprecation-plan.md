@@ -287,6 +287,8 @@ Acceptance:
 
 ### Phase 9: Hook and breakpoint migration
 
+Status: hook baseline implemented locally for fetch/xhr, cookie writes, and minimal anti-debug instrumentation; breakpoint manager remains pending.
+
 Deliverables:
 
 - `hooks/fetch_xhr.py`

@@ -301,6 +301,17 @@ Current CDP event cache support:
 
 The collector attaches before navigation in `NativeWebRuntime` so event-backed caches can observe page load and runtime activity. Real browser smoke remains provider/environment gated.
 
+## 11.2 Hook manager status
+
+Current hook baseline support:
+
+- fetch wrapper records sanitized URL and method into `workspace/hook-timeline.json`.
+- XHR `open` / `send` wrapper records sanitized URL, method, and body type.
+- cookie setter wrapper records cookie names and value sizes, not raw cookie values.
+- minimal anti-debug patch disables `console.clear` and emits blocked clear events.
+
+Breakpoint and callframe operations remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
+
 ## 12. Implementation status
 
 Current implementation status:
@@ -313,8 +324,8 @@ Current implementation status:
 | Native collectors | Baseline implemented | `src/reverse_deepagent/browser/collectors/` |
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
-| NativeWebRuntime | Minimal implementation | `src/reverse_deepagent/adapters/native_web.py` |
-| MCP legacy alias | Planned | Phase 8 in migration plan |
+| NativeWebRuntime | Native collectors and hook baseline implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
+| MCP legacy alias | Planned | Phase 10 in migration plan |
 
 The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services. CloakBrowser-specific operational notes live in `docs/runtime/cloakbrowser-provider.md`.
 

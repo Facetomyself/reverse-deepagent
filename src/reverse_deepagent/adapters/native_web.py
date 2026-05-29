@@ -5,6 +5,7 @@ from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
 from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
+from reverse_deepagent.browser.hooks import BrowserHookManager
 from reverse_deepagent.browser.providers import CloakBrowserConfig, CloakBrowserProvider, PlaywrightChromiumConfig, PlaywrightChromiumProvider
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
@@ -112,9 +113,11 @@ class NativeWebRuntime(WebReverseRuntime):
         console = ConsoleCollector()
         network = NetworkCollector()
         cdp_events = CDPEventCacheCollector()
+        hooks = BrowserHookManager()
         console.attach(page)
         network.attach(page)
         cdp_events.attach(page)
+        hook_install = hooks.install(page)
         navigation_events: list[str] = []
         if self._looks_like_url(task_card.target_url_or_file) and page.url != task_card.target_url_or_file:
             page.goto(task_card.target_url_or_file)
@@ -126,11 +129,13 @@ class NativeWebRuntime(WebReverseRuntime):
         source_hits = ScriptCollector().search(script_inventory, task_card.target_param_or_api)
         network_snapshot = network.snapshot()
         console_snapshot = console.snapshot()
+        hook_snapshot = hooks.snapshot(page)
+        hook_timeline = {"install": hook_install.to_dict(), "snapshot": hook_snapshot.to_dict()}
         cdp_event_snapshot = cdp_events.snapshot()
         cdp_snapshot = CDPEnhancedCollector().collect(page, network_snapshot, cdp_event_snapshot)
 
-        evidence = self._build_evidence(dom, storage, script_inventory, source_hits, network_snapshot, console_snapshot, navigation_events, cdp_snapshot)
-        artifacts = self._build_artifacts(network_snapshot, source_hits, storage, dom, console_snapshot, cdp_snapshot)
+        evidence = self._build_evidence(dom, storage, script_inventory, source_hits, network_snapshot, console_snapshot, navigation_events, cdp_snapshot, hook_timeline)
+        artifacts = self._build_artifacts(network_snapshot, source_hits, storage, dom, console_snapshot, cdp_snapshot, hook_timeline)
         facts = [
             "Native Web runtime session is available",
             f"Browser provider: {self.browser_provider.describe().provider_id}",
@@ -159,14 +164,49 @@ class NativeWebRuntime(WebReverseRuntime):
         return result
 
     def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
+        context = context or {}
+        try:
+            session = self._ensure_session()
+            page = session.get_active_page() or session.new_page()
+        except Exception as exc:
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=[f"Native Web browser provider unavailable: {exc}", f"context_keys={sorted(context.keys())}"],
+                status=ExecutionStatus.FAILED,
+                artifacts=[],
+                next_action="ensure_browser_provider",
+                confidence=ConfidenceLevel.LOW,
+            )
+        hooks = BrowserHookManager()
+        install = hooks.install(page)
+        snapshot = hooks.snapshot(page)
+        applied_actions = [f"install_hook:{name}" for name, enabled in install.installed.items() if enabled]
+        if not applied_actions and install.ok:
+            applied_actions = ["install_hook:runtime_baseline"]
+        verification = [
+            f"hook_install_ok={install.ok}",
+            f"hook_event_count={snapshot.event_count}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if install.error:
+            verification.append(f"hook_install_error={install.error}")
+        status = ExecutionStatus.SUCCESS if install.ok else ExecutionStatus.FAILED
         return ProtectionResult(
             protection_name=protection_name,
-            applied_actions=[],
-            verification=["Native Web hook manager is not implemented yet", f"context_keys={sorted((context or {}).keys())}"],
-            status=ExecutionStatus.FAILED,
-            artifacts=[],
-            next_action="implement_native_hook_manager",
-            confidence=ConfidenceLevel.LOW,
+            applied_actions=applied_actions,
+            verification=verification,
+            status=status,
+            artifacts=[
+                ArtifactRef(
+                    path="virtual://workspace/hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime hook install and event timeline.",
+                    metadata={"event_count": snapshot.event_count, "installed": install.installed, "protection_name": protection_name},
+                )
+            ],
+            next_action="resume_recon" if install.ok else "ensure_browser_provider_or_hook_capability",
+            confidence=ConfidenceLevel.MEDIUM if install.ok else ConfidenceLevel.LOW,
         )
 
     def export_reverse_artifacts(self, final_result: FinalResult | None = None) -> RuntimeExportBundle:
@@ -208,6 +248,7 @@ class NativeWebRuntime(WebReverseRuntime):
         console_snapshot: dict[str, Any],
         navigation_events: list[str],
         cdp_snapshot: dict[str, Any],
+        hook_timeline: dict[str, Any],
     ) -> list[EvidenceItem]:
         return [
             EvidenceItem(summary="Native Web DOM snapshot collected", kind=EvidenceKind.DYNAMIC, source="dom_snapshot", details=dom, confidence=ConfidenceLevel.MEDIUM),
@@ -221,6 +262,7 @@ class NativeWebRuntime(WebReverseRuntime):
             EvidenceItem(summary="Native Web CDP response body metadata collected", kind=EvidenceKind.REQUEST, source="response_body_metadata", details=cdp_snapshot.get("response_bodies", {}), confidence=ConfidenceLevel.MEDIUM),
             EvidenceItem(summary="Native Web CDP script source metadata collected", kind=EvidenceKind.STATIC, source="get_script_source", details=cdp_snapshot.get("script_sources", {}), confidence=ConfidenceLevel.MEDIUM),
             EvidenceItem(summary="Native Web CDP WebSocket metadata collected", kind=EvidenceKind.WEBSOCKET, source="websocket_frame_metadata", details=cdp_snapshot.get("websocket_frames", {}), confidence=ConfidenceLevel.MEDIUM),
+            EvidenceItem(summary="Native Web runtime hook timeline collected", kind=EvidenceKind.HOOK, source="runtime_hook_timeline", details=hook_timeline, confidence=ConfidenceLevel.MEDIUM),
         ]
 
     @staticmethod
@@ -231,6 +273,7 @@ class NativeWebRuntime(WebReverseRuntime):
         dom: dict[str, Any],
         console_snapshot: dict[str, Any],
         cdp_snapshot: dict[str, Any],
+        hook_timeline: dict[str, Any],
     ) -> list[ArtifactRef]:
         return [
             ArtifactRef(path="virtual://workspace/network-requests.json", kind=ArtifactKind.JSON, description="Native Web network request samples.", metadata={"count": network_snapshot.get("count", 0)}),
@@ -242,6 +285,7 @@ class NativeWebRuntime(WebReverseRuntime):
             ArtifactRef(path="virtual://workspace/response-bodies.json", kind=ArtifactKind.JSON, description="Native Web CDP response body metadata.", metadata={"count": cdp_snapshot.get("response_bodies", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
             ArtifactRef(path="virtual://workspace/source-contexts.json", kind=ArtifactKind.JSON, description="Native Web CDP script source metadata.", metadata={"count": cdp_snapshot.get("script_sources", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
             ArtifactRef(path="virtual://workspace/websocket-frames.json", kind=ArtifactKind.JSON, description="Native Web CDP WebSocket frame metadata.", metadata={"count": cdp_snapshot.get("websocket_frames", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
+            ArtifactRef(path="virtual://workspace/hook-timeline.json", kind=ArtifactKind.JSON, description="Native Web runtime hook timeline.", metadata={"count": hook_timeline.get("snapshot", {}).get("eventCount", 0), "installed": hook_timeline.get("install", {}).get("installed", {})}),
         ]
 
 
