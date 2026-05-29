@@ -26,6 +26,18 @@ python -m pip install -e .
 reverse-agent-demo --runtime mock
 ```
 
+如果 shell 提示 `reverse-agent-demo: command not found`，说明当前终端还没有激活项目虚拟环境。可以先执行：
+
+```bash
+source "<repo-root>/.venv/bin/activate"
+```
+
+或者直接使用绝对路径：
+
+```bash
+"<repo-root>/.venv/bin/reverse-agent-demo" --runtime mock
+```
+
 运行本地 sign fixture 冒烟测试：
 
 ```bash
@@ -906,6 +918,20 @@ USER_DATA_DIR="/tmp/reverse-agent-chrome" \
 ## 运行真实 MCP 冒烟测试
 
 完整前置条件和故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。
+
+推荐先运行浏览器 / MCP doctor，确认本机 Chrome、调试端口、`jsreverser-mcp` 和 console script 入口是否就绪：
+
+```bash
+reverse-agent-doctor --ensure-chrome --check-mcp
+```
+
+如果当前 shell 没有激活虚拟环境，可以使用绝对路径：
+
+```bash
+"<repo-root>/.venv/bin/reverse-agent-doctor" --ensure-chrome --check-mcp
+```
+
+默认情况下，`reverse-agent-doctor --ensure-chrome` 会在检查后停止受管 Chrome；如果你需要保留调试会话，显式添加 `--keep-chrome`。
 
 先探测真实 `jsreverser-mcp` stdio 协议和工具列表：
 
