@@ -16,6 +16,13 @@
   - test each backend independently
   - preserve legacy commands until replacement is validated
 
+## Planning artifacts
+
+- Public migration plan: `docs/plans/2026-05-29-browser-provider-mcp-deprecation-plan.md`.
+- Execution-ready do-plan entry: `.codex/plans/browser-provider-mcp-deprecation-plan.md`.
+- Runtime architecture: `docs/runtime/browser-provider-architecture.md`.
+- CloakBrowser provider notes: `docs/runtime/cloakbrowser-provider.md`.
+
 ## Current state
 
 The project already has useful pieces:
@@ -52,13 +59,15 @@ reverse-agent-demo \
   --task-text "https://example.com 找 sign 入口"
 ```
 
-Legacy flow:
+Current compatibility flow:
 
 ```bash
 reverse-agent-demo \
-  --runtime legacy-mcp \
+  --runtime mcp \
   --ensure-chrome
 ```
+
+`legacy-mcp` is the planned explicit backend name for Phase 8; `mcp` remains the current runnable compatibility id until that alias is implemented.
 
 ## Milestones
 
@@ -187,12 +196,15 @@ Remaining validation:
 
 ### Phase 5: CloakBrowser provider
 
+Status: provider skeleton and optional dependency added; real CloakBrowser binary smoke and doctor mode remain pending.
+
 Deliverables:
 
 - optional dependency group:
   - `cloak = ["cloakbrowser>=...,<..."]`
 - `src/reverse_deepagent/browser/providers/cloakbrowser.py`
 - `docs/runtime/cloakbrowser-provider.md`
+- execution plan entry: `.codex/plans/browser-provider-mcp-deprecation-plan.md`
 - doctor support: `reverse-agent-doctor --browser cloakbrowser`
 
 Acceptance:
@@ -202,6 +214,22 @@ Acceptance:
 - Provider reports stealth/humanize/persistent profile capabilities.
 - Basic native collectors work through the same Playwright-compatible session layer.
 - CloakBrowser binary is not committed or redistributed by this repo.
+
+Current evidence:
+
+- Optional dependency group `.[cloak]` is declared without affecting default installs.
+- `CloakBrowserProvider` reports stealth/humanize/persistent profile capabilities.
+- Proxy configuration is redacted from capability metadata.
+- Missing dependency raises `BrowserProviderUnavailableError` with install guidance.
+- `native-web` factory can select `--browser cloakbrowser` without importing or launching CloakBrowser during metadata listing.
+- Unit tests: `tests.test_cloakbrowser_provider`.
+
+Remaining validation:
+
+- Install `.[cloak]` in an environment allowed to download/use CloakBrowser binaries.
+- Run persistent-context smoke against a safe local page.
+- Add `reverse-agent-doctor --browser cloakbrowser` support.
+- Keep `docs/runtime/cloakbrowser-provider.md` updated after real binary smoke.
 
 ### Phase 6: CDP-enhanced collectors
 

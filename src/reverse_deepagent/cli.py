@@ -33,7 +33,7 @@ def build_demo_parser() -> argparse.ArgumentParser:
         "--runtime",
         default="mock",
         help=(
-            "Runtime backend to use. Common values: mock, mcp, playwright-cli, chrome-cdp, browser-cli. "
+            "Runtime backend to use. Common values: mock, native-web, mcp, playwright-cli, chrome-cdp, browser-cli. "
             "Aliases are resolved through the runtime registry."
         ),
     )
@@ -66,6 +66,11 @@ def build_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Run BrowserProvider in headless mode when supported.")
     parser.add_argument("--browser-executable-path", default=None, help="Optional browser executable path for BrowserProvider launch.")
     parser.add_argument("--browser-args", default="", help="Extra BrowserProvider args as a shell-split string.")
+    parser.add_argument("--browser-humanize", action=argparse.BooleanOptionalAction, default=None, help="Enable humanized BrowserProvider behavior when supported, such as CloakBrowser.")
+    parser.add_argument("--browser-proxy", default=None, help="Optional BrowserProvider proxy URL. Avoid printing credentials in shared logs.")
+    parser.add_argument("--browser-geoip", action="store_true", help="Let BrowserProvider derive geo settings from proxy/IP when supported.")
+    parser.add_argument("--browser-locale", default=None, help="Optional BrowserProvider locale, such as zh-CN.")
+    parser.add_argument("--browser-timezone", default=None, help="Optional BrowserProvider timezone, such as Asia/Shanghai.")
     return parser
 
 
@@ -102,6 +107,11 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
         browser_headless=args.browser_headless,
         browser_executable_path=args.browser_executable_path,
         browser_args=shlex.split(args.browser_args) if args.browser_args else None,
+        browser_humanize=args.browser_humanize,
+        browser_proxy=args.browser_proxy,
+        browser_geoip=args.browser_geoip,
+        browser_locale=args.browser_locale,
+        browser_timezone=args.browser_timezone,
     )
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
     return 0

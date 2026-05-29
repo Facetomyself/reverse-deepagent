@@ -5,7 +5,7 @@ from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
 from reverse_deepagent.browser.collectors import ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
-from reverse_deepagent.browser.providers import PlaywrightChromiumConfig, PlaywrightChromiumProvider
+from reverse_deepagent.browser.providers import CloakBrowserConfig, CloakBrowserProvider, PlaywrightChromiumConfig, PlaywrightChromiumProvider
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -237,14 +237,27 @@ def create_native_web_runtime(*, browser_provider: BrowserProvider | None = None
     if browser_provider is not None:
         return NativeWebRuntime(browser_provider=browser_provider)
     browser_id = browser or kwargs.get("browser_provider") or "playwright-chromium"
-    if browser_id not in {"playwright-chromium", "playwright", "chromium"}:
-        raise BrowserProviderUnavailableError(f"Unsupported native browser provider: {browser_id}")
     browser_headless = kwargs.get("browser_headless")
-    config = PlaywrightChromiumConfig(
-        headless=True if browser_headless is None else bool(browser_headless),
-        profile_dir=kwargs.get("browser_profile_dir"),
-        browser_url=kwargs.get("browser_url"),
-        executable_path=kwargs.get("browser_executable_path"),
-        args=kwargs.get("browser_args") or [],
-    )
-    return NativeWebRuntime(browser_provider=PlaywrightChromiumProvider(config=config))
+    if browser_id in {"playwright-chromium", "playwright", "chromium"}:
+        config = PlaywrightChromiumConfig(
+            headless=True if browser_headless is None else bool(browser_headless),
+            profile_dir=kwargs.get("browser_profile_dir"),
+            browser_url=kwargs.get("browser_url"),
+            executable_path=kwargs.get("browser_executable_path"),
+            args=kwargs.get("browser_args") or [],
+        )
+        return NativeWebRuntime(browser_provider=PlaywrightChromiumProvider(config=config))
+    if browser_id in {"cloakbrowser", "cloak", "cloak-browser"}:
+        browser_humanize = kwargs.get("browser_humanize")
+        config = CloakBrowserConfig(
+            headless=False if browser_headless is None else bool(browser_headless),
+            humanize=True if browser_humanize is None else bool(browser_humanize),
+            profile_dir=kwargs.get("browser_profile_dir"),
+            proxy=kwargs.get("browser_proxy"),
+            geoip=bool(kwargs.get("browser_geoip", False)),
+            locale=kwargs.get("browser_locale"),
+            timezone=kwargs.get("browser_timezone"),
+            args=kwargs.get("browser_args") or [],
+        )
+        return NativeWebRuntime(browser_provider=CloakBrowserProvider(config=config))
+    raise BrowserProviderUnavailableError(f"Unsupported native browser provider: {browser_id}")

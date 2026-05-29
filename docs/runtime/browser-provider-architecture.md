@@ -253,13 +253,15 @@ reverse-agent-demo \
   --task-text "https://example.com 找 sign 入口"
 ```
 
-Compatibility path:
+Current compatibility path:
 
 ```bash
 reverse-agent-demo \
-  --runtime legacy-mcp \
+  --runtime mcp \
   --ensure-chrome
 ```
+
+`legacy-mcp` is the planned explicit backend name for Phase 8; `mcp` remains the current runnable compatibility id until that alias is implemented.
 
 ## 11. Artifact compatibility
 
@@ -291,11 +293,11 @@ Current implementation status:
 | BrowserProvider registry | Implemented | `src/reverse_deepagent/browser/registry.py` |
 | Native collectors | Baseline implemented | `src/reverse_deepagent/browser/collectors/` |
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
-| CloakBrowser provider | Planned | Phase 5 in migration plan |
+| CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
 | NativeWebRuntime | Minimal implementation | `src/reverse_deepagent/adapters/native_web.py` |
 | MCP legacy alias | Planned | Phase 8 in migration plan |
 
-The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services.
+The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services. CloakBrowser-specific operational notes live in `docs/runtime/cloakbrowser-provider.md`.
 
 ## 13. Deprecation posture
 

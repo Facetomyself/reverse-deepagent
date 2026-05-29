@@ -5,7 +5,7 @@
 面向 Web / JavaScript 逆向流程的 DeepAgents 演示项目。项目聚焦本地、授权场景：归一化逆向任务、通过运行时适配器采集 Web 证据、验证候选签名函数，并生成 replay / rebuild 交付物。
 
 > 当前发布线：`v0.1.x` 公开演示版稳定期。详见 [`CHANGELOG.md`](CHANGELOG.md) 与 [`ROADMAP.md`](ROADMAP.md)。
-> BrowserProvider 架构与 MCP legacy 迁移：[`docs/runtime/browser-provider-architecture.md`](docs/runtime/browser-provider-architecture.md)、[`docs/plans/2026-05-29-browser-provider-mcp-deprecation-plan.md`](docs/plans/2026-05-29-browser-provider-mcp-deprecation-plan.md)。
+> BrowserProvider 架构与 MCP legacy 迁移：[`docs/runtime/browser-provider-architecture.md`](docs/runtime/browser-provider-architecture.md)、[`docs/runtime/cloakbrowser-provider.md`](docs/runtime/cloakbrowser-provider.md)、[`docs/plans/2026-05-29-browser-provider-mcp-deprecation-plan.md`](docs/plans/2026-05-29-browser-provider-mcp-deprecation-plan.md)。
 > MCP 运行时与自托管冒烟测试目前保留为 legacy 兼容路径：[`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)、[`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md)。
 > 运行时适配器契约：[`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
@@ -51,7 +51,34 @@ reverse-agent-fixture-smoke --runtime mock --profile sha256
 python -m unittest discover -s tests -v
 ```
 
-当前真实浏览器链路正在从 MCP 迁移到 BrowserProvider 架构：长期目标是 `native-web + BrowserProvider + native collectors`，MCP 保留为 legacy 兼容路径。现阶段基于 MCP 的浏览器集成仍可用于真实 smoke，需要本机 JSReverser MCP 可执行文件和 Chrome 调试环境。环境假设与故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。公开 CI 不默认运行真实 MCP 链路，而是隔离在手动 `MCP Integration` 工作流中。本地建议优先使用受管 Chrome 启动器：
+当前真实浏览器链路正在从 MCP 迁移到 BrowserProvider 架构：长期目标是 `native-web + BrowserProvider + native collectors`，MCP 保留为 legacy 兼容路径。
+
+Native Web 运行时示例：
+
+```bash
+reverse-agent-demo \
+  --runtime native-web \
+  --browser playwright-chromium \
+  --task-text "https://example.com 找 sign 入口"
+```
+
+CloakBrowser 作为可选 BrowserProvider 使用，安装方式如下：
+
+```bash
+uv pip install --python "<repo-root>/.venv/bin/python" -e ".[cloak]"
+```
+
+运行示例：
+
+```bash
+reverse-agent-demo \
+  --runtime native-web \
+  --browser cloakbrowser \
+  --browser-profile-dir "./profiles/example" \
+  --task-text "https://example.com 查看登录态和关键请求"
+```
+
+现阶段基于 MCP 的浏览器集成仍可用于真实 smoke，需要本机 JSReverser MCP 可执行文件和 Chrome 调试环境。环境假设与故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。公开 CI 不默认运行真实 MCP 链路，而是隔离在手动 `MCP Integration` 工作流中。本地建议优先使用受管 Chrome 启动器：
 
 ```bash
 reverse-agent-fixture-smoke \
@@ -836,7 +863,7 @@ print(capabilities.model_dump(mode="json"))
 `build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。当前已注册：
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
-- `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前默认 provider 为 `playwright-chromium`
+- `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium` skeleton 和 optional `cloakbrowser` provider skeleton
 - `mcp`（别名：`jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 运行时，过渡期保留
 - `playwright-cli`（别名：`playwright`, `pw-cli`）：轻量 Playwright CLI 探测与静态源码拉取，不主动启动浏览器
 - `chrome-cdp`（别名：`cdp`, `devtools`）：连接既有 Chrome DevTools 端点，不主动启动 Chrome
