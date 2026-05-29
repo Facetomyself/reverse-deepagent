@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/Facetomyself/reverse-deepagent/actions/workflows/ci.yml/badge.svg)](https://github.com/Facetomyself/reverse-deepagent/actions/workflows/ci.yml)
 
-Reverse-engineering oriented DeepAgents demo for Web / JavaScript workflows. The project focuses on local, authorized analysis: route a reverse task, collect Web evidence through runtime adapters, validate candidate signing functions, and generate replay / rebuild artifacts.
+面向 Web / JavaScript 逆向流程的 DeepAgents 演示项目。项目聚焦本地、授权场景：归一化逆向任务、通过运行时适配器采集 Web 证据、验证候选签名函数，并生成 replay / rebuild 交付物。
 
-> 当前发布线：`v0.1.x` public demo stabilization。详见 [`CHANGELOG.md`](CHANGELOG.md) 与 [`ROADMAP.md`](ROADMAP.md)。
-> MCP runtime 与 self-hosted smoke：[`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)、[`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md)。
-> Self-hosted MCP workflow 当前支持手动 `profile`、批量 `profile_set`、weekly canary、runner preflight、step summary 与 artifact upload。
-> Runtime adapter contract：[`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
+> 当前发布线：`v0.1.x` 公开演示版稳定期。详见 [`CHANGELOG.md`](CHANGELOG.md) 与 [`ROADMAP.md`](ROADMAP.md)。
+> MCP 运行时与自托管冒烟测试：[`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)、[`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md)。
+> 自托管 MCP 工作流当前支持手动 `profile`、批量 `profile_set`、每周金丝雀检查、运行器预检、步骤摘要与产物上传。
+> 运行时适配器契约：[`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
-## Quickstart
+## 快速开始
 
 ```bash
 git clone https://github.com/Facetomyself/reverse-deepagent.git
@@ -20,26 +20,26 @@ python -m pip install -U pip
 python -m pip install -e .
 ```
 
-Run the deterministic mock pipeline:
+运行确定性的 mock 流水线：
 
 ```bash
 reverse-agent-demo --runtime mock
 ```
 
-Run the local sign fixture smoke:
+运行本地 sign fixture 冒烟测试：
 
 ```bash
 reverse-agent-fixture --check
 reverse-agent-fixture-smoke --runtime mock --profile sha256
 ```
 
-Run tests:
+运行测试：
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-MCP-backed browser integration requires a local JSReverser MCP binary and Chrome debug environment. See [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md) for setup assumptions and troubleshooting. For public CI this is isolated in the manual `MCP Integration` workflow instead of the default CI workflow. Locally, prefer the managed Chrome launcher:
+基于 MCP 的浏览器集成需要本机 JSReverser MCP 可执行文件和 Chrome 调试环境。环境假设与故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。公开 CI 不默认运行真实 MCP 链路，而是隔离在手动 `MCP Integration` 工作流中。本地建议优先使用受管 Chrome 启动器：
 
 ```bash
 reverse-agent-fixture-smoke \
@@ -81,7 +81,7 @@ agent = build_reverse_agent(
 
 不要把未验证的一次性抓包、候选源码、临时 todo 写入 `/memories/`；这些仍应留在 `/workspace/` 或 `/artifacts/`。
 
-纯 Python smoke：
+纯 Python 冒烟测试：
 
 ```bash
 PYTHONPATH="<repo-root>/src" \
@@ -89,13 +89,13 @@ PYTHONPATH="<repo-root>/src" \
   "<repo-root>/scripts/run_deepagent_memory_smoke.py"
 ```
 
-## 轻量 Web Runtime Backend
+## 轻量 Web 运行时后端
 
-除了 `mock` 和 `mcp`，默认 registry 还注册了 3 个轻量 Web backend：
+除了 `mock` 和 `mcp`，默认 registry 还注册了 3 个轻量 Web 后端：
 
-- `playwright-cli`（alias: `playwright`, `pw-cli`）：运行 `playwright --version` 这类 side-effect-light probe，并对目标 URL 做静态 HTML / script source fetch。
-- `chrome-cdp`（alias: `cdp`, `devtools`）：只探测已经存在的 Chrome DevTools endpoint，例如 `http://127.0.0.1:9222/json/version` 和 `/json/list`，不会主动启动 Chrome。
-- `browser-cli`（alias: `cli-browser`, `browser-command`）：给本地浏览器 CLI shim 预留的轻量命令 backend，默认不配置 command，因此会结构化返回不可用。
+- `playwright-cli`（别名：`playwright`, `pw-cli`）：运行 `playwright --version` 这类轻副作用探测，并对目标 URL 做静态 HTML / 脚本源码拉取。
+- `chrome-cdp`（别名：`cdp`, `devtools`）：只探测已经存在的 Chrome DevTools 端点，例如 `http://127.0.0.1:9222/json/version` 和 `/json/list`，不会主动启动 Chrome。
+- `browser-cli`（别名：`cli-browser`, `browser-command`）：给本地浏览器 CLI 适配命令预留的轻量后端；默认不配置命令，因此会结构化返回不可用。
 
 示例：
 
@@ -116,7 +116,7 @@ reverse-agent-demo \
   --task-text "https://example.com/search 找 sign"
 ```
 
-这 3 个 backend 复用 `WebReverseRuntime` / `JSReverserRuntime` 的 Web recon schema，但能力是刻意保守的：它们不捕获 live network timeline，不执行页面内 JS runtime validation，不注入 anti-debug preload。工具不可用时会输出 `status=failed`、`next_action=ensure_browser_session` 和 session export artifact，而不是假装完成。
+这 3 个后端复用 `WebReverseRuntime` / `JSReverserRuntime` 的 Web recon schema，但能力刻意保持保守：不捕获实时网络时间线，不执行页面内 JS 运行时验证，也不注入反调试预加载脚本。工具不可用时会输出 `status=failed`、`next_action=ensure_browser_session` 和会话导出 artifact，而不是假装完成。
 
 ## 环境重建
 
@@ -166,16 +166,16 @@ reverse-agent-fixture-smoke --runtime mock
 - 设计文档：`<repo-root>/docs/design/reverse-deepagent-architecture.md`
 - 规划文档：`<repo-root>/docs/plans/2026-05-26-deepagents-js-reverse-agent-plan.md`
 
-## 运行最小 Demo（mock runtime）
+## 运行最小演示（mock 运行时）
 
-mock runtime 不依赖真实浏览器，适合验证 schema、route、adapter、artifacts 链路。
+mock 运行时不依赖真实浏览器，适合验证 schema、route、adapter、artifact 链路。
 
 `scripts/run_demo.py` 现在只是薄 CLI；真正的协调逻辑在：
 
 - `<repo-root>/src/reverse_deepagent/coordinator.py`
 - 包内入口：`reverse_deepagent.run_reverse_pipeline`
 
-正式命令也可以直接走：
+也可以直接使用正式命令：
 
 ```bash
 reverse-agent-demo --runtime mock
@@ -207,43 +207,43 @@ reverse-agent-demo --runtime mock
 - `reports/demo-final-report.md`
 - `exports/artifact-index.json`
 
-## 通用 Evidence Promotion
+## 通用证据晋升
 
-Web pipeline 与平台中立 pipeline 现在都会生成一组平台无关的 evidence promotion artifacts：
+Web pipeline 与平台中立 pipeline 现在都会生成一组平台无关的证据晋升 artifact：
 
 - `workspace/evidence-candidates.json`：所有规范化 `EvidenceItem` 的候选索引。
 - `workspace/evidence-validated.json`：通过通用验证门槛的证据索引。
 - `workspace/evidence-promotion.json`：candidate / validated / promoted / rejected 全量记录与摘要。
 
-promotion 不替代 `final-result.json`，也不改变现有 rebuild 所依赖的 `FinalResult.evidence`；它是给 review gate、后续自动门禁、自动交付阻断和人类 code review 使用的机器可读索引。
+证据晋升不替代 `final-result.json`，也不改变现有 rebuild 所依赖的 `FinalResult.evidence`；它是给 review gate、后续自动门禁、自动交付阻断和人工代码审查使用的机器可读索引。
 
 通用规则保持保守：
 
 - 低置信、工具不可用、`available=false`、unsupported 等信号会阻断晋升。
 - 高置信 source/callstack/runtime/context/function validation 证据更容易进入 `promoted`。
-- `function_validation_summary.replay_ready=true` 和 runtime validation success 会提高晋升分数。
+- `function_validation_summary.replay_ready=true` 和运行时验证成功会提高晋升分数。
 - 非 Web runtime 也会生成同样结构的 promotion 文件，避免把证据规则写死在 Web recon 里。
 
 这些文件会进入 `workspace/backend-artifact-manifest.json`，category 为 `evidence`。
 
-## `review_hints` 自动 Gate
+## `review_hints` 自动门禁
 
-Web rebuild delivery 现在会在生成 `workspace/rebuild-plan.json` 后自动评估 `review_hints`，并输出：
+Web rebuild 交付流程现在会在生成 `workspace/rebuild-plan.json` 后自动评估 `review_hints`，并输出：
 
 - `workspace/review-gate.json`
 
-Gate 输入包括：
+门禁输入包括：
 
 - `rebuild_plan.ready`
 - `rebuild_plan.review_hints`
 - `workspace/evidence-promotion.json` 的 validated / promoted / rejected 摘要
 
-Gate 结果字段包括：
+门禁结果字段包括：
 
 - `status`: `pass` / `warn` / `block`
 - `blocked`: 是否阻断自动交付
 - `blocking_hint_codes`: 阻断交付的 `risk` hint code
-- `warning_hint_codes`: 需要人工确认的 warning hint code
+- `warning_hint_codes`: 需要人工确认的 warning 提示码
 - `evidence_counts`: candidate / validated / promoted / rejected 证据数量
 - `next_action`: `delivery_allowed`、`manual_review_before_delivery` 或 `manual_review_or_expand_evidence`
 
@@ -253,16 +253,16 @@ Gate 结果字段包括：
 - `rebuild_plan.ready=false` 会阻断自动交付。
 - 没有 validated evidence 会阻断自动交付。
 - ready=true 但没有 promoted evidence 会阻断自动交付。
-- warning hints 不阻断，但输出 `status=warn`，要求人工确认后再交付。
+- warning hint 不阻断，但输出 `status=warn`，要求人工确认后再交付。
 - 存在 rejected evidence 且没有阻断项时输出 `status=warn`，避免把有争议的证据静默放行。
 
-`review-gate.json` 会进入 `workspace/backend-artifact-manifest.json`，category 为 `triage`。平台中立 pipeline 不生成 rebuild bundle，因此不生成 review gate；它继续只输出 evidence promotion。
+`review-gate.json` 会进入 `workspace/backend-artifact-manifest.json`，category 为 `triage`。平台中立 pipeline 不生成 rebuild bundle，因此不生成 review gate；它继续只输出证据晋升结果。
 
-## 运行平台中立 Runtime Pipeline
+## 运行平台中立运行时流水线
 
-`run_reverse_pipeline(...)` 仍然是 Web 专用入口，会要求 backend 实现 `WebReverseRuntime` 并执行 Web recon；非 Web runtime 统一走 `run_platform_pipeline(...)` / `reverse-agent-platform`。这个入口只依赖平台中立的 `ReverseRuntime` contract：task normalize、route、capability capture、runtime artifact export、manifest/index/report 落盘，不会调用 `ensure_browser_session()` 或 `run_web_recon()`。
+`run_reverse_pipeline(...)` 仍然是 Web 专用入口，会要求后端实现 `WebReverseRuntime` 并执行 Web recon；非 Web runtime 统一走 `run_platform_pipeline(...)` / `reverse-agent-platform`。这个入口只依赖平台中立的 `ReverseRuntime` 契约：任务归一化、路由、能力采集、运行时 artifact 导出，以及 manifest / index / report 落盘，不会调用 `ensure_browser_session()` 或 `run_web_recon()`。
 
-最小 smoke：
+最小冒烟测试：
 
 ```bash
 reverse-agent-platform \
@@ -304,9 +304,9 @@ reverse-agent-platform \
 
 工具链不可用时不会伪装成功：pipeline 会结构化返回 `status=partial` 和 `next_action=install_or_configure_platform_tooling`，同时仍然保留 probe 证据，方便后续平台专用子流程接手。
 
-## 运行最小 DeepAgents invoke smoke
+## 运行最小 DeepAgents 调用冒烟测试
 
-如果你想验证“主 Agent + route tool（并注册专用子 Agent）”这条深度编排链路，但又不想依赖外部模型或真实浏览器，可以直接跑纯 Python smoke：
+如果你想验证“主 Agent + route tool（并注册专用子 Agent）”这条深度编排链路，但又不想依赖外部模型或真实浏览器，可以直接跑纯 Python 冒烟测试：
 
 ```bash
 cd "<repo-root>"
@@ -316,7 +316,7 @@ PYTHONPATH="<repo-root>/src" \
   --artifact-root "<repo-root>/artifacts/deepagents-smoke"
 ```
 
-这条 smoke 会：
+这条冒烟测试会：
 
 - 构建 `deepagents` 主 Agent
 - 通过 `route_reverse_task` 工具完成一次真实 invoke
@@ -329,7 +329,7 @@ PYTHONPATH="<repo-root>/src" \
 - 工具函数是否具备可包装成 LangChain tool 的元数据
 - 主 Agent 到 route tool 的闭环是否可用
 
-### 子 Agent 委派 smoke
+### 子 Agent 委派冒烟测试
 
 如果你还想验证主 Agent 通过 `task` 工具委派给 general-purpose 子 Agent 的链路，可以再跑这个：
 
@@ -341,14 +341,14 @@ PYTHONPATH="<repo-root>/src" \
   --artifact-root "<repo-root>/artifacts/deepagents-subagent-smoke"
 ```
 
-这条 smoke 会验证：
+这条冒烟测试会验证：
 
 - 主 Agent 生成 `task` tool call
 - deepagents 启动 general-purpose 子 Agent
 - 子 Agent 的单条结果被回收到主线程
 - 消息链完整呈现为 `HumanMessage -> AIMessage -> ToolMessage -> AIMessage`
 
-### Rebuild Delivery smoke
+### 重建交付冒烟测试
 
 如果你想验证 deepagents 主 Agent 的 rebuild delivery 工具链路，可以跑：
 
@@ -360,9 +360,9 @@ PYTHONPATH="<repo-root>/src" \
   --artifact-root "<repo-root>/artifacts/deepagents-delivery-smoke"
 ```
 
-这条 smoke 会验证：
+这条冒烟测试会验证：
 
-- 先用 mock runtime 准备一份已验证 `FinalResult`
+- 先用 mock 运行时准备一份已验证 `FinalResult`
 - 主 Agent 调用 `build_rebuild_delivery`
 - 生成结构化 `RebuildResult`
 - 产出 `workspace/rebuild-plan.json`
@@ -384,7 +384,7 @@ PYTHONPATH="<repo-root>/src" \
 相关入口：
 
 - fixture 服务：`reverse-agent-fixture`
-- fixture smoke：`reverse-agent-fixture-smoke`
+- fixture 冒烟测试：`reverse-agent-fixture-smoke`
 - 服务实现：`<repo-root>/src/reverse_deepagent/fixtures/web_sign.py`
 
 快速自检：
@@ -415,7 +415,7 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765 --profile sha256
 - `context-localstorage`：依赖 `localStorage.device_id`，用于验证 localStorage context-aware delivery
 - `context-cookie`：依赖 `document.cookie` 中的 `device_id`，用于验证 cookie context-aware delivery
 - `context-navigator`：依赖 `navigator.userAgent`，用于验证浏览器指纹上下文 context-aware delivery
-- `webpack-minified`：模拟 webpack module wrapper 与压缩 helper，验证打包形态下的 SHA-256 sign 识别
+- `webpack-minified`：模拟 webpack 模块包装器与压缩辅助函数，验证打包形态下的 SHA-256 sign 识别
 - `token-chain`：先访问 `/api/bootstrap` 获取 token，再用 `sessionStorage.fixture_token` 参与 SHA-256 sign
 - `hybrid-context`：同时依赖 `localStorage.fixture_nonce` 与 `cookie.csrf_token`，用于验证多上下文绑定时不会误报 ready
 
@@ -432,7 +432,7 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765 --profile sha256
 - `x-sign`
 - `window.reverseFixture.search(...)`
 
-使用 mock runtime 跑 fixture smoke：
+使用 mock 运行时跑 fixture 冒烟测试：
 
 ```bash
 reverse-agent-fixture-smoke \
@@ -441,7 +441,7 @@ reverse-agent-fixture-smoke \
   --artifact-root "<repo-root>/artifacts/fixture-smoke-mock"
 ```
 
-使用真实 MCP + 受管 Chrome 跑 fixture smoke：
+使用真实 MCP + 受管 Chrome 跑 fixture 冒烟测试：
 
 ```bash
 reverse-agent-fixture-smoke \
@@ -454,7 +454,7 @@ reverse-agent-fixture-smoke \
   --artifact-root "<repo-root>/artifacts/fixture-smoke-mcp"
 ```
 
-多策略真实 smoke 示例：
+多策略真实冒烟测试示例：
 
 ```bash
 reverse-agent-fixture-smoke \
@@ -478,7 +478,7 @@ reverse-agent-fixture-smoke \
   --artifact-root "<repo-root>/artifacts/fixture-context-mcp"
 ```
 
-Phase 13 还可以直接验证 cookie / navigator 两类上下文：
+第 13 阶段还可以直接验证 cookie / navigator 两类上下文：
 
 ```bash
 reverse-agent-fixture-smoke \
@@ -521,9 +521,9 @@ reverse-agent-fixture-smoke \
 
 `context-cookie` 的预期是 `runtime_context_required = ["cookie"]`，生成的 `sign_rebuild.py` 会固化 `COOKIE_DEVICE_ID`。
 
-`context-navigator` 的预期是 `runtime_context_required = ["navigator"]`，生成的 `sign_rebuild.py` 会固化 `NAVIGATOR_USER_AGENT` 并完成 `sha256_keyword_timestamp` self-check。
+`context-navigator` 的预期是 `runtime_context_required = ["navigator"]`，生成的 `sign_rebuild.py` 会固化 `NAVIGATOR_USER_AGENT` 并完成 `sha256_keyword_timestamp` 自检。
 
-当前已验证真实 MCP smoke 结果：
+当前已验证真实 MCP 冒烟测试结果：
 
 - `final_result.status = success`
 - `final_result.next_action = extract_pure_logic_and_build_replay`
@@ -539,17 +539,17 @@ reverse-agent-fixture-smoke \
   - `source = function_candidate_card`
   - artifact：`virtual://workspace/function-candidates.json`
   - 当前 fixture 可稳定生成 `buildSign` 与 `search` 两张函数卡片
-- 能自动完成候选函数 runtime validation 与 replay 校验：
+- 能自动完成候选函数运行时验证与 replay 校验：
   - `source = function_validation_result`
   - `source = function_validation_summary`
   - artifact：`virtual://workspace/function-validations.json`
   - artifact：`virtual://workspace/function-validation-summary.json`
   - 当前 fixture 可稳定验证 `buildSign` 与 `search` 两张函数卡片，并完成 replay
 - 能自动生成纯算交付包：
-  - `workspace/rebuild-plan.json`：描述候选函数、算法策略、pure extraction 状态、验证状态、replay URL 和输出文件
+  - `workspace/rebuild-plan.json`：描述候选函数、算法策略、纯算提取状态、验证状态、replay URL 和输出文件
   - `rebuild/sign_rebuild.py`：浏览器外纯 Python sign 计算脚本
-  - `rebuild/replay_demo.py`：浏览器外 HTTP replay demo
-  - `rebuild/scrapy_middleware.py`：兼容型 Scrapy downloader middleware 单文件
+  - `rebuild/replay_demo.py`：浏览器外 HTTP replay 演示
+  - `rebuild/scrapy_middleware.py`：兼容型 Scrapy 下载中间件单文件
   - `rebuild/scrapy_project/`：可运行 Scrapy replay 项目，包含 `scrapy.cfg`、settings、middleware、spider、runner 和 `sign_adapter.py`
   - `rebuild/scrapy_export_manifest.json`：Scrapy 项目入口、命令和文件索引
 - workspace 虚拟 artifact 会同步写成真实 JSON 文件：
@@ -576,7 +576,7 @@ reverse-agent-fixture-smoke \
 
 ### 纯算 replay 交付包
 
-真实 MCP fixture smoke 完成后，可以先对生成的 sign 脚本做 sample self-check：
+真实 MCP fixture 冒烟测试完成后，可以先对生成的 sign 脚本做 sample 自检：
 
 ```bash
 "<repo-root>/.venv/bin/python" \
@@ -631,7 +631,7 @@ python runner.py --base-url "http://127.0.0.1:8765" --output result.json
 
 生成项目通过 `reverse_sign_project.sign_adapter` 读取同级上层的 `../sign_rebuild.py`，middleware 会把请求改写为带 `keyword` / `timestamp` / `sign` JSON body 的 POST，并设置 `x-sign` 与 `x-fixture` headers。没有安装 Scrapy 时，middleware 和 adapter 仍可被普通 Python import / compile，用于离线验证签名注入逻辑。
 
-### Pure extraction 策略字段
+### 纯算提取策略字段
 
 `workspace/rebuild-plan.json` 现在会显式区分“能纯算”和“需要运行时上下文”：
 
@@ -669,7 +669,7 @@ python runner.py --base-url "http://127.0.0.1:8765" --output result.json
 }
 ```
 
-当前 strategy detection 通过 `reverse_deepagent.strategies` 包里的 `AlgorithmStrategyRule` registry 管理；`rebuild.py` 只保留兼容代理。strategy 输出保留旧 `confidence` 字符串，同时新增 `confidence_score`，记录数值分数、positive markers 和 caveats。registry metadata 可由 `list_algorithm_strategy_registry()` 读取。当前默认顺序：
+当前策略检测通过 `reverse_deepagent.strategies` 包里的 `AlgorithmStrategyRule` registry 管理；`rebuild.py` 只保留兼容代理。策略输出保留旧 `confidence` 字符串，同时新增 `confidence_score`，记录数值分数、positive markers 和 caveats。registry 元数据可由 `list_algorithm_strategy_registry()` 读取。当前默认顺序：
 
 1. `protected_flow_triage`：发射 `triage_wasm_module`、`triage_vm_obfuscation`、`triage_anti_debug_runtime`、`triage_dynamic_secret`、`triage_wasm_vm_obfuscation`
 2. `deterministic_fixture`：发射 `fixture_seed_mod100000`
@@ -677,13 +677,13 @@ python runner.py --base-url "http://127.0.0.1:8765" --output result.json
 4. `sig_template`：发射 `sig_keyword_timestamp_template`
 5. `encoding`：发射 `base64_keyword_timestamp`、`urlencode_keyword_timestamp`
 
-`protected_flow_triage` 是阻断型前置 detector，必须保守：普通 `cookie` / `localStorage` / `navigator` / `nonce` / `csrf` 等上下文输入不会仅凭变量名进入 triage-only，除非同时出现 WASM / VM / anti-debug / native bridge / strong runtime challenge 等强保护证据。
+`protected_flow_triage` 是阻断型前置检测器，必须保守：普通 `cookie` / `localStorage` / `navigator` / `nonce` / `csrf` 等上下文输入不会仅凭变量名进入仅分诊状态，除非同时出现 WASM / VM / anti-debug / 原生桥 / 强运行时挑战等强保护证据。
 
-策略库还提供 `STRATEGY_SAMPLE_CORPUS` / `list_strategy_sample_corpus()`，覆盖 fixture reducer、MD5、SHA-1、SHA-256、SHA-512、HMAC-MD5、HMAC-SHA1、HMAC-SHA256、HMAC-SHA512、Base64 和 URL encoding 的 deterministic samples。测试会用这些样本同时验证 detector 输出和生成的 `sign_rebuild.py` self-check。
+策略库还提供 `STRATEGY_SAMPLE_CORPUS` / `list_strategy_sample_corpus()`，覆盖 fixture reducer、MD5、SHA-1、SHA-256、SHA-512、HMAC-MD5、HMAC-SHA1、HMAC-SHA256、HMAC-SHA512、Base64 和 URL encoding 的确定性样本。测试会用这些样本同时验证检测器输出和生成的 `sign_rebuild.py` 自检。
 
-WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说成 pure-Python 可移植。对应边界见 [`docs/strategy/wasm-vm-obfuscation-triage.md`](docs/strategy/wasm-vm-obfuscation-triage.md)：这类场景会优先命中 `protected_flow_triage` detector，输出 triage-only / runtime-assisted / partial 计划，并通过 `review_hints` 阻断误导性的纯算交付。
+WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说成纯 Python 可移植。对应边界见 [`docs/strategy/wasm-vm-obfuscation-triage.md`](docs/strategy/wasm-vm-obfuscation-triage.md)：这类场景会优先命中 `protected_flow_triage` 检测器，输出仅分诊 / 运行时辅助 / 部分完成计划，并通过 `review_hints` 阻断误导性的纯算交付。
 
-当前会阻断 pure extraction 的运行时上下文依赖：
+当前会阻断纯算提取的运行时上下文依赖：
 
 - `document.cookie`
 - `localStorage`
@@ -759,17 +759,17 @@ WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说
 
 生成的 `sign_rebuild.py` 会把采集到的上下文写成默认常量，用于浏览器外 replay。renderer 会从源码自动识别 `localStorage.getItem('<key>')`、`localStorage['<key>']`、`localStorage.<key>`、`sessionStorage.getItem('<key>')`、`sessionStorage['<key>']`、`sessionStorage.<key>`、`document.cookie` 中的 cookie name、`navigator.<prop>` 和 `timezoneOffset`，再从 `runtime-context.json` 中提取对应值写入 `pure_extraction.runtime_context_binding`。
 
-如果源码已经明确依赖某个具体上下文 key，例如 `localStorage.getItem('nonce')`，但采集结果里只有同 family 的其他值，例如 `localStorage.device_id`，则 `context_aware_extractable` 会保持 `false`，`review_hints` 会输出 `missing_runtime_context_binding=localStorage.nonce`，交付包只生成 `rebuild/README.md`，不会用空 salt 或错误 fallback 生成假成功脚本。
+如果源码已经明确依赖某个具体上下文 key，例如 `localStorage.getItem('nonce')`，但采集结果里只有同 family 的其他值，例如 `localStorage.device_id`，则 `context_aware_extractable` 会保持 `false`，`review_hints` 会输出 `missing_runtime_context_binding=localStorage.nonce`，交付包只生成 `rebuild/README.md`，不会用空 salt 或错误兜底生成假成功脚本。
 
-当前自动交付只支持单个 runtime context binding 写入生成脚本；如果源码同时依赖 `localStorage.nonce` 和 `cookie.csrf` 这类多个显式上下文值，即使都已采集，也会标记 `multiple_runtime_context_bindings_unsupported=true` 并保持 not-ready，避免把多输入签名硬塞进单 salt renderer。HMAC 策略会区分 HMAC secret 与 message 里的 runtime context：`CryptoJS.HmacSHA256(raw, 'secret')` 会把 `secret` 作为 HMAC key，把 `nonce` 作为 message binding。
+当前自动交付只支持单个运行时上下文 binding 写入生成脚本；如果源码同时依赖 `localStorage.nonce` 和 `cookie.csrf` 这类多个显式上下文值，即使都已采集，也会标记 `multiple_runtime_context_bindings_unsupported=true` 并保持 not-ready，避免把多输入签名硬塞进单 salt renderer。HMAC 策略会区分 HMAC secret 与 message 里的运行时上下文：`CryptoJS.HmacSHA256(raw, 'secret')` 会把 `secret` 作为 HMAC key，把 `nonce` 作为 message binding。
 
-`review_hints` 是给后续人工 review、CI gate 或子智能体复核使用的 machine-readable 提示，不替代 `ready` / `pure_extraction`。当前由 `reverse_deepagent.schemas.ReviewHint` 集中约束，固定字段为 `severity`、`category`、`code`、`message`、`evidence`，会覆盖 pure rebuild、context-aware rebuild、manual port / partial rebuild，以及 volatile runtime context 等风险。
+`review_hints` 是给后续人工 review、CI gate 或子智能体复核使用的 机器可读提示，不替代 `ready` / `pure_extraction`。当前由 `reverse_deepagent.schemas.ReviewHint` 集中约束，固定字段为 `severity`、`category`、`code`、`message`、`evidence`，会覆盖 pure rebuild、context-aware rebuild、人工移植 / 部分 rebuild，以及易变运行时上下文等风险。
 
-`workspace/runtime-context-diff.json` 会对运行时上下文做稳定性摘要。默认 runtime 会采集多次样本，字段包括 `status`（`multi_sample` 或 `single_sample` fallback）、`sample_count`、`stable`、`stable_keys`、`volatile_keys`、`missing_requirements` 和 `changes`。其中 `sample_index` / `collected_at_ms` 只作为采样元数据，不参与稳定性判断；`volatile_keys` 应被视为 replay 时仍需要运行时绑定的输入。
+`workspace/runtime-context-diff.json` 会对运行时上下文做稳定性摘要。默认运行时会采集多次样本，字段包括 `status`（`multi_sample` 或 `single_sample` 兜底）、`sample_count`、`stable`、`stable_keys`、`volatile_keys`、`missing_requirements` 和 `changes`。其中 `sample_index` / `collected_at_ms` 只作为采样元数据，不参与稳定性判断；`volatile_keys` 应被视为 replay 时仍需要运行时绑定的输入。
 
-## Runtime backend capabilities
+## 运行时后端能力
 
-Runtime backend 能力通过 `RuntimeBackendCapabilities` 描述，调用方可以用 `runtime.describe_capabilities()` 做能力发现，而不是在 coordinator 里硬猜 MCP、Chrome 或 mock backend 的行为。
+运行时后端能力通过 `RuntimeBackendCapabilities` 描述，调用方可以用 `runtime.describe_capabilities()` 做能力发现，而不是在 coordinator 中硬猜 MCP、Chrome 或 mock 后端的行为。
 
 示例：
 
@@ -783,28 +783,28 @@ capabilities = runtime.describe_capabilities()
 print(capabilities.model_dump(mode="json"))
 ```
 
-`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建 backend，当前默认注册：
+`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端，当前默认注册：
 
-- `mock`（alias: `in-process`）：公开 CI 和本地 deterministic demo 使用
-- `mcp`（alias: `jsreverser-mcp`）：真实 JSReverser MCP + Chrome DevTools runtime
-- `playwright-cli`（alias: `playwright`, `pw-cli`）：轻量 Playwright CLI probe + static source fetch，不主动启动浏览器
-- `chrome-cdp`（alias: `cdp`, `devtools`）：连接既有 Chrome DevTools endpoint，不主动启动 Chrome
-- `browser-cli`（alias: `cli-browser`, `browser-command`）：通用浏览器 CLI shim backend，默认 command 未配置
-- `android-adb`（alias: `adb`, `android-device`）：Android ADB 工具链探测与平台 artifact export
-- `ios-simulator`（alias: `simctl`, `ios-sim`）：iOS Simulator / `xcrun simctl` 工具链探测与平台 artifact export
-- `mini-program-devtools`（alias: `mp-devtools`, `wechat-devtools`）：小程序 vendor devtools CLI 配置探测与平台 artifact export
+- `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
+- `mcp`（别名：`jsreverser-mcp`）：真实 JSReverser MCP + Chrome DevTools 运行时
+- `playwright-cli`（别名：`playwright`, `pw-cli`）：轻量 Playwright CLI 探测与静态源码拉取，不主动启动浏览器
+- `chrome-cdp`（别名：`cdp`, `devtools`）：连接既有 Chrome DevTools 端点，不主动启动 Chrome
+- `browser-cli`（别名：`cli-browser`, `browser-command`）：通用浏览器 CLI 适配命令 backend，默认 command 未配置
+- `android-adb`（别名：`adb`, `android-device`）：Android ADB 工具链探测与平台 artifact 导出
+- `ios-simulator`（别名：`simctl`, `ios-sim`）：iOS Simulator / `xcrun simctl` 工具链探测与平台 artifact 导出
+- `mini-program-devtools`（别名：`mp-devtools`, `wechat-devtools`）：小程序 vendor devtools CLI 配置探测与平台 artifact 导出
 
 每次 pipeline 会额外写出 `workspace/backend-artifact-manifest.json`，用 `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` 描述 artifact key、路径、类别、kind、producer backend、transport 和 target platforms。这个 manifest 是新增索引，不替换现有 `exports/artifact-index.json`。跨平台 artifact category 词表见 [`docs/runtime/platform-neutral-artifact-categories.md`](docs/runtime/platform-neutral-artifact-categories.md)。
 
-非 Web 运行时会沿用同一套 capability / manifest 边界，但不能复用 Web-only 的 browser session 语义。当前接口草案：
+非 Web 运行时会沿用同一套 capability / manifest 边界，但不能复用 Web 专属的浏览器会话语义。当前接口草案：
 
 - Android: [`docs/runtime/android-adapter-interface.md`](docs/runtime/android-adapter-interface.md)
 - iOS: [`docs/runtime/ios-adapter-interface.md`](docs/runtime/ios-adapter-interface.md)
 - Mini-program: [`docs/runtime/mini-program-adapter-interface.md`](docs/runtime/mini-program-adapter-interface.md)
 
-当前 Web 路径的浏览器会话、Chrome debug port、JSReverser MCP、Web storage、URL replay 推导等假设统一收口在 [`docs/runtime/web-runtime-assumptions.md`](docs/runtime/web-runtime-assumptions.md)，后续平台 adapter 不应默认继承这些语义。
+当前 Web 路径的浏览器会话、Chrome 调试端口、JSReverser MCP、Web 存储、URL replay 推导等假设统一收口在 [`docs/runtime/web-runtime-assumptions.md`](docs/runtime/web-runtime-assumptions.md)，后续平台适配器不应默认继承这些语义。
 
-JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、backend metadata 和 runtime sampling 参数。CLI 里的 `--jsreverser-mcp-command`、Chrome debug port 等参数最终都会汇入这个 config，再创建 MCP runtime。
+JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、后端元数据和运行时采样参数。CLI 里的 `--jsreverser-mcp-command`、Chrome 调试端口等参数最终都会汇入这个配置，再创建 MCP 运行时。
 
 核心字段包括：
 
@@ -813,18 +813,18 @@ JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `comm
 - `target_platforms`：当前目标平台，现阶段主要是 `web`
 - `supports_web_recon` / `supports_runtime_context` / `supports_replay_validation`：能力开关
 - `managed_chrome` / `mcp_backed`：运行时约束提示
-- `evidence_kinds` / `artifact_kinds`：该 backend 常见输出类型
+- `evidence_kinds` / `artifact_kinds`：该后端常见输出类型
 
-当前 Android / iOS / 小程序 backend 已具备 registry / factory / capability metadata / side-effect-light tool probe / artifact export 基础层，并可通过平台中立 `reverse-agent-platform` pipeline 落盘 capabilities、probe、export bundle、manifest 与报告；但还不包含真实 hook、静态分析或 replay validation。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
+当前 Android / iOS / 小程序后端已具备 registry / factory / 能力元数据 / 轻副作用工具探测 / artifact 导出基础层，并可通过平台中立 `reverse-agent-platform` pipeline 落盘 capabilities、probe、export bundle、manifest 与报告；但还不包含真实 hook、静态分析或 replay 验证。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 
-## Chrome Debug Session 约束
+## Chrome 调试会话约束
 
-真实 MCP runtime 依赖 `http://127.0.0.1:9222` 这类 Chrome DevTools 端口。
+真实 MCP 运行时依赖 `http://127.0.0.1:9222` 这类 Chrome DevTools 端口。
 
 约束：
 
 - Agent 不应该假设 9222 Chrome 已经存在
-- 真实 Web recon 前必须先完成 Chrome debug session 检查
+- 真实 Web recon 前必须先完成 Chrome 调试会话检查
 - 如果没有可用 Chrome：
   - 显式使用 `--ensure-chrome` 时，通过推荐脚本启动受管 Chrome
   - 未显式启用时，结构化返回 `status=failed`、`next_action=ensure_browser_session`
@@ -865,7 +865,7 @@ USER_DATA_DIR="/tmp/reverse-agent-chrome" \
 "<repo-root>/scripts/stop_chrome_debug.sh"
 ```
 
-## 运行真实 MCP smoke
+## 运行真实 MCP 冒烟测试
 
 完整前置条件和故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。
 
@@ -881,12 +881,12 @@ PYTHONPATH="<repo-root>/src" \
 已验证当前本机 `jsreverser-mcp`：
 
 - 协议：stdio JSON-RPC newline framing
-- negotiated protocol version：`2025-03-26`
+- 协商协议版本：`2025-03-26`
 - tools/list 可返回 73 个工具
 
-## 运行最小 Demo（真实 MCP runtime）
+## 运行最小演示（真实 MCP 运行时）
 
-真实 MCP runtime 会启动 `/opt/homebrew/bin/jsreverser-mcp --browserUrl http://127.0.0.1:9222`。
+真实 MCP 运行时会启动 `/opt/homebrew/bin/jsreverser-mcp --browserUrl http://127.0.0.1:9222`。
 
 ```bash
 reverse-agent-demo \
@@ -911,9 +911,9 @@ reverse-agent-demo \
 
 这属于预期行为，不是脚本崩溃。
 
-## 真实 Chrome smoke（可调端口）
+## 真实 Chrome 冒烟测试（可调端口）
 
-已验证一条真实 smoke 链路，可以在隔离端口上启动受管 Chrome，再交给 `jsreverser-mcp`：
+已验证一条真实冒烟测试链路，可以在隔离端口上启动受管 Chrome，再交给 `jsreverser-mcp`：
 
 ```bash
 reverse-agent-demo \
@@ -937,7 +937,7 @@ reverse-agent-demo \
 
 注意：
 
-- `jsreverser-mcp` 的真实输出可能是 Markdown + fenced JSON 的混合文本，适配层已经做了归一化
+- `jsreverser-mcp` 的真实输出可能是 Markdown 与 fenced JSON 混合文本，适配层已经做了归一化
 - 如果你改了 `--chrome-debug-port`，`reverse-agent-demo` 会把这个端口同步传给 MCP 后端，不会再傻乎乎地默认连 9222
 
 ## 测试
