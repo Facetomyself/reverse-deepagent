@@ -119,6 +119,8 @@ Remaining validation:
 
 ### Phase 3: Native collector baseline
 
+Status: provider-neutral baseline implemented; CDP-enhanced depth remains Phase 6.
+
 Deliverables:
 
 - `collectors/dom.py`
@@ -135,6 +137,17 @@ Acceptance:
 - `StorageCollector` emits cookies/localStorage/sessionStorage with safe redaction points.
 - `ConsoleCollector` emits logs/warnings/errors.
 - Collectors work with Playwright-compatible pages and do not know whether the provider is CloakBrowser or Chromium.
+
+Current evidence:
+
+- `src/reverse_deepagent/browser/collectors/` contains DOM, storage, console, network, script, and screenshot collectors.
+- Collectors consume `BrowserPage` / Playwright-compatible adapters rather than MCP tools.
+- Unit tests: `tests.test_browser_collectors`.
+
+Remaining validation:
+
+- Wire collectors into `NativeWebRuntime` and verify artifact compatibility.
+- Add CDP-enhanced request initiator, response body, script source, and WebSocket frame support in Phase 6.
 
 ### Phase 4: NativeWebRuntime
 
