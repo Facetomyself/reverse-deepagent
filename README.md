@@ -78,6 +78,21 @@ reverse-agent-demo \
   --task-text "https://example.com 查看登录态和关键请求"
 ```
 
+BrowserProvider doctor 示例，默认不启动真实浏览器，也不依赖 MCP：
+
+```bash
+reverse-agent-doctor --browser cloakbrowser
+```
+
+需要真实启动 smoke 时显式打开：
+
+```bash
+reverse-agent-doctor \
+  --browser cloakbrowser \
+  --launch-browser-smoke \
+  --browser-smoke-url "about:blank"
+```
+
 现阶段基于 MCP 的浏览器集成仍可用于真实 smoke，需要本机 JSReverser MCP 可执行文件和 Chrome 调试环境。环境假设与故障排查见 [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md)。公开 CI 不默认运行真实 MCP 链路，而是隔离在手动 `MCP Integration` 工作流中。本地建议优先使用受管 Chrome 启动器：
 
 ```bash

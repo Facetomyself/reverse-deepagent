@@ -25,8 +25,8 @@
 | 2. Playwright provider skeleton | 已完成 | `tests.test_playwright_session`、`tests.test_playwright_provider` |
 | 3. Native collector baseline | 已完成 | `tests.test_browser_collectors` |
 | 4. NativeWebRuntime 最小接入 | 已完成 | `tests.test_native_web_runtime` |
-| 5. CloakBrowser provider skeleton | 进行中 | provider、CLI 参数、文档和测试已落本地，待 review / commit |
-| 6. Browser doctor provider mode | 未开始 | 需要 `reverse-agent-doctor --browser ...` |
+| 5. CloakBrowser provider skeleton | 已完成 | `8c9f897` 本地提交，待网络恢复后 push |
+| 6. Browser doctor provider mode | 已完成 | `reverse-agent-doctor --browser ...` 已实现，39 项相关测试通过，待网络恢复后 push |
 | 7. Native artifact parity | 未开始 | 需要补齐 DOM、console、script inventory 等落盘 |
 | 8. CDP-enhanced collectors | 未开始 | request initiator、response body、script source、WebSocket frame |
 | 9. Hook / breakpoint migration | 未开始 | fetch/xhr、cookie、anti-debug、breakpoint manager |
@@ -80,6 +80,8 @@ git diff --check
 - 缺 Playwright / CloakBrowser 时返回结构化安装建议。
 - provider metadata 检查不启动浏览器。
 - proxy 等敏感配置不出现在输出里。
+- browser-only doctor 不依赖 `jsreverser-mcp` 或 Chrome debug 静态检查。
+- `--launch-browser-smoke` 是唯一会真实启动 provider 的路径。
 
 ### Step 7：补齐 native artifact parity
 

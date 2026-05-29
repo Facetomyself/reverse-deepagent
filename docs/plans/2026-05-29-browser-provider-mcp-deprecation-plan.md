@@ -67,7 +67,7 @@ reverse-agent-demo \
   --ensure-chrome
 ```
 
-`legacy-mcp` is the planned explicit backend name for Phase 8; `mcp` remains the current runnable compatibility id until that alias is implemented.
+`legacy-mcp` is the planned explicit backend name for Phase 9; `mcp` remains the current runnable compatibility id until that alias is implemented.
 
 ## Milestones
 
@@ -128,7 +128,7 @@ Remaining validation:
 
 ### Phase 3: Native collector baseline
 
-Status: provider-neutral baseline implemented; CDP-enhanced depth remains Phase 6.
+Status: provider-neutral baseline implemented; CDP-enhanced depth remains Phase 7.
 
 Deliverables:
 
@@ -156,7 +156,7 @@ Current evidence:
 Remaining validation:
 
 - Wire collectors into `NativeWebRuntime` and verify artifact compatibility.
-- Add CDP-enhanced request initiator, response body, script source, and WebSocket frame support in Phase 6.
+- Add CDP-enhanced request initiator, response body, script source, and WebSocket frame support in Phase 7.
 
 ### Phase 4: NativeWebRuntime
 
@@ -196,7 +196,7 @@ Remaining validation:
 
 ### Phase 5: CloakBrowser provider
 
-Status: provider skeleton and optional dependency added; real CloakBrowser binary smoke and doctor mode remain pending.
+Status: provider skeleton, optional dependency, and browser-provider doctor metadata checks added; real CloakBrowser binary smoke remains pending.
 
 Deliverables:
 
@@ -228,10 +228,27 @@ Remaining validation:
 
 - Install `.[cloak]` in an environment allowed to download/use CloakBrowser binaries.
 - Run persistent-context smoke against a safe local page.
-- Add `reverse-agent-doctor --browser cloakbrowser` support.
+- BrowserProvider doctor support is implemented for metadata/dependency checks; keep real launch smoke optional.
 - Keep `docs/runtime/cloakbrowser-provider.md` updated after real binary smoke.
 
-### Phase 6: CDP-enhanced collectors
+### Phase 6: BrowserProvider doctor mode
+
+Status: metadata/dependency checks implemented; related tests and CLI redaction smoke pass locally.
+
+Deliverables:
+
+- `reverse-agent-doctor --browser playwright-chromium`
+- `reverse-agent-doctor --browser cloakbrowser`
+- `--launch-browser-smoke` explicit launch gate
+
+Acceptance:
+
+- BrowserProvider doctor does not require MCP or Chrome static checks in browser-only mode.
+- Missing optional dependencies produce structured guidance.
+- Provider metadata is collected without browser launch.
+- Proxy configuration is redacted from doctor output.
+
+### Phase 7: CDP-enhanced collectors
 
 Deliverables:
 
@@ -248,7 +265,7 @@ Acceptance:
 - WebSocket metadata is captured when available.
 - Providers without CDP degrade with explicit `unsupported` evidence rather than failing the run.
 
-### Phase 7: Hook and breakpoint migration
+### Phase 8: Hook and breakpoint migration
 
 Deliverables:
 
@@ -265,7 +282,7 @@ Acceptance:
 - Breakpoint features are behind provider capability checks.
 - Hook output is emitted as normalized evidence and artifact files.
 
-### Phase 8: MCP legacy downgrade
+### Phase 9: MCP legacy downgrade
 
 Deliverables:
 

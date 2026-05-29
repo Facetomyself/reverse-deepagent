@@ -93,8 +93,35 @@ provider capability metadata 会将 proxy 脱敏为 `<configured>`。
 | persistent context | skeleton 已实现 | 配置 `--browser-profile-dir` 时走 `launch_persistent_context(...)`。 |
 | connect 模式 | 暂不支持 | 后续可拆 `remote-cdp` / `cloakserve` provider。 |
 | native collectors 复用 | 已接入运行时工厂 | collector 仍由 `NativeWebRuntime` 统一驱动。 |
-| doctor 支持 | 待实现 | 后续加 `reverse-agent-doctor --browser cloakbrowser`。 |
-| 真实二进制 smoke | 待验证 | 需要本机安装 CloakBrowser wrapper 和可用浏览器环境。 |
+| doctor 支持 | 已实现 metadata / dependency 检查 | `reverse-agent-doctor --browser cloakbrowser` 默认不启动浏览器。 |
+| 真实二进制 smoke | 可选显式触发，待本机验证 | 使用 `--launch-browser-smoke` 才会启动 provider。 |
+
+## 4.1 Doctor 检查
+
+默认 BrowserProvider doctor 只做 provider 构建、capability metadata 和 dependency probe，不启动浏览器，也不要求本机安装 `jsreverser-mcp`：
+
+```bash
+reverse-agent-doctor --browser cloakbrowser
+```
+
+需要传入 CloakBrowser 配置时，可以复用 provider 参数；输出中的 proxy 会脱敏：
+
+```bash
+reverse-agent-doctor \
+  --browser cloakbrowser \
+  --browser-proxy "http://127.0.0.1:7890" \
+  --browser-locale "zh-CN" \
+  --browser-timezone "Asia/Shanghai"
+```
+
+只有显式加入 `--launch-browser-smoke` 时才会启动真实浏览器：
+
+```bash
+reverse-agent-doctor \
+  --browser cloakbrowser \
+  --launch-browser-smoke \
+  --browser-smoke-url "about:blank"
+```
 
 ## 5. 设计约束
 
@@ -107,8 +134,8 @@ provider capability metadata 会将 proxy 脱敏为 `<configured>`。
 
 ## 6. 后续计划
 
-1. 增加 `reverse-agent-doctor --browser cloakbrowser`：只检查依赖、版本、配置脱敏和 provider metadata，不默认启动浏览器。
-2. 增加可选 `--launch-browser-smoke`：用户明确打开后才启动浏览器，并访问本地 fixture 页面。
-3. 验证真实 `cloakbrowser.launch(...)` 与 `launch_persistent_context(...)` 的参数兼容性。
+1. 验证真实 `cloakbrowser.launch(...)` 与 `launch_persistent_context(...)` 的参数兼容性。
+2. 将 `--launch-browser-smoke` 接入本地 fixture 页面，而不只使用 `about:blank`。
+3. 在真实 CloakBrowser 环境下确认 dependency probe、profile 和 humanize 参数行为。
 4. 将 CDP-enhanced collectors 接入 capability gate：支持则采 request initiator、script source、WebSocket frame，不支持则降级为 baseline evidence。
 5. 将 CloakBrowser smoke 纳入本地手动测试，不放入默认公开 CI。

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import socket
 import sys
@@ -11,6 +12,7 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 
 from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
+from reverse_deepagent.adapters.native_web import create_native_web_runtime
 from reverse_deepagent.runtime.chrome import (
     ChromeDebugConfig,
     DEFAULT_CHROME_PATH,
@@ -42,6 +44,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ensure-chrome", action="store_true", help="Start the managed Chrome debug listener before checks.")
     parser.add_argument("--keep-chrome", action="store_true", help="Keep Chrome running when --ensure-chrome starts it.")
     parser.add_argument("--check-mcp", action="store_true", help="Start jsreverser-mcp over stdio and call list_tools/check_browser_health.")
+    parser.add_argument("--browser", default=None, help="BrowserProvider id to diagnose, such as playwright-chromium or cloakbrowser. Does not launch by default.")
+    parser.add_argument("--browser-profile-dir", default=None, help="Optional BrowserProvider persistent profile directory for metadata/smoke checks.")
+    parser.add_argument("--browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Run BrowserProvider in headless mode during --launch-browser-smoke when supported.")
+    parser.add_argument("--browser-executable-path", default=None, help="Optional browser executable path for BrowserProvider launch checks.")
+    parser.add_argument("--browser-args", default="", help="Extra BrowserProvider args as a shell-split string.")
+    parser.add_argument("--browser-humanize", action=argparse.BooleanOptionalAction, default=None, help="Enable humanized BrowserProvider behavior when supported, such as CloakBrowser.")
+    parser.add_argument("--browser-proxy", default=None, help="Optional BrowserProvider proxy URL. The doctor output must redact configured proxy values.")
+    parser.add_argument("--browser-geoip", action="store_true", help="Let BrowserProvider derive geo settings from proxy/IP when supported.")
+    parser.add_argument("--browser-locale", default=None, help="Optional BrowserProvider locale, such as zh-CN.")
+    parser.add_argument("--browser-timezone", default=None, help="Optional BrowserProvider timezone, such as Asia/Shanghai.")
+    parser.add_argument("--launch-browser-smoke", action="store_true", help="Actually launch the selected BrowserProvider and open --browser-smoke-url. Disabled by default.")
+    parser.add_argument("--browser-smoke-url", default="about:blank", help="URL used only when --launch-browser-smoke is set.")
     parser.add_argument("--request-timeout", type=float, default=10.0, help="MCP request timeout in seconds.")
     parser.add_argument("--startup-timeout", type=float, default=10.0, help="MCP startup timeout in seconds.")
     parser.add_argument("--strict", action="store_true", help="Exit non-zero when required checks fail.")
@@ -100,6 +114,78 @@ def _console_script_status() -> dict[str, Any]:
         },
         "hint": f'Run `source "{local_bin}/activate"` or call scripts through absolute paths if scripts_on_path are null.',
     }
+
+
+def _check_browser_provider(args: argparse.Namespace) -> dict[str, Any]:
+    try:
+        browser_args = shlex.split(args.browser_args) if args.browser_args else []
+        runtime = create_native_web_runtime(
+            browser=args.browser,
+            browser_profile_dir=args.browser_profile_dir,
+            browser_headless=args.browser_headless,
+            browser_executable_path=args.browser_executable_path,
+            browser_args=browser_args,
+            browser_humanize=args.browser_humanize,
+            browser_proxy=args.browser_proxy,
+            browser_geoip=args.browser_geoip,
+            browser_locale=args.browser_locale,
+            browser_timezone=args.browser_timezone,
+        )
+        provider = runtime.browser_provider
+        capabilities = provider.describe().model_dump(mode="json")
+    except Exception as exc:
+        return {
+            "ok": False,
+            "browser": args.browser,
+            "available": False,
+            "launched": False,
+            "error": str(exc),
+            "hint": "Use a supported BrowserProvider id such as playwright-chromium or cloakbrowser.",
+        }
+
+    try:
+        available = provider.is_available()
+        availability_error = None
+    except Exception as exc:
+        available = False
+        availability_error = str(exc)
+
+    payload: dict[str, Any] = {
+        "ok": bool(available),
+        "browser": args.browser,
+        "available": bool(available),
+        "launched": False,
+        "launch_requested": bool(args.launch_browser_smoke),
+        "capabilities": capabilities,
+    }
+    if availability_error:
+        payload["availability_error"] = availability_error
+    if not available:
+        payload["hint"] = "Install the provider optional dependency or choose another BrowserProvider. Metadata was collected without launching a browser."
+        return payload
+
+    if not args.launch_browser_smoke:
+        payload["hint"] = "Provider dependency is available. Add --launch-browser-smoke to start a real browser smoke test."
+        return payload
+
+    try:
+        session = provider.start()
+        page = session.get_active_page() or session.new_page(args.browser_smoke_url)
+        if page.url == "about:blank" and args.browser_smoke_url and args.browser_smoke_url != "about:blank":
+            page.goto(args.browser_smoke_url)
+        payload["launched"] = True
+        payload["smoke"] = {
+            "ok": True,
+            "url": page.url,
+            "title": page.title(),
+            "page_count": len(session.list_pages()),
+        }
+    except Exception as exc:
+        payload["ok"] = False
+        payload["smoke"] = {"ok": False, "error": str(exc), "url": args.browser_smoke_url}
+    finally:
+        provider.stop()
+    return payload
 
 
 def _check_mcp(args: argparse.Namespace) -> dict[str, Any]:
@@ -168,6 +254,9 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         should_stop = launch.ok and not args.keep_chrome
     payload["port_after_launch"] = _port_status(args.browser_url)
 
+    if args.browser:
+        payload["browser_provider"] = _check_browser_provider(args)
+
     if args.check_mcp:
         payload["mcp_check"] = _check_mcp(args)
 
@@ -176,16 +265,22 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         payload["chrome_stop"] = stop.model_dump(mode="json")
         payload["port_after_stop"] = _port_status(args.browser_url)
 
-    required_ok = [
-        payload["chrome"]["path"]["exists"],
-        payload["chrome"]["start_script"]["exists"],
-        payload["chrome"]["stop_script"]["exists"],
-        payload["mcp"]["command"]["exists"],
-    ]
-    if args.ensure_chrome:
-        required_ok.append(bool(payload.get("chrome_launch", {}).get("ok")))
-    if args.check_mcp:
-        required_ok.append(bool(payload.get("mcp_check", {}).get("ok")))
+    browser_only_check = bool(args.browser and not args.ensure_chrome and not args.check_mcp)
+    if browser_only_check:
+        required_ok = [bool(payload.get("browser_provider", {}).get("ok"))]
+    else:
+        required_ok = [
+            payload["chrome"]["path"]["exists"],
+            payload["chrome"]["start_script"]["exists"],
+            payload["chrome"]["stop_script"]["exists"],
+            payload["mcp"]["command"]["exists"],
+        ]
+        if args.ensure_chrome:
+            required_ok.append(bool(payload.get("chrome_launch", {}).get("ok")))
+        if args.browser:
+            required_ok.append(bool(payload.get("browser_provider", {}).get("ok")))
+        if args.check_mcp:
+            required_ok.append(bool(payload.get("mcp_check", {}).get("ok")))
     payload["ok"] = all(required_ok)
     return payload
 
