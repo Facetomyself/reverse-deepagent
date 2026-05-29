@@ -166,6 +166,44 @@ reverse-agent-fixture-smoke --runtime mock
 - 设计文档：`<repo-root>/docs/design/reverse-deepagent-architecture.md`
 - 规划文档：`<repo-root>/docs/plans/2026-05-26-deepagents-js-reverse-agent-plan.md`
 
+## 配置真实 OpenAI API 验证
+
+仓库默认测试仍走 mock 运行时，避免公开 CI 或本地单元测试误消耗 API 额度。要用真实 OpenAI API 验证 DeepAgents 编排，可以安装 `llm` 可选依赖并设置环境变量。
+
+安装可选依赖：
+
+```bash
+cd "<repo-root>"
+uv pip install --python "<repo-root>/.venv/bin/python" -e ".[llm]"
+```
+
+设置 API key。不要把 key 写进 `.env`、README、代码或 Git 历史里；推荐只放当前 shell、系统 keychain 或 CI secret：
+
+```bash
+export OPENAI_API_KEY="sk-..."
+export OPENAI_MODEL="gpt-5.5"
+```
+
+运行真实 OpenAI-backed DeepAgents 冒烟测试：
+
+```bash
+reverse-agent-openai-smoke \
+  --task-text "http://localhost 找 sign 入口，并给出下一步建议。先调用 route_reverse_task 工具完成路由。" \
+  --artifact-root "<repo-root>/artifacts/openai-smoke"
+```
+
+也可以不安装 console script，直接用模块入口：
+
+```bash
+"<repo-root>/.venv/bin/python" -m reverse_deepagent.openai_smoke \
+  --model "${OPENAI_MODEL:-gpt-5.5}" \
+  --artifact-root "<repo-root>/artifacts/openai-smoke"
+```
+
+这个 smoke 只验证真实模型能驱动 DeepAgents 主 Agent、调用 `route_reverse_task` 工具并返回结构化摘要；它不默认启动 Chrome，也不默认调用 MCP。真实 Web runtime 仍按后文 `reverse-agent-demo --runtime mcp --ensure-chrome` 或 `reverse-agent-fixture-smoke --runtime mcp --ensure-chrome` 配置。
+
+如果你的账号暂时没有 `gpt-5.5` 权限，可以把 `OPENAI_MODEL` 改成账号可用的模型。
+
 ## 运行最小演示（mock 运行时）
 
 mock 运行时不依赖真实浏览器，适合验证 schema、route、adapter、artifact 链路。

@@ -36,6 +36,7 @@ reverse-agent-demo = "reverse_deepagent.cli:main_demo"
 reverse-agent-fixture = "reverse_deepagent.fixture_cli:main_fixture"
 reverse-agent-fixture-smoke = "reverse_deepagent.fixture_smoke:main_fixture_smoke"
 reverse-agent-platform = "reverse_deepagent.cli:main_platform"
+reverse-agent-openai-smoke = "reverse_deepagent.openai_smoke:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
