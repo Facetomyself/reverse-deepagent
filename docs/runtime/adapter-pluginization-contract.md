@@ -10,16 +10,20 @@ The short version: the DeepAgents coordinator should depend on stable runtime sc
 DeepAgents coordinator / subagents
   -> ReverseRuntime interface
     -> Runtime backend registry
-      -> backend adapter implementation
-        -> concrete transport: mock, MCP stdio, CLI, CDP, Playwright, mobile tooling, ...
+      -> native Web runtime
+        -> BrowserProvider registry
+        -> native collectors / hooks / artifact exporters
+      -> legacy backend adapters
+        -> MCP stdio, CLI, CDP, mobile tooling, ...
 ```
 
-Current default backends:
+Backend direction:
 
 | Backend id | Alias | Transport | Purpose |
 | --- | --- | --- | --- |
 | `mock` | `in-process` | `in-process` | Deterministic public CI and local demo backend. |
-| `mcp` | `jsreverser-mcp` | `mcp-stdio` | Real JSReverser MCP + Chrome DevTools backend. |
+| `native-web` | `web`, `browser-native` | `browser-provider` | Target Web runtime with project-owned collectors and replaceable browser providers. |
+| `legacy-mcp` | `mcp`, `jsreverser-mcp` | `mcp-stdio` | Compatibility backend for JSReverser MCP + Chrome DevTools while native parity is built. |
 
 The backend registry is exposed through:
 
@@ -96,7 +100,9 @@ Non-goals:
 
 Backend-specific configuration should be collected into serializable config objects instead of being scattered across coordinator code.
 
-Current example:
+For native Web runtime, browser-specific configuration belongs to BrowserProvider config objects, not the coordinator. Examples include `PlaywrightChromiumConfig`, `CloakBrowserConfig`, `ChromeCDPConfig`, and `RemoteCDPConfig`.
+
+Legacy MCP example:
 
 ```python
 from reverse_deepagent.adapters import JSReverserMcpConfig, create_jsreverser_mcp_runtime
@@ -125,6 +131,13 @@ Implemented lightweight Web backend examples:
 - `LightweightWebRuntimeConfig` with `transport=chrome-cdp`
 - `LightweightWebRuntimeConfig` with `transport=browser-cli`
 
+Planned native Web examples:
+
+- `NativeWebRuntimeConfig` selecting a BrowserProvider.
+- `CloakBrowserConfig` for stealth browser sessions and persistent profiles.
+- `PlaywrightChromiumConfig` for the portable baseline provider.
+- `RemoteCDPConfig` for browserless, Docker, or remote debug endpoints.
+
 Future platform backend examples:
 
 - `AndroidAdbConfig`
@@ -135,6 +148,31 @@ Future platform backend examples:
 The Android planning boundary is documented in [`android-adapter-interface.md`](android-adapter-interface.md), the iOS boundary is documented in [`ios-adapter-interface.md`](ios-adapter-interface.md), and the mini-program boundary is documented in [`mini-program-adapter-interface.md`](mini-program-adapter-interface.md). They deliberately treat app/process/container instrumentation as separate runtime shapes instead of overloading Web browser session semantics.
 
 Web-only assumptions are isolated in [`web-runtime-assumptions.md`](web-runtime-assumptions.md). New platform adapters should treat that document as a list of assumptions to avoid inheriting unless they explicitly implement a Web backend.
+
+
+## BrowserProvider plug-in boundary
+
+The Web browser itself should be a plug-in below `NativeWebRuntime`.
+
+A provider owns:
+
+1. browser launch/connect/stop,
+2. profile and login-state handling,
+3. optional CDP or Playwright session access,
+4. provider capability metadata,
+5. provider-specific errors and setup guidance.
+
+A provider does **not** own:
+
+1. route decisions,
+2. evidence scoring,
+3. artifact schema design,
+4. report generation,
+5. target-specific reverse logic.
+
+This keeps `cloakbrowser`, ordinary Playwright Chromium, local Chrome CDP, and remote CDP interchangeable without rewriting the recon pipeline.
+
+The full target architecture is documented in [`browser-provider-architecture.md`](browser-provider-architecture.md).
 
 ## Artifact manifest contract
 
@@ -243,3 +281,5 @@ The project can then add Android-specific methods or higher-level workflows with
 - `ReverseRuntime` intentionally does not expose mobile-specific operations yet; future adapters should add separate capability layers rather than reusing browser method names.
 - The registry is in-process Python registration, not package entry-point plugin loading.
 - Real MCP smoke still requires a self-hosted runner with Chrome and JSReverser MCP installed.
+- `native-web` and BrowserProvider contracts are planned but not yet implemented as the default runtime.
+- MCP is retained as a compatibility backend during migration; it is not the long-term Web architecture center.

@@ -9,7 +9,7 @@ The current public demo is Web / JS first. That is fine, but Web convenience can
 - `ensure_browser_session()` now lives on `WebReverseRuntime` and means browser / DevTools readiness only.
 - Chrome debug ports are useful for Web, irrelevant for Android Frida or iOS simulator flows.
 - `document.cookie`, `localStorage`, `navigator`, and replay URL derivation are browser concepts.
-- JSReverser MCP is a concrete Web runtime backend, not the platform abstraction itself.
+- JSReverser MCP is a legacy Web runtime backend, not the platform abstraction itself. The preferred direction is a native Web runtime with pluggable BrowserProvider implementations.
 
 The rule: keep Web assumptions inside Web runtime docs, adapters, and paths. Platform adapters should expose their own runtime concepts through stable schemas.
 
@@ -18,7 +18,7 @@ The rule: keep Web assumptions inside Web runtime docs, adapters, and paths. Pla
 | Assumption | Current location / behavior | Why it is Web-only | Future adapter guidance |
 | --- | --- | --- | --- |
 | Browser session | `WebReverseRuntime.ensure_browser_session()` returns `BrowserSessionInfo` with page count, page index, active URL. | Android / iOS app processes and mini-program projects are not browser tabs. | Keep non-Web adapters on `ReverseRuntime`; add platform-specific routes instead of overloading browser session. |
-| Chrome debug port | Managed Chrome scripts start/stop a DevTools endpoint for MCP recon. | Mobile and mini-program tooling may use ADB, Frida, simctl, vendor devtools, or JSCore. | Keep transport details in backend config and `producer_transport`. |
+| Chrome debug port | Managed Chrome scripts start/stop a DevTools endpoint for CDP-capable Web providers and legacy MCP recon. | Mobile and mini-program tooling may use ADB, Frida, simctl, vendor devtools, or JSCore. | Keep transport details in provider/backend config and `producer_transport`. |
 | JSReverser MCP | `mcp` backend normalizes JSReverser MCP tool output. | It is a Web / DevTools-oriented backend. | Other platforms may use CLI, Frida, static analysis, or vendor tool adapters. |
 | DOM / page navigation | Web recon can navigate URLs and inspect pages/scripts. | Native apps and mini-programs use package routes, activities, view controllers, or container pages. | Normalize platform-specific entrypoints as evidence, not fake URLs. |
 | Web storage | Runtime context detects `document.cookie`, `localStorage`, `sessionStorage`, `navigator`, timezone, canvas. | Android SharedPreferences, iOS keychain / NSUserDefaults, and mini-program storage are not browser storage. | Use platform-specific context keys and redact sensitive values. |
@@ -41,12 +41,31 @@ Current Web runtime responsibilities:
 These responsibilities belong to Web backends such as:
 
 - `mock` for deterministic public CI.
-- `mcp` / `jsreverser-mcp` for real JSReverser MCP + Chrome DevTools.
+- `native-web` for project-owned browser instrumentation with pluggable BrowserProvider implementations.
+- `playwright-chromium` / `cloakbrowser` / `chrome-cdp` / `remote-cdp` as BrowserProvider implementations under `native-web`.
 - `playwright-cli` for side-effect-light Playwright CLI probes plus static source fetch.
 - `chrome-cdp` for existing Chrome DevTools endpoint probes without launching Chrome.
 - `browser-cli` for generic local browser CLI shims.
+- `legacy-mcp` / `mcp` for JSReverser MCP compatibility while native collectors reach parity.
 
 They should not be treated as requirements for `android-*`, `ios-*`, or `mini-program-*` backends.
+
+
+## BrowserProvider direction
+
+The Web runtime should evolve toward a provider-oriented browser boundary:
+
+```text
+NativeWebRuntime
+  -> BrowserProvider
+  -> CollectorRegistry
+  -> HookManager
+  -> ArtifactExporter
+```
+
+The browser provider is the replaceable module. MCP is not. A provider can be ordinary Playwright Chromium, CloakBrowser, local Chrome CDP, remote CDP, or a future browser service. Collectors should remain project-owned and emit the same evidence/artifact schemas regardless of provider.
+
+See [`browser-provider-architecture.md`](browser-provider-architecture.md) for the full target boundary and MCP deprecation posture.
 
 ## Naming guidance
 

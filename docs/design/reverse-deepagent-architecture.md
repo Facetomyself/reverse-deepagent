@@ -29,7 +29,11 @@ User Task
     -> Web Recon Subagent
     -> Protection Subagent
     -> Runtime Adapter Layer
-      -> MCP Runtime / CLI Runtime / CDP Runtime / Future Mobile Runtime
+      -> Native Web Runtime
+        -> BrowserProvider (Playwright / CloakBrowser / Chrome CDP / Remote CDP)
+        -> Native collectors / hooks / artifact exporters
+      -> Legacy MCP Runtime (compatibility only)
+      -> Future Mobile / Mini-program Runtime
     -> Virtual Filesystem + Artifacts + Memory
 ```
 
@@ -62,19 +66,56 @@ User Task
 
 ### 3.3 执行层
 
-### 3.3.1 Chrome Debug Session 约束
+执行层通过 runtime adapter 对外暴露高层语义动作，不直接把原子工具暴露给主 Agent。新的长期方向是：**MCP 降级为 legacy backend，浏览器实现通过 BrowserProvider 插拔，网络/源码/存储/hook 等逆向采集能力由项目内置 collector 承担**。
+
+推荐主路径：
+
+```text
+WebReverseRuntime
+  -> NativeWebRuntime
+    -> BrowserProvider
+      -> playwright-chromium / cloakbrowser / chrome-cdp / remote-cdp
+    -> CollectorRegistry
+      -> network / scripts / storage / console / DOM / WebSocket
+    -> HookManager
+      -> fetch-xhr / cookie / anti-debug / breakpoint
+```
+
+兼容路径：
+
+```text
+WebReverseRuntime
+  -> LegacyMcpRuntime
+    -> jsreverser-mcp
+```
+
+`jsreverser-mcp` 仍可用于对比、过渡和能力兜底，但不应继续作为 Web runtime 的默认架构中心。详细边界见 [`docs/runtime/browser-provider-architecture.md`](../runtime/browser-provider-architecture.md)。
+
+### 3.3.1 BrowserProvider 约束
+
+BrowserProvider 负责浏览器生命周期与页面/session 抽象，不负责逆向策略。它至少应该回答：
+
+- 能否启动浏览器或连接已有浏览器
+- 是否支持 persistent context / 登录态保留
+- 是否支持 CDP / Playwright API / runtime eval
+- 是否支持 proxy / locale / timezone / stealth / humanize
+- 是否支持 request initiator、script source、WebSocket frame、breakpoint 等高级采集能力
+
+CloakBrowser 应作为 `BrowserProvider` 实现之一接入，而不是替代整个 runtime。这样后续可以在 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 之间切换，而不重写 recon pipeline。
+
+### 3.3.2 Chrome Debug Session 约束
 
 真实 Web runtime 不允许隐式假设 Chrome debug 端口已存在。
 
 约束如下：
 
-- `mcp` runtime 执行 Web recon 前必须先检查 Chrome DevTools session
+- 需要 CDP 的 provider 执行 Web recon 前必须先检查浏览器调试会话
 - 若端口不可用，必须结构化失败并给出 `next_action=ensure_browser_session`
 - 若用户或上层策略显式启用自动准备，可以调用推荐启动脚本启动受管 Chrome
 - 推荐脚本必须参数可调，至少支持 Chrome 路径、debug port、debug address、user data dir、start URL、extra args、wait seconds
 - 启动脚本只接管自己启动的 Chrome，不盲杀占用端口的非托管进程
-- runtime adapter 必须把实际启动的 `browser_url` 传给 MCP 后端，不能一边启动自定义端口、一边让 MCP 继续连默认 `9222`
-- `jsreverser-mcp` 的真实返回经常是 Markdown + fenced JSON + traceId 的混合文本，adapter 必须先归一化再进入 schema，不允许把原始文本形态泄露给上层 Agent 做判断
+- legacy MCP runtime 必须把实际启动的 `browser_url` 传给 MCP 后端，不能一边启动自定义端口、一边让 MCP 继续连默认 `9222`
+- `jsreverser-mcp` 的真实返回经常是 Markdown + fenced JSON + traceId 的混合文本，legacy adapter 必须先归一化再进入 schema，不允许把原始文本形态泄露给上层 Agent 做判断
 
 推荐脚本：
 
@@ -86,6 +127,7 @@ User Task
 - `src/reverse_deepagent/coordinator.py`
 - 包内稳定协调入口已从 CLI 脚本中抽离，后续所有入口都应复用 `run_reverse_pipeline()`
 - `pyproject.toml` 现已声明 console script `reverse-agent-demo = reverse_deepagent.cli:main_demo`
+- `reverse-agent-doctor` 已可诊断 console script、Chrome、调试端口、`jsreverser-mcp` 与 MCP tool list
 - `scripts/run_deepagent_smoke.py`
 - `build_reverse_agent()` 已与当前 deepagents 版本对齐，可完成一次真实 `agent.invoke()`，并把 route tool 的结果回流到消息链
 - `scripts/run_deepagent_subagent_smoke.py`
@@ -102,19 +144,6 @@ User Task
 - 使用隔离 profile `/tmp/reverse-agent-chrome-9445`
 - 能完成受管 Chrome 启动、MCP 接入、Web recon 结构化输出与自动停止
 - 未使用 `--keep-chrome` 时，执行结束后不应残留该端口监听
-
-执行层通过 runtime adapter 对外暴露高层语义动作，不直接把原子工具暴露给主 Agent。
-
-首版主要接：
-
-- `jsreverser-mcp`
-
-未来可替换为：
-
-- 本地 CLI
-- Playwright + CDP
-- Chrome DevTools 协议
-- Frida / mitmproxy / ADB / iOS device 工具链
 
 当前执行层里的浏览器会话、Chrome debug port、JSReverser MCP、Web storage 和 replay URL 推导都属于 Web-only 假设，统一记录在 `docs/runtime/web-runtime-assumptions.md`。Android / iOS / 小程序 adapter 应通过各自的 runtime interface 和 capability metadata 接入，不应把 app process、Frida session 或 vendor devtools project 伪装成 browser session。
 
@@ -439,7 +468,7 @@ Gate 规则：
 
 ### 9.3 对 MCP 的态度
 
-不是“废掉 MCP”，而是“把 MCP 降级成一个当前 runtime backend”。
+MCP 必须从核心路径拆出去。它可以保留为 `legacy-mcp` backend，但不能继续承担 Web runtime 的主抽象。
 
 建议演进路线：
 
@@ -447,9 +476,14 @@ Gate 规则：
 当前：
 Agent -> Runtime Adapter -> jsreverser-mcp
 
-后续：
-Agent -> Runtime Adapter -> CLI / CDP / Playwright / Frida / mitmproxy
+目标：
+Agent -> NativeWebRuntime -> BrowserProvider + Collectors + HookManager
+
+兼容：
+Agent -> LegacyMcpRuntime -> jsreverser-mcp
 ```
+
+真正可插拔的模块是 BrowserProvider，例如 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp`。Collector / hook / artifact 逻辑应该由项目自己维护并复用。
 
 ### 9.4 CLI 和 Skill 的分工建议
 
@@ -520,12 +554,14 @@ reverse_agent/
 1. 定 `schemas`：`TaskCard / RouterResult / ReconResult / ProtectionResult / FinalResult`
 2. 定 `runtime adapter` 抽象接口
 3. 组装主 Agent 与 3 个子 Agent
-4. 接 `jsreverser-mcp` 的首个 runtime 实现
-5. 跑通 `web recon` 的最小 Demo
-6. 再补 protection 和 artifact 导出
+4. 保留 `jsreverser-mcp` 作为 legacy runtime，实现过渡期真实 Web recon
+5. 新增 BrowserProvider contract 与 provider registry
+6. 实现 `native-web` runtime 与基础 collectors
+7. 接入 `playwright-chromium` 与 `cloakbrowser` provider
+8. 将 MCP 从默认路径降级到 legacy 兼容路径
 
 ## 12. 一句话收口
 
 首版不要把自己做成一个“工具名驱动的 MCP 大泥球”，而是要做成：
 
-> 以 `deepagents` 为编排核心、以 `js-reverse` 为方法资产层、以 `runtime adapter` 为执行抽象的逆向专用 Agent Demo。
+> 以 `deepagents` 为编排核心、以 `js-reverse` 为方法资产层、以 `NativeWebRuntime + BrowserProvider` 为 Web 执行抽象，并把 MCP 降级为 legacy backend 的逆向专用 Agent。

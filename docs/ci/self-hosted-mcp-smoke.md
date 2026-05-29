@@ -1,6 +1,6 @@
 # Self-hosted MCP smoke workflow
 
-This document describes how to run and maintain the self-hosted GitHub Actions workflow for real JSReverser MCP + Chrome smoke coverage. The workflow supports both manual dispatch and a weekly scheduled canary on a self-hosted runner.
+This document describes how to run and maintain the self-hosted GitHub Actions workflow for legacy JSReverser MCP + Chrome smoke coverage. The workflow supports both manual dispatch and a weekly scheduled canary on a self-hosted runner. MCP coverage is kept for compatibility while native BrowserProvider runtime coverage is developed.
 
 The workflow lives at:
 

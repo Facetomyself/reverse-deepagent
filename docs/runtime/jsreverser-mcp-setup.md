@@ -1,10 +1,10 @@
 # JSReverser MCP setup assumptions
 
-This document describes how `reverse-deepagent` expects JSReverser MCP and Chrome remote debugging to be wired for local, authorized Web / JavaScript reverse-engineering workflows.
+This document describes the legacy JSReverser MCP wiring for local, authorized Web / JavaScript reverse-engineering workflows. MCP is retained as a compatibility backend while `native-web` and BrowserProvider-based instrumentation are built.
 
 ## Architecture boundary
 
-`jsreverser-mcp` is treated as a **runtime backend**, not as the agent architecture boundary.
+`jsreverser-mcp` is treated as a **legacy runtime backend**, not as the agent architecture boundary. The target architecture is documented in [`browser-provider-architecture.md`](browser-provider-architecture.md).
 
 ```text
 DeepAgents coordinator / subagents

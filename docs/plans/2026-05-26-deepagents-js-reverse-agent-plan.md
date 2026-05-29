@@ -4,7 +4,7 @@
 
 ```text
 task_card:
-- task_description: 基于 deepagents 搭建一个高集成度的逆向专用 agent，统一整合本机 js-reverse skill、jsreverser-mcp 能力与可复用脚本/参考资产，首期聚焦 Web / JS 逆向，预留 Android / iOS / 小程序扩展空间。
+- task_description: 基于 deepagents 搭建一个高集成度的逆向专用 agent，统一整合本机 js-reverse skill、可替换 BrowserProvider、native collectors 与可复用脚本/参考资产；jsreverser-mcp 保留为 legacy 兼容路径，首期聚焦 Web / JS 逆向，预留 Android / iOS / 小程序扩展空间。
 - mode: planning
 - plan_target: <repo-root>/docs/plans/2026-05-26-deepagents-js-reverse-agent-plan.md
 - constraints: 当前阶段以规划文档和任务同步为主，不修改业务实现逻辑；后续执行必须遵守 docs/design/reverse-deepagent-architecture.md 的分层设计与输出契约。
@@ -26,9 +26,11 @@ task_card:
 - 系统主结构采用：`方法层 + 编排层 + 执行层`
 - `deepagents` 负责编排、规划、虚拟文件系统、子任务隔离
 - `js-reverse` 负责 route / playbook / capability / protection / evidence 规范
-- `jsreverser-mcp` 当前作为 **runtime backend** 使用，而不是主架构中心
+- `jsreverser-mcp` 当前作为 **legacy runtime backend** 使用，后续从默认 Web 路径拆出
+- 真正需要可插拔的是 BrowserProvider：`playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp`
 - 首版目标收敛为：**Web Reverse Demo v0**
-- 当前 demo 已完成真实 Chrome + MCP smoke，证明可在可调端口上稳定拉起、接入和收尾
+- 当前 demo 已完成真实 Chrome + MCP smoke，证明 legacy 路径可在可调端口上稳定拉起、接入和收尾
+- 新增计划：[`2026-05-29-browser-provider-mcp-deprecation-plan.md`](2026-05-29-browser-provider-mcp-deprecation-plan.md)，用于推进 BrowserProvider native runtime 和 MCP 下线
 
 ## 3. 目标定义
 
