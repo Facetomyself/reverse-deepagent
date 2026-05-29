@@ -67,7 +67,7 @@ reverse-agent-demo \
   --ensure-chrome
 ```
 
-`legacy-mcp` is the planned explicit backend name for Phase 9; `mcp` remains the current runnable compatibility id until that alias is implemented.
+`legacy-mcp` is the planned explicit backend name for Phase 10; `mcp` remains the current runnable compatibility id until that alias is implemented.
 
 ## Milestones
 
@@ -128,7 +128,7 @@ Remaining validation:
 
 ### Phase 3: Native collector baseline
 
-Status: provider-neutral baseline implemented; CDP-enhanced depth remains Phase 7.
+Status: provider-neutral baseline implemented; CDP-enhanced depth remains Phase 8.
 
 Deliverables:
 
@@ -156,7 +156,7 @@ Current evidence:
 Remaining validation:
 
 - Wire collectors into `NativeWebRuntime` and verify artifact compatibility.
-- Add CDP-enhanced request initiator, response body, script source, and WebSocket frame support in Phase 7.
+- Add CDP-enhanced request initiator, response body, script source, and WebSocket frame support in Phase 8.
 
 ### Phase 4: NativeWebRuntime
 
@@ -248,7 +248,25 @@ Acceptance:
 - Provider metadata is collected without browser launch.
 - Proxy configuration is redacted from doctor output.
 
-### Phase 7: CDP-enhanced collectors
+### Phase 7: Native artifact parity
+
+Status: native DOM, console, script inventory, and navigation evidence are mapped to workspace artifacts; related tests pass locally.
+
+Deliverables:
+
+- `workspace/dom-snapshot.json`
+- `workspace/console-messages.json`
+- `workspace/script-inventory.json`
+- `workspace/navigation-events.json`
+- backend manifest metadata containing `browser_provider` and `browser_provider_transport` when available
+
+Acceptance:
+
+- Native Web fake-provider pipeline writes the new workspace artifacts.
+- Existing legacy MCP artifact mappings remain unchanged.
+- Manifest entries expose provider metadata without secrets.
+
+### Phase 8: CDP-enhanced collectors
 
 Deliverables:
 
@@ -265,7 +283,7 @@ Acceptance:
 - WebSocket metadata is captured when available.
 - Providers without CDP degrade with explicit `unsupported` evidence rather than failing the run.
 
-### Phase 8: Hook and breakpoint migration
+### Phase 9: Hook and breakpoint migration
 
 Deliverables:
 
@@ -282,7 +300,7 @@ Acceptance:
 - Breakpoint features are behind provider capability checks.
 - Hook output is emitted as normalized evidence and artifact files.
 
-### Phase 9: MCP legacy downgrade
+### Phase 10: MCP legacy downgrade
 
 Deliverables:
 

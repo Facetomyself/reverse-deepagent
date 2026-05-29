@@ -276,11 +276,17 @@ The native runtime should preserve current artifact semantics:
 - `workspace/request-initiators.json`
 - `workspace/source-contexts.json`
 - `workspace/runtime-context.json`
+- `workspace/dom-snapshot.json`
+- `workspace/script-inventory.json`
+- `workspace/console-messages.json`
+- `workspace/navigation-events.json`
 - `workspace/backend-artifact-manifest.json`
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
 
 Downstream rebuild/replay/report code should not care whether evidence came from MCP, Playwright, CloakBrowser, or remote CDP.
+
+Native BrowserProvider-backed manifest entries should include non-secret `browser_provider` and `browser_provider_transport` metadata when available.
 
 ## 12. Implementation status
 

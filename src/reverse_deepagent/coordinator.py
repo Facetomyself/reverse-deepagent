@@ -834,7 +834,7 @@ def _build_backend_artifact_manifest(
             producer_transport=capabilities.transport,
             target_platforms=capabilities.target_platforms,
             description=_artifact_description_from_key(key),
-            metadata={"path_style": "virtual" if path.startswith("virtual://") else "filesystem"},
+            metadata=_artifact_manifest_entry_metadata(capabilities, path),
         )
         for key, path in sorted(output_paths.items())
     ]
@@ -851,8 +851,12 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_network_requests": "network",
     "workspace_source_hits": "source",
     "workspace_source_contexts": "source",
+    "workspace_script_inventory": "source",
     "workspace_request_initiators": "trace",
+    "workspace_navigation_events": "trace",
     "workspace_runtime_context": "runtime-context",
+    "workspace_dom_snapshot": "runtime-context",
+    "workspace_console_messages": "runtime-context",
     "workspace_runtime_context_diff": "runtime-context",
     "workspace_runtime_capabilities": "runtime-context",
     "workspace_runtime_export_bundle": "export",
@@ -865,6 +869,19 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_evidence_promotion": "evidence",
     "workspace_review_gate": "triage",
 }
+
+
+def _artifact_manifest_entry_metadata(capabilities: RuntimeBackendCapabilities, path: str) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"path_style": "virtual" if path.startswith("virtual://") else "filesystem"}
+    provider = capabilities.config.get("provider") if isinstance(capabilities.config, dict) else None
+    if isinstance(provider, dict):
+        provider_id = provider.get("provider_id")
+        if provider_id:
+            metadata["browser_provider"] = provider_id
+        provider_transport = provider.get("transport")
+        if provider_transport:
+            metadata["browser_provider_transport"] = provider_transport
+    return metadata
 
 
 def _artifact_category_from_key(key: str) -> str:
@@ -1369,6 +1386,14 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-contexts.json"] = evidence.details
         elif evidence.source == "runtime_context":
             payloads["runtime-context.json"] = evidence.details
+        elif evidence.source == "dom_snapshot":
+            payloads["dom-snapshot.json"] = evidence.details
+        elif evidence.source == "script_inventory":
+            payloads["script-inventory.json"] = evidence.details
+        elif evidence.source == "console_message":
+            payloads["console-messages.json"] = evidence.details
+        elif evidence.source == "navigate_page":
+            payloads["navigation-events.json"] = evidence.details
         elif evidence.source == "runtime_context_diff":
             payloads["runtime-context-diff.json"] = evidence.details
         elif evidence.source == "function_candidate_card":

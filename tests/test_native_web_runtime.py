@@ -165,14 +165,31 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertIn("workspace_network_requests", artifacts)
             self.assertIn("workspace_source_hits", artifacts)
             self.assertIn("workspace_runtime_context", artifacts)
+            self.assertIn("workspace_dom_snapshot", artifacts)
+            self.assertIn("workspace_script_inventory", artifacts)
+            self.assertIn("workspace_console_messages", artifacts)
+            self.assertIn("workspace_navigation_events", artifacts)
             network = json.loads(Path(artifacts["workspace_network_requests"]).read_text(encoding="utf-8"))
             source_hits = json.loads(Path(artifacts["workspace_source_hits"]).read_text(encoding="utf-8"))
             runtime_context = json.loads(Path(artifacts["workspace_runtime_context"]).read_text(encoding="utf-8"))
+            dom_snapshot = json.loads(Path(artifacts["workspace_dom_snapshot"]).read_text(encoding="utf-8"))
+            script_inventory = json.loads(Path(artifacts["workspace_script_inventory"]).read_text(encoding="utf-8"))
+            console_messages = json.loads(Path(artifacts["workspace_console_messages"]).read_text(encoding="utf-8"))
+            navigation_events = json.loads(Path(artifacts["workspace_navigation_events"]).read_text(encoding="utf-8"))
+            manifest = json.loads(Path(artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
 
         self.assertEqual(provider.started, 1)
         self.assertEqual(network["count"], 1)
         self.assertEqual(source_hits["count"], 1)
         self.assertTrue(runtime_context["ok"])
+        self.assertGreater(dom_snapshot["html_size"], 0)
+        self.assertEqual(script_inventory["count"], 2)
+        self.assertEqual(console_messages["count"], 0)
+        self.assertEqual(navigation_events["events"], ["navigated:https://example.test/app"])
+        manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
+        self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
+        self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")
+        self.assertEqual(manifest_by_key["workspace_navigation_events"]["category"], "trace")
 
 
 if __name__ == "__main__":

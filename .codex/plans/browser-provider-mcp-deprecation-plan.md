@@ -27,7 +27,7 @@
 | 4. NativeWebRuntime 最小接入 | 已完成 | `tests.test_native_web_runtime` |
 | 5. CloakBrowser provider skeleton | 已完成 | `8c9f897` 本地提交，待网络恢复后 push |
 | 6. Browser doctor provider mode | 已完成 | `reverse-agent-doctor --browser ...` 已实现，39 项相关测试通过，待网络恢复后 push |
-| 7. Native artifact parity | 未开始 | 需要补齐 DOM、console、script inventory 等落盘 |
+| 7. Native artifact parity | 已完成 | DOM、console、script inventory、navigation events 已落盘，manifest 带 BrowserProvider metadata，63 项相关测试通过 |
 | 8. CDP-enhanced collectors | 未开始 | request initiator、response body、script source、WebSocket frame |
 | 9. Hook / breakpoint migration | 未开始 | fetch/xhr、cookie、anti-debug、breakpoint manager |
 | 10. MCP legacy downgrade | 未开始 | `legacy-mcp` 文档化，`mcp` 保留临时 alias |
