@@ -274,7 +274,9 @@ The native runtime should preserve current artifact semantics:
 - `workspace/network-requests.json`
 - `workspace/source-hits.json`
 - `workspace/request-initiators.json`
+- `workspace/response-bodies.json`
 - `workspace/source-contexts.json`
+- `workspace/websocket-frames.json`
 - `workspace/runtime-context.json`
 - `workspace/dom-snapshot.json`
 - `workspace/script-inventory.json`
@@ -286,7 +288,7 @@ The native runtime should preserve current artifact semantics:
 
 Downstream rebuild/replay/report code should not care whether evidence came from MCP, Playwright, CloakBrowser, or remote CDP.
 
-Native BrowserProvider-backed manifest entries should include non-secret `browser_provider` and `browser_provider_transport` metadata when available.
+Native BrowserProvider-backed manifest entries should include non-secret `browser_provider` and `browser_provider_transport` metadata when available. CDP-enhanced collectors may emit `unsupported` payloads when a provider lacks CDP or when event-backed caches are not implemented; this is preferred over silently omitting artifact files.
 
 ## 12. Implementation status
 

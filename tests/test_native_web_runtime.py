@@ -9,6 +9,13 @@ from reverse_deepagent.browser import BrowserPageRef, BrowserProviderCapabilitie
 from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
 
 
+class FakeCDPSession:
+    def send(self, method, params=None):
+        if method == "Network.getResponseBody":
+            return {"body": '{"native":true}', "base64Encoded": False}
+        return {}
+
+
 class FakeRawPage:
     def __init__(self, context) -> None:
         self.context = context
@@ -40,6 +47,18 @@ class FakeRawPage:
         """
 
     def evaluate(self, expression):
+        if "performance.getEntriesByType" in expression:
+            return [
+                {
+                    "name": self.url.rstrip("/") + "/api/search",
+                    "initiatorType": "xmlhttprequest",
+                    "startTime": 1.0,
+                    "duration": 3.0,
+                    "transferSize": 256,
+                    "encodedBodySize": 128,
+                    "decodedBodySize": 128,
+                }
+            ]
         return {
             "cookie": "",
             "localStorage": {"demo": "1"},
@@ -47,6 +66,9 @@ class FakeRawPage:
             "navigator": {"userAgent": "fake-native", "webdriver": False},
             "timezoneOffset": 0,
         }
+
+    def cdp_session(self):
+        return FakeCDPSession()
 
     def screenshot(self, **kwargs):
         return b"png"
@@ -58,6 +80,7 @@ class FakeRequest:
         self.method = "GET"
         self.resource_type = "xhr"
         self.headers = {}
+        self.request_id = "req-1"
 
 
 class FakeResponse:
@@ -77,6 +100,9 @@ class FakeContext:
         page = FakeRawPage(self)
         self.pages.append(page)
         return page
+
+    def new_cdp_session(self, page):
+        return page.cdp_session()
 
     def close(self):
         self.closed = True
@@ -176,6 +202,10 @@ class NativeWebRuntimeTests(unittest.TestCase):
             script_inventory = json.loads(Path(artifacts["workspace_script_inventory"]).read_text(encoding="utf-8"))
             console_messages = json.loads(Path(artifacts["workspace_console_messages"]).read_text(encoding="utf-8"))
             navigation_events = json.loads(Path(artifacts["workspace_navigation_events"]).read_text(encoding="utf-8"))
+            request_initiators = json.loads(Path(artifacts["workspace_request_initiators"]).read_text(encoding="utf-8"))
+            response_bodies = json.loads(Path(artifacts["workspace_response_bodies"]).read_text(encoding="utf-8"))
+            source_contexts = json.loads(Path(artifacts["workspace_source_contexts"]).read_text(encoding="utf-8"))
+            websocket_frames = json.loads(Path(artifacts["workspace_websocket_frames"]).read_text(encoding="utf-8"))
             manifest = json.loads(Path(artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
 
         self.assertEqual(provider.started, 1)
@@ -186,10 +216,18 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(script_inventory["count"], 2)
         self.assertEqual(console_messages["count"], 0)
         self.assertEqual(navigation_events["events"], ["navigated:https://example.test/app"])
+        self.assertEqual(request_initiators["status"], "success")
+        self.assertEqual(request_initiators["count"], 1)
+        self.assertEqual(response_bodies["status"], "success")
+        self.assertEqual(response_bodies["items"][0]["preview"], '{"native":true}')
+        self.assertEqual(source_contexts["status"], "unsupported")
+        self.assertEqual(websocket_frames["status"], "unsupported")
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")
         self.assertEqual(manifest_by_key["workspace_navigation_events"]["category"], "trace")
+        self.assertEqual(manifest_by_key["workspace_response_bodies"]["category"], "network")
+        self.assertEqual(manifest_by_key["workspace_websocket_frames"]["category"], "network")
 
 
 if __name__ == "__main__":

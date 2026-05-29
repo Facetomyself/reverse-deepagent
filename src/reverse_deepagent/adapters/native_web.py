@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
-from reverse_deepagent.browser.collectors import ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
+from reverse_deepagent.browser.collectors import CDPEnhancedCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
 from reverse_deepagent.browser.providers import CloakBrowserConfig, CloakBrowserProvider, PlaywrightChromiumConfig, PlaywrightChromiumProvider
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
@@ -124,9 +124,10 @@ class NativeWebRuntime(WebReverseRuntime):
         source_hits = ScriptCollector().search(script_inventory, task_card.target_param_or_api)
         network_snapshot = network.snapshot()
         console_snapshot = console.snapshot()
+        cdp_snapshot = CDPEnhancedCollector().collect(page, network_snapshot)
 
-        evidence = self._build_evidence(dom, storage, script_inventory, source_hits, network_snapshot, console_snapshot, navigation_events)
-        artifacts = self._build_artifacts(network_snapshot, source_hits, storage, dom, console_snapshot)
+        evidence = self._build_evidence(dom, storage, script_inventory, source_hits, network_snapshot, console_snapshot, navigation_events, cdp_snapshot)
+        artifacts = self._build_artifacts(network_snapshot, source_hits, storage, dom, console_snapshot, cdp_snapshot)
         facts = [
             "Native Web runtime session is available",
             f"Browser provider: {self.browser_provider.describe().provider_id}",
@@ -203,6 +204,7 @@ class NativeWebRuntime(WebReverseRuntime):
         network_snapshot: dict[str, Any],
         console_snapshot: dict[str, Any],
         navigation_events: list[str],
+        cdp_snapshot: dict[str, Any],
     ) -> list[EvidenceItem]:
         return [
             EvidenceItem(summary="Native Web DOM snapshot collected", kind=EvidenceKind.DYNAMIC, source="dom_snapshot", details=dom, confidence=ConfidenceLevel.MEDIUM),
@@ -212,6 +214,10 @@ class NativeWebRuntime(WebReverseRuntime):
             EvidenceItem(summary="Native Web script inventory collected", kind=EvidenceKind.STATIC, source="script_inventory", details=script_inventory, confidence=ConfidenceLevel.MEDIUM),
             EvidenceItem(summary="Native Web console events collected", kind=EvidenceKind.DYNAMIC, source="console_message", details=console_snapshot, confidence=ConfidenceLevel.MEDIUM),
             EvidenceItem(summary="Native Web navigation events", kind=EvidenceKind.NOTE, source="navigate_page", details={"events": navigation_events}, confidence=ConfidenceLevel.MEDIUM),
+            EvidenceItem(summary="Native Web CDP request initiators collected", kind=EvidenceKind.CALLSTACK, source="get_request_initiator", details=cdp_snapshot.get("request_initiators", {}), confidence=ConfidenceLevel.MEDIUM),
+            EvidenceItem(summary="Native Web CDP response body metadata collected", kind=EvidenceKind.REQUEST, source="response_body_metadata", details=cdp_snapshot.get("response_bodies", {}), confidence=ConfidenceLevel.MEDIUM),
+            EvidenceItem(summary="Native Web CDP script source metadata collected", kind=EvidenceKind.STATIC, source="get_script_source", details=cdp_snapshot.get("script_sources", {}), confidence=ConfidenceLevel.MEDIUM),
+            EvidenceItem(summary="Native Web CDP WebSocket metadata collected", kind=EvidenceKind.WEBSOCKET, source="websocket_frame_metadata", details=cdp_snapshot.get("websocket_frames", {}), confidence=ConfidenceLevel.MEDIUM),
         ]
 
     @staticmethod
@@ -221,6 +227,7 @@ class NativeWebRuntime(WebReverseRuntime):
         storage: dict[str, Any],
         dom: dict[str, Any],
         console_snapshot: dict[str, Any],
+        cdp_snapshot: dict[str, Any],
     ) -> list[ArtifactRef]:
         return [
             ArtifactRef(path="virtual://workspace/network-requests.json", kind=ArtifactKind.JSON, description="Native Web network request samples.", metadata={"count": network_snapshot.get("count", 0)}),
@@ -228,6 +235,10 @@ class NativeWebRuntime(WebReverseRuntime):
             ArtifactRef(path="virtual://workspace/runtime-context.json", kind=ArtifactKind.JSON, description="Native Web runtime context snapshot.", metadata={"ok": storage.get("ok")}),
             ArtifactRef(path="virtual://workspace/dom-snapshot.json", kind=ArtifactKind.JSON, description="Native Web DOM snapshot.", metadata={"html_size": dom.get("html_size")}),
             ArtifactRef(path="virtual://workspace/console-messages.json", kind=ArtifactKind.JSON, description="Native Web console messages.", metadata={"count": console_snapshot.get("count", 0)}),
+            ArtifactRef(path="virtual://workspace/request-initiators.json", kind=ArtifactKind.JSON, description="Native Web CDP request initiator metadata.", metadata={"count": cdp_snapshot.get("request_initiators", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
+            ArtifactRef(path="virtual://workspace/response-bodies.json", kind=ArtifactKind.JSON, description="Native Web CDP response body metadata.", metadata={"count": cdp_snapshot.get("response_bodies", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
+            ArtifactRef(path="virtual://workspace/source-contexts.json", kind=ArtifactKind.JSON, description="Native Web CDP script source metadata.", metadata={"count": cdp_snapshot.get("script_sources", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
+            ArtifactRef(path="virtual://workspace/websocket-frames.json", kind=ArtifactKind.JSON, description="Native Web CDP WebSocket frame metadata.", metadata={"count": cdp_snapshot.get("websocket_frames", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
         ]
 
 

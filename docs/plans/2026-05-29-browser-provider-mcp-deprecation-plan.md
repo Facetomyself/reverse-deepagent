@@ -268,6 +268,8 @@ Acceptance:
 
 ### Phase 8: CDP-enhanced collectors
 
+Status: baseline CDP metadata collector implemented and tested locally; full Debugger.scriptParsed and WebSocket event caches remain pending.
+
 Deliverables:
 
 - CDP session helper.

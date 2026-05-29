@@ -852,6 +852,8 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_source_hits": "source",
     "workspace_source_contexts": "source",
     "workspace_script_inventory": "source",
+    "workspace_response_bodies": "network",
+    "workspace_websocket_frames": "network",
     "workspace_request_initiators": "trace",
     "workspace_navigation_events": "trace",
     "workspace_runtime_context": "runtime-context",
@@ -1384,6 +1386,10 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["request-initiators.json"] = evidence.details
         elif evidence.source == "get_script_source":
             payloads["source-contexts.json"] = evidence.details
+        elif evidence.source == "response_body_metadata":
+            payloads["response-bodies.json"] = evidence.details
+        elif evidence.source == "websocket_frame_metadata":
+            payloads["websocket-frames.json"] = evidence.details
         elif evidence.source == "runtime_context":
             payloads["runtime-context.json"] = evidence.details
         elif evidence.source == "dom_snapshot":

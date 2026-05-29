@@ -42,6 +42,7 @@ class NetworkCollector:
         key = url or f"request-{len(self._order)}"
         if key not in self._requests:
             self._order.append(key)
+        request_id = _safe_call(request, "request_id") or _safe_call(request, "requestId")
         self._requests[key] = {
             **self._requests.get(key, {}),
             "url": url,
@@ -49,6 +50,8 @@ class NetworkCollector:
             "resource_type": _safe_call(request, "resource_type"),
             "headers": _safe_call(request, "headers", {}) or {},
         }
+        if request_id:
+            self._requests[key]["requestId"] = request_id
 
     def record_response(self, response: Any) -> None:
         request = _safe_call(response, "request")
