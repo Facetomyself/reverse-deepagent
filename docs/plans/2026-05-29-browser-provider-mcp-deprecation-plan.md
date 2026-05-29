@@ -64,6 +64,8 @@ reverse-agent-demo \
 
 ### Phase 1: BrowserProvider contract
 
+Status: implemented in the initial contract layer.
+
 Deliverables:
 
 - `src/reverse_deepagent/browser/base.py`
@@ -78,6 +80,13 @@ Acceptance:
 - Unknown provider errors are explicit.
 - Capability metadata is JSON-serializable and contains no secrets.
 - No browser process is launched by metadata listing.
+
+Current evidence:
+
+- `BrowserProviderCapabilities` is serializable through `model_dump(mode="json")`.
+- `BrowserProviderRegistry.list_metadata()` returns capability metadata without invoking provider factories.
+- Secret-like capability metadata keys are rejected at registration time.
+- Unit tests: `tests.test_browser_provider_contract`, `tests.test_browser_provider_registry`.
 
 ### Phase 2: Playwright-compatible session layer
 

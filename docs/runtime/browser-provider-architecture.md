@@ -280,7 +280,24 @@ The native runtime should preserve current artifact semantics:
 
 Downstream rebuild/replay/report code should not care whether evidence came from MCP, Playwright, CloakBrowser, or remote CDP.
 
-## 12. Deprecation posture
+## 12. Implementation status
+
+Current implementation status:
+
+| Layer | Status | Evidence |
+| --- | --- | --- |
+| BrowserProvider capability schema | Implemented | `src/reverse_deepagent/browser/capabilities.py` |
+| BrowserProvider / BrowserSession / BrowserPage Protocols | Implemented | `src/reverse_deepagent/browser/base.py` |
+| BrowserProvider registry | Implemented | `src/reverse_deepagent/browser/registry.py` |
+| Native collectors | Planned | Phase 3 in migration plan |
+| Playwright provider | Planned | Phase 2 in migration plan |
+| CloakBrowser provider | Planned | Phase 5 in migration plan |
+| NativeWebRuntime | Planned | Phase 4 in migration plan |
+| MCP legacy alias | Planned | Phase 8 in migration plan |
+
+The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services.
+
+## 13. Deprecation posture
 
 Use these terms consistently:
 
