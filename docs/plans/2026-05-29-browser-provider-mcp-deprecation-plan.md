@@ -90,6 +90,8 @@ Current evidence:
 
 ### Phase 2: Playwright-compatible session layer
 
+Status: contract and provider skeleton implemented; real browser smoke pending optional Playwright installation and browser binary availability.
+
 Deliverables:
 
 - `src/reverse_deepagent/browser/session.py`
@@ -102,6 +104,18 @@ Acceptance:
 - Can open a URL, read title/content, evaluate JS, and close cleanly.
 - Can produce a normalized `BrowserSessionInfo` equivalent.
 - No MCP process is started.
+
+Current evidence:
+
+- `PlaywrightBrowserSessionAdapter` and `PlaywrightBrowserPageAdapter` wrap Playwright-compatible objects.
+- `PlaywrightChromiumProvider` exposes serializable capabilities and structured unavailable errors when `playwright` is missing.
+- Optional dependency group: `.[browser]` installs `playwright` but does not force browser binary download in default installs.
+- Unit tests: `tests.test_playwright_session`, `tests.test_playwright_provider`.
+
+Remaining validation:
+
+- Install `.[browser]` in an environment allowed to download/use Playwright browsers.
+- Run a headed/headless smoke that opens a URL, captures title/content/screenshot, and closes without residual browser processes.
 
 ### Phase 3: Native collector baseline
 

@@ -290,7 +290,7 @@ Current implementation status:
 | BrowserProvider / BrowserSession / BrowserPage Protocols | Implemented | `src/reverse_deepagent/browser/base.py` |
 | BrowserProvider registry | Implemented | `src/reverse_deepagent/browser/registry.py` |
 | Native collectors | Planned | Phase 3 in migration plan |
-| Playwright provider | Planned | Phase 2 in migration plan |
+| Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Planned | Phase 5 in migration plan |
 | NativeWebRuntime | Planned | Phase 4 in migration plan |
 | MCP legacy alias | Planned | Phase 8 in migration plan |

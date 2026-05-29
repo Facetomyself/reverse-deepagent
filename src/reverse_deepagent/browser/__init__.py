@@ -9,6 +9,7 @@ from .base import (
 )
 from .capabilities import BrowserProviderCapabilities, metadata_has_secret_like_keys
 from .registry import BrowserProviderFactory, BrowserProviderRegistration, BrowserProviderRegistry, BrowserProviderRegistryError
+from .session import PlaywrightBrowserPageAdapter, PlaywrightBrowserSessionAdapter, PlaywrightCDPSessionAdapter
 
 __all__ = [
     "BrowserCDPSession",
@@ -23,5 +24,8 @@ __all__ = [
     "BrowserProviderRegistryError",
     "BrowserProviderUnavailableError",
     "BrowserSession",
+    "PlaywrightBrowserPageAdapter",
+    "PlaywrightBrowserSessionAdapter",
+    "PlaywrightCDPSessionAdapter",
     "metadata_has_secret_like_keys",
 ]
