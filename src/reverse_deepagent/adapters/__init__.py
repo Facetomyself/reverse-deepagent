@@ -5,6 +5,7 @@ from .lightweight_web import (
     LightweightWebRuntimeConfig,
     create_lightweight_web_runtime,
 )
+from .native_web import NativeWebRuntime, create_native_web_runtime
 from .platforms import (
     AndroidAdbRuntime,
     IosSimulatorRuntime,
@@ -27,4 +28,6 @@ __all__ = [
     "PlatformRuntimeConfig",
     "create_jsreverser_mcp_runtime",
     "create_lightweight_web_runtime",
+    "NativeWebRuntime",
+    "create_native_web_runtime",
 ]

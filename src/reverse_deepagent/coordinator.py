@@ -18,6 +18,7 @@ from reverse_deepagent.adapters.jsreverser import (
     create_jsreverser_mcp_runtime,
 )
 from reverse_deepagent.adapters.lightweight_web import LightweightWebRuntimeConfig, create_lightweight_web_runtime
+from reverse_deepagent.adapters.native_web import create_native_web_runtime
 from reverse_deepagent.evidence import promote_evidence, promotion_workspace_payloads
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.review_gate import evaluate_review_gate, review_gate_workspace_payload
@@ -445,6 +446,27 @@ def _browser_cli_runtime_factory(
     return create_lightweight_web_runtime(config=config)
 
 
+def _native_web_runtime_factory(
+    *,
+    browser: str | None = None,
+    browser_provider: str | None = None,
+    browser_headless: bool | None = None,
+    browser_profile_dir: str | None = None,
+    browser_executable_path: str | None = None,
+    browser_args: list[str] | None = None,
+    browser_url: str | None = None,
+    **_: Any,
+):
+    return create_native_web_runtime(
+        browser=browser or browser_provider,
+        browser_headless=True if browser_headless is None else browser_headless,
+        browser_profile_dir=browser_profile_dir,
+        browser_executable_path=browser_executable_path,
+        browser_args=browser_args or [],
+        browser_url=browser_url,
+    )
+
+
 def build_default_runtime_registry() -> RuntimeBackendRegistry:
     """Build the default runtime backend registry without starting external processes."""
 
@@ -493,6 +515,36 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                 artifact_kinds=["json", "export", "rebuild", "markdown"],
                 notes=["requires jsreverser-mcp and a reachable Chrome DevTools endpoint"],
                 config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND},
+            ),
+        )
+    )
+
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="native-web",
+            aliases=("web", "browser-native"),
+            factory=_native_web_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="native-web",
+                display_name="Native Web Runtime",
+                transport="browser-provider",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=False,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
+                artifact_kinds=["json", "markdown", "screenshot"],
+                notes=[
+                    "native BrowserProvider-backed Web runtime",
+                    "does not require jsreverser-mcp",
+                    "default provider is playwright-chromium",
+                ],
+                config={"default_browser_provider": "playwright-chromium"},
             ),
         )
     )
@@ -1243,7 +1295,7 @@ def run_reverse_pipeline(
         final_result = _final_from_recon(task_card, route_result, recon_result)
         export_bundle = active_runtime.export_reverse_artifacts(final_result=final_result).model_dump(mode="json")
     finally:
-        if owns_runtime and runtime_kind == "mcp":
+        if owns_runtime:
             close = getattr(active_runtime, "close", None)
             if callable(close):
                 close()

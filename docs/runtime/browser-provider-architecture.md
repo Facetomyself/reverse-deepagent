@@ -292,7 +292,7 @@ Current implementation status:
 | Native collectors | Baseline implemented | `src/reverse_deepagent/browser/collectors/` |
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Planned | Phase 5 in migration plan |
-| NativeWebRuntime | Planned | Phase 4 in migration plan |
+| NativeWebRuntime | Minimal implementation | `src/reverse_deepagent/adapters/native_web.py` |
 | MCP legacy alias | Planned | Phase 8 in migration plan |
 
 The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services.

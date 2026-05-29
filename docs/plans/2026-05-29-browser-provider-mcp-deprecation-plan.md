@@ -151,6 +151,8 @@ Remaining validation:
 
 ### Phase 4: NativeWebRuntime
 
+Status: minimal runtime implemented and registered; advanced provider options and real browser smoke remain pending.
+
 Deliverables:
 
 - `src/reverse_deepagent/adapters/native_web.py`
@@ -169,6 +171,19 @@ Acceptance:
 - `reverse-agent-demo --runtime native-web --browser playwright-chromium` produces `ReconResult` and current artifact files.
 - `backend-artifact-manifest.json` marks producer backend as `native-web` and provider as metadata.
 - Existing mock and MCP tests remain green.
+
+Current evidence:
+
+- `native-web` is registered with aliases `web` and `browser-native`.
+- `NativeWebRuntime` can run with a fake BrowserProvider and write current core artifacts without MCP.
+- CLI now accepts `--browser`, `--browser-profile-dir`, `--browser-headless`, `--browser-executable-path`, and `--browser-args`.
+- Unit tests: `tests.test_native_web_runtime`.
+
+Remaining validation:
+
+- Add `--browser-humanize`, `--browser-proxy`, `--browser-locale`, and `--browser-timezone` once CloakBrowser/provider configs need them.
+- Run real `reverse-agent-demo --runtime native-web --browser playwright-chromium` after installing `.[browser]` and a Playwright browser binary.
+- Ensure backend manifest carries provider metadata in downstream artifact entries.
 
 ### Phase 5: CloakBrowser provider
 

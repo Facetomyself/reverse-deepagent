@@ -836,6 +836,7 @@ print(capabilities.model_dump(mode="json"))
 `build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。当前已注册：
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
+- `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前默认 provider 为 `playwright-chromium`
 - `mcp`（别名：`jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 运行时，过渡期保留
 - `playwright-cli`（别名：`playwright`, `pw-cli`）：轻量 Playwright CLI 探测与静态源码拉取，不主动启动浏览器
 - `chrome-cdp`（别名：`cdp`, `devtools`）：连接既有 Chrome DevTools 端点，不主动启动 Chrome

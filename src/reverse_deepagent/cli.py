@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 from pathlib import Path
 from typing import Sequence
 
@@ -60,6 +61,11 @@ def build_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cdp-browser-url", default=None, help="Existing Chrome DevTools browser URL for --runtime chrome-cdp. Does not launch Chrome.")
     parser.add_argument("--browser-cli-command", default=None, help="Generic browser CLI command for --runtime browser-cli.")
     parser.add_argument("--lightweight-request-timeout", type=float, default=None, help="Timeout for lightweight backend command / HTTP probes.")
+    parser.add_argument("--browser", default=None, help="BrowserProvider id for --runtime native-web, such as playwright-chromium or cloakbrowser.")
+    parser.add_argument("--browser-profile-dir", default=None, help="Optional BrowserProvider persistent profile directory.")
+    parser.add_argument("--browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Run BrowserProvider in headless mode when supported.")
+    parser.add_argument("--browser-executable-path", default=None, help="Optional browser executable path for BrowserProvider launch.")
+    parser.add_argument("--browser-args", default="", help="Extra BrowserProvider args as a shell-split string.")
     return parser
 
 
@@ -91,6 +97,11 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
         cdp_browser_url=args.cdp_browser_url,
         browser_cli_command=args.browser_cli_command,
         request_timeout=args.lightweight_request_timeout,
+        browser=args.browser,
+        browser_profile_dir=args.browser_profile_dir,
+        browser_headless=args.browser_headless,
+        browser_executable_path=args.browser_executable_path,
+        browser_args=shlex.split(args.browser_args) if args.browser_args else None,
     )
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
     return 0
