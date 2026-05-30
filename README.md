@@ -108,6 +108,8 @@ reverse-agent-demo \
   --task-text "https://example.com 查看登录态和关键请求"
 ```
 
+本机已经验证过 `reverse-agent-doctor --browser cloakbrowser --launch-browser-smoke` 和 `reverse-agent-demo --runtime native-web --browser cloakbrowser` 的真实 smoke；如果要复现到别的机器，优先保证 `.[cloak]` 安装和 CloakBrowser 二进制可用。
+
 BrowserProvider doctor 示例，默认不启动真实浏览器，也不依赖 MCP：
 
 ```bash

@@ -192,12 +192,12 @@ Current evidence:
 Remaining validation:
 
 - Re-run `reverse-agent-demo --runtime native-web --browser playwright-chromium` against a freshly installed Playwright browser binary when available, to confirm the package-managed browser path in addition to the system Chrome smoke.
-- Validate `--browser-humanize`, `--browser-proxy`, `--browser-locale`, and `--browser-timezone` on real CloakBrowser once the binary is available.
-- Ensure backend manifest carries provider metadata in downstream artifact entries.
+- Keep `--browser-humanize`, `--browser-locale`, and `--browser-timezone` covered by real CloakBrowser smoke; validate `--browser-proxy` / `--browser-geoip` only in a controlled proxy environment.
+- Ensure backend manifest continues to carry provider metadata in downstream artifact entries.
 
 ### Phase 5: CloakBrowser provider
 
-Status: provider skeleton, optional dependency, and browser-provider doctor metadata checks added; real CloakBrowser binary smoke remains pending.
+Status: provider skeleton, optional dependency, browser-provider doctor metadata checks, real launch smoke, persistent-context smoke, and native-web fixture smoke are verified locally.
 
 Deliverables:
 
@@ -224,13 +224,15 @@ Current evidence:
 - Missing dependency raises `BrowserProviderUnavailableError` with install guidance.
 - `native-web` factory can select `--browser cloakbrowser` without importing or launching CloakBrowser during metadata listing.
 - Unit tests: `tests.test_cloakbrowser_provider`.
+- Real `reverse-agent-doctor --browser cloakbrowser --launch-browser-smoke` passes locally.
+- Real persistent-context smoke with `--browser-profile-dir` passes locally.
+- Real `reverse-agent-demo --runtime native-web --browser cloakbrowser` fixture smoke passes locally and emits native collector artifacts.
 
 Remaining validation:
 
-- Install `.[cloak]` in an environment allowed to download/use CloakBrowser binaries.
-- Run persistent-context smoke against a safe local page.
-- BrowserProvider doctor support is implemented for metadata/dependency checks; keep real launch smoke optional.
-- Keep `docs/runtime/cloakbrowser-provider.md` updated after real binary smoke.
+- Keep the real browser smoke path documented for environments that can also run CloakBrowser manually.
+- Maintain the provider / doctor / collector capability gates as the browser wrapper evolves.
+- Keep `docs/runtime/cloakbrowser-provider.md` updated after future binary or wrapper changes.
 
 ### Phase 6: BrowserProvider doctor mode
 
@@ -269,7 +271,7 @@ Acceptance:
 
 ### Phase 8: CDP-enhanced collectors
 
-Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable, and `remote-cdp` provides a real smoke path against an existing Chrome DevTools endpoint. Playwright real browser smoke is verified locally; CloakBrowser real browser smoke remains pending.
+Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable, and `remote-cdp` provides a real smoke path against an existing Chrome DevTools endpoint. Playwright and CloakBrowser real browser smoke are both verified locally.
 
 Deliverables:
 

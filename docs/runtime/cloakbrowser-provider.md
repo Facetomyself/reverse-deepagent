@@ -89,12 +89,12 @@ provider capability metadata 会将 proxy 脱敏为 `<configured>`。
 | --- | --- | --- |
 | Provider capability metadata | 已实现 | `CloakBrowserProvider.describe()` 不启动浏览器。 |
 | 缺依赖错误 | 已实现 | 返回 `BrowserProviderUnavailableError` 和安装建议。 |
-| launch 模式 | skeleton 已实现 | 通过 `cloakbrowser.launch(...)` 创建 Playwright-compatible session。 |
-| persistent context | skeleton 已实现 | 配置 `--browser-profile-dir` 时走 `launch_persistent_context(...)`。 |
+| launch 模式 | 已验证 | 通过 `cloakbrowser.launch(...)` 创建 Playwright-compatible session。 |
+| persistent context | 已验证 | 配置 `--browser-profile-dir` 时走 `launch_persistent_context(...)`。 |
 | connect 模式 | 暂不支持 | 后续可拆 `remote-cdp` / `cloakserve` provider。 |
 | native collectors 复用 | 已接入运行时工厂 | collector 仍由 `NativeWebRuntime` 统一驱动。 |
 | doctor 支持 | 已实现 metadata / dependency 检查 | `reverse-agent-doctor --browser cloakbrowser` 默认不启动浏览器。 |
-| 真实二进制 smoke | 可选显式触发，待本机验证 | 使用 `--launch-browser-smoke` 才会启动 provider。 |
+| 真实二进制 smoke | 已在本机验证 | 使用 `--launch-browser-smoke` 才会启动 provider。 |
 
 ## 4.1 Doctor 检查
 
@@ -134,8 +134,8 @@ reverse-agent-doctor \
 
 ## 6. 后续计划
 
-1. 验证真实 `cloakbrowser.launch(...)` 与 `launch_persistent_context(...)` 的参数兼容性。
-2. 将 `--launch-browser-smoke` 接入本地 fixture 页面，而不只使用 `about:blank`。
-3. 在真实 CloakBrowser 环境下确认 dependency probe、profile 和 humanize 参数行为。
-4. 将 CDP-enhanced collectors 接入 capability gate：支持则采 request initiator、script source、WebSocket frame，不支持则降级为 baseline evidence。
+1. 已在本机验证真实 `cloakbrowser.launch(...)` 与 `launch_persistent_context(...)` 的参数兼容性。
+2. 已将 `--launch-browser-smoke` 接入本地 fixture 页面，不再只使用 `about:blank`。
+3. 已在真实 CloakBrowser 环境下确认 dependency probe、profile 和 humanize 参数行为。
+4. 持续保持 CDP-enhanced collectors 接入 capability gate：支持则采 request initiator、script source、WebSocket frame，不支持则降级为 baseline evidence。
 5. 将 CloakBrowser smoke 纳入本地手动测试，不放入默认公开 CI。
