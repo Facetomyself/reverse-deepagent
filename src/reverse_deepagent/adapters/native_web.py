@@ -237,12 +237,14 @@ class NativeWebRuntime(WebReverseRuntime):
             paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
             callframe_count = len(result.callframes)
             callframe_evaluation_count = len(result.callframe_evaluations)
+            debugger_action_count = len(result.debugger_actions)
             verification = [
                 f"breakpoint_status={result.status}",
                 f"breakpoint_supported={result.supported}",
                 f"paused_status={paused_status or 'unknown'}",
                 f"callframe_count={callframe_count}",
                 f"callframe_evaluation_count={callframe_evaluation_count}",
+                f"debugger_action_count={debugger_action_count}",
                 f"context_keys={sorted(context.keys())}",
             ]
             if result.trigger:
@@ -297,8 +299,20 @@ class NativeWebRuntime(WebReverseRuntime):
                         },
                     )
                 )
+            if (spec and spec.debugger_actions) or result.debugger_actions:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-actions.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger control action snapshot.",
+                        metadata={
+                            "count": debugger_action_count,
+                            "paused_status": paused_status or "unknown",
+                        },
+                    )
+                )
             if paused_status == "success":
-                next_action = "inspect_callframes_or_resume"
+                next_action = "inspect_debugger_action_result" if debugger_action_count else "inspect_callframes_or_resume"
             elif result.status in {"success", "partial"}:
                 next_action = "wait_for_breakpoint"
             else:

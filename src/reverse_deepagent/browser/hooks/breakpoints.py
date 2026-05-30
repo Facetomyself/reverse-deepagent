@@ -21,6 +21,7 @@ class BreakpointSpec:
     auto_resume: bool = True
     callframe_evaluations: list[str] = field(default_factory=list)
     callframe_index: int = 0
+    debugger_actions: list[str] = field(default_factory=list)
 
     @classmethod
     def from_context(cls, context: dict[str, Any] | None = None) -> "BreakpointSpec | None":
@@ -40,6 +41,14 @@ class BreakpointSpec:
             or context.get("evaluate_on_callframe")
             or context.get("evaluateOnCallFrame")
         )
+        debugger_actions_raw = (
+            context.get("debugger_actions")
+            or context.get("debuggerActions")
+            or context.get("pause_actions")
+            or context.get("pauseActions")
+            or context.get("step_actions")
+            or context.get("stepActions")
+        )
         callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex", 0))
         return cls(
             url_pattern=str(url_pattern),
@@ -51,6 +60,7 @@ class BreakpointSpec:
             auto_resume=bool(context.get("auto_resume", context.get("autoResume", True))),
             callframe_evaluations=cls._coerce_evaluations(evaluations_raw),
             callframe_index=int(callframe_index_raw or 0),
+            debugger_actions=cls._coerce_actions(debugger_actions_raw),
         )
 
     def to_cdp_params(self) -> dict[str, Any]:
@@ -82,6 +92,24 @@ class BreakpointSpec:
             return expressions
         return []
 
+    @staticmethod
+    def _coerce_actions(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            stripped = value.strip()
+            return [stripped] if stripped else []
+        if isinstance(value, Iterable) and not isinstance(value, (dict, bytes, bytearray)):
+            actions: list[str] = []
+            for item in value:
+                if item is None:
+                    continue
+                action = str(item).strip()
+                if action:
+                    actions.append(action)
+            return actions
+        return []
+
 
 @dataclass(slots=True)
 class BreakpointResult:
@@ -91,6 +119,7 @@ class BreakpointResult:
     paused: dict[str, Any] = field(default_factory=dict)
     callframes: list[dict[str, Any]] = field(default_factory=list)
     callframe_evaluations: list[dict[str, Any]] = field(default_factory=list)
+    debugger_actions: list[dict[str, Any]] = field(default_factory=list)
     trigger: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     reason: str | None = None
@@ -106,6 +135,8 @@ class BreakpointResult:
             "callframe_count": len(self.callframes),
             "callframe_evaluations": self.callframe_evaluations,
             "callframe_evaluation_count": len(self.callframe_evaluations),
+            "debugger_actions": self.debugger_actions,
+            "debugger_action_count": len(self.debugger_actions),
             "trigger": self.trigger,
             "error": self.error,
             "reason": self.reason,
@@ -135,6 +166,7 @@ class BreakpointManager:
                 paused=self._paused_summary(paused_events, pause_subscription),
                 callframes=self._callframes_from_paused(paused_events),
                 callframe_evaluations=self._evaluations_from_paused(paused_events),
+                debugger_actions=self._debugger_actions_from_paused(paused_events),
                 trigger=trigger,
                 error=str(exc),
             )
@@ -143,6 +175,7 @@ class BreakpointManager:
         paused = self._paused_summary(paused_events, pause_subscription)
         callframes = self._callframes_from_paused(paused_events)
         evaluations = self._evaluations_from_paused(paused_events)
+        debugger_actions = self._debugger_actions_from_paused(paused_events)
         return BreakpointResult(
             status="success" if breakpoint_id else "partial",
             supported=True,
@@ -159,6 +192,7 @@ class BreakpointManager:
             paused=paused,
             callframes=callframes,
             callframe_evaluations=evaluations,
+            debugger_actions=debugger_actions,
             trigger=trigger,
         )
 
@@ -168,10 +202,15 @@ class BreakpointManager:
             return {"supported": False, "reason": "cdp_event_subscription_unavailable"}
 
         def handle_paused(params: Any) -> None:
+            first_pause = not paused_events
             paused = self._normalize_paused(params)
-            paused["evaluations"] = self._evaluate_callframe_expressions(session, paused.get("callFrames", []), spec)
+            paused["evaluations"] = []
+            paused["debugger_actions"] = []
             paused_events.append(paused)
-            if not spec.auto_resume:
+            if first_pause:
+                paused["evaluations"] = self._evaluate_callframe_expressions(session, paused.get("callFrames", []), spec)
+                paused["debugger_actions"] = self._run_debugger_actions(session, spec)
+            if not self._should_auto_resume(spec, paused["debugger_actions"]):
                 return
             try:
                 session.send("Debugger.resume", {})
@@ -231,6 +270,13 @@ class BreakpointManager:
             return []
         evaluations = paused_events[0].get("evaluations", [])
         return evaluations if isinstance(evaluations, list) else []
+
+    @staticmethod
+    def _debugger_actions_from_paused(paused_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not paused_events:
+            return []
+        actions = paused_events[0].get("debugger_actions", [])
+        return actions if isinstance(actions, list) else []
 
     @classmethod
     def _normalize_paused(cls, params: Any) -> dict[str, Any]:
@@ -293,6 +339,62 @@ class BreakpointManager:
                     }
                 )
         return evaluations
+
+    def _run_debugger_actions(self, session: Any, spec: BreakpointSpec) -> list[dict[str, Any]]:
+        if not spec.debugger_actions:
+            return []
+        results: list[dict[str, Any]] = []
+        for action in spec.debugger_actions:
+            method = self._normalize_debugger_action(action)
+            if not method:
+                results.append(
+                    {
+                        "action": action,
+                        "ok": False,
+                        "error": "unsupported_debugger_action",
+                    }
+                )
+                continue
+            try:
+                payload = session.send(method, {})
+                results.append(
+                    {
+                        "action": action,
+                        "method": method,
+                        "ok": True,
+                        "result": payload if isinstance(payload, dict) else {"value": payload},
+                    }
+                )
+            except Exception as exc:
+                results.append(
+                    {
+                        "action": action,
+                        "method": method,
+                        "ok": False,
+                        "error": str(exc),
+                    }
+                )
+        return results
+
+    @staticmethod
+    def _should_auto_resume(spec: BreakpointSpec, debugger_actions: list[dict[str, Any]]) -> bool:
+        if not spec.auto_resume:
+            return False
+        successful_methods = {str(item.get("method")) for item in debugger_actions if item.get("ok") and item.get("method")}
+        return not successful_methods.intersection({"Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"})
+
+    @staticmethod
+    def _normalize_debugger_action(action: str) -> str | None:
+        normalized = action.strip().replace("-", "_").lower()
+        if normalized in {"resume"}:
+            return "Debugger.resume"
+        if normalized in {"step_over", "stepover", "over"}:
+            return "Debugger.stepOver"
+        if normalized in {"step_into", "stepinto", "into"}:
+            return "Debugger.stepInto"
+        if normalized in {"step_out", "stepout", "out"}:
+            return "Debugger.stepOut"
+        return None
 
     @staticmethod
     def _normalize_callframe_evaluation(expression: str, payload: Any, callframe_index: int, callframe_id: str) -> dict[str, Any]:
