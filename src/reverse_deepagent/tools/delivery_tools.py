@@ -22,6 +22,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         overwrite: bool = False,
         commit_manifest_revision: bool = False,
+        commit_backend_manifest_mutation: bool = False,
+        backend_manifest_path: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or apply local filesystem delivery for reviewed artifact paths."""
@@ -40,6 +42,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
             mode=DeliveryExecutionMode(mode),
             overwrite=overwrite,
             commit_manifest_revision=commit_manifest_revision,
+            commit_backend_manifest_mutation=commit_backend_manifest_mutation,
+            backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
             metadata=metadata,
         )
         return LocalDeliveryExecutor(config).execute(artifacts).to_dict()
@@ -47,7 +51,9 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
     execute_local_delivery.__name__ = "execute_local_delivery"
     execute_local_delivery.__doc__ = (
         "Plan or apply local filesystem delivery. artifacts_json is a JSON list with source_path, optional artifact_key, "
-        "destination_name, required, and metadata. mode defaults to dry-run; apply copies files locally and writes receipt/journal. commit_manifest_revision can additionally write a local delivery-manifest-revision.json."
+        "destination_name, required, and metadata. mode defaults to dry-run; apply copies files locally and writes receipt/journal. "
+        "commit_manifest_revision can additionally write a local delivery-manifest-revision.json. "
+        "commit_backend_manifest_mutation writes a local mutation record plus patched backend manifest copy without mutating the source manifest in place."
     )
     return execute_local_delivery
 
