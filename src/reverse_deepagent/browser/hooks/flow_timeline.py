@@ -173,6 +173,8 @@ class FlowTimelineResult:
     correlation_groups: list[dict[str, Any]] = field(default_factory=list)
     stitch_candidates: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_dry_runs: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_conflict_resolutions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_conflict_resolution_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_policy_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_policy_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_materialization_plans: list[dict[str, Any]] = field(default_factory=list)
@@ -211,6 +213,9 @@ class FlowTimelineResult:
             "stitch_candidates": self.stitch_candidates,
             "auto_stitch_dry_run_count": len(self.auto_stitch_dry_runs),
             "auto_stitch_dry_runs": self.auto_stitch_dry_runs,
+            "auto_stitch_conflict_resolution_count": len(self.auto_stitch_conflict_resolutions),
+            "auto_stitch_conflict_resolutions": self.auto_stitch_conflict_resolutions,
+            "auto_stitch_conflict_resolution_summary": self.auto_stitch_conflict_resolution_summary,
             "auto_stitch_policy_decision_count": len(self.auto_stitch_policy_decisions),
             "auto_stitch_policy_decisions": self.auto_stitch_policy_decisions,
             "auto_stitch_policy_summary": self.auto_stitch_policy_summary,
@@ -262,12 +267,15 @@ class FlowTimelineManager:
         correlation_groups = self._correlation_groups(entries)
         stitch_candidates = self._stitch_candidates(correlation_groups, entries)
         auto_stitch_dry_runs = self._auto_stitch_dry_runs(stitch_candidates)
+        auto_stitch_conflict_resolutions = self._auto_stitch_conflict_resolutions(auto_stitch_dry_runs, stitch_candidates)
+        auto_stitch_conflict_resolution_summary = self._auto_stitch_conflict_resolution_summary(auto_stitch_conflict_resolutions)
         auto_stitch_policy_decisions = self._auto_stitch_policy_decisions(auto_stitch_dry_runs, spec.auto_stitch_policy)
         auto_stitch_policy_summary = self._auto_stitch_policy_summary(auto_stitch_policy_decisions, spec.auto_stitch_policy)
         auto_stitch_materialization_plans = self._auto_stitch_materialization_plans(
             auto_stitch_policy_decisions,
             auto_stitch_dry_runs,
             stitch_candidates,
+            auto_stitch_conflict_resolutions,
             spec.auto_stitch_policy,
         )
         auto_stitch_materialization_plans = self._apply_materialization_review_decisions(
@@ -323,6 +331,8 @@ class FlowTimelineManager:
             correlation_groups=correlation_groups,
             stitch_candidates=stitch_candidates,
             auto_stitch_dry_runs=auto_stitch_dry_runs,
+            auto_stitch_conflict_resolutions=auto_stitch_conflict_resolutions,
+            auto_stitch_conflict_resolution_summary=auto_stitch_conflict_resolution_summary,
             auto_stitch_policy_decisions=auto_stitch_policy_decisions,
             auto_stitch_policy_summary=auto_stitch_policy_summary,
             auto_stitch_materialization_plans=auto_stitch_materialization_plans,
@@ -784,6 +794,123 @@ class FlowTimelineManager:
                 conflicts.append(f"same_strategy_alternative={other.get('candidate_id')}")
         return cls._unique_strings(conflicts)
 
+    @classmethod
+    def _auto_stitch_conflict_resolutions(
+        cls,
+        dry_runs: list[dict[str, Any]],
+        candidates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Build conservative, review-only conflict resolution records.
+
+        The resolver is intentionally non-authoritative: it can identify a
+        deterministic review-preferred candidate for a conflict set, but it
+        never marks conflicts as applied, never materializes a stitched flow,
+        and never enables automatic stitching.
+        """
+
+        dry_runs_by_candidate_id = {str(item.get("candidate_id")): item for item in dry_runs if item.get("candidate_id")}
+        candidates_by_id = {str(item.get("candidate_id")): item for item in candidates if item.get("candidate_id")}
+        resolutions: list[dict[str, Any]] = []
+        for index, dry_run in enumerate(dry_runs, 1):
+            candidate_id = str(dry_run.get("candidate_id") or "")
+            candidate = candidates_by_id.get(candidate_id, {})
+            conflict_reasons = cls._string_values(dry_run.get("conflict_reasons"))
+            related_candidate_ids = cls._related_conflict_candidate_ids(candidate_id, conflict_reasons)
+            cohort_ids = [item for item in related_candidate_ids if item in dry_runs_by_candidate_id]
+            selected_candidate_id = cls._review_preferred_candidate_id(cohort_ids, dry_runs_by_candidate_id) if conflict_reasons else candidate_id or None
+            alternative_candidate_ids = [item for item in cohort_ids if item != selected_candidate_id]
+            unresolved_conflicts = conflict_reasons
+            status = "review_required" if unresolved_conflicts else "no_conflict"
+            strategy = "prefer_highest_confidence_review_required" if unresolved_conflicts else "no_conflict"
+            resolutions.append(
+                {
+                    "resolution_id": f"auto-stitch-conflict-resolution-{index}",
+                    "candidate_id": candidate_id or None,
+                    "dry_run_id": dry_run.get("dry_run_id"),
+                    "group_id": dry_run.get("group_id"),
+                    "status": status,
+                    "strategy": strategy,
+                    "conflict_reasons": conflict_reasons,
+                    "resolved_conflicts": [],
+                    "unresolved_conflicts": unresolved_conflicts,
+                    "selected_candidate_id": selected_candidate_id,
+                    "alternative_candidate_ids": alternative_candidate_ids,
+                    "related_candidate_ids": cohort_ids,
+                    "entry_sequences": cls._integer_values(candidate.get("entry_sequences")),
+                    "confidence_score": float(dry_run.get("confidence_score") or 0.0),
+                    "review_required": bool(unresolved_conflicts),
+                    "would_materialize": False,
+                    "automatic_stitching": False,
+                    "stitching": False,
+                    "scope": "auto-stitch-conflict-resolution-baseline",
+                    "next_action": "review_conflict_resolution_before_materialization" if unresolved_conflicts else "continue_policy_review",
+                }
+            )
+        return resolutions
+
+    @classmethod
+    def _auto_stitch_conflict_resolution_summary(cls, resolutions: list[dict[str, Any]]) -> dict[str, Any]:
+        conflict_count = sum(1 for item in resolutions if item.get("conflict_reasons"))
+        no_conflict_count = sum(1 for item in resolutions if not item.get("conflict_reasons"))
+        unresolved_count = sum(1 for item in resolutions if item.get("unresolved_conflicts"))
+        return {
+            "resolution_count": len(resolutions),
+            "conflict_count": conflict_count,
+            "no_conflict_count": no_conflict_count,
+            "resolved_by_policy_count": 0,
+            "unresolved_count": unresolved_count,
+            "review_required": bool(conflict_count),
+            "would_materialize": False,
+            "automatic_stitching": False,
+            "stitching": False,
+            "scope": "auto-stitch-conflict-resolution-summary",
+            "next_action": "review_conflict_resolutions_before_materialization" if conflict_count else "continue_policy_review",
+        }
+
+    @classmethod
+    def _related_conflict_candidate_ids(cls, candidate_id: str, conflict_reasons: list[str]) -> list[str]:
+        candidate_ids = [candidate_id] if candidate_id else []
+        for reason in conflict_reasons:
+            if reason.startswith("overlaps_with_"):
+                remainder = reason[len("overlaps_with_") :]
+                other_id = remainder.split(":", 1)[0]
+                if other_id:
+                    candidate_ids.append(other_id)
+            elif reason.startswith("same_strategy_alternative="):
+                other_id = reason.split("=", 1)[1]
+                if other_id:
+                    candidate_ids.append(other_id)
+        return cls._unique_strings(candidate_ids)
+
+    @staticmethod
+    def _review_preferred_candidate_id(
+        candidate_ids: list[str],
+        dry_runs_by_candidate_id: dict[str, dict[str, Any]],
+    ) -> str | None:
+        if not candidate_ids:
+            return None
+
+        def sort_key(candidate_id: str) -> tuple[float, int, str]:
+            dry_run = dry_runs_by_candidate_id.get(candidate_id, {})
+            try:
+                score = float(dry_run.get("confidence_score") or 0.0)
+            except (TypeError, ValueError):
+                score = 0.0
+            path_length = int(dry_run.get("path_length") or 0)
+            return (score, path_length, candidate_id)
+
+        return sorted(candidate_ids, key=sort_key, reverse=True)[0]
+
+    @staticmethod
+    def _integer_values(value: Any) -> list[int]:
+        if not isinstance(value, list):
+            return []
+        integers: list[int] = []
+        for item in value:
+            if isinstance(item, int):
+                integers.append(item)
+        return integers
+
 
     @classmethod
     def _auto_stitch_policy_decisions(
@@ -920,6 +1047,7 @@ class FlowTimelineManager:
         decisions: list[dict[str, Any]],
         dry_runs: list[dict[str, Any]],
         candidates: list[dict[str, Any]],
+        conflict_resolutions: list[dict[str, Any]],
         policy: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Build plan-only materialization proposals for policy-eligible decisions.
@@ -936,12 +1064,14 @@ class FlowTimelineManager:
             return []
         dry_runs_by_id = {dry_run.get("dry_run_id"): dry_run for dry_run in dry_runs}
         candidates_by_id = {candidate.get("candidate_id"): candidate for candidate in candidates}
+        conflict_resolutions_by_candidate_id = {item.get("candidate_id"): item for item in conflict_resolutions}
         plans: list[dict[str, Any]] = []
         for decision in decisions:
             if decision.get("status") != "ready_for_review_gate" or not decision.get("eligible_for_review_gate"):
                 continue
             dry_run = dry_runs_by_id.get(decision.get("dry_run_id"), {})
             candidate = candidates_by_id.get(decision.get("candidate_id"), {})
+            conflict_resolution = conflict_resolutions_by_candidate_id.get(decision.get("candidate_id"), {})
             conflict_reasons = cls._string_values(decision.get("conflict_reasons"))
             entry_sequences = list(candidate.get("entry_sequences", [])) if isinstance(candidate.get("entry_sequences"), list) else []
             plans.append(
@@ -963,8 +1093,13 @@ class FlowTimelineManager:
                     "confidence": dry_run.get("confidence"),
                     "evidence": dict(candidate.get("evidence", {})) if isinstance(candidate.get("evidence"), dict) else {},
                     "conflict_resolution": {
+                        "resolution_id": conflict_resolution.get("resolution_id"),
                         "strategy": "policy_allowed_conflicts_review_required" if conflict_reasons else "none_required",
                         "unresolved_conflicts": conflict_reasons,
+                        "selected_candidate_id": conflict_resolution.get("selected_candidate_id", decision.get("candidate_id")),
+                        "alternative_candidate_ids": list(conflict_resolution.get("alternative_candidate_ids", []))
+                        if isinstance(conflict_resolution.get("alternative_candidate_ids"), list)
+                        else [],
                         "review_required": bool(conflict_reasons),
                     },
                     "review_requirements": [

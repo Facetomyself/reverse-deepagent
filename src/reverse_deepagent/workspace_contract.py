@@ -270,6 +270,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_page_mutation_audit", "workspace/page-mutation-audit.json", "/workspace/browser/", "page-mutation-audit.json", "trace", ("browser_runtime", "review")),
         ("workspace_mutation_observer_timeline", "workspace/mutation-observer-timeline.json", "/workspace/timeline/", "mutation-observer-timeline.json", "trace", ("timeline", "browser_runtime")),
         ("workspace_flow_timeline", "workspace/flow-timeline.json", "/workspace/timeline/", "flow-timeline.json", "trace", ("timeline", "review")),
+        ("workspace_auto_stitch_conflict_resolutions", "workspace/auto-stitch-conflict-resolutions.json", "/workspace/timeline/", "auto-stitch-conflict-resolutions.json", "trace", ("timeline", "review")),
         ("workspace_auto_stitch_materialization_results", "workspace/auto-stitch-materialization-results.json", "/workspace/timeline/", "auto-stitch-materialization-results.json", "trace", ("timeline", "review")),
         ("workspace_stitched_flow_materialization_audit", "workspace/stitched-flow-materialization-audit.json", "/workspace/timeline/", "stitched-flow-materialization-audit.json", "trace", ("timeline", "review")),
         ("workspace_stitched_flow_rollback_plan", "workspace/stitched-flow-rollback-plan.json", "/workspace/timeline/", "stitched-flow-rollback-plan.json", "trace", ("timeline", "review")),

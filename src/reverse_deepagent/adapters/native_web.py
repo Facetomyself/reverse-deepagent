@@ -262,6 +262,7 @@ class NativeWebRuntime(WebReverseRuntime):
             entry_count = len(result.entries)
             stitch_candidate_count = len(result.stitch_candidates)
             auto_stitch_dry_run_count = len(result.auto_stitch_dry_runs)
+            auto_stitch_conflict_resolution_count = len(result.auto_stitch_conflict_resolutions)
             auto_stitch_policy_decision_count = len(result.auto_stitch_policy_decisions)
             auto_stitch_materialization_plan_count = len(result.auto_stitch_materialization_plans)
             auto_stitch_materialization_review_decision_count = len(result.auto_stitch_materialization_review_decisions)
@@ -280,6 +281,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_correlation_group_count={len(result.correlation_groups)}",
                 f"flow_timeline_stitch_candidate_count={stitch_candidate_count}",
                 f"flow_timeline_auto_stitch_dry_run_count={auto_stitch_dry_run_count}",
+                f"flow_timeline_auto_stitch_conflict_resolution_count={auto_stitch_conflict_resolution_count}",
                 f"flow_timeline_auto_stitch_policy_decision_count={auto_stitch_policy_decision_count}",
                 f"flow_timeline_auto_stitch_materialization_plan_count={auto_stitch_materialization_plan_count}",
                 f"flow_timeline_auto_stitch_materialization_review_decision_count={auto_stitch_materialization_review_decision_count}",
@@ -313,6 +315,8 @@ class NativeWebRuntime(WebReverseRuntime):
                         "correlation_group_count": len(result.correlation_groups),
                         "stitch_candidate_count": stitch_candidate_count,
                         "auto_stitch_dry_run_count": auto_stitch_dry_run_count,
+                        "auto_stitch_conflict_resolution_count": auto_stitch_conflict_resolution_count,
+                        "auto_stitch_conflict_resolution_summary": dict(result.auto_stitch_conflict_resolution_summary),
                         "auto_stitch_policy_decision_count": auto_stitch_policy_decision_count,
                         "auto_stitch_policy_summary": dict(result.auto_stitch_policy_summary),
                         "auto_stitch_materialization_plan_count": auto_stitch_materialization_plan_count,
@@ -333,6 +337,22 @@ class NativeWebRuntime(WebReverseRuntime):
                     },
                 )
             ]
+            if auto_stitch_conflict_resolution_count:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/auto-stitch-conflict-resolutions.json",
+                        kind=ArtifactKind.JSON,
+                        description="Review-only Native Web auto-stitch conflict resolution baseline.",
+                        metadata={
+                            "flow_id": result.flow_id,
+                            "count": auto_stitch_conflict_resolution_count,
+                            "summary": dict(result.auto_stitch_conflict_resolution_summary),
+                            "automatic_stitching": False,
+                            "would_materialize": False,
+                            "source": "auto_stitch_conflict_resolution_baseline",
+                        },
+                    )
+                )
             if auto_stitch_materialization_result_count:
                 artifact_paths.append(
                     ArtifactRef(
@@ -1529,6 +1549,8 @@ class NativeWebRuntime(WebReverseRuntime):
                     "correlation_group_count": flow_timeline.get("correlation_group_count", 0),
                     "stitch_candidate_count": flow_timeline.get("stitch_candidate_count", 0),
                     "auto_stitch_dry_run_count": flow_timeline.get("auto_stitch_dry_run_count", 0),
+                    "auto_stitch_conflict_resolution_count": flow_timeline.get("auto_stitch_conflict_resolution_count", 0),
+                    "auto_stitch_conflict_resolution_summary": flow_timeline.get("auto_stitch_conflict_resolution_summary", {}),
                     "auto_stitch_policy_decision_count": flow_timeline.get("auto_stitch_policy_decision_count", 0),
                     "auto_stitch_policy_summary": flow_timeline.get("auto_stitch_policy_summary", {}),
                     "auto_stitch_materialization_plan_count": flow_timeline.get("auto_stitch_materialization_plan_count", 0),
@@ -1548,6 +1570,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 },
             ),
         ]
+        conflict_resolutions = (
+            flow_timeline.get("auto_stitch_conflict_resolutions")
+            if isinstance(flow_timeline.get("auto_stitch_conflict_resolutions"), list)
+            else []
+        )
+        if conflict_resolutions:
+            artifacts.append(
+                ArtifactRef(
+                    path="virtual://workspace/auto-stitch-conflict-resolutions.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-only Native Web auto-stitch conflict resolution baseline.",
+                    metadata={
+                        "flow_id": flow_timeline.get("flow_id"),
+                        "count": len(conflict_resolutions),
+                        "summary": flow_timeline.get("auto_stitch_conflict_resolution_summary", {}),
+                        "automatic_stitching": False,
+                        "would_materialize": False,
+                        "source": "auto_stitch_conflict_resolution_baseline",
+                    },
+                )
+            )
         materialization_results = (
             flow_timeline.get("auto_stitch_materialization_results")
             if isinstance(flow_timeline.get("auto_stitch_materialization_results"), list)
