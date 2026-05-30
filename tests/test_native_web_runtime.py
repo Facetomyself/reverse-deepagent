@@ -601,6 +601,10 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(groups_by_strategy["function_name"]["key"], {"function_name": "buildSign"})
         self.assertFalse(groups_by_strategy["url_path_method"]["stitching"])
         self.assertEqual(groups_by_strategy["function_name"]["scope"], "correlation-hints-only")
+        self.assertEqual(groups_by_strategy["request_id"]["verification"]["status"], "reviewable")
+        self.assertEqual(groups_by_strategy["url_path_method"]["verification"]["status"], "reviewable")
+        self.assertEqual(groups_by_strategy["function_name"]["verification"]["status"], "reviewable")
+        self.assertFalse(groups_by_strategy["function_name"]["verification"]["automatic_stitching"])
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")

@@ -446,7 +446,55 @@ class FlowTimelineManager:
             group["entry_count"] = len(group["entry_sequences"])
             group["stitching"] = False
             group["scope"] = "correlation-hints-only"
+            group["verification"] = self._group_verification(group)
         return groups
+
+    @staticmethod
+    def _group_verification(group: dict[str, Any]) -> dict[str, Any]:
+        sources = {str(source) for source in group.get("sources", [])}
+        entry_types = {str(entry_type) for entry_type in group.get("entry_types", [])}
+        evidence = {
+            "network_request": "network_requests" in sources,
+            "request_initiator": "request_initiators" in sources,
+            "runtime_hook": any(source.endswith("hook_timeline") for source in sources) or any(entry_type.startswith(("hook.", "function_hook.", "module_hook.")) for entry_type in entry_types),
+            "replay_validation": "replay_validation" in sources or "replay.validation" in entry_types,
+            "debugger": "debugger_timeline" in sources or any(entry_type.startswith("debugger.") for entry_type in entry_types),
+            "source_logpoint": "source_logpoint_timeline" in sources or any(entry_type.startswith("source_logpoint.") for entry_type in entry_types),
+            "mutation": "mutation_observer_timeline" in sources or any(entry_type.startswith("mutation.") for entry_type in entry_types),
+        }
+        required_for_ready = ("request_initiator", "runtime_hook", "replay_validation")
+        missing_for_ready = [name for name in required_for_ready if not evidence[name]]
+        if not missing_for_ready:
+            status = "ready_for_manual_stitch_review"
+            next_action = "review_group_against_request_and_replay_evidence"
+            reasons = ["initiator_hook_and_replay_evidence_present"]
+        elif (
+            evidence["request_initiator"]
+            and evidence["runtime_hook"]
+            or evidence["runtime_hook"]
+            and evidence["replay_validation"]
+            or evidence["request_initiator"]
+            and evidence["replay_validation"]
+            or evidence["network_request"]
+            and evidence["runtime_hook"]
+            or evidence["network_request"]
+            and evidence["request_initiator"]
+        ):
+            status = "reviewable"
+            next_action = "collect_missing_evidence_or_review_manually"
+            reasons = ["multiple_complementary_evidence_types_present"]
+        else:
+            status = "weak"
+            next_action = "collect_more_timeline_evidence"
+            reasons = ["insufficient_complementary_evidence"]
+        return {
+            "status": status,
+            "automatic_stitching": False,
+            "evidence": evidence,
+            "missing_for_ready": missing_for_ready,
+            "reasons": reasons,
+            "next_action": next_action,
+        }
 
     @staticmethod
     def _group_candidates(correlation: dict[str, Any]) -> list[tuple[str, dict[str, str], str]]:

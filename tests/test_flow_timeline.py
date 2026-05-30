@@ -37,7 +37,7 @@ class FlowTimelineManagerTests(unittest.TestCase):
                         }
                     ]
                 },
-                "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign", "method": "POST", "path": "window.buildSign"}}]}},
+                "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign", "method": "POST", "path": "window.buildSign", "functionName": "buildSign"}}]}},
                 "debugger_timeline": {"entries": [{"type": "breakpoint.hit", "callFrameId": "cf-1"}]},
                 "replay_validation": {"validations": [{"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": True}]},
             }
@@ -85,17 +85,45 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(groups_by_strategy["request_id"]["entry_sequences"], [1, 2])
         self.assertEqual(groups_by_strategy["request_id"]["confidence"], "medium")
         self.assertFalse(groups_by_strategy["request_id"]["stitching"])
+        self.assertEqual(groups_by_strategy["request_id"]["verification"]["status"], "reviewable")
+        self.assertIn("runtime_hook", groups_by_strategy["request_id"]["verification"]["missing_for_ready"])
         self.assertEqual(groups_by_strategy["url_path_method"]["key"], {"url_path": "/api/sign", "method": "POST"})
         self.assertEqual(groups_by_strategy["url_path_method"]["entry_sequences"], [1, 2, 3])
+        self.assertEqual(groups_by_strategy["url_path_method"]["verification"]["status"], "reviewable")
+        self.assertEqual(groups_by_strategy["url_path_method"]["verification"]["missing_for_ready"], ["replay_validation"])
         self.assertEqual(groups_by_strategy["function_name"]["key"], {"function_name": "buildSign"})
-        self.assertEqual(groups_by_strategy["function_name"]["entry_sequences"], [2, 5])
+        self.assertEqual(groups_by_strategy["function_name"]["entry_sequences"], [2, 3, 5])
         self.assertEqual(groups_by_strategy["function_name"]["scope"], "correlation-hints-only")
+        self.assertEqual(groups_by_strategy["function_name"]["verification"]["status"], "ready_for_manual_stitch_review")
+        self.assertEqual(groups_by_strategy["function_name"]["verification"]["missing_for_ready"], [])
+        self.assertFalse(groups_by_strategy["function_name"]["verification"]["automatic_stitching"])
         result_dict = result.to_dict()
         self.assertEqual(result_dict["correlation_group_count"], 3)
         self.assertEqual(result_dict["correlation_groups"][0]["stitching"], False)
 
     def test_missing_inputs_is_not_a_flow_timeline_request(self) -> None:
         self.assertIsNone(FlowTimelineSpec.from_context({"flow_id": "empty"}))
+
+    def test_correlation_group_with_single_evidence_kind_stays_weak(self) -> None:
+        spec = FlowTimelineSpec.from_context(
+            {
+                "flow_id": "weak-flow",
+                "replay_validation": {
+                    "validations": [
+                        {"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": True},
+                        {"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": False},
+                    ]
+                },
+            }
+        )
+
+        result = FlowTimelineManager().build(spec)
+
+        groups_by_strategy = {group["strategy"]: group for group in result.correlation_groups}
+        self.assertEqual(groups_by_strategy["candidate_id"]["verification"]["status"], "weak")
+        self.assertEqual(groups_by_strategy["candidate_id"]["verification"]["evidence"]["replay_validation"], True)
+        self.assertIn("request_initiator", groups_by_strategy["candidate_id"]["verification"]["missing_for_ready"])
+        self.assertFalse(groups_by_strategy["candidate_id"]["verification"]["automatic_stitching"])
 
 
 if __name__ == "__main__":
