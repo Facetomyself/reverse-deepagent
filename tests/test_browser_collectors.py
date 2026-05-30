@@ -38,6 +38,8 @@ class FakeRawPage:
         """
 
     def evaluate(self, expression):
+        if "fetch(" in expression and "/assets/app.js" in expression:
+            return "function buildExternalSign(){ return 'external'; }"
         return {
             "cookie": "sid=redacted",
             "localStorage": {"theme": "dark"},
@@ -97,6 +99,9 @@ class BrowserCollectorTests(unittest.TestCase):
         hits = ScriptCollector().search(inventory, "buildSign")
         self.assertEqual(hits["count"], 1)
         self.assertEqual(hits["results"][0]["kind"], "inline")
+        external_hits = ScriptCollector().search(inventory, "buildExternalSign")
+        self.assertEqual(external_hits["count"], 1)
+        self.assertEqual(external_hits["results"][0]["kind"], "external")
 
         screenshot = ScreenshotCollector().collect(page)
         self.assertTrue(screenshot["in_memory"])

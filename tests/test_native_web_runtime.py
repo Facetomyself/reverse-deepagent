@@ -216,6 +216,30 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(capabilities["supports_protection_patch"])
         self.assertEqual(capabilities["config"]["provider"]["provider_id"], "playwright-chromium")
 
+    def test_registry_factory_preserves_browser_provider_config(self) -> None:
+        runtime = build_runtime(
+            "native-web",
+            browser="cloakbrowser",
+            browser_headless=False,
+            browser_humanize=False,
+            browser_proxy="http://127.0.0.1:7890",
+            browser_geoip=True,
+            browser_locale="zh-CN",
+            browser_timezone="Asia/Shanghai",
+            browser_args=["--disable-gpu"],
+        )
+        provider = runtime.browser_provider
+        config = provider.config.model_dump(mode="json")
+        self.assertEqual(provider.provider_id, "cloakbrowser")
+        self.assertFalse(config["headless"])
+        self.assertFalse(config["humanize"])
+        self.assertEqual(config["proxy"], "http://127.0.0.1:7890")
+        self.assertTrue(config["geoip"])
+        self.assertEqual(config["locale"], "zh-CN")
+        self.assertEqual(config["timezone"], "Asia/Shanghai")
+        self.assertEqual(config["args"], ["--disable-gpu"])
+
+
     def test_native_web_runtime_pipeline_writes_core_artifacts_without_mcp(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

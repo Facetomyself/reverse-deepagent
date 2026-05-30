@@ -62,6 +62,26 @@ reverse-agent-demo \
   --task-text "https://example.com 找 sign 入口"
 ```
 
+如果本机已经有可用的 Chrome DevTools 端点，但还没有装 Playwright 或 CloakBrowser，`remote-cdp` 可以直接作为 BrowserProvider smoke 路径使用；它和 `chrome-cdp` 轻量探测后端不是一回事：前者接入 `native-web` 的采集栈，后者只是做端点探测。
+
+```bash
+reverse-agent-demo \
+  --runtime native-web \
+  --browser remote-cdp \
+  --cdp-browser-url "http://127.0.0.1:9555" \
+  --task-text "http://127.0.0.1:8000/ 找 buildSign 入口"
+```
+
+对应的 doctor smoke 也支持显式指定端点：
+
+```bash
+reverse-agent-doctor \
+  --browser remote-cdp \
+  --browser-url "http://127.0.0.1:9555" \
+  --launch-browser-smoke \
+  --browser-smoke-url "about:blank"
+```
+
 CloakBrowser 作为可选 BrowserProvider 使用，安装方式如下：
 
 ```bash
@@ -878,7 +898,7 @@ print(capabilities.model_dump(mode="json"))
 `build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。当前已注册：
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
-- `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium` 和 optional `cloakbrowser` provider；真实二进制 smoke 需要显式触发
+- `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium`、`cloakbrowser` 和 `remote-cdp` provider；真实二进制 smoke 需要显式触发
 - `legacy-mcp`（别名：`mcp`, `jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 兼容运行时，`mcp` 仅作为旧命令 alias 保留
 - `playwright-cli`（别名：`playwright`, `pw-cli`）：轻量 Playwright CLI 探测与静态源码拉取，不主动启动浏览器
 - `chrome-cdp`（别名：`cdp`, `devtools`）：连接既有 Chrome DevTools 端点，不主动启动 Chrome

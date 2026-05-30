@@ -458,6 +458,13 @@ def _native_web_runtime_factory(
     browser_executable_path: str | None = None,
     browser_args: list[str] | None = None,
     browser_url: str | None = None,
+    cdp_browser_url: str | None = None,
+    browser_humanize: bool | None = None,
+    browser_proxy: str | None = None,
+    browser_geoip: bool | None = None,
+    browser_locale: str | None = None,
+    browser_timezone: str | None = None,
+    request_timeout: float | None = None,
     **_: Any,
 ):
     return create_native_web_runtime(
@@ -467,7 +474,19 @@ def _native_web_runtime_factory(
         browser_executable_path=browser_executable_path,
         browser_args=browser_args or [],
         browser_url=browser_url,
+        cdp_browser_url=cdp_browser_url,
+        browser_humanize=browser_humanize,
+        browser_proxy=browser_proxy,
+        browser_geoip=browser_geoip,
+        browser_locale=browser_locale,
+        browser_timezone=browser_timezone,
+        request_timeout=request_timeout,
     )
+
+
+def _remote_cdp_provider_runtime_factory(**kwargs: Any):
+    kwargs.setdefault("browser", "remote-cdp")
+    return _native_web_runtime_factory(**kwargs)
 
 
 def build_default_runtime_registry() -> RuntimeBackendRegistry:
@@ -552,6 +571,35 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                     "default provider is playwright-chromium",
                 ],
                 config={"default_browser_provider": "playwright-chromium"},
+            ),
+        )
+    )
+
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="remote-cdp",
+            aliases=("cdp-provider", "chrome-cdp-provider"),
+            factory=_remote_cdp_provider_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="remote-cdp",
+                display_name="Remote Chrome CDP BrowserProvider",
+                transport="remote-cdp",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
+                artifact_kinds=["json", "markdown", "screenshot"],
+                notes=[
+                    "connects to an already-running Chrome DevTools endpoint",
+                    "useful as a smoke path when Playwright is unavailable",
+                ],
+                config={"default_browser_url": "http://127.0.0.1:9222"},
             ),
         )
     )

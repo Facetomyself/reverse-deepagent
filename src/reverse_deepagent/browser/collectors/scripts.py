@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 from urllib.parse import urljoin
@@ -13,11 +14,15 @@ INLINE_SCRIPT_RE = re.compile(r"<script(?![^>]+src=)[^>]*>(.*?)</script>", re.IG
 class ScriptCollector:
     """Collect script inventory and lightweight source hits from page HTML."""
 
+    def __init__(self, *, max_external_source_chars: int = 500_000) -> None:
+        self.max_external_source_chars = max_external_source_chars
+
     def collect(self, page: BrowserPage) -> dict[str, Any]:
         html = page.content()
         scripts: list[dict[str, Any]] = []
         for index, src in enumerate(SCRIPT_SRC_RE.findall(html)):
-            scripts.append({"scriptId": f"external-{index}", "url": urljoin(page.url, src), "kind": "external", "source": ""})
+            url = urljoin(page.url, src)
+            scripts.append({"scriptId": f"external-{index}", "url": url, "kind": "external", "source": self._fetch_external_source(page, url)})
         for index, source in enumerate(INLINE_SCRIPT_RE.findall(html)):
             scripts.append({"scriptId": f"inline-{index}", "url": page.url, "kind": "inline", "source": source})
         return {"count": len(scripts), "scripts": scripts}
@@ -41,3 +46,23 @@ class ScriptCollector:
             if len(hits) >= limit:
                 break
         return {"count": len(hits), "results": hits}
+
+    def _fetch_external_source(self, page: BrowserPage, url: str) -> str:
+        expression = f"""
+(async () => {{
+  try {{
+    const response = await fetch({json.dumps(url)}, {{ credentials: 'include' }});
+    if (!response || !response.ok) return '';
+    return await response.text();
+  }} catch (_) {{
+    return '';
+  }}
+}})()
+"""
+        try:
+            source = page.evaluate(expression)
+        except Exception:
+            return ""
+        if not isinstance(source, str):
+            return ""
+        return source[: self.max_external_source_chars]

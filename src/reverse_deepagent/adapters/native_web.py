@@ -6,7 +6,14 @@ from typing import Any
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
 from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
 from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, BrowserHookManager
-from reverse_deepagent.browser.providers import CloakBrowserConfig, CloakBrowserProvider, PlaywrightChromiumConfig, PlaywrightChromiumProvider
+from reverse_deepagent.browser.providers import (
+    CloakBrowserConfig,
+    CloakBrowserProvider,
+    PlaywrightChromiumConfig,
+    PlaywrightChromiumProvider,
+    RemoteCDPConfig,
+    RemoteCDPProvider,
+)
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -364,4 +371,11 @@ def create_native_web_runtime(*, browser_provider: BrowserProvider | None = None
             args=kwargs.get("browser_args") or [],
         )
         return NativeWebRuntime(browser_provider=CloakBrowserProvider(config=config))
+    if browser_id in {"remote-cdp", "chrome-cdp-provider", "cdp-provider"}:
+        config = RemoteCDPConfig(
+            browser_url=kwargs.get("browser_url") or kwargs.get("cdp_browser_url") or "http://127.0.0.1:9222",
+            connect_timeout=float(kwargs.get("request_timeout") or kwargs.get("browser_connect_timeout") or 5.0),
+            navigation_wait=float(kwargs.get("browser_navigation_wait") or 0.5),
+        )
+        return NativeWebRuntime(browser_provider=RemoteCDPProvider(config=config))
     raise BrowserProviderUnavailableError(f"Unsupported native browser provider: {browser_id}")

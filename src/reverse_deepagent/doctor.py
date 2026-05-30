@@ -126,6 +126,7 @@ def _check_browser_provider(args: argparse.Namespace) -> dict[str, Any]:
             browser_headless=args.browser_headless,
             browser_executable_path=args.browser_executable_path,
             browser_args=browser_args,
+            browser_url=args.browser_url,
             browser_humanize=args.browser_humanize,
             browser_proxy=args.browser_proxy,
             browser_geoip=args.browser_geoip,

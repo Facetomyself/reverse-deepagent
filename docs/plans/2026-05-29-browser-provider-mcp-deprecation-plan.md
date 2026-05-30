@@ -160,7 +160,7 @@ Remaining validation:
 
 ### Phase 4: NativeWebRuntime
 
-Status: minimal runtime implemented and registered; advanced provider options and real browser smoke remain pending.
+Status: minimal runtime implemented and registered; `remote-cdp` smoke path and advanced BrowserProvider option forwarding are implemented; Playwright / CloakBrowser real browser smoke remains pending.
 
 Deliverables:
 
@@ -185,13 +185,14 @@ Current evidence:
 
 - `native-web` is registered with aliases `web` and `browser-native`.
 - `NativeWebRuntime` can run with a fake BrowserProvider and write current core artifacts without MCP.
-- CLI now accepts `--browser`, `--browser-profile-dir`, `--browser-headless`, `--browser-executable-path`, and `--browser-args`.
-- Unit tests: `tests.test_native_web_runtime`.
+- `remote-cdp` is implemented as a BrowserProvider smoke path for existing Chrome DevTools endpoints.
+- CLI now accepts `--browser`, `--browser-profile-dir`, `--browser-headless`, `--browser-executable-path`, `--browser-args`, `--browser-humanize`, `--browser-proxy`, `--browser-locale`, and `--browser-timezone`.
+- Unit tests: `tests.test_native_web_runtime`, `tests.test_remote_cdp_provider`.
 
 Remaining validation:
 
-- Add `--browser-humanize`, `--browser-proxy`, `--browser-locale`, and `--browser-timezone` once CloakBrowser/provider configs need them.
 - Run real `reverse-agent-demo --runtime native-web --browser playwright-chromium` after installing `.[browser]` and a Playwright browser binary.
+- Validate `--browser-humanize`, `--browser-proxy`, `--browser-locale`, and `--browser-timezone` on real CloakBrowser once the binary is available.
 - Ensure backend manifest carries provider metadata in downstream artifact entries.
 
 ### Phase 5: CloakBrowser provider
@@ -268,7 +269,7 @@ Acceptance:
 
 ### Phase 8: CDP-enhanced collectors
 
-Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, and WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable. Real browser smoke remains pending.
+Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable, and `remote-cdp` provides a real smoke path against an existing Chrome DevTools endpoint. Playwright / CloakBrowser real browser smoke remains pending.
 
 Deliverables:
 
