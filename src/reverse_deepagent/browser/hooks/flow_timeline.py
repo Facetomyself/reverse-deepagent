@@ -23,6 +23,7 @@ class FlowTimelineSpec:
     previous_timeline: dict[str, Any] = field(default_factory=dict)
     flow_events: list[dict[str, Any]] = field(default_factory=list)
     source_payloads: dict[str, Any] = field(default_factory=dict)
+    stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     max_payload_preview_length: int = 480
 
     @classmethod
@@ -37,7 +38,16 @@ class FlowTimelineSpec:
         previous = cls._coerce_mapping(raw_previous)
         flow_events = cls._coerce_events(context.get("flow_events", context.get("flowEvents", context.get("events"))))
         source_payloads = cls._collect_source_payloads(context)
-        if not previous and not flow_events and not source_payloads:
+        raw_review_decisions = cls._first_present(
+            context,
+            "stitch_review_decisions",
+            "stitchReviewDecisions",
+            "review_decisions",
+            "reviewDecisions",
+            "stitch_decisions",
+        )
+        stitch_review_decisions = cls._coerce_events(raw_review_decisions)
+        if not previous and not flow_events and not source_payloads and not stitch_review_decisions:
             return None
         flow_id = str(context.get("flow_id", context.get("flowId", previous.get("flow_id", "default-flow"))) or "default-flow")
         return cls(
@@ -47,6 +57,7 @@ class FlowTimelineSpec:
             previous_timeline=previous,
             flow_events=flow_events,
             source_payloads=source_payloads,
+            stitch_review_decisions=stitch_review_decisions,
             max_payload_preview_length=int(context.get("max_payload_preview_length", context.get("maxPayloadPreviewLength", 480)) or 480),
         )
 
@@ -61,6 +72,13 @@ class FlowTimelineSpec:
                 return {}
             return dict(parsed) if isinstance(parsed, dict) else {}
         return {}
+
+    @staticmethod
+    def _first_present(context: dict[str, Any], *keys: str) -> Any:
+        for key in keys:
+            if key in context:
+                return context.get(key)
+        return None
 
     @staticmethod
     def _coerce_events(value: Any) -> list[dict[str, Any]]:
@@ -125,6 +143,8 @@ class FlowTimelineResult:
     correlation_groups: list[dict[str, Any]] = field(default_factory=list)
     stitch_candidates: list[dict[str, Any]] = field(default_factory=list)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
+    stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    stitched_flows: list[dict[str, Any]] = field(default_factory=list)
     previous_entry_count: int = 0
     new_entry_count: int = 0
     source_counts: dict[str, int] = field(default_factory=dict)
@@ -149,6 +169,10 @@ class FlowTimelineResult:
             "stitch_candidates": self.stitch_candidates,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
+            "stitch_review_decision_count": len(self.stitch_review_decisions),
+            "stitch_review_decisions": self.stitch_review_decisions,
+            "stitched_flow_count": len(self.stitched_flows),
+            "stitched_flows": self.stitched_flows,
             "error": self.error,
             "reason": self.reason,
         }
@@ -177,7 +201,9 @@ class FlowTimelineManager:
         correlation_groups = self._correlation_groups(entries)
         stitch_candidates = self._stitch_candidates(correlation_groups, entries)
         stitch_proposals = self._stitch_proposals(stitch_candidates)
-        status = "success" if new_entries else "partial" if previous_entries else "unsupported"
+        stitch_proposals = self._apply_review_decisions(stitch_proposals, spec.stitch_review_decisions)
+        stitched_flows = self._stitched_flows(stitch_proposals, stitch_candidates, entries)
+        status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
             flow_id=spec.flow_id,
@@ -186,6 +212,8 @@ class FlowTimelineManager:
             correlation_groups=correlation_groups,
             stitch_candidates=stitch_candidates,
             stitch_proposals=stitch_proposals,
+            stitch_review_decisions=list(spec.stitch_review_decisions),
+            stitched_flows=stitched_flows,
             previous_entry_count=len(previous_entries),
             new_entry_count=len(new_entries),
             source_counts=source_counts,
@@ -580,6 +608,132 @@ class FlowTimelineManager:
                 }
             )
         return proposals
+
+    def _apply_review_decisions(
+        self,
+        proposals: list[dict[str, Any]],
+        decisions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not decisions:
+            return proposals
+        output: list[dict[str, Any]] = []
+        for proposal in proposals:
+            next_proposal = dict(proposal)
+            decision = self._matching_review_decision(next_proposal, decisions)
+            if decision is not None:
+                next_proposal = self._proposal_with_review_decision(next_proposal, decision)
+            output.append(next_proposal)
+        return output
+
+    @staticmethod
+    def _matching_review_decision(
+        proposal: dict[str, Any],
+        decisions: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            if decision.get("proposal_id") and decision.get("proposal_id") == proposal.get("proposal_id"):
+                return decision
+            if decision.get("proposalId") and decision.get("proposalId") == proposal.get("proposal_id"):
+                return decision
+            if decision.get("candidate_id") and decision.get("candidate_id") == proposal.get("candidate_id"):
+                return decision
+            if decision.get("candidateId") and decision.get("candidateId") == proposal.get("candidate_id"):
+                return decision
+            if decision.get("group_id") and decision.get("group_id") == proposal.get("group_id"):
+                return decision
+            if decision.get("groupId") and decision.get("groupId") == proposal.get("group_id"):
+                return decision
+        return None
+
+    @classmethod
+    def _proposal_with_review_decision(
+        cls,
+        proposal: dict[str, Any],
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        next_proposal = dict(proposal)
+        status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+        approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed"}
+        rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+        review_decision = dict(next_proposal.get("review_decision", {}))
+        review_decision.update(
+            {
+                "status": "approved" if approved else "rejected" if rejected else status or "pending_review",
+                "approved": approved and not rejected,
+                "review_required": not approved,
+                "review_gate": "manual_review_decision",
+            }
+        )
+        for key in ("reviewer", "reviewed_by", "reviewedBy", "reviewed_at", "reviewedAt", "reason", "notes"):
+            if decision.get(key) is not None:
+                review_decision[key] = decision.get(key)
+        next_proposal["review_decision"] = review_decision
+        next_proposal["review_decision_input"] = dict(decision)
+        if approved and not rejected:
+            next_proposal["blocking_conditions"] = []
+            next_proposal["next_action"] = "materialize_approved_stitched_flow"
+            next_proposal["scope"] = "review-approved-stitch-proposal"
+        elif rejected:
+            next_proposal["blocking_conditions"] = cls._unique_strings(
+                [*cls._string_values(next_proposal.get("blocking_conditions")), "reviewer_rejected"]
+            )
+            next_proposal["next_action"] = "collect_more_evidence_or_revise_stitch_proposal"
+        return next_proposal
+
+    @staticmethod
+    def _stitched_flows(
+        proposals: list[dict[str, Any]],
+        candidates: list[dict[str, Any]],
+        entries: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        candidates_by_id = {candidate.get("candidate_id"): candidate for candidate in candidates}
+        entries_by_sequence = {entry.get("sequence"): entry for entry in entries}
+        stitched: list[dict[str, Any]] = []
+        for proposal in proposals:
+            review_decision = proposal.get("review_decision")
+            if not isinstance(review_decision, dict):
+                continue
+            if not review_decision.get("approved") or review_decision.get("status") != "approved":
+                continue
+            candidate = candidates_by_id.get(proposal.get("candidate_id"), {})
+            entry_sequences = proposal.get("entry_sequences") if isinstance(proposal.get("entry_sequences"), list) else []
+            path = candidate.get("path") if isinstance(candidate.get("path"), list) else []
+            stitched.append(
+                {
+                    "stitched_flow_id": f"stitched-flow-{len(stitched) + 1}",
+                    "proposal_id": proposal.get("proposal_id"),
+                    "candidate_id": proposal.get("candidate_id"),
+                    "group_id": proposal.get("group_id"),
+                    "strategy": proposal.get("strategy"),
+                    "key": proposal.get("key", {}) if isinstance(proposal.get("key"), dict) else {},
+                    "confidence": proposal.get("confidence", "medium"),
+                    "status": "approved",
+                    "entry_sequences": list(entry_sequences),
+                    "entry_count": len(entry_sequences),
+                    "entry_types": [
+                        entries_by_sequence[sequence].get("type")
+                        for sequence in entry_sequences
+                        if isinstance(entries_by_sequence.get(sequence), dict)
+                    ],
+                    "sources": list(candidate.get("sources", [])) if isinstance(candidate.get("sources"), list) else [],
+                    "path": list(path),
+                    "path_length": len(path),
+                    "evidence": proposal.get("evidence", {}) if isinstance(proposal.get("evidence"), dict) else {},
+                    "review_decision": review_decision,
+                    "source": "review_approved_stitch_proposal",
+                    "scope": "review-approved-stitch-baseline",
+                    "stitching": True,
+                    "automatic_stitching": False,
+                    "limitations": [
+                        "review_approved_not_automatically_inferred",
+                        "no_full_browser_event_subscription",
+                    ],
+                    "next_action": "inspect_stitched_flow_or_use_for_replay_planning",
+                }
+            )
+        return stitched
 
     @staticmethod
     def _group_verification(group: dict[str, Any]) -> dict[str, Any]:

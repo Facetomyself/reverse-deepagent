@@ -889,6 +889,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_websocket_frames": "network",
     "workspace_hook_timeline": "hook-timeline",
     "workspace_flow_timeline": "trace",
+    "workspace_stitched_flow": "trace",
     "workspace_function_hooks": "hook-timeline",
     "workspace_function_hook_timeline": "hook-timeline",
     "workspace_source_logpoints": "trace",
@@ -1445,6 +1446,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["hook-timeline.json"] = evidence.details
         elif evidence.source == "flow_timeline":
             payloads["flow-timeline.json"] = evidence.details
+        elif evidence.source == "stitched_flow":
+            payloads["stitched-flow.json"] = evidence.details
         elif evidence.source == "function_hooks":
             payloads["function-hooks.json"] = evidence.details
         elif evidence.source == "function_hook_timeline":

@@ -181,6 +181,13 @@ class CoordinatorTests(unittest.TestCase):
                     details={"count": 1, "breakpoints": [{"breakpointId": "bp-logpoint-1"}]},
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
+                EvidenceItem(
+                    summary="Native review-approved stitched flow",
+                    kind=EvidenceKind.NOTE,
+                    source="stitched_flow",
+                    details={"count": 1, "flows": [{"stitched_flow_id": "stitched-flow-1"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
             ],
             artifacts=[],
             next_action="wait_for_breakpoint",
@@ -196,6 +203,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["source-logpoints.json"]["count"], 1)
         self.assertEqual(payloads["source-logpoint-timeline.json"]["event_count"], 1)
+        self.assertEqual(payloads["stitched-flow.json"]["flows"][0]["stitched_flow_id"], "stitched-flow-1")
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_function_hooks"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
@@ -205,6 +213,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_timeline"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_stitched_flow"), "trace")
 
     def test_build_runtime_legacy_mcp_without_optional_plugin_reports_guidance(self) -> None:
         with self.assertRaisesRegex(LegacyMcpPluginUnavailableError, "install_hint") as ctx:

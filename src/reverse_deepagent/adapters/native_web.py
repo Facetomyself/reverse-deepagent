@@ -262,6 +262,8 @@ class NativeWebRuntime(WebReverseRuntime):
             entry_count = len(result.entries)
             stitch_candidate_count = len(result.stitch_candidates)
             stitch_proposal_count = len(result.stitch_proposals)
+            stitch_review_decision_count = len(result.stitch_review_decisions)
+            stitched_flow_count = len(result.stitched_flows)
             verification = [
                 f"flow_timeline_status={result.status}",
                 f"flow_timeline_flow_id={result.flow_id}",
@@ -271,6 +273,8 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_correlation_group_count={len(result.correlation_groups)}",
                 f"flow_timeline_stitch_candidate_count={stitch_candidate_count}",
                 f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
+                f"flow_timeline_stitch_review_decision_count={stitch_review_decision_count}",
+                f"flow_timeline_stitched_flow_count={stitched_flow_count}",
                 f"flow_timeline_automatic_stitching=False",
                 f"flow_timeline_continued_from_previous={result.continued_from_previous}",
                 f"flow_timeline_sources={sorted(result.source_counts.keys())}",
@@ -280,34 +284,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification.append(f"flow_timeline_reason={result.reason}")
             if result.error:
                 verification.append(f"flow_timeline_error={result.error}")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["build_flow_timeline"] if entry_count else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.new_entry_count else ExecutionStatus.PARTIAL if entry_count else ExecutionStatus.FAILED,
-                artifacts=[
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/flow-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web cross-request flow timeline continuation baseline.",
+                    metadata={
+                        "status": result.status,
+                        "flow_id": result.flow_id,
+                        "run_id": result.run_id,
+                        "entry_count": entry_count,
+                        "previous_entry_count": result.previous_entry_count,
+                        "new_entry_count": result.new_entry_count,
+                        "correlation_group_count": len(result.correlation_groups),
+                        "stitch_candidate_count": stitch_candidate_count,
+                        "stitch_proposal_count": stitch_proposal_count,
+                        "stitch_review_decision_count": stitch_review_decision_count,
+                        "stitched_flow_count": stitched_flow_count,
+                        "automatic_stitching": False,
+                        "continued_from_previous": result.continued_from_previous,
+                        "source_counts": result.source_counts,
+                    },
+                )
+            ]
+            if stitched_flow_count:
+                artifact_paths.append(
                     ArtifactRef(
-                        path="virtual://workspace/flow-timeline.json",
+                        path="virtual://workspace/stitched-flow.json",
                         kind=ArtifactKind.JSON,
-                        description="Native Web cross-request flow timeline continuation baseline.",
+                        description="Review-approved Native Web stitched flow baseline.",
                         metadata={
-                            "status": result.status,
                             "flow_id": result.flow_id,
-                            "run_id": result.run_id,
-                            "entry_count": entry_count,
-                            "previous_entry_count": result.previous_entry_count,
-                            "new_entry_count": result.new_entry_count,
-                            "correlation_group_count": len(result.correlation_groups),
-                            "stitch_candidate_count": stitch_candidate_count,
-                            "stitch_proposal_count": stitch_proposal_count,
+                            "count": stitched_flow_count,
                             "automatic_stitching": False,
-                            "continued_from_previous": result.continued_from_previous,
-                            "source_counts": result.source_counts,
+                            "source": "review_approved_stitch_proposal",
                         },
                     )
-                ],
-                next_action="inspect_flow_timeline_or_continue_next_request" if entry_count else "provide_timeline_inputs",
-                confidence=ConfidenceLevel.MEDIUM if result.new_entry_count else ConfidenceLevel.LOW,
+                )
+            applied_actions = ["build_flow_timeline"] if entry_count else []
+            if stitched_flow_count:
+                applied_actions.append("materialize_review_approved_stitched_flow")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.new_entry_count or stitched_flow_count else ExecutionStatus.PARTIAL if entry_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=(
+                    "inspect_stitched_flow_or_use_for_replay_planning"
+                    if stitched_flow_count
+                    else "inspect_flow_timeline_or_continue_next_request"
+                    if entry_count
+                    else "provide_timeline_inputs"
+                ),
+                confidence=ConfidenceLevel.MEDIUM if result.new_entry_count or stitched_flow_count else ConfidenceLevel.LOW,
             )
         if self._is_mutation_observer_timeline_request(protection_name, context):
             spec = MutationObserverTimelineSpec.from_context(context)
@@ -1336,6 +1366,22 @@ class NativeWebRuntime(WebReverseRuntime):
             EvidenceItem(summary="Native Web runtime hook timeline collected", kind=EvidenceKind.HOOK, source="runtime_hook_timeline", details=hook_timeline, confidence=ConfidenceLevel.MEDIUM),
             EvidenceItem(summary="Native Web recon flow timeline assembled", kind=EvidenceKind.NOTE, source="flow_timeline", details=flow_timeline, confidence=ConfidenceLevel.MEDIUM),
         ]
+        stitched_flows = flow_timeline.get("stitched_flows") if isinstance(flow_timeline.get("stitched_flows"), list) else []
+        if stitched_flows:
+            evidence.append(
+                EvidenceItem(
+                    summary="Native Web review-approved stitched flow materialized",
+                    kind=EvidenceKind.NOTE,
+                    source="stitched_flow",
+                    details={
+                        "count": len(stitched_flows),
+                        "flow_id": flow_timeline.get("flow_id"),
+                        "flows": stitched_flows,
+                        "automatic_stitching": False,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                )
+            )
         if function_candidates:
             evidence.append(
                 EvidenceItem(
@@ -1405,11 +1451,28 @@ class NativeWebRuntime(WebReverseRuntime):
                     "correlation_group_count": flow_timeline.get("correlation_group_count", 0),
                     "stitch_candidate_count": flow_timeline.get("stitch_candidate_count", 0),
                     "stitch_proposal_count": flow_timeline.get("stitch_proposal_count", 0),
+                    "stitch_review_decision_count": flow_timeline.get("stitch_review_decision_count", 0),
+                    "stitched_flow_count": flow_timeline.get("stitched_flow_count", 0),
                     "automatic_stitching": False,
                     "continued_from_previous": bool(flow_timeline.get("continued_from_previous")),
                 },
             ),
         ]
+        stitched_flows = flow_timeline.get("stitched_flows") if isinstance(flow_timeline.get("stitched_flows"), list) else []
+        if stitched_flows:
+            artifacts.append(
+                ArtifactRef(
+                    path="virtual://workspace/stitched-flow.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-approved Native Web stitched flow baseline.",
+                    metadata={
+                        "flow_id": flow_timeline.get("flow_id"),
+                        "count": len(stitched_flows),
+                        "automatic_stitching": False,
+                        "source": "review_approved_stitch_proposal",
+                    },
+                )
+            )
         if function_candidates:
             artifacts.append(
                 ArtifactRef(

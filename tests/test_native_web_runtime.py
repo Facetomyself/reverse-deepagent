@@ -514,7 +514,6 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(config["timezone"], "Asia/Shanghai")
         self.assertEqual(config["args"], ["--disable-gpu"])
 
-
     def test_native_web_runtime_pipeline_writes_core_artifacts_without_mcp(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
@@ -831,6 +830,49 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["automatic_stitching"])
         self.assertTrue(result.artifacts[0].metadata["continued_from_previous"])
         self.assertEqual(result.artifacts[0].metadata["source_counts"]["network_requests"], 1)
+
+    def test_native_web_runtime_materializes_review_approved_stitched_flow(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "flow-timeline",
+            {
+                "flow_id": "sign-flow",
+                "run_id": "run-2",
+                "request_id": "req-2",
+                "network_requests": {"items": [{"url": "https://example.test/api/sign", "method": "POST", "requestId": "req-2"}]},
+                "request_initiators": {
+                    "items": [
+                        {
+                            "requestId": "req-2",
+                            "url": "https://example.test/api/sign",
+                            "method": "POST",
+                            "initiator": {"stack": {"callFrames": [{"functionName": "buildSign"}]}},
+                        }
+                    ]
+                },
+                "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign", "method": "POST", "path": "window.buildSign", "functionName": "buildSign"}}]}},
+                "replay_validation": {"validations": [{"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": True}]},
+                "stitch_review_decisions": [
+                    {"proposal_id": "stitch-proposal-1", "status": "approved", "approved": True, "reviewer": "unit-reviewer"}
+                ],
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["build_flow_timeline", "materialize_review_approved_stitched_flow"])
+        self.assertIn("flow_timeline_stitch_proposal_count=1", result.verification)
+        self.assertIn("flow_timeline_stitch_review_decision_count=1", result.verification)
+        self.assertIn("flow_timeline_stitched_flow_count=1", result.verification)
+        self.assertEqual(result.next_action, "inspect_stitched_flow_or_use_for_replay_planning")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/flow-timeline.json")
+        self.assertEqual(result.artifacts[0].metadata["stitch_proposal_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["stitch_review_decision_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["stitched_flow_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_stitching"])
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/stitched-flow.json")
+        self.assertEqual(result.artifacts[1].metadata["count"], 1)
+        self.assertFalse(result.artifacts[1].metadata["automatic_stitching"])
 
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()

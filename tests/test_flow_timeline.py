@@ -4,6 +4,26 @@ from reverse_deepagent.browser.hooks import FlowTimelineManager, FlowTimelineSpe
 
 
 class FlowTimelineManagerTests(unittest.TestCase):
+    def _ready_flow_context(self) -> dict:
+        return {
+            "flow_id": "sign-flow",
+            "run_id": "run-2",
+            "request_id": "req-2",
+            "network_requests": {"items": [{"url": "https://example.test/api/sign?x=1", "method": "POST", "requestId": "req-2"}]},
+            "request_initiators": {
+                "items": [
+                    {
+                        "requestId": "req-2",
+                        "url": "https://example.test/api/sign?x=1",
+                        "method": "POST",
+                        "initiator": {"type": "script", "stack": {"callFrames": [{"functionName": "buildSign"}]}},
+                    }
+                ]
+            },
+            "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign", "method": "POST", "path": "window.buildSign", "functionName": "buildSign"}}]}},
+            "replay_validation": {"validations": [{"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": True}]},
+        }
+
     def test_build_continues_previous_timeline_and_normalizes_sources(self) -> None:
         spec = FlowTimelineSpec.from_context(
             {
@@ -139,6 +159,61 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result_dict["stitch_candidates"][0]["automatic_stitching"], False)
         self.assertEqual(result_dict["stitch_proposal_count"], 1)
         self.assertEqual(result_dict["stitch_proposals"][0]["review_decision"]["status"], "pending_review")
+
+    def test_approved_stitch_review_decision_materializes_stitched_flow(self) -> None:
+        context = self._ready_flow_context()
+        context["stitch_review_decisions"] = [
+            {
+                "proposal_id": "stitch-proposal-1",
+                "status": "approved",
+                "approved": True,
+                "reviewer": "unit-reviewer",
+                "reviewed_at": "2026-05-30T12:00:00Z",
+                "reason": "Initiator, hook, and replay evidence line up.",
+            }
+        ]
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(result.stitch_review_decisions[0]["proposal_id"], "stitch-proposal-1")
+        self.assertEqual(len(result.stitch_proposals), 1)
+        proposal = result.stitch_proposals[0]
+        self.assertEqual(proposal["review_decision"]["status"], "approved")
+        self.assertTrue(proposal["review_decision"]["approved"])
+        self.assertFalse(proposal["review_decision"]["review_required"])
+        self.assertEqual(proposal["review_decision"]["reviewer"], "unit-reviewer")
+        self.assertEqual(proposal["blocking_conditions"], [])
+        self.assertEqual(proposal["next_action"], "materialize_approved_stitched_flow")
+        self.assertFalse(proposal["automatic_stitching"])
+        self.assertFalse(proposal["stitching"])
+        self.assertEqual(len(result.stitched_flows), 1)
+        stitched = result.stitched_flows[0]
+        self.assertEqual(stitched["stitched_flow_id"], "stitched-flow-1")
+        self.assertEqual(stitched["proposal_id"], "stitch-proposal-1")
+        self.assertEqual(stitched["status"], "approved")
+        self.assertTrue(stitched["stitching"])
+        self.assertFalse(stitched["automatic_stitching"])
+        self.assertEqual(stitched["scope"], "review-approved-stitch-baseline")
+        self.assertEqual(stitched["review_decision"]["reviewer"], "unit-reviewer")
+        self.assertIn("review_approved_not_automatically_inferred", stitched["limitations"])
+        result_dict = result.to_dict()
+        self.assertEqual(result_dict["stitch_review_decision_count"], 1)
+        self.assertEqual(result_dict["stitched_flow_count"], 1)
+        self.assertEqual(result_dict["stitched_flows"][0]["next_action"], "inspect_stitched_flow_or_use_for_replay_planning")
+
+    def test_rejected_stitch_review_decision_does_not_materialize_stitched_flow(self) -> None:
+        context = self._ready_flow_context()
+        context["stitch_review_decisions"] = [
+            {"proposal_id": "stitch-proposal-1", "status": "rejected", "reviewer": "unit-reviewer"}
+        ]
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(len(result.stitch_proposals), 1)
+        proposal = result.stitch_proposals[0]
+        self.assertEqual(proposal["review_decision"]["status"], "rejected")
+        self.assertFalse(proposal["review_decision"]["approved"])
+        self.assertIn("reviewer_rejected", proposal["blocking_conditions"])
+        self.assertEqual(result.stitched_flows, [])
+        self.assertEqual(result.to_dict()["stitched_flow_count"], 0)
 
     def test_missing_inputs_is_not_a_flow_timeline_request(self) -> None:
         self.assertIsNone(FlowTimelineSpec.from_context({"flow_id": "empty"}))
