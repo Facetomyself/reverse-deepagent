@@ -186,6 +186,8 @@ class FlowTimelineResult:
     auto_stitch_materialization_audit_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_materialization_rollback_plans: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_materialization_rollback_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_materialization_transactions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_materialization_transaction_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -233,6 +235,9 @@ class FlowTimelineResult:
             "auto_stitch_materialization_rollback_plan_count": len(self.auto_stitch_materialization_rollback_plans),
             "auto_stitch_materialization_rollback_plans": self.auto_stitch_materialization_rollback_plans,
             "auto_stitch_materialization_rollback_summary": self.auto_stitch_materialization_rollback_summary,
+            "auto_stitch_materialization_transaction_count": len(self.auto_stitch_materialization_transactions),
+            "auto_stitch_materialization_transactions": self.auto_stitch_materialization_transactions,
+            "auto_stitch_materialization_transaction_summary": self.auto_stitch_materialization_transaction_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -322,6 +327,15 @@ class FlowTimelineManager:
             auto_stitch_materialization_rollback_plans,
             auto_stitch_materialization_results,
         )
+        auto_stitch_materialization_transactions = self._auto_stitch_materialization_transactions(
+            auto_stitch_materialization_results,
+            auto_stitch_materialization_audit_entries,
+            auto_stitch_materialization_rollback_plans,
+        )
+        auto_stitch_materialization_transaction_summary = self._auto_stitch_materialization_transaction_summary(
+            auto_stitch_materialization_transactions,
+            auto_stitch_materialization_results,
+        )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -344,6 +358,8 @@ class FlowTimelineManager:
             auto_stitch_materialization_audit_summary=auto_stitch_materialization_audit_summary,
             auto_stitch_materialization_rollback_plans=auto_stitch_materialization_rollback_plans,
             auto_stitch_materialization_rollback_summary=auto_stitch_materialization_rollback_summary,
+            auto_stitch_materialization_transactions=auto_stitch_materialization_transactions,
+            auto_stitch_materialization_transaction_summary=auto_stitch_materialization_transaction_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -1613,6 +1629,152 @@ class FlowTimelineManager:
             "review_required": bool(rollback_plans),
             "scope": "stitched-flow-rollback-plan-summary",
             "next_action": "review_rollback_plan_before_reverting_stitched_flow" if rollback_plans else "materialize_review_approved_plan_before_rollback_planning",
+        }
+
+    @classmethod
+    def _auto_stitch_materialization_transactions(
+        cls,
+        results: list[dict[str, Any]],
+        audit_entries: list[dict[str, Any]],
+        rollback_plans: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Aggregate result, audit and rollback links without executing them."""
+
+        audits_by_transaction_id = {
+            str(entry.get("transaction_id")): entry
+            for entry in audit_entries
+            if isinstance(entry, dict) and entry.get("transaction_id")
+        }
+        rollbacks_by_transaction_id = {
+            str(plan.get("transaction_id")): plan
+            for plan in rollback_plans
+            if isinstance(plan, dict) and plan.get("transaction_id")
+        }
+        transactions: list[dict[str, Any]] = []
+        for result in results:
+            if result.get("status") != "materialized" or not result.get("materialized"):
+                continue
+            transaction_id = str(result.get("transaction_id") or f"auto-stitch-materialization-txn-{len(transactions) + 1}")
+            audit = audits_by_transaction_id.get(transaction_id, {})
+            rollback = rollbacks_by_transaction_id.get(transaction_id, {})
+            missing_links: list[str] = []
+            if not audit:
+                missing_links.append("missing_materialization_audit")
+            if not rollback:
+                missing_links.append("missing_rollback_plan")
+            review_decision = result.get("review_decision") if isinstance(result.get("review_decision"), dict) else {}
+            conflict_resolution = result.get("conflict_resolution") if isinstance(result.get("conflict_resolution"), dict) else {}
+            transactions.append(
+                {
+                    "transaction_id": transaction_id,
+                    "transaction_log_id": f"auto-stitch-materialization-transaction-{len(transactions) + 1}",
+                    "status": "transaction_ready" if not missing_links else "transaction_incomplete",
+                    "flow_id": audit.get("flow_id"),
+                    "run_id": audit.get("run_id"),
+                    "result_id": result.get("result_id"),
+                    "audit_id": audit.get("audit_id"),
+                    "rollback_id": rollback.get("rollback_id"),
+                    "plan_id": result.get("plan_id"),
+                    "decision_id": result.get("decision_id"),
+                    "dry_run_id": result.get("dry_run_id"),
+                    "candidate_id": result.get("candidate_id"),
+                    "group_id": result.get("group_id"),
+                    "target_artifact": result.get("target_artifact", "workspace/stitched-flow.json"),
+                    "virtual_target_artifact": result.get("virtual_target_artifact", "virtual://workspace/stitched-flow.json"),
+                    "entry_sequences": list(result.get("entry_sequences", [])) if isinstance(result.get("entry_sequences"), list) else [],
+                    "entry_count": int(result.get("entry_count") or 0),
+                    "confidence": result.get("confidence"),
+                    "confidence_score": result.get("confidence_score"),
+                    "review": {
+                        "status": review_decision.get("status"),
+                        "approved": bool(review_decision.get("approved")),
+                        "reviewer": review_decision.get("reviewer") or review_decision.get("reviewed_by") or review_decision.get("reviewedBy"),
+                        "reviewed_at": review_decision.get("reviewed_at") or review_decision.get("reviewedAt"),
+                    },
+                    "conflict_resolution": {
+                        "resolution_id": conflict_resolution.get("resolution_id"),
+                        "selected_candidate_id": conflict_resolution.get("selected_candidate_id"),
+                        "alternative_candidate_ids": list(conflict_resolution.get("alternative_candidate_ids", []))
+                        if isinstance(conflict_resolution.get("alternative_candidate_ids"), list)
+                        else [],
+                        "unresolved_conflicts": list(conflict_resolution.get("unresolved_conflicts", []))
+                        if isinstance(conflict_resolution.get("unresolved_conflicts"), list)
+                        else [],
+                    },
+                    "stages": [
+                        {
+                            "stage": "materialization_result",
+                            "status": result.get("status"),
+                            "artifact": result.get("target_artifact", "workspace/stitched-flow.json"),
+                            "writes_artifact": bool(result.get("writes_artifact")),
+                        },
+                        {
+                            "stage": "materialization_audit",
+                            "status": audit.get("status", "missing"),
+                            "artifact": audit.get("audit_artifact", "workspace/stitched-flow-materialization-audit.json"),
+                            "writes_artifact": bool(audit.get("writes_artifact")),
+                        },
+                        {
+                            "stage": "rollback_plan",
+                            "status": rollback.get("status", "missing"),
+                            "artifact": rollback.get("rollback_artifact", "workspace/stitched-flow-rollback-plan.json"),
+                            "writes_artifact": bool(rollback.get("writes_artifact")),
+                        },
+                    ],
+                    "integrity": {
+                        "has_materialization_result": True,
+                        "has_audit": bool(audit),
+                        "has_rollback_plan": bool(rollback),
+                        "missing_links": missing_links,
+                    },
+                    "source_artifacts": {
+                        "flow_timeline": "workspace/flow-timeline.json",
+                        "materialization_results": "workspace/auto-stitch-materialization-results.json",
+                        "materialization_audit": "workspace/stitched-flow-materialization-audit.json",
+                        "rollback_plan": "workspace/stitched-flow-rollback-plan.json",
+                    },
+                    "review_required": bool(missing_links),
+                    "writes_artifact": bool(result.get("writes_artifact")),
+                    "would_materialize": bool(result.get("would_materialize")),
+                    "would_revert": False,
+                    "automatic_stitching": False,
+                    "automatic_rollback": False,
+                    "transaction_log_only": True,
+                    "scope": "stitched-flow-materialization-transaction-log-baseline",
+                    "next_action": "review_materialization_transaction_and_rollback_plan"
+                    if not missing_links
+                    else "repair_materialization_transaction_links_before_use",
+                }
+            )
+        return transactions
+
+    @staticmethod
+    def _auto_stitch_materialization_transaction_summary(
+        transactions: list[dict[str, Any]],
+        results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        materialized_result_count = sum(1 for result in results if result.get("status") == "materialized")
+        ready_count = sum(1 for item in transactions if item.get("status") == "transaction_ready")
+        incomplete_count = sum(1 for item in transactions if item.get("status") != "transaction_ready")
+        return {
+            "transaction_count": len(transactions),
+            "materialized_result_count": materialized_result_count,
+            "ready_transaction_count": ready_count,
+            "incomplete_transaction_count": incomplete_count,
+            "missing_transaction_count": max(0, materialized_result_count - len(transactions)),
+            "transaction_artifact": "workspace/stitched-flow-materialization-transactions.json",
+            "virtual_transaction_artifact": "virtual://workspace/stitched-flow-materialization-transactions.json",
+            "writes_artifact": bool(transactions),
+            "would_materialize": bool(transactions),
+            "would_revert": False,
+            "automatic_stitching": False,
+            "automatic_rollback": False,
+            "transaction_log_only": True,
+            "review_required": bool(incomplete_count),
+            "scope": "stitched-flow-materialization-transaction-summary",
+            "next_action": "review_materialization_transactions_before_rollback_executor"
+            if transactions
+            else "materialize_review_approved_plan_before_transaction_log",
         }
 
     @staticmethod

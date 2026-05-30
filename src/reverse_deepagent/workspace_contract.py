@@ -274,6 +274,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_auto_stitch_materialization_results", "workspace/auto-stitch-materialization-results.json", "/workspace/timeline/", "auto-stitch-materialization-results.json", "trace", ("timeline", "review")),
         ("workspace_stitched_flow_materialization_audit", "workspace/stitched-flow-materialization-audit.json", "/workspace/timeline/", "stitched-flow-materialization-audit.json", "trace", ("timeline", "review")),
         ("workspace_stitched_flow_rollback_plan", "workspace/stitched-flow-rollback-plan.json", "/workspace/timeline/", "stitched-flow-rollback-plan.json", "trace", ("timeline", "review")),
+        ("workspace_stitched_flow_materialization_transactions", "workspace/stitched-flow-materialization-transactions.json", "/workspace/timeline/", "stitched-flow-materialization-transactions.json", "trace", ("timeline", "review")),
         ("workspace_stitched_flow", "workspace/stitched-flow.json", "/workspace/timeline/", "stitched-flow.json", "trace", ("timeline", "review")),
         ("workspace_function_candidates", "workspace/function-candidates.json", "/workspace/evidence/", "function-candidates.json", "source", ("web_recon", "rebuild")),
         ("workspace_function_validations", "workspace/function-validations.json", "/workspace/evidence/", "function-validations.json", "trace", ("web_recon", "rebuild")),

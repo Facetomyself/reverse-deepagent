@@ -962,6 +962,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
                 "materialize_review_approved_auto_stitch_plan",
                 "write_stitched_flow_materialization_audit",
                 "write_stitched_flow_rollback_plan",
+                "write_stitched_flow_materialization_transaction_log",
                 "materialize_review_approved_stitched_flow",
             ],
         )
@@ -971,6 +972,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("flow_timeline_auto_stitch_materialization_result_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_materialization_audit_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_materialization_rollback_plan_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_materialization_transaction_count=1", result.verification)
         self.assertIn("flow_timeline_stitch_review_decision_count=0", result.verification)
         self.assertIn("flow_timeline_stitched_flow_count=1", result.verification)
         self.assertIn("flow_timeline_automatic_stitching=False", result.verification)
@@ -991,6 +993,10 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(flow_metadata["auto_stitch_materialization_rollback_plan_count"], 1)
         self.assertEqual(flow_metadata["auto_stitch_materialization_rollback_summary"]["rollback_plan_count"], 1)
         self.assertFalse(flow_metadata["auto_stitch_materialization_rollback_summary"]["automatic_rollback"])
+        self.assertEqual(flow_metadata["auto_stitch_materialization_transaction_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_transaction_summary"]["transaction_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_transaction_summary"]["ready_transaction_count"], 1)
+        self.assertTrue(flow_metadata["auto_stitch_materialization_transaction_summary"]["transaction_log_only"])
         self.assertEqual(flow_metadata["stitch_review_decision_count"], 0)
         self.assertEqual(flow_metadata["stitched_flow_count"], 1)
         self.assertFalse(flow_metadata["automatic_stitching"])
@@ -1008,6 +1014,13 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(artifacts_by_path["virtual://workspace/stitched-flow-rollback-plan.json"].metadata["automatic_stitching"])
         self.assertFalse(artifacts_by_path["virtual://workspace/stitched-flow-rollback-plan.json"].metadata["automatic_rollback"])
         self.assertEqual(artifacts_by_path["virtual://workspace/stitched-flow-rollback-plan.json"].metadata["summary"]["rollback_plan_count"], 1)
+        self.assertEqual(artifacts_by_path["virtual://workspace/stitched-flow-materialization-transactions.json"].metadata["count"], 1)
+        self.assertEqual(
+            artifacts_by_path["virtual://workspace/stitched-flow-materialization-transactions.json"].metadata["summary"]["ready_transaction_count"],
+            1,
+        )
+        self.assertTrue(artifacts_by_path["virtual://workspace/stitched-flow-materialization-transactions.json"].metadata["transaction_log_only"])
+        self.assertFalse(artifacts_by_path["virtual://workspace/stitched-flow-materialization-transactions.json"].metadata["automatic_rollback"])
         self.assertEqual(artifacts_by_path["virtual://workspace/stitched-flow.json"].metadata["count"], 1)
         self.assertFalse(artifacts_by_path["virtual://workspace/stitched-flow.json"].metadata["automatic_stitching"])
 

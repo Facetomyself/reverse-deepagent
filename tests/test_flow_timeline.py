@@ -353,6 +353,30 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_materialization_rollback_summary["rollback_plan_count"], 1)
         self.assertEqual(result.auto_stitch_materialization_rollback_summary["missing_rollback_plan_count"], 0)
         self.assertFalse(result.auto_stitch_materialization_rollback_summary["automatic_rollback"])
+        self.assertEqual(len(result.auto_stitch_materialization_transactions), 1)
+        transaction = result.auto_stitch_materialization_transactions[0]
+        self.assertEqual(transaction["status"], "transaction_ready")
+        self.assertEqual(transaction["transaction_id"], "auto-stitch-materialization-txn-1")
+        self.assertEqual(transaction["result_id"], "auto-stitch-materialization-result-1")
+        self.assertEqual(transaction["audit_id"], audit["audit_id"])
+        self.assertEqual(transaction["rollback_id"], rollback["rollback_id"])
+        self.assertTrue(transaction["integrity"]["has_materialization_result"])
+        self.assertTrue(transaction["integrity"]["has_audit"])
+        self.assertTrue(transaction["integrity"]["has_rollback_plan"])
+        self.assertEqual(transaction["integrity"]["missing_links"], [])
+        self.assertTrue(transaction["writes_artifact"])
+        self.assertTrue(transaction["would_materialize"])
+        self.assertFalse(transaction["would_revert"])
+        self.assertFalse(transaction["automatic_rollback"])
+        self.assertFalse(transaction["automatic_stitching"])
+        self.assertTrue(transaction["transaction_log_only"])
+        self.assertEqual(transaction["next_action"], "review_materialization_transaction_and_rollback_plan")
+        self.assertEqual(result.auto_stitch_materialization_transaction_summary["transaction_count"], 1)
+        self.assertEqual(result.auto_stitch_materialization_transaction_summary["ready_transaction_count"], 1)
+        self.assertEqual(result.auto_stitch_materialization_transaction_summary["incomplete_transaction_count"], 0)
+        self.assertEqual(result.auto_stitch_materialization_transaction_summary["missing_transaction_count"], 0)
+        self.assertFalse(result.auto_stitch_materialization_transaction_summary["automatic_rollback"])
+        self.assertTrue(result.auto_stitch_materialization_transaction_summary["transaction_log_only"])
         self.assertEqual(len(result.stitched_flows), 1)
         stitched = result.stitched_flows[0]
         self.assertEqual(stitched["stitched_flow_id"], "stitched-flow-1")
@@ -366,6 +390,7 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result_dict["auto_stitch_materialization_result_count"], 1)
         self.assertEqual(result_dict["auto_stitch_materialization_audit_count"], 1)
         self.assertEqual(result_dict["auto_stitch_materialization_rollback_plan_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_materialization_transaction_count"], 1)
         self.assertEqual(result_dict["stitched_flow_count"], 1)
 
     def test_rejected_auto_stitch_materialization_review_decision_does_not_materialize_plan(self) -> None:
@@ -394,6 +419,8 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_materialization_audit_summary["audit_count"], 0)
         self.assertEqual(result.auto_stitch_materialization_rollback_plans, [])
         self.assertEqual(result.auto_stitch_materialization_rollback_summary["rollback_plan_count"], 0)
+        self.assertEqual(result.auto_stitch_materialization_transactions, [])
+        self.assertEqual(result.auto_stitch_materialization_transaction_summary["transaction_count"], 0)
         self.assertEqual(result.stitched_flows, [])
 
     def test_approved_stitch_review_decision_materializes_stitched_flow(self) -> None:
@@ -486,6 +513,7 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.to_dict()["auto_stitch_conflict_resolution_count"], 0)
         self.assertEqual(result.to_dict()["auto_stitch_policy_decision_count"], 0)
         self.assertEqual(result.to_dict()["auto_stitch_materialization_plan_count"], 0)
+        self.assertEqual(result.to_dict()["auto_stitch_materialization_transaction_count"], 0)
         self.assertEqual(result.to_dict()["stitch_proposal_count"], 0)
 
 

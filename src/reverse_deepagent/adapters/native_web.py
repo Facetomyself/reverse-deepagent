@@ -269,6 +269,7 @@ class NativeWebRuntime(WebReverseRuntime):
             auto_stitch_materialization_result_count = len(result.auto_stitch_materialization_results)
             auto_stitch_materialization_audit_count = len(result.auto_stitch_materialization_audit_entries)
             auto_stitch_materialization_rollback_plan_count = len(result.auto_stitch_materialization_rollback_plans)
+            auto_stitch_materialization_transaction_count = len(result.auto_stitch_materialization_transactions)
             stitch_proposal_count = len(result.stitch_proposals)
             stitch_review_decision_count = len(result.stitch_review_decisions)
             stitched_flow_count = len(result.stitched_flows)
@@ -288,6 +289,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_auto_stitch_materialization_result_count={auto_stitch_materialization_result_count}",
                 f"flow_timeline_auto_stitch_materialization_audit_count={auto_stitch_materialization_audit_count}",
                 f"flow_timeline_auto_stitch_materialization_rollback_plan_count={auto_stitch_materialization_rollback_plan_count}",
+                f"flow_timeline_auto_stitch_materialization_transaction_count={auto_stitch_materialization_transaction_count}",
                 f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
                 f"flow_timeline_stitch_review_decision_count={stitch_review_decision_count}",
                 f"flow_timeline_stitched_flow_count={stitched_flow_count}",
@@ -328,6 +330,8 @@ class NativeWebRuntime(WebReverseRuntime):
                         "auto_stitch_materialization_audit_summary": dict(result.auto_stitch_materialization_audit_summary),
                         "auto_stitch_materialization_rollback_plan_count": auto_stitch_materialization_rollback_plan_count,
                         "auto_stitch_materialization_rollback_summary": dict(result.auto_stitch_materialization_rollback_summary),
+                        "auto_stitch_materialization_transaction_count": auto_stitch_materialization_transaction_count,
+                        "auto_stitch_materialization_transaction_summary": dict(result.auto_stitch_materialization_transaction_summary),
                         "stitch_proposal_count": stitch_proposal_count,
                         "stitch_review_decision_count": stitch_review_decision_count,
                         "stitched_flow_count": stitched_flow_count,
@@ -399,6 +403,23 @@ class NativeWebRuntime(WebReverseRuntime):
                         },
                     )
                 )
+            if auto_stitch_materialization_transaction_count:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/stitched-flow-materialization-transactions.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web stitched-flow materialization transaction log.",
+                        metadata={
+                            "flow_id": result.flow_id,
+                            "count": auto_stitch_materialization_transaction_count,
+                            "summary": dict(result.auto_stitch_materialization_transaction_summary),
+                            "automatic_stitching": False,
+                            "automatic_rollback": False,
+                            "transaction_log_only": True,
+                            "source": "review_approved_auto_stitch_materialization_plan",
+                        },
+                    )
+                )
             if stitched_flow_count:
                 artifact_paths.append(
                     ArtifactRef(
@@ -420,6 +441,8 @@ class NativeWebRuntime(WebReverseRuntime):
                 applied_actions.append("write_stitched_flow_materialization_audit")
             if auto_stitch_materialization_rollback_plan_count:
                 applied_actions.append("write_stitched_flow_rollback_plan")
+            if auto_stitch_materialization_transaction_count:
+                applied_actions.append("write_stitched_flow_materialization_transaction_log")
             if stitched_flow_count:
                 applied_actions.append("materialize_review_approved_stitched_flow")
             return ProtectionResult(
@@ -1562,6 +1585,8 @@ class NativeWebRuntime(WebReverseRuntime):
                     "auto_stitch_materialization_audit_summary": flow_timeline.get("auto_stitch_materialization_audit_summary", {}),
                     "auto_stitch_materialization_rollback_plan_count": flow_timeline.get("auto_stitch_materialization_rollback_plan_count", 0),
                     "auto_stitch_materialization_rollback_summary": flow_timeline.get("auto_stitch_materialization_rollback_summary", {}),
+                    "auto_stitch_materialization_transaction_count": flow_timeline.get("auto_stitch_materialization_transaction_count", 0),
+                    "auto_stitch_materialization_transaction_summary": flow_timeline.get("auto_stitch_materialization_transaction_summary", {}),
                     "stitch_proposal_count": flow_timeline.get("stitch_proposal_count", 0),
                     "stitch_review_decision_count": flow_timeline.get("stitch_review_decision_count", 0),
                     "stitched_flow_count": flow_timeline.get("stitched_flow_count", 0),
@@ -1648,6 +1673,28 @@ class NativeWebRuntime(WebReverseRuntime):
                         "summary": flow_timeline.get("auto_stitch_materialization_rollback_summary", {}),
                         "automatic_stitching": False,
                         "automatic_rollback": False,
+                        "source": "review_approved_auto_stitch_materialization_plan",
+                    },
+                )
+            )
+        materialization_transactions = (
+            flow_timeline.get("auto_stitch_materialization_transactions")
+            if isinstance(flow_timeline.get("auto_stitch_materialization_transactions"), list)
+            else []
+        )
+        if materialization_transactions:
+            artifacts.append(
+                ArtifactRef(
+                    path="virtual://workspace/stitched-flow-materialization-transactions.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web stitched-flow materialization transaction log.",
+                    metadata={
+                        "flow_id": flow_timeline.get("flow_id"),
+                        "count": len(materialization_transactions),
+                        "summary": flow_timeline.get("auto_stitch_materialization_transaction_summary", {}),
+                        "automatic_stitching": False,
+                        "automatic_rollback": False,
+                        "transaction_log_only": True,
                         "source": "review_approved_auto_stitch_materialization_plan",
                     },
                 )
