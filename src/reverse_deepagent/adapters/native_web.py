@@ -13,6 +13,8 @@ from reverse_deepagent.browser.hooks import (
     BrowserHookManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    FlowTimelineManager,
+    FlowTimelineSpec,
     FunctionHookManager,
     FunctionHookSpec,
     ModuleDiscoveryManager,
@@ -243,6 +245,49 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=[],
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_flow_timeline_request(protection_name, context):
+            spec = FlowTimelineSpec.from_context(context)
+            result = FlowTimelineManager().build(spec)
+            entry_count = len(result.entries)
+            verification = [
+                f"flow_timeline_status={result.status}",
+                f"flow_timeline_flow_id={result.flow_id}",
+                f"flow_timeline_entry_count={entry_count}",
+                f"flow_timeline_previous_entry_count={result.previous_entry_count}",
+                f"flow_timeline_new_entry_count={result.new_entry_count}",
+                f"flow_timeline_continued_from_previous={result.continued_from_previous}",
+                f"flow_timeline_sources={sorted(result.source_counts.keys())}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"flow_timeline_reason={result.reason}")
+            if result.error:
+                verification.append(f"flow_timeline_error={result.error}")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["build_flow_timeline"] if entry_count else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.new_entry_count else ExecutionStatus.PARTIAL if entry_count else ExecutionStatus.FAILED,
+                artifacts=[
+                    ArtifactRef(
+                        path="virtual://workspace/flow-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web cross-request flow timeline continuation baseline.",
+                        metadata={
+                            "status": result.status,
+                            "flow_id": result.flow_id,
+                            "run_id": result.run_id,
+                            "entry_count": entry_count,
+                            "previous_entry_count": result.previous_entry_count,
+                            "new_entry_count": result.new_entry_count,
+                            "continued_from_previous": result.continued_from_previous,
+                            "source_counts": result.source_counts,
+                        },
+                    )
+                ],
+                next_action="inspect_flow_timeline_or_continue_next_request" if entry_count else "provide_timeline_inputs",
+                confidence=ConfidenceLevel.MEDIUM if result.new_entry_count else ConfidenceLevel.LOW,
             )
         if self._is_mutation_observer_timeline_request(protection_name, context):
             spec = MutationObserverTimelineSpec.from_context(context)
@@ -1021,6 +1066,31 @@ class NativeWebRuntime(WebReverseRuntime):
                 "selectedGlobals",
                 "global_names",
                 "globalNames",
+            )
+        )
+
+    @staticmethod
+    def _is_flow_timeline_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "flow-timeline",
+            "cross-request-timeline",
+            "request-flow-timeline",
+            "continue-flow-timeline",
+            "timeline-continuation",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "flow_timeline",
+                "flowTimeline",
+                "previous_flow_timeline",
+                "previousFlowTimeline",
+                "flow_events",
+                "flowEvents",
+                "timeline_inputs",
+                "timelineInputs",
             )
         )
 

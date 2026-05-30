@@ -750,6 +750,42 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["federation_key_count"], 1)
         self.assertEqual(result.artifacts[1].metadata["candidate_count"], 2)
 
+    def test_native_web_runtime_apply_minimal_protection_builds_flow_timeline(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "flow-timeline",
+            {
+                "flow_id": "sign-flow",
+                "run_id": "run-2",
+                "request_id": "req-2",
+                "previous_flow_timeline": {
+                    "entries": [
+                        {"sequence": 0, "flow_id": "sign-flow", "source": "network_requests", "type": "network.request"}
+                    ]
+                },
+                "network_requests": {"items": [{"url": "https://example.test/api/sign", "method": "POST"}]},
+                "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign"}}]}},
+                "debugger_timeline": {"entries": [{"type": "breakpoint.hit", "callFrameId": "cf-1"}]},
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["build_flow_timeline"])
+        self.assertIn("flow_timeline_status=success", result.verification)
+        self.assertIn("flow_timeline_entry_count=4", result.verification)
+        self.assertIn("flow_timeline_previous_entry_count=1", result.verification)
+        self.assertIn("flow_timeline_new_entry_count=3", result.verification)
+        self.assertIn("flow_timeline_continued_from_previous=True", result.verification)
+        self.assertEqual(result.next_action, "inspect_flow_timeline_or_continue_next_request")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/flow-timeline.json")
+        self.assertEqual(result.artifacts[0].metadata["flow_id"], "sign-flow")
+        self.assertEqual(result.artifacts[0].metadata["entry_count"], 4)
+        self.assertEqual(result.artifacts[0].metadata["previous_entry_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["new_entry_count"], 3)
+        self.assertTrue(result.artifacts[0].metadata["continued_from_previous"])
+        self.assertEqual(result.artifacts[0].metadata["source_counts"]["network_requests"], 1)
+
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
