@@ -1,6 +1,6 @@
 import unittest
 
-from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec
+from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, PausedSessionActionSpec
 
 
 class RecordingCDPSession:
@@ -301,6 +301,7 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertIn(("Debugger.resume", {}), session.calls)
 
     def test_set_breakpoint_can_preserve_paused_session_without_auto_resume(self) -> None:
+        BreakpointManager.clear_paused_sessions()
         session = RecordingCDPSession(emit_pause_on_evaluate=True)
         spec = BreakpointSpec.from_context(
             {
@@ -323,6 +324,33 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertIn("debugger.resume", [entry["type"] for entry in result.debugger_timeline["entries"]])
         self.assertEqual(result.trigger["mode"], "scheduled")
         self.assertNotIn(("Debugger.resume", {}), session.calls)
+
+    def test_paused_session_registry_supports_resume_follow_up(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        session = RecordingCDPSession(emit_pause_on_evaluate=True, emit_pause_on_step=True)
+        manager = BreakpointManager()
+        spec = BreakpointSpec.from_context(
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 3,
+                "trigger_expression": "debugger; 'scheduled'",
+                "keep_paused": True,
+                "pause_session_id": "session-follow-up",
+            }
+        )
+        initial = manager.set_breakpoint(FakeBreakpointPage(session), spec)
+        self.assertEqual(initial.debugger_session["lifecycle"], "retained_paused")
+        self.assertIn("session-follow-up", BreakpointManager._paused_sessions)
+        follow_up = manager.run_paused_session_action(
+            FakeBreakpointPage(session),
+            PausedSessionActionSpec.from_context({"pause_session_id": "session-follow-up", "paused_session_action": "resume"}),
+        )
+        self.assertEqual(follow_up.status, "success")
+        self.assertEqual(follow_up.debugger_session["lifecycle"], "resumed")
+        self.assertEqual(follow_up.debugger_session["continued_from_registry"], True)
+        self.assertIn("debugger.session_action", [entry["type"] for entry in follow_up.debugger_timeline["entries"]])
+        self.assertNotIn("session-follow-up", BreakpointManager._paused_sessions)
+        self.assertIn(("Debugger.resume", {}), session.calls)
 
     def test_set_breakpoint_failure_is_structured(self) -> None:
         result = BreakpointManager().set_breakpoint(

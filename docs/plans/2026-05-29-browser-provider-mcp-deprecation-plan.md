@@ -297,7 +297,7 @@ Acceptance:
 
 ### Phase 9: Hook and breakpoint migration
 
-Status: hook baseline, WebSocket send/message capture, target-function wrapper baseline, source-level logpoint baseline, provider-neutral BreakpointManager baseline, native-web runtime-eval candidate validation, basic paused/callframe breakpoint smoke, explicit evaluateOnCallFrame baseline, callframe evaluation policy baseline, debugger step-control baseline, paused-session snapshot baseline, and single-run debugger timeline baseline are implemented and tested locally. Deeper cross-request pause lifecycle management, source map / bundle offset remapping, webpack / module-internal function hooks, fine-grained mutation auditing, and cross-request timeline continuation remain future debugger-scope work.
+Status: hook baseline, WebSocket send/message capture, target-function wrapper baseline, source-level logpoint baseline, provider-neutral BreakpointManager baseline, in-process paused-session registry baseline, native-web runtime-eval candidate validation, basic paused/callframe breakpoint smoke, explicit evaluateOnCallFrame baseline, callframe evaluation policy baseline, debugger step-control baseline, paused-session snapshot baseline, and single-run debugger timeline baseline are implemented and tested locally. Deeper cross-process paused session persistence, source map / bundle offset remapping, webpack / module-internal function hooks, fine-grained mutation auditing, and richer cross-request timeline continuation remain future debugger-scope work.
 
 Deliverables:
 
@@ -310,6 +310,7 @@ Deliverables:
 - WebSocket send/message hook capture through the shared hook timeline.
 - `virtual://workspace/function-hooks.json` and `virtual://workspace/function-hook-timeline.json` target-function hook artifact refs / evidence mapping
 - `virtual://workspace/source-logpoints.json` and `virtual://workspace/source-logpoint-timeline.json` source logpoint artifact refs / evidence mapping
+- retained paused-session registry baseline via `pause_session_id` and `paused-session` follow-up actions
 - `virtual://workspace/breakpoints.json` protection artifact ref / evidence mapping
 - `virtual://workspace/debugger-paused.json` and `virtual://workspace/callframes.json` breakpoint smoke artifact refs
 - `virtual://workspace/callframe-evaluations.json` artifact ref when explicit callframe evaluations are requested
@@ -324,7 +325,7 @@ Acceptance:
 - Anti-debug patches are minimal and auditable.
 - Breakpoint features are behind provider capability checks and only run for explicit protection/debug requests.
 - Hook output is emitted as normalized evidence and artifact files.
-- Target-function hook baseline is limited to globally reachable paths such as `window.buildSign`; source-level logpoint baseline is limited to explicit script URL / line-number observations; source map / bundle offset remapping and webpack internal hook support are intentionally separate follow-up capabilities.
+- Target-function hook baseline is limited to globally reachable paths such as `window.buildSign`; source-level logpoint baseline is limited to explicit script URL / line-number observations; retained paused sessions are in-process only; source map / bundle offset remapping and webpack internal hook support are intentionally separate follow-up capabilities.
 
 ### Phase 10: MCP legacy downgrade
 

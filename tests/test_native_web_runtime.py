@@ -6,6 +6,7 @@ from typing import Any
 
 from reverse_deepagent.adapters.native_web import NativeWebRuntime
 from reverse_deepagent.browser import BrowserPageRef, BrowserProviderCapabilities, PlaywrightBrowserPageAdapter
+from reverse_deepagent.browser.hooks import BreakpointManager
 from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
 
 
@@ -560,6 +561,37 @@ class NativeWebRuntimeTests(unittest.TestCase):
         )
         self.assertIn(("Debugger.stepOver", {}), page._cdp_session.calls)
         self.assertNotIn(("Debugger.resume", {}), page._cdp_session.calls)
+
+    def test_native_web_runtime_can_resume_retained_paused_session(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        initial = runtime.apply_minimal_protection(
+            "set-breakpoint",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 4,
+                "trigger_expression": "debugger; 'scheduled'",
+                "keep_paused": True,
+                "pause_session_id": "native-paused-session",
+            },
+        )
+        self.assertEqual(initial.status.value, "success")
+        self.assertEqual(initial.next_action, "inspect_debugger_session_or_resume")
+        follow_up = runtime.apply_minimal_protection(
+            "paused-session",
+            {
+                "pause_session_id": "native-paused-session",
+                "paused_session_action": "resume",
+            },
+        )
+        self.assertEqual(follow_up.status.value, "success")
+        self.assertEqual(follow_up.applied_actions, ["run_paused_session_action:native-paused-session"])
+        self.assertEqual(follow_up.next_action, "continue_recon")
+        self.assertIn("paused_session_lifecycle=resumed", follow_up.verification)
+        self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/debugger-session.json")
+        self.assertEqual(follow_up.artifacts[0].metadata["lifecycle"], "resumed")
+        self.assertNotIn("native-paused-session", BreakpointManager._paused_sessions)
 
 
 if __name__ == "__main__":

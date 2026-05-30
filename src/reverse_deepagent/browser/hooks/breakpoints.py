@@ -183,8 +183,93 @@ class BreakpointResult:
         }
 
 
+@dataclass(slots=True)
+class PausedSessionActionSpec:
+    """Follow-up action against a retained paused debugger session."""
+
+    pause_session_id: str
+    action: str = "inspect"
+    callframe_evaluations: list[str] = field(default_factory=list)
+    callframe_index: int = 0
+    callframe_evaluation_policy: str = "read_only"
+    debugger_actions: list[str] = field(default_factory=list)
+    wait_after_action_ms: int = 0
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionActionSpec | None":
+        context = context or {}
+        session_id = context.get("pause_session_id") or context.get("pauseSessionId") or context.get("debugger_session_id") or context.get("debuggerSessionId")
+        if not session_id:
+            return None
+        raw_action = context.get(
+            "paused_session_action",
+            context.get("pausedSessionAction", context.get("debugger_session_action", context.get("debuggerSessionAction", context.get("session_action", "inspect")))),
+        )
+        action = str(raw_action or "inspect").strip().replace("-", "_").lower()
+        evaluations_raw = (
+            context.get("callframe_evaluations")
+            or context.get("callframeEvaluations")
+            or context.get("evaluate_on_callframe")
+            or context.get("evaluateOnCallFrame")
+        )
+        debugger_actions_raw = (
+            context.get("debugger_actions")
+            or context.get("debuggerActions")
+            or context.get("pause_actions")
+            or context.get("pauseActions")
+            or context.get("step_actions")
+            or context.get("stepActions")
+        )
+        debugger_actions = BreakpointSpec._coerce_actions(debugger_actions_raw)
+        if action in {"resume", "step_over", "stepover", "over", "step_into", "stepinto", "into", "step_out", "stepout", "out"} and not debugger_actions:
+            debugger_actions = [action]
+        evaluation_policy_raw = context.get(
+            "callframe_evaluation_policy",
+            context.get("callframeEvaluationPolicy", context.get("evaluation_policy", context.get("evaluationPolicy"))),
+        )
+        allow_side_effects_raw = context.get(
+            "allow_callframe_side_effects",
+            context.get("allowCallframeSideEffects", context.get("allow_side_effects", context.get("allowSideEffects"))),
+        )
+        return cls(
+            pause_session_id=str(session_id),
+            action=action or "inspect",
+            callframe_evaluations=BreakpointSpec._coerce_evaluations(evaluations_raw),
+            callframe_index=int(context.get("callframe_index", context.get("callFrameIndex", 0)) or 0),
+            callframe_evaluation_policy=BreakpointSpec._normalize_evaluation_policy(
+                evaluation_policy_raw,
+                allow_side_effects=bool(allow_side_effects_raw),
+            ),
+            debugger_actions=debugger_actions,
+            wait_after_action_ms=int(context.get("wait_after_action_ms", context.get("waitAfterActionMs", 0)) or 0),
+        )
+
+    def to_breakpoint_spec(self, base: BreakpointSpec) -> BreakpointSpec:
+        return BreakpointSpec(
+            url_pattern=base.url_pattern,
+            line_number=base.line_number,
+            column_number=base.column_number,
+            condition=base.condition,
+            trigger_expression=None,
+            wait_after_trigger_ms=0,
+            auto_resume=False,
+            callframe_evaluations=list(self.callframe_evaluations),
+            callframe_index=self.callframe_index,
+            callframe_evaluation_policy=self.callframe_evaluation_policy,
+            debugger_actions=list(self.debugger_actions),
+            preserve_pause_state=True,
+            pause_session_id=self.pause_session_id,
+        )
+
+
 class BreakpointManager:
     """Set CDP breakpoints behind a provider-neutral capability gate."""
+
+    _paused_sessions: dict[str, dict[str, Any]] = {}
+
+    @classmethod
+    def clear_paused_sessions(cls) -> None:
+        cls._paused_sessions.clear()
 
     def set_breakpoint(self, page: BrowserPage, spec: BreakpointSpec | None) -> BreakpointResult:
         if spec is None:
@@ -232,7 +317,7 @@ class BreakpointManager:
                 "locations": locations if isinstance(locations, list) else [],
             }
         ]
-        return BreakpointResult(
+        result = BreakpointResult(
             status="success" if breakpoint_id else "partial",
             supported=True,
             breakpoints=breakpoints,
@@ -244,6 +329,123 @@ class BreakpointManager:
             debugger_timeline=self._debugger_timeline(paused_events, spec, trigger, breakpoints, debugger_session),
             trigger=trigger,
         )
+        self._maybe_store_paused_session(session, page, spec, paused_events, pause_subscription, trigger, breakpoints, debugger_session)
+        return result
+
+    def run_paused_session_action(self, page: BrowserPage, spec: PausedSessionActionSpec | None) -> BreakpointResult:
+        if spec is None:
+            return BreakpointResult(status="unsupported", supported=False, reason="missing_pause_session_id")
+        entry = self._paused_sessions.get(spec.pause_session_id)
+        if not entry:
+            return BreakpointResult(status="unsupported", supported=False, reason="pause_session_not_found")
+        session = entry["session"]
+        paused_events = entry["paused_events"]
+        base_spec = entry["spec"]
+        breakpoints = entry.get("breakpoints", [])
+        action_breakpoint_spec = spec.to_breakpoint_spec(base_spec)
+        evaluations: list[dict[str, Any]] = []
+        actions: list[dict[str, Any]] = []
+        error: str | None = None
+        if spec.callframe_evaluations:
+            evaluations = self._evaluate_callframe_expressions(session, self._callframes_from_paused(paused_events), action_breakpoint_spec)
+            if paused_events:
+                paused_events[0].setdefault("evaluations", []).extend(evaluations)
+        if spec.debugger_actions:
+            actions = self._run_debugger_actions(session, action_breakpoint_spec)
+            if paused_events:
+                paused_events[0].setdefault("debugger_actions", []).extend(actions)
+            self._wait_after_trigger(entry.get("page") or page, spec.wait_after_action_ms)
+        if spec.action == "inspect" and not evaluations and not actions:
+            pass
+        elif spec.action not in {"inspect", "evaluate", "eval", "resume", "step_over", "stepover", "over", "step_into", "stepinto", "into", "step_out", "stepout", "out"}:
+            error = "unsupported_paused_session_action"
+        base_debugger_session = self._debugger_session_snapshot(paused_events, action_breakpoint_spec)
+        lifecycle = self._continued_pause_lifecycle(base_debugger_session, actions)
+        base_debugger_session["lifecycle"] = lifecycle
+        base_debugger_session["continued_from_registry"] = True
+        base_debugger_session["registry_active"] = lifecycle != "resumed"
+        timeline = self._debugger_timeline(paused_events, action_breakpoint_spec, {"attempted": False}, breakpoints, base_debugger_session, error=error)
+        timeline["continued_from_registry"] = True
+        timeline["registry_active"] = lifecycle != "resumed"
+        action_entries = self._debugger_action_timeline_entries(actions, start_index=len(timeline["entries"]))
+        timeline["entries"].extend(action_entries)
+        timeline["entry_count"] = len(timeline["entries"])
+        timeline["debugger_action_count"] = sum(
+            len(event.get("debugger_actions", [])) for event in paused_events if isinstance(event.get("debugger_actions"), list)
+        )
+        if lifecycle == "resumed":
+            self._paused_sessions.pop(spec.pause_session_id, None)
+        else:
+            entry["debugger_session"] = base_debugger_session
+            entry["debugger_timeline"] = timeline
+        return BreakpointResult(
+            status="failed" if error else "success",
+            supported=True,
+            breakpoints=breakpoints,
+            paused=self._paused_summary(paused_events, {"supported": True, "source": "paused_session_registry"}),
+            callframes=self._callframes_from_paused(paused_events),
+            callframe_evaluations=evaluations,
+            debugger_actions=actions,
+            debugger_session=base_debugger_session,
+            debugger_timeline=timeline,
+            trigger={"attempted": False},
+            error=error,
+            reason=None if not error else error,
+        )
+
+    def _maybe_store_paused_session(
+        self,
+        session: Any,
+        page: BrowserPage,
+        spec: BreakpointSpec,
+        paused_events: list[dict[str, Any]],
+        pause_subscription: dict[str, Any],
+        trigger: dict[str, Any],
+        breakpoints: list[dict[str, Any]],
+        debugger_session: dict[str, Any],
+    ) -> None:
+        session_id = debugger_session.get("session_id")
+        lifecycle = debugger_session.get("lifecycle")
+        if not session_id or not paused_events or lifecycle not in {"retained_paused", "action_controlled"}:
+            return
+        timeline = self._debugger_timeline(paused_events, spec, trigger, breakpoints, debugger_session)
+        self._paused_sessions[str(session_id)] = {
+            "session": session,
+            "page": page,
+            "spec": spec,
+            "paused_events": paused_events,
+            "pause_subscription": pause_subscription,
+            "breakpoints": breakpoints,
+            "debugger_session": debugger_session,
+            "debugger_timeline": timeline,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+        }
+
+    @staticmethod
+    def _continued_pause_lifecycle(debugger_session: dict[str, Any], actions: list[dict[str, Any]]) -> str:
+        successful_methods = {str(item.get("method")) for item in actions if item.get("ok") and item.get("method")}
+        if "Debugger.resume" in successful_methods:
+            return "resumed"
+        if successful_methods:
+            return "action_controlled"
+        return debugger_session.get("lifecycle", "retained_paused")
+
+    @staticmethod
+    def _debugger_action_timeline_entries(actions: list[dict[str, Any]], *, start_index: int) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        for offset, action in enumerate(actions):
+            entry = {
+                "type": "debugger.session_action",
+                "index": start_index + offset,
+                "action": action.get("action"),
+                "method": action.get("method"),
+                "ok": action.get("ok"),
+            }
+            if action.get("error"):
+                entry["error"] = action["error"]
+            entries.append(entry)
+        return entries
 
     def _subscribe_paused(self, session: Any, paused_events: list[dict[str, Any]], *, spec: BreakpointSpec) -> dict[str, Any]:
         on = getattr(session, "on", None)

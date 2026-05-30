@@ -13,6 +13,7 @@ from reverse_deepagent.browser.hooks import (
     BrowserHookManager,
     FunctionHookManager,
     FunctionHookSpec,
+    PausedSessionActionSpec,
     SourceLogpointManager,
     SourceLogpointSpec,
 )
@@ -232,6 +233,99 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=[],
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_request(protection_name, context):
+            spec = PausedSessionActionSpec.from_context(context)
+            result = BreakpointManager().run_paused_session_action(page, spec)
+            pause_session_id = spec.pause_session_id if spec else "<missing>"
+            paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
+            debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
+            callframe_count = len(result.callframes)
+            callframe_evaluation_count = len(result.callframe_evaluations)
+            debugger_action_count = len(result.debugger_actions)
+            debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
+            debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
+            verification = [
+                f"paused_session_status={result.status}",
+                f"paused_session_paused_status={paused_status or 'unknown'}",
+                f"paused_session_lifecycle={debugger_lifecycle or 'unknown'}",
+                f"paused_session_callframe_count={callframe_count}",
+                f"paused_session_callframe_evaluation_count={callframe_evaluation_count}",
+                f"paused_session_debugger_action_count={debugger_action_count}",
+                f"paused_session_debugger_session_count={debugger_session_count}",
+                f"paused_session_debugger_timeline_count={debugger_timeline_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"paused_session_error={result.error}")
+            if result.reason:
+                verification.append(f"paused_session_reason={result.reason}")
+            artifact_paths = []
+            if result.debugger_session:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-session.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session snapshot.",
+                        metadata={
+                            "status": result.debugger_session.get("status", "unknown"),
+                            "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
+                            "paused_event_count": result.debugger_session.get("paused_event_count", 0),
+                            "continued_from_registry": True,
+                        },
+                    )
+                )
+            if result.debugger_timeline:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session timeline.",
+                        metadata={
+                            "status": result.debugger_timeline.get("status", "unknown"),
+                            "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
+                            "entry_count": result.debugger_timeline.get("entry_count", 0),
+                            "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
+                            "continued_from_registry": True,
+                        },
+                    )
+                )
+            if result.callframes:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/callframes.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session callframes.",
+                        metadata={"count": callframe_count, "continued_from_registry": True},
+                    )
+                )
+            if result.callframe_evaluations:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/callframe-evaluations.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session callframe evaluations.",
+                        metadata={"count": callframe_evaluation_count, "continued_from_registry": True},
+                    )
+                )
+            if result.debugger_actions:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-actions.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session debugger actions.",
+                        metadata={"count": debugger_action_count, "continued_from_registry": True},
+                    )
+                )
+            next_action = "inspect_debugger_session" if debugger_lifecycle != "resumed" else "continue_recon"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[f"run_paused_session_action:{pause_session_id}"] if result.status == "success" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
             )
         if self._is_source_logpoint_request(protection_name, context):
             spec = SourceLogpointSpec.from_context(context)
@@ -553,6 +647,30 @@ class NativeWebRuntime(WebReverseRuntime):
         if normalized in {"breakpoint", "set-breakpoint", "debugger-breakpoint"}:
             return True
         return any(key in context for key in ("url_pattern", "script_url", "line_number", "lineNumber"))
+
+    @staticmethod
+    def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session",
+            "pause-session",
+            "debugger-session",
+            "resume-paused-session",
+            "inspect-paused-session",
+            "evaluate-paused-session",
+            "step-paused-session",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_action",
+                "pausedSessionAction",
+                "debugger_session_action",
+                "debuggerSessionAction",
+                "session_action",
+            )
+        )
 
     @staticmethod
     def _is_source_logpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
