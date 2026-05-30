@@ -570,6 +570,10 @@ class NativeWebRuntime(WebReverseRuntime):
             script_count = len(result.scripts)
             runtime_status = result.runtime.get("status") if result.runtime else "not_attempted"
             runtime_module_count = int(result.runtime.get("module_count") or 0) if result.runtime else 0
+            runtime_kinds = result.runtime.get("runtime_kinds") if isinstance(result.runtime.get("runtime_kinds"), list) else []
+            runtime_paths = result.runtime.get("runtime_paths") if isinstance(result.runtime.get("runtime_paths"), list) else []
+            custom_key_count = int(result.runtime.get("custom_key_count") or 0) if result.runtime else 0
+            federation_key_count = int(result.runtime.get("federation_key_count") or 0) if result.runtime else 0
             verification = [
                 f"module_discovery_status={result.status}",
                 f"module_discovery_script_count={script_count}",
@@ -577,6 +581,9 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"module_discovery_candidate_count={candidate_count}",
                 f"module_discovery_runtime_status={runtime_status}",
                 f"module_discovery_runtime_module_count={runtime_module_count}",
+                f"module_discovery_runtime_kinds={runtime_kinds}",
+                f"module_discovery_custom_key_count={custom_key_count}",
+                f"module_discovery_federation_key_count={federation_key_count}",
                 f"context_keys={sorted(context.keys())}",
             ]
             if result.trigger:
@@ -598,6 +605,10 @@ class NativeWebRuntime(WebReverseRuntime):
                         "module_count": module_count,
                         "runtime_status": runtime_status,
                         "runtime_module_count": runtime_module_count,
+                        "runtime_kinds": runtime_kinds,
+                        "runtime_paths": runtime_paths,
+                        "custom_key_count": custom_key_count,
+                        "federation_key_count": federation_key_count,
                     },
                 ),
                 ArtifactRef(

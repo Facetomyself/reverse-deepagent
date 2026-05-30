@@ -94,7 +94,13 @@ class ModuleDiscoveryPage:
 class ModuleDiscoveryManagerTests(unittest.TestCase):
     def test_from_context_accepts_query_or_discovery_flag(self) -> None:
         by_query = ModuleDiscoverySpec.from_context({"module_query": "sign"})
-        by_flag = ModuleDiscoverySpec.from_context({"discover_modules": True, "require_path": "window.__r"})
+        by_flag = ModuleDiscoverySpec.from_context(
+            {
+                "discover_modules": True,
+                "require_path": "window.__r",
+                "module_runtime_paths": "window.__r, window.__viteModules, window.remoteApp",
+            }
+        )
 
         self.assertIsNotNone(by_query)
         assert by_query is not None
@@ -103,6 +109,7 @@ class ModuleDiscoveryManagerTests(unittest.TestCase):
         self.assertIsNotNone(by_flag)
         assert by_flag is not None
         self.assertEqual(by_flag.require_path, "window.__r")
+        self.assertEqual(by_flag.module_runtime_paths, ["window.__r", "window.__viteModules", "window.remoteApp"])
         self.assertIsNone(ModuleDiscoverySpec.from_context({}))
 
     def test_discovers_webpack_like_module_exports_from_fixture_source(self) -> None:
@@ -178,6 +185,68 @@ class ModuleDiscoveryManagerTests(unittest.TestCase):
         self.assertEqual(by_id["732"]["export_names"], ["token"])
         hook_paths = {item["hook_path"] for item in result.candidates}
         self.assertEqual(hook_paths, {"window.__webpack_require__(731).sign", "window.__webpack_require__(732).token"})
+
+    def test_discovers_custom_runtime_and_federation_function_path_candidates(self) -> None:
+        page = ModuleDiscoveryPage(source="")
+        page.runtime_payload = {
+            "ok": True,
+            "status": "success",
+            "requirePath": "window.__webpack_require__",
+            "runtimes": [
+                {
+                    "runtimePath": "window.__viteModules",
+                    "runtimeKind": "object-runtime",
+                    "customKeyCount": 2,
+                    "customRuntimeModules": [
+                        {
+                            "moduleId": "/src/sign.ts",
+                            "exportNames": ["buildSign"],
+                            "exportTypes": {"buildSign": "function"},
+                            "hookPaths": ["window.__viteModules[\"/src/sign.ts\"].buildSign"],
+                            "sourcePreview": "function buildSign(keyword) { return keyword; }",
+                        }
+                    ],
+                },
+                {
+                    "runtimePath": "window.remoteApp",
+                    "runtimeKind": "module-federation",
+                    "federationKeyCount": 1,
+                    "federationModules": [
+                        {
+                            "moduleId": "./sign",
+                            "exposedName": "./sign",
+                            "exportNames": ["sign"],
+                            "exportTypes": {"sign": "function"},
+                            "hookPaths": ["window.remoteApp.__reverseAgentExposes[\"./sign\"].sign"],
+                            "sourcePreview": "function sign(keyword) { return keyword; }",
+                        }
+                    ],
+                },
+            ],
+        }
+        spec = ModuleDiscoverySpec.from_context(
+            {
+                "discover_modules": True,
+                "module_runtime_paths": ["window.__webpack_require__", "window.__viteModules", "window.remoteApp"],
+                "module_query": "sign",
+            }
+        )
+
+        result = ModuleDiscoveryManager().discover(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.runtime["runtime_paths"], ["window.__viteModules", "window.remoteApp"])
+        self.assertEqual(result.runtime["runtime_kinds"], ["object-runtime", "module-federation"])
+        self.assertEqual(result.runtime["custom_key_count"], 2)
+        self.assertEqual(result.runtime["federation_key_count"], 1)
+        by_source = {item["discovery_source"]: item for item in result.modules}
+        self.assertEqual(by_source["custom_runtime"]["hook_kind"], "function-path")
+        self.assertEqual(by_source["module_federation"]["hook_kind"], "function-path")
+        candidates = {item["export_name"]: item for item in result.candidates}
+        self.assertEqual(candidates["buildSign"]["hook_path"], 'window.__viteModules["/src/sign.ts"].buildSign')
+        self.assertEqual(candidates["buildSign"]["hook_kind"], "function-path")
+        self.assertEqual(candidates["sign"]["hook_path"], 'window.remoteApp.__reverseAgentExposes["./sign"].sign')
+        self.assertEqual(candidates["sign"]["discovery_source"], "module_federation")
 
 
 class ModuleHookManagerTests(unittest.TestCase):

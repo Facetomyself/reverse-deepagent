@@ -692,6 +692,64 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["runtime_module_count"], 1)
         self.assertEqual(result.artifacts[1].metadata["candidate_count"], 1)
 
+    def test_native_web_runtime_apply_minimal_protection_discovers_custom_and_federated_runtime_modules(self) -> None:
+        provider = FakeProvider()
+        provider.session.context.pages[0].runtime_module_payload = {
+            "ok": True,
+            "status": "success",
+            "requirePath": "window.__webpack_require__",
+            "runtimes": [
+                {
+                    "runtimePath": "window.__viteModules",
+                    "runtimeKind": "object-runtime",
+                    "customKeyCount": 1,
+                    "customRuntimeModules": [
+                        {
+                            "moduleId": "/src/sign.ts",
+                            "exportNames": ["buildSign"],
+                            "exportTypes": {"buildSign": "function"},
+                            "hookPaths": ["window.__viteModules[\"/src/sign.ts\"].buildSign"],
+                            "sourcePreview": "function buildSign(keyword) { return keyword; }",
+                        }
+                    ],
+                },
+                {
+                    "runtimePath": "window.remoteApp",
+                    "runtimeKind": "module-federation",
+                    "federationKeyCount": 1,
+                    "federationModules": [
+                        {
+                            "moduleId": "./sign",
+                            "exportNames": ["sign"],
+                            "hookPaths": ["window.remoteApp.__reverseAgentExposes[\"./sign\"].sign"],
+                            "sourcePreview": "function sign(keyword) { return keyword; }",
+                        }
+                    ],
+                },
+            ],
+        }
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "module-discovery",
+            {
+                "module_query": "sign",
+                "module_runtime_paths": ["window.__webpack_require__", "window.__viteModules", "window.remoteApp"],
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["discover_module_exports"])
+        self.assertIn("module_discovery_runtime_kinds=['object-runtime', 'module-federation']", result.verification)
+        self.assertIn("module_discovery_custom_key_count=1", result.verification)
+        self.assertIn("module_discovery_federation_key_count=1", result.verification)
+        self.assertIn("module_discovery_candidate_count=2", result.verification)
+        self.assertEqual(result.next_action, "install_module_hook_from_candidate")
+        self.assertEqual(result.artifacts[0].metadata["runtime_kinds"], ["object-runtime", "module-federation"])
+        self.assertEqual(result.artifacts[0].metadata["runtime_paths"], ["window.__viteModules", "window.remoteApp"])
+        self.assertEqual(result.artifacts[0].metadata["custom_key_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["federation_key_count"], 1)
+        self.assertEqual(result.artifacts[1].metadata["candidate_count"], 2)
+
     def test_native_web_runtime_apply_minimal_protection_audits_page_mutation(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

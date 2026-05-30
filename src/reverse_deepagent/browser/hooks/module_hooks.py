@@ -104,9 +104,10 @@ class ModuleHookResult:
 
 @dataclass(slots=True)
 class ModuleDiscoverySpec:
-    """Runtime discovery request for webpack-like module exports."""
+    """Runtime discovery request for webpack-like and custom module exports."""
 
     require_path: str = "window.__webpack_require__"
+    module_runtime_paths: list[str] = field(default_factory=list)
     query: str | None = None
     max_candidates: int = 20
     max_preview_length: int = 240
@@ -121,8 +122,23 @@ class ModuleDiscoverySpec:
         if not discover_flag and not query:
             return None
         require_path = str(context.get("require_path", context.get("requirePath", "window.__webpack_require__")) or "window.__webpack_require__").strip()
+        module_runtime_paths = cls._coerce_paths(
+            context.get(
+                "module_runtime_paths",
+                context.get(
+                    "moduleRuntimePaths",
+                    context.get(
+                        "runtime_paths",
+                        context.get("runtimePaths", context.get("federation_containers", context.get("federationContainers"))),
+                    ),
+                ),
+            )
+        )
+        if require_path and require_path not in module_runtime_paths:
+            module_runtime_paths.insert(0, require_path)
         return cls(
             require_path=require_path,
+            module_runtime_paths=module_runtime_paths,
             query=str(query).strip() if query is not None and str(query).strip() else None,
             max_candidates=int(context.get("max_candidates", context.get("maxCandidates", 20)) or 20),
             max_preview_length=int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240),
@@ -134,6 +150,22 @@ class ModuleDiscoverySpec:
                 )
             ),
         )
+
+    @staticmethod
+    def _coerce_paths(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = [item.strip() for item in value.split(",")]
+        elif isinstance(value, list):
+            raw = [str(item).strip() for item in value if item is not None]
+        else:
+            raw = []
+        paths: list[str] = []
+        for item in raw:
+            if item and item not in paths:
+                paths.append(item)
+        return paths
 
 
 @dataclass(slots=True)
@@ -238,6 +270,67 @@ class ModuleDiscoveryManager:
             return {"status": "unsupported", "modules": [], "reason": "non_object_runtime_payload"}
         modules: list[dict[str, Any]] = []
         query_lower = spec.query.lower() if spec.query else None
+        runtime_payloads = cls._normalize_runtime_payloads(payload, spec)
+        runtime_kinds: list[str] = []
+        runtime_paths: list[str] = []
+        cache_key_count = 0
+        registry_key_count = 0
+        custom_key_count = 0
+        federation_key_count = 0
+        for runtime_payload in runtime_payloads:
+            runtime_path = str(runtime_payload.get("runtimePath") or runtime_payload.get("requirePath") or spec.require_path)
+            runtime_kind = str(runtime_payload.get("runtimeKind") or "webpack-require")
+            if runtime_path and runtime_path not in runtime_paths:
+                runtime_paths.append(runtime_path)
+            if runtime_kind and runtime_kind not in runtime_kinds:
+                runtime_kinds.append(runtime_kind)
+            cache_key_count += int(runtime_payload.get("cacheKeyCount") or 0)
+            registry_key_count += int(runtime_payload.get("registryKeyCount") or 0)
+            custom_key_count += int(runtime_payload.get("customKeyCount") or 0)
+            federation_key_count += int(runtime_payload.get("federationKeyCount") or 0)
+            modules.extend(cls._modules_from_require_cache(runtime_payload, runtime_path, query_lower, page))
+            modules.extend(cls._modules_from_registry(runtime_payload, runtime_path, query_lower, page, spec.max_preview_length))
+            modules.extend(cls._modules_from_custom_runtime(runtime_payload, runtime_path, query_lower, page, spec.max_preview_length))
+            modules.extend(cls._modules_from_federation(runtime_payload, runtime_path, query_lower, page, spec.max_preview_length))
+        status = str(payload.get("status") or ("success" if modules else "partial" if payload.get("ok") else "unsupported"))
+        return {
+            "status": status,
+            "ok": bool(payload.get("ok")),
+            "require_path": payload.get("requirePath", spec.require_path),
+            "runtime_paths": runtime_paths,
+            "runtime_kinds": runtime_kinds,
+            "cache_key_count": cache_key_count,
+            "registry_key_count": registry_key_count,
+            "custom_key_count": custom_key_count,
+            "federation_key_count": federation_key_count,
+            "module_count": len(modules),
+            "modules": modules,
+            "error": payload.get("error"),
+            "reason": payload.get("reason"),
+        }
+
+    @classmethod
+    def _normalize_runtime_payloads(cls, payload: dict[str, Any], spec: ModuleDiscoverySpec) -> list[dict[str, Any]]:
+        runtimes = cls._list_of_dicts(payload.get("runtimes"))
+        if runtimes:
+            return runtimes
+        legacy = {
+            "runtimePath": payload.get("requirePath", spec.require_path),
+            "runtimeKind": payload.get("runtimeKind", "webpack-require"),
+            "cacheKeyCount": payload.get("cacheKeyCount", 0),
+            "registryKeyCount": payload.get("registryKeyCount", 0),
+            "customKeyCount": payload.get("customKeyCount", 0),
+            "federationKeyCount": payload.get("federationKeyCount", 0),
+            "cacheModules": payload.get("cacheModules", []),
+            "registryModules": payload.get("registryModules", []),
+            "customRuntimeModules": payload.get("customRuntimeModules", []),
+            "federationModules": payload.get("federationModules", []),
+        }
+        return [legacy]
+
+    @classmethod
+    def _modules_from_require_cache(cls, payload: dict[str, Any], runtime_path: str, query_lower: str | None, page: BrowserPage) -> list[dict[str, Any]]:
+        modules: list[dict[str, Any]] = []
         for item in cls._list_of_dicts(payload.get("cacheModules")):
             module_id = str(item.get("moduleId") or "")
             export_names = cls._normalize_export_names(item.get("exportNames"))
@@ -245,7 +338,9 @@ class ModuleDiscoveryManager:
                 "module_id": module_id,
                 "export_names": export_names,
                 "export_count": len(export_names),
-                "hook_paths": [_module_export_hook_path(spec.require_path, module_id, name) for name in export_names],
+                "hook_paths": [_module_export_hook_path(runtime_path, module_id, name) for name in export_names],
+                "hook_kind": "module-export",
+                "runtime_path": runtime_path,
                 "source_preview": item.get("sourcePreview") or "",
                 "export_types": item.get("exportTypes") if isinstance(item.get("exportTypes"), dict) else {},
                 "kind": "runtime-cache",
@@ -254,6 +349,11 @@ class ModuleDiscoveryManager:
             }
             if cls._module_matches_query(module, query_lower):
                 modules.append(module)
+        return modules
+
+    @classmethod
+    def _modules_from_registry(cls, payload: dict[str, Any], runtime_path: str, query_lower: str | None, page: BrowserPage, max_preview_length: int) -> list[dict[str, Any]]:
+        modules: list[dict[str, Any]] = []
         for item in cls._list_of_dicts(payload.get("registryModules")):
             module_id = str(item.get("moduleId") or "")
             source = str(item.get("source") or item.get("sourcePreview") or "")
@@ -262,36 +362,78 @@ class ModuleDiscoveryManager:
                 "module_id": module_id,
                 "export_names": export_names,
                 "export_count": len(export_names),
-                "hook_paths": [_module_export_hook_path(spec.require_path, module_id, name) for name in export_names],
-                "source_preview": str(item.get("sourcePreview") or source)[: spec.max_preview_length],
+                "hook_paths": [_module_export_hook_path(runtime_path, module_id, name) for name in export_names],
+                "hook_kind": "module-export",
+                "runtime_path": runtime_path,
+                "source_preview": str(item.get("sourcePreview") or source)[:max_preview_length],
                 "kind": "runtime-registry",
                 "url": getattr(page, "url", None),
                 "discovery_source": "runtime_registry",
             }
             if cls._module_matches_query(module, query_lower):
                 modules.append(module)
-        status = str(payload.get("status") or ("success" if modules else "partial" if payload.get("ok") else "unsupported"))
-        return {
-            "status": status,
-            "ok": bool(payload.get("ok")),
-            "require_path": payload.get("requirePath", spec.require_path),
-            "cache_key_count": int(payload.get("cacheKeyCount") or 0),
-            "registry_key_count": int(payload.get("registryKeyCount") or 0),
-            "module_count": len(modules),
-            "modules": modules,
-            "error": payload.get("error"),
-            "reason": payload.get("reason"),
-        }
+        return modules
+
+    @classmethod
+    def _modules_from_custom_runtime(cls, payload: dict[str, Any], runtime_path: str, query_lower: str | None, page: BrowserPage, max_preview_length: int) -> list[dict[str, Any]]:
+        modules: list[dict[str, Any]] = []
+        for item in cls._list_of_dicts(payload.get("customRuntimeModules")):
+            module_id = str(item.get("moduleId") or item.get("path") or "")
+            export_names = cls._normalize_export_names(item.get("exportNames"))
+            hook_paths = cls._normalize_hook_paths(item.get("hookPaths"))
+            module = {
+                "module_id": module_id,
+                "export_names": export_names,
+                "export_count": len(export_names),
+                "hook_paths": hook_paths,
+                "hook_kind": "function-path",
+                "runtime_path": runtime_path,
+                "source_preview": str(item.get("sourcePreview") or "")[:max_preview_length],
+                "export_types": item.get("exportTypes") if isinstance(item.get("exportTypes"), dict) else {},
+                "kind": "custom-runtime",
+                "url": getattr(page, "url", None),
+                "discovery_source": "custom_runtime",
+            }
+            if cls._module_matches_query(module, query_lower):
+                modules.append(module)
+        return modules
+
+    @classmethod
+    def _modules_from_federation(cls, payload: dict[str, Any], runtime_path: str, query_lower: str | None, page: BrowserPage, max_preview_length: int) -> list[dict[str, Any]]:
+        modules: list[dict[str, Any]] = []
+        for item in cls._list_of_dicts(payload.get("federationModules")):
+            module_id = str(item.get("moduleId") or item.get("exposedName") or "")
+            export_names = cls._normalize_export_names(item.get("exportNames"))
+            hook_paths = cls._normalize_hook_paths(item.get("hookPaths"))
+            hook_kind = "function-path" if hook_paths else "federation-exposed-module"
+            module = {
+                "module_id": module_id,
+                "export_names": export_names,
+                "export_count": len(export_names),
+                "hook_paths": hook_paths,
+                "hook_kind": hook_kind,
+                "runtime_path": runtime_path,
+                "source_preview": str(item.get("sourcePreview") or "")[:max_preview_length],
+                "export_types": item.get("exportTypes") if isinstance(item.get("exportTypes"), dict) else {},
+                "kind": "module-federation",
+                "url": getattr(page, "url", None),
+                "discovery_source": "module_federation",
+            }
+            if cls._module_matches_query(module, query_lower):
+                modules.append(module)
+        return modules
 
     @staticmethod
     def _runtime_introspection_expression(spec: ModuleDiscoverySpec) -> str:
         require_path = json.dumps(spec.require_path)
+        runtime_paths = json.dumps(spec.module_runtime_paths or [spec.require_path], ensure_ascii=False)
         max_preview_length = max(1, int(spec.max_preview_length))
         source_limit = max(2_000, min(max_preview_length * 20, 20_000))
         return f"""
 (() => {{
   const marker = "__REVERSE_AGENT_MODULE_DISCOVERY__";
   const requirePath = {require_path};
+  const runtimePaths = {runtime_paths};
   const maxPreviewLength = {max_preview_length};
   const sourceLimit = {source_limit};
   const describeValue = (value) => {{
@@ -299,15 +441,19 @@ class ModuleDiscoveryManager:
     if (Array.isArray(value)) return "array";
     return typeof value;
   }};
-  try {{
-    let req;
+  const accessPath = (basePath, property) => /^[A-Za-z_$][\\w$]*$/.test(String(property || ""))
+    ? `${{basePath}}.${{property}}`
+    : `${{basePath}}[${{JSON.stringify(String(property || ""))}}]`;
+  const resolveRuntime = (path) => {{
     try {{
-      req = Function("return (" + requirePath + ")")();
+      return {{ ok: true, value: Function("return (" + path + ")")() }};
     }} catch (error) {{
-      return {{ marker, ok: false, status: "unsupported", requirePath, cacheModules: [], registryModules: [], reason: "require_path_unavailable", error: String(error && error.message || error) }};
+      return {{ ok: false, error: String(error && error.message || error) }};
     }}
+  }};
+  const inspectWebpackRequire = (path, req) => {{
     if (!req || typeof req !== "function") {{
-      return {{ marker, ok: false, status: "unsupported", requirePath, cacheModules: [], registryModules: [], reason: "require_not_function" }};
+      return {{ runtimePath: path, runtimeKind: "webpack-require", ok: false, status: "unsupported", reason: "require_not_function", cacheModules: [], registryModules: [], customRuntimeModules: [], federationModules: [], cacheKeyCount: 0, registryKeyCount: 0, customKeyCount: 0, federationKeyCount: 0 }};
     }}
     const cache = req.c && typeof req.c === "object" ? req.c : {{}};
     const registry = req.m && typeof req.m === "object" ? req.m : {{}};
@@ -344,17 +490,157 @@ class ModuleDiscoveryManager:
       registryModules.push({{ moduleId, source, sourcePreview: source.slice(0, maxPreviewLength) }});
     }}
     return {{
-      marker,
+      runtimePath: path,
+      runtimeKind: "webpack-require",
       ok: true,
       status: cacheModules.length || registryModules.length ? "success" : "partial",
-      requirePath,
       cacheKeyCount: cacheKeys.length,
       registryKeyCount: registryKeys.length,
+      customKeyCount: 0,
+      federationKeyCount: 0,
       cacheModules,
       registryModules,
+      customRuntimeModules: [],
+      federationModules: [],
+    }};
+  }};
+  const inspectObjectRuntime = (path, runtime) => {{
+    const keys = runtime && typeof runtime === "object" ? Object.keys(runtime) : [];
+    const modules = [];
+    for (const key of keys) {{
+      const value = runtime[key];
+      if (typeof value === "function") {{
+        modules.push({{
+          moduleId: key,
+          exportNames: [key],
+          exportTypes: {{ [key]: "function" }},
+          hookPaths: [accessPath(path, key)],
+          sourcePreview: String(value).slice(0, maxPreviewLength)
+        }});
+      }} else if (value && typeof value === "object") {{
+        const exportTypes = {{}};
+        const exportNames = Object.keys(value).filter((name) => {{
+          exportTypes[name] = describeValue(value[name]);
+          return typeof value[name] === "function";
+        }});
+        if (exportNames.length) {{
+          modules.push({{
+            moduleId: key,
+            exportNames,
+            exportTypes,
+            hookPaths: exportNames.map((name) => accessPath(accessPath(path, key), name)),
+            sourcePreview: exportNames.map((name) => String(value[name]).slice(0, maxPreviewLength)).join("\\n")
+          }});
+        }}
+      }}
+    }}
+    return {{
+      runtimePath: path,
+      runtimeKind: "object-runtime",
+      ok: true,
+      status: modules.length ? "success" : "partial",
+      cacheKeyCount: 0,
+      registryKeyCount: 0,
+      customKeyCount: keys.length,
+      federationKeyCount: 0,
+      cacheModules: [],
+      registryModules: [],
+      customRuntimeModules: modules,
+      federationModules: [],
+    }};
+  }};
+  const inspectFederationContainer = (path, container) => {{
+    const modules = [];
+    const exposes = container && typeof container === "object" && container.__reverseAgentExposes && typeof container.__reverseAgentExposes === "object"
+      ? container.__reverseAgentExposes
+      : {{}};
+    for (const exposedName of Object.keys(exposes)) {{
+      const value = exposes[exposedName];
+      const exportTypes = {{}};
+      let exportNames = [];
+      let hookPaths = [];
+      let sourcePreview = "";
+      if (typeof value === "function") {{
+        exportNames = [exposedName];
+        exportTypes[exposedName] = "function";
+        hookPaths = [accessPath(accessPath(path, "__reverseAgentExposes"), exposedName)];
+        sourcePreview = String(value).slice(0, maxPreviewLength);
+      }} else if (value && typeof value === "object") {{
+        exportNames = Object.keys(value).filter((name) => {{
+          exportTypes[name] = describeValue(value[name]);
+          return typeof value[name] === "function";
+        }});
+        hookPaths = exportNames.map((name) => accessPath(accessPath(accessPath(path, "__reverseAgentExposes"), exposedName), name));
+        sourcePreview = exportNames.map((name) => String(value[name]).slice(0, maxPreviewLength)).join("\\n");
+      }}
+      if (exportNames.length) {{
+        modules.push({{ moduleId: exposedName, exposedName, exportNames, exportTypes, hookPaths, sourcePreview }});
+      }}
+    }}
+    return {{
+      runtimePath: path,
+      runtimeKind: "module-federation",
+      ok: true,
+      status: modules.length ? "success" : "partial",
+      cacheKeyCount: 0,
+      registryKeyCount: 0,
+      customKeyCount: 0,
+      federationKeyCount: Object.keys(exposes).length,
+      cacheModules: [],
+      registryModules: [],
+      customRuntimeModules: [],
+      federationModules: modules,
+    }};
+  }};
+  try {{
+    const paths = Array.from(new Set((runtimePaths && runtimePaths.length ? runtimePaths : [requirePath]).filter(Boolean)));
+    const runtimes = [];
+    const unavailable = [];
+    for (const path of paths) {{
+      const resolved = resolveRuntime(path);
+      if (!resolved.ok) {{
+        unavailable.push({{ runtimePath: path, reason: "runtime_path_unavailable", error: resolved.error }});
+        continue;
+      }}
+      const value = resolved.value;
+      if (typeof value === "function") {{
+        runtimes.push(inspectWebpackRequire(path, value));
+      }} else if (value && typeof value === "object" && (typeof value.get === "function" || typeof value.init === "function")) {{
+        runtimes.push(inspectFederationContainer(path, value));
+      }} else if (value && typeof value === "object") {{
+        runtimes.push(inspectObjectRuntime(path, value));
+      }} else {{
+        unavailable.push({{ runtimePath: path, reason: "unsupported_runtime_type", valueType: describeValue(value) }});
+      }}
+    }}
+    const cacheModules = runtimes.flatMap((item) => item.cacheModules || []);
+    const registryModules = runtimes.flatMap((item) => item.registryModules || []);
+    const customRuntimeModules = runtimes.flatMap((item) => item.customRuntimeModules || []);
+    const federationModules = runtimes.flatMap((item) => item.federationModules || []);
+    const cacheKeyCount = runtimes.reduce((total, item) => total + (item.cacheKeyCount || 0), 0);
+    const registryKeyCount = runtimes.reduce((total, item) => total + (item.registryKeyCount || 0), 0);
+    const customKeyCount = runtimes.reduce((total, item) => total + (item.customKeyCount || 0), 0);
+    const federationKeyCount = runtimes.reduce((total, item) => total + (item.federationKeyCount || 0), 0);
+    return {{
+      marker,
+      ok: runtimes.length > 0,
+      status: cacheModules.length || registryModules.length || customRuntimeModules.length || federationModules.length ? "success" : runtimes.length ? "partial" : "unsupported",
+      requirePath,
+      runtimePaths: paths,
+      cacheKeyCount,
+      registryKeyCount,
+      customKeyCount,
+      federationKeyCount,
+      cacheModules,
+      registryModules,
+      customRuntimeModules,
+      federationModules,
+      runtimes,
+      unavailable,
+      reason: runtimes.length ? undefined : "runtime_path_unavailable",
     }};
   }} catch (error) {{
-    return {{ marker, ok: false, status: "failed", requirePath, cacheModules: [], registryModules: [], error: String(error && error.message || error) }};
+    return {{ marker, ok: false, status: "failed", requirePath, cacheModules: [], registryModules: [], customRuntimeModules: [], federationModules: [], runtimes: [], error: String(error && error.message || error) }};
   }}
 }})()
 """
@@ -473,8 +759,15 @@ class ModuleDiscoveryManager:
         seen_hook_paths: set[str] = set()
         for module in modules:
             module_id = str(module.get("module_id") or "")
+            hook_kind = str(module.get("hook_kind") or "module-export")
+            module_hook_paths = ModuleDiscoveryManager._normalize_hook_paths(module.get("hook_paths"))
             for export_name in module.get("export_names", []) or []:
-                hook_path = _module_export_hook_path(require_path, module_id, str(export_name))
+                if hook_kind == "function-path":
+                    hook_path = ModuleDiscoveryManager._select_function_hook_path(module_hook_paths, str(export_name))
+                    if not hook_path:
+                        continue
+                else:
+                    hook_path = _module_export_hook_path(str(module.get("runtime_path") or require_path), module_id, str(export_name))
                 if hook_path in seen_hook_paths:
                     continue
                 seen_hook_paths.add(hook_path)
@@ -483,6 +776,9 @@ class ModuleDiscoveryManager:
                         "module_id": module_id,
                         "export_name": export_name,
                         "hook_path": hook_path,
+                        "hook_kind": hook_kind,
+                        "runtime_path": module.get("runtime_path") or require_path,
+                        "discovery_source": module.get("discovery_source"),
                         "function_name": export_name,
                         "source_preview": module.get("source_preview"),
                         "scriptId": module.get("scriptId"),
@@ -502,7 +798,7 @@ class ModuleDiscoveryManager:
             export_names = tuple(ModuleDiscoveryManager._normalize_export_names(module.get("export_names")))
             if not module_id or not export_names:
                 continue
-            key = (module_id, export_names, str(module.get("discovery_source") or ""))
+            key = (module_id, export_names, str(module.get("discovery_source") or ""), str(module.get("runtime_path") or ""), str(module.get("hook_kind") or ""))
             if key in seen:
                 continue
             seen.add(key)
@@ -524,6 +820,28 @@ class ModuleDiscoveryManager:
             if name and name not in names:
                 names.append(name)
         return names
+
+    @staticmethod
+    def _normalize_hook_paths(value: Any) -> list[str]:
+        paths: list[str] = []
+        if not isinstance(value, list):
+            return paths
+        for item in value:
+            path = str(item).strip()
+            if path and path not in paths:
+                paths.append(path)
+        return paths
+
+    @staticmethod
+    def _select_function_hook_path(hook_paths: list[str], export_name: str) -> str | None:
+        if not hook_paths:
+            return None
+        suffix = f".{export_name}"
+        bracket_suffix = f"[{json.dumps(export_name, ensure_ascii=False)}]"
+        for path in hook_paths:
+            if path.endswith(suffix) or path.endswith(bracket_suffix):
+                return path
+        return hook_paths[0] if len(hook_paths) == 1 else None
 
     @staticmethod
     def _module_matches_query(module: dict[str, Any], query_lower: str | None) -> bool:
