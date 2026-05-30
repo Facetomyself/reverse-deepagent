@@ -103,7 +103,7 @@ def _profile_metadata(profile: FixtureProfile) -> dict[str, Any]:
             "expected_strategy": "base64_keyword_timestamp",
             "runtime_context_required": ["localStorage", "cookie"],
             "realism": ["multi-context", "cookie-context", "storage-context"],
-            "expected_delivery": "partial_until_multi_binding_renderer",
+            "expected_delivery": "context_aware_multi_binding_rebuild",
         },
     }
     return metadata[profile]

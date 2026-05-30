@@ -714,7 +714,7 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             self.assertIsNone(extraction["runtime_context_binding"])
             self.assertNotIn("sign_rebuild", rebuild.generated_files)
 
-    def test_multiple_runtime_context_bindings_are_not_auto_ported(self) -> None:
+    def test_multiple_runtime_context_bindings_are_auto_ported_when_all_values_are_captured(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {
   const nonce = localStorage.getItem('nonce');
   const match = document.cookie.match(/(?:^|;\\s*)csrf=([^;]+)/);
@@ -733,17 +733,24 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         with tempfile.TemporaryDirectory() as tmpdir:
             rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
             extraction = rebuild.rebuild_plan["pure_extraction"]
-            self.assertEqual(rebuild.status, ExecutionStatus.PARTIAL)
-            self.assertFalse(rebuild.rebuild_plan["ready"])
-            self.assertFalse(extraction["context_aware_extractable"])
-            self.assertTrue(extraction["multiple_runtime_context_bindings_unsupported"])
+            self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
+            self.assertTrue(rebuild.rebuild_plan["ready"])
+            self.assertTrue(extraction["context_aware_extractable"])
+            self.assertFalse(extraction["multiple_runtime_context_bindings_unsupported"])
             self.assertEqual(
                 [item["source"] for item in extraction["runtime_context_bindings"]],
                 ["localStorage.nonce", "cookie.csrf"],
             )
-            manual_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "manual_port_required")
-            self.assertIn("multiple_runtime_context_bindings_unsupported=True", manual_hint["evidence"])
-            self.assertNotIn("sign_rebuild", rebuild.generated_files)
+            context_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "context_aware_rebuild")
+            self.assertIn("runtime_context_bindings=localStorage.nonce,cookie.csrf", context_hint["evidence"])
+            sign_rebuild_path = Path(rebuild.generated_files["sign_rebuild"])
+            result = subprocess.run(
+                [sys.executable, str(sign_rebuild_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.stdout.strip(), sample_sign)
 
     def test_missing_one_of_multiple_runtime_context_bindings_blocks_ready(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {

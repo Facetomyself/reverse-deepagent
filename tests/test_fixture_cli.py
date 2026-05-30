@@ -205,7 +205,14 @@ class FixtureCliTests(unittest.TestCase):
             hybrid_payload = json.loads(hybrid_result.stdout)
             hybrid_pipeline = hybrid_payload["pipeline"]
             hybrid_plan_path = Path(hybrid_pipeline["artifacts"]["workspace_rebuild_plan"])
+            hybrid_sign_path = Path(hybrid_pipeline["artifacts"]["rebuild_sign_rebuild"])
             hybrid_plan = json.loads(hybrid_plan_path.read_text(encoding="utf-8"))
+            hybrid_generated = subprocess.run(
+                [sys.executable, str(hybrid_sign_path)],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
 
         self.assertEqual(webpack_payload["fixture"]["profile"], "webpack-minified")
         self.assertEqual(webpack_plan["algorithm_strategy"]["id"], "sha256_keyword_timestamp")
@@ -220,8 +227,10 @@ class FixtureCliTests(unittest.TestCase):
 
         self.assertEqual(hybrid_payload["fixture"]["profile"], "hybrid-context")
         self.assertEqual(hybrid_plan["algorithm_strategy"]["id"], "base64_keyword_timestamp")
-        self.assertFalse(hybrid_plan["ready"])
-        self.assertTrue(hybrid_plan["pure_extraction"]["multiple_runtime_context_bindings_unsupported"])
+        self.assertTrue(hybrid_plan["ready"])
+        self.assertTrue(hybrid_plan["pure_extraction"]["context_aware_extractable"])
+        self.assertFalse(hybrid_plan["pure_extraction"]["multiple_runtime_context_bindings_unsupported"])
+        self.assertEqual(hybrid_generated, hybrid_plan["validation"]["sample_output"]["sign"])
         self.assertEqual(
             hybrid_plan["pure_extraction"]["runtime_context_binding_candidates"],
             ["localStorage.fixture_nonce", "cookie.csrf_token"],

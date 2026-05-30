@@ -206,9 +206,8 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
 '''
     elif strategy_id in {"md5_keyword_timestamp", "sha1_keyword_timestamp", "sha256_keyword_timestamp", "sha512_keyword_timestamp"}:
         algorithm = strategy_id.split("_", 1)[0]
-        context_binding = _select_runtime_context_binding(runtime_context, extraction)
-        context_constant = f"{context_binding[0]} = {context_binding[1]!r}\n" if context_binding else ""
-        context_value_expression = context_binding[0] if context_binding else "SOURCE_SALT"
+        context_bindings = _select_runtime_context_bindings(runtime_context, extraction)
+        context_constant, context_value_expression = _render_runtime_context_binding_block(context_bindings, fallback="SOURCE_SALT")
         body = f'''import hashlib
 
 
@@ -238,9 +237,8 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
         "hmac_sha512_keyword_timestamp",
     }:
         hmac_algorithm = str(strategy_id).removeprefix("hmac_").split("_keyword_timestamp", 1)[0]
-        context_binding = _select_runtime_context_binding(runtime_context, extraction)
-        context_constant = f"{context_binding[0]} = {context_binding[1]!r}\n" if context_binding else ""
-        context_value_expression = context_binding[0] if context_binding else "HMAC_SECRET"
+        context_bindings = _select_runtime_context_bindings(runtime_context, extraction)
+        context_constant, context_value_expression = _render_runtime_context_binding_block(context_bindings, fallback="HMAC_SECRET")
         body = f'''import hashlib
 import hmac
 
@@ -268,10 +266,9 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
     return hmac.new(HMAC_SECRET.encode("utf-8"), _message(keyword, timestamp).encode("utf-8"), getattr(hashlib, HMAC_ALGORITHM)).hexdigest()
 '''
     elif strategy_id == "base64_keyword_timestamp":
-        context_binding = _select_runtime_context_binding(runtime_context, extraction)
-        if extraction.get("context_aware_extractable") and context_binding:
-            context_constant = f"{context_binding[0]} = {context_binding[1]!r}\n"
-            context_value_expression = context_binding[0]
+        context_bindings = _select_runtime_context_bindings(runtime_context, extraction)
+        if extraction.get("context_aware_extractable") and context_bindings:
+            context_constant, context_value_expression = _render_runtime_context_binding_block(context_bindings, fallback="SOURCE_SALT")
             body = f'''import base64
 
 
@@ -317,9 +314,8 @@ def build_sign(keyword: str, timestamp: int | None = None) -> str:
     return base64.b64encode(_message(keyword, timestamp).encode("utf-8")).decode("ascii")
 '''
     elif strategy_id == "urlencode_keyword_timestamp":
-        context_binding = _select_runtime_context_binding(runtime_context, extraction)
-        context_constant = f"{context_binding[0]} = {context_binding[1]!r}\n" if context_binding else ""
-        context_value_expression = context_binding[0] if context_binding else "SOURCE_SALT"
+        context_bindings = _select_runtime_context_bindings(runtime_context, extraction)
+        context_constant, context_value_expression = _render_runtime_context_binding_block(context_bindings, fallback="SOURCE_SALT")
         body = f'''from urllib.parse import quote
 
 
@@ -933,6 +929,7 @@ def _build_review_hints(
     elif extraction.get("context_aware_extractable"):
         required = [str(item) for item in extraction.get("runtime_context_required", [])]
         captured = [str(item) for item in extraction.get("captured_runtime_context", [])]
+        binding_sources = [str(item.get("source")) for item in extraction.get("runtime_context_bindings", []) if isinstance(item, dict) and item.get("source")]
         hints.append(
             _review_hint(
                 severity="warning",
@@ -943,6 +940,7 @@ def _build_review_hints(
                     f"strategy={strategy_id}",
                     f"runtime_context_required={','.join(required)}",
                     f"captured_runtime_context={','.join(captured)}",
+                    f"runtime_context_bindings={','.join(binding_sources)}",
                 ],
             )
         )
@@ -1082,6 +1080,41 @@ def _select_runtime_context_binding(runtime_context: dict[str, Any], extraction:
     return None
 
 
+def _select_runtime_context_bindings(runtime_context: dict[str, Any], extraction: dict[str, Any]) -> list[tuple[str, str, str]]:
+    if not extraction.get("context_aware_extractable") or not isinstance(runtime_context, dict):
+        return []
+    bindings = extraction.get("runtime_context_bindings")
+    if isinstance(bindings, list) and bindings and not extraction.get("missing_runtime_context_bindings"):
+        normalized: list[tuple[str, str, str]] = []
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                continue
+            constant = binding.get("constant")
+            value = binding.get("value")
+            source = binding.get("source")
+            if constant and value is not None and source:
+                normalized.append((str(constant), str(value), str(source)))
+        if len(normalized) == len(bindings):
+            return normalized
+    single = _select_runtime_context_binding(runtime_context, extraction)
+    return [single] if single else []
+
+
+def _render_runtime_context_binding_block(bindings: list[tuple[str, str, str]], *, fallback: str) -> tuple[str, str]:
+    if not bindings:
+        return "", fallback
+    lines: list[str] = []
+    constants: list[str] = []
+    for constant, value, _source in bindings:
+        lines.append(f"{constant} = {value!r}")
+        constants.append(constant)
+    if len(constants) == 1:
+        return "\n".join(lines) + "\n", constants[0]
+    lines.append(f"RUNTIME_CONTEXT_VALUES = ({', '.join(constants)},)")
+    lines.append("RUNTIME_CONTEXT_SUFFIX = ':'.join(RUNTIME_CONTEXT_VALUES)")
+    return "\n".join(lines) + "\n", "RUNTIME_CONTEXT_SUFFIX"
+
+
 def _first_mapping_value(value: Any, keys: tuple[str, ...]) -> tuple[str, str] | None:
     if not isinstance(value, dict):
         return None
@@ -1189,9 +1222,9 @@ def _build_pure_extraction(strategy: dict[str, Any], source_context: str, runtim
             runtime_context,
             runtime_context_required,
         )
-    single_binding_supported = len(binding_candidates) == 1
-    runtime_context_binding = runtime_context_bindings[0] if single_binding_supported and runtime_context_bindings and not missing_runtime_context_bindings else None
-    context_aware_extractable = bool(strategy.get("supported")) and family_context_captured and runtime_context_binding is not None
+    bindings_complete = bool(binding_candidates) and not missing_runtime_context_bindings and len(runtime_context_bindings) == len(binding_candidates)
+    runtime_context_binding = runtime_context_bindings[0] if len(runtime_context_bindings) == 1 and bindings_complete else None
+    context_aware_extractable = bool(strategy.get("supported")) and family_context_captured and bindings_complete
     return {
         "pure_extractable": pure_extractable,
         "context_aware_extractable": context_aware_extractable,
@@ -1203,7 +1236,7 @@ def _build_pure_extraction(strategy: dict[str, Any], source_context: str, runtim
         "missing_runtime_context_bindings": missing_runtime_context_bindings,
         "runtime_context_binding_required": bool(binding_candidates),
         "runtime_context_binding_candidates": [source for source, _key in binding_candidates],
-        "multiple_runtime_context_bindings_unsupported": len(binding_candidates) > 1,
+        "multiple_runtime_context_bindings_unsupported": len(binding_candidates) > 1 and not bindings_complete,
         "dependencies": strategy.get("dependencies", []),
         "confidence_reason": strategy.get("confidence_reason", ""),
     }

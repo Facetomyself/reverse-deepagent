@@ -541,7 +541,7 @@ reverse-agent-fixture --host 127.0.0.1 --port 8765 --profile sha256
 - `context-navigator`：依赖 `navigator.userAgent`，用于验证浏览器指纹上下文 context-aware delivery
 - `webpack-minified`：模拟 webpack 模块包装器与压缩辅助函数，验证打包形态下的 SHA-256 sign 识别
 - `token-chain`：先访问 `/api/bootstrap` 获取 token，再用 `sessionStorage.fixture_token` 参与 SHA-256 sign
-- `hybrid-context`：同时依赖 `localStorage.fixture_nonce` 与 `cookie.csrf_token`，用于验证多上下文绑定时不会误报 ready
+- `hybrid-context`：同时依赖 `localStorage.fixture_nonce` 与 `cookie.csrf_token`，用于验证多上下文绑定 context-aware delivery
 
 页面与脚本：
 
@@ -885,7 +885,7 @@ WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说
 
 如果源码已经明确依赖某个具体上下文 key，例如 `localStorage.getItem('nonce')`，但采集结果里只有同 family 的其他值，例如 `localStorage.device_id`，则 `context_aware_extractable` 会保持 `false`，`review_hints` 会输出 `missing_runtime_context_binding=localStorage.nonce`，交付包只生成 `rebuild/README.md`，不会用空 salt 或错误兜底生成假成功脚本。
 
-当前自动交付只支持单个运行时上下文 binding 写入生成脚本；如果源码同时依赖 `localStorage.nonce` 和 `cookie.csrf` 这类多个显式上下文值，即使都已采集，也会标记 `multiple_runtime_context_bindings_unsupported=true` 并保持 not-ready，避免把多输入签名硬塞进单 salt renderer。HMAC 策略会区分 HMAC secret 与 message 里的运行时上下文：`CryptoJS.HmacSHA256(raw, 'secret')` 会把 `secret` 作为 HMAC key，把 `nonce` 作为 message binding。
+当前自动交付支持单个或多个运行时上下文 binding 写入生成脚本；如果源码同时依赖 `localStorage.nonce` 和 `cookie.csrf` 这类多个显式上下文值，只要都已采集并解析出来，就会把它们按源码顺序拼进生成脚本，继续保持 ready。缺失任一上下文值时才会标记 `multiple_runtime_context_bindings_unsupported=true` 并保持 not-ready，避免把半截多输入签名硬塞进单 salt renderer。HMAC 策略会区分 HMAC secret 与 message 里的运行时上下文：`CryptoJS.HmacSHA256(raw, 'secret')` 会把 `secret` 作为 HMAC key，把 `nonce` 作为 message binding。
 
 `review_hints` 是给后续人工 review、CI gate 或子智能体复核使用的 机器可读提示，不替代 `ready` / `pure_extraction`。当前由 `reverse_deepagent.schemas.ReviewHint` 集中约束，固定字段为 `severity`、`category`、`code`、`message`、`evidence`，会覆盖 pure rebuild、context-aware rebuild、人工移植 / 部分 rebuild，以及易变运行时上下文等风险。
 
