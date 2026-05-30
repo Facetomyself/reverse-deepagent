@@ -11,12 +11,7 @@ from urllib.request import urlopen
 from pydantic import Field
 
 from reverse_deepagent.adapters.platforms import AndroidAdbRuntime, IosSimulatorRuntime, MiniProgramDevtoolsRuntime
-from reverse_deepagent.adapters.jsreverser import (
-    DEFAULT_JSREVERSER_MCP_COMMAND,
-    JSReverserMcpConfig,
-    JSReverserRuntime,
-    create_jsreverser_mcp_runtime,
-)
+from reverse_deepagent.adapters.jsreverser import JSReverserRuntime
 from reverse_deepagent.adapters.lightweight_web import LightweightWebRuntimeConfig, create_lightweight_web_runtime
 from reverse_deepagent.adapters.native_web import create_native_web_runtime
 from reverse_deepagent.evidence import promote_evidence, promotion_workspace_payloads
@@ -32,6 +27,13 @@ from reverse_deepagent.runtime import (
 )
 from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactManifestEntry
 from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
+from reverse_deepagent.runtime.legacy_mcp import (
+    LEGACY_MCP_BACKEND_ID,
+    LEGACY_MCP_ALIASES,
+    is_legacy_mcp_runtime_kind,
+    legacy_mcp_alias_warning as _legacy_mcp_alias_warning,
+    legacy_mcp_backend_registration,
+)
 from reverse_deepagent.schemas import (
     ArtifactKind,
     ArtifactRef,
@@ -48,14 +50,6 @@ from reverse_deepagent.schemas import (
     TaskCard,
 )
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
-
-LEGACY_MCP_BACKEND_ID = "legacy-mcp"
-LEGACY_MCP_ALIASES = ("mcp", "jsreverser-mcp")
-LEGACY_MCP_ALIAS_DEPRECATION_WARNING = (
-    "警告：`mcp` / `jsreverser-mcp` 只是 legacy 兼容别名，后续新脚本请改用 `legacy-mcp`；"
-    "Web 默认路径请优先使用 `native-web`。"
-)
-
 
 class ReversePipelineOutput(SchemaBaseModel):
     """Complete result returned by the deterministic coordinator pipeline."""
@@ -342,24 +336,6 @@ def _mock_runtime_factory(**_: Any) -> JSReverserRuntime:
     )
 
 
-def _mcp_runtime_factory(
-    *,
-    browser_url: str | None = None,
-    mcp_command: str | None = None,
-    **_: Any,
-) -> JSReverserRuntime:
-    config = JSReverserMcpConfig(
-        command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
-        browser_url=browser_url or "http://127.0.0.1:9222",
-        backend_id=LEGACY_MCP_BACKEND_ID,
-        display_name="Legacy JSReverser MCP",
-        transport="mcp-stdio",
-    )
-    return create_jsreverser_mcp_runtime(
-        config=config,
-    )
-
-
 def _android_adb_runtime_factory(
     *,
     android_adb_command: str | None = None,
@@ -493,7 +469,7 @@ def _remote_cdp_provider_runtime_factory(**kwargs: Any):
     return _native_web_runtime_factory(**kwargs)
 
 
-def build_default_runtime_registry(*, include_entry_points: bool = True) -> RuntimeBackendRegistry:
+def build_default_runtime_registry(*, include_entry_points: bool = True, include_legacy_mcp: bool = True) -> RuntimeBackendRegistry:
     """Build the default runtime backend registry without starting external processes."""
 
     registry = RuntimeBackendRegistry()
@@ -519,35 +495,8 @@ def build_default_runtime_registry(*, include_entry_points: bool = True) -> Runt
             ),
         )
     )
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id=LEGACY_MCP_BACKEND_ID,
-            aliases=LEGACY_MCP_ALIASES,
-            factory=_mcp_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id=LEGACY_MCP_BACKEND_ID,
-                display_name="Legacy JSReverser MCP",
-                transport="mcp-stdio",
-                target_platforms=["web"],
-                supports_browser_session=True,
-                supports_web_recon=True,
-                supports_protection_patch=True,
-                supports_artifact_export=True,
-                supports_runtime_context=True,
-                supports_replay_validation=True,
-                managed_chrome=True,
-                mcp_backed=True,
-                evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
-                artifact_kinds=["json", "export", "rebuild", "markdown"],
-                notes=[
-                    "legacy compatibility backend backed by jsreverser-mcp",
-                    "requires jsreverser-mcp and a reachable Chrome DevTools endpoint",
-                    "mcp and jsreverser-mcp remain deprecated temporary compatibility aliases",
-                ],
-                config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND, "aliases": list(LEGACY_MCP_ALIASES)},
-            ),
-        )
-    )
+    if include_legacy_mcp:
+        registry.register(legacy_mcp_backend_registration())
 
     registry.register(
         RuntimeBackendRegistration(
@@ -779,9 +728,7 @@ def list_runtime_backends() -> list[dict[str, Any]]:
 def legacy_mcp_alias_warning(runtime_kind: str) -> str | None:
     """Return the deprecation warning for legacy MCP aliases, if applicable."""
 
-    if runtime_kind in LEGACY_MCP_ALIASES:
-        return LEGACY_MCP_ALIAS_DEPRECATION_WARNING
-    return None
+    return _legacy_mcp_alias_warning(runtime_kind)
 
 
 def build_runtime(
@@ -1421,7 +1368,7 @@ def run_reverse_pipeline(
 
 
 def _is_legacy_mcp_runtime_kind(runtime_kind: str) -> bool:
-    return runtime_kind in {LEGACY_MCP_BACKEND_ID, *LEGACY_MCP_ALIASES}
+    return is_legacy_mcp_runtime_kind(runtime_kind)
 
 
 def _write_json(path: Path, payload: Any) -> None:

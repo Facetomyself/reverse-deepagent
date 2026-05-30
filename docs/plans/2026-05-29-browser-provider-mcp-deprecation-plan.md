@@ -359,20 +359,20 @@ Acceptance:
 
 ### Phase 10.1: Runtime backend entry-point discovery
 
-Status: baseline implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. This is the packaging seam for moving `legacy-mcp` into an optional package later; it does not mean MCP has already been physically removed from the core distribution.
+Status: baseline implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. `legacy-mcp` registration / factory / alias warning now live in `reverse_deepagent.runtime.legacy_mcp`, and `build_default_runtime_registry(include_legacy_mcp=False)` can construct a registry with no MCP backend. This is the packaging seam for moving `legacy-mcp` into an optional package later; it does not mean MCP has already been physically removed from the core distribution.
 
 Deliverables:
 
 - `RUNTIME_BACKEND_ENTRY_POINT_GROUP` exported from `reverse_deepagent.runtime`.
 - `RuntimeBackendRegistry.load_entry_points()` supports a single `RuntimeBackendRegistration`, a callable returning registrations, or an iterable of registrations.
-- `build_default_runtime_registry(include_entry_points=True)` loads external backend registrations by default and keeps a deterministic opt-out for tests.
+- `build_default_runtime_registry(include_entry_points=True, include_legacy_mcp=True)` loads external backend registrations by default, keeps a deterministic entry-point opt-out for tests, and can explicitly exclude the built-in legacy MCP registration.
 - Unit tests cover plugin registration, callable multi-registration, invalid payload errors, entry-point load errors, capability id mismatch rejection, and the invariant that backend factories are not invoked during metadata listing.
 
 Acceptance:
 
 - External runtime backend packages have a stable discovery seam.
 - Metadata listing remains free of browser, MCP, device-tool, and network session side effects.
-- Legacy MCP physical split remains a separate packaging task.
+- Legacy MCP physical split remains a separate packaging task, but coordinator no longer owns the MCP registration details inline.
 
 ## Test strategy
 
