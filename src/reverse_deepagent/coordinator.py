@@ -913,6 +913,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_debugger_timeline": "trace",
     "workspace_request_initiators": "trace",
     "workspace_navigation_events": "trace",
+    "workspace_browser_provider_smoke": "runtime-context",
     "workspace_runtime_context": "runtime-context",
     "workspace_dom_snapshot": "runtime-context",
     "workspace_console_messages": "runtime-context",

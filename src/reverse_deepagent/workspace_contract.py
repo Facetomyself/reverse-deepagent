@@ -246,6 +246,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_dom_snapshot", "workspace/dom-snapshot.json", "/workspace/browser/", "dom-snapshot.json", "runtime-context", ("browser_runtime", "web_recon")),
         ("workspace_console_messages", "workspace/console-messages.json", "/workspace/browser/", "console-messages.json", "runtime-context", ("browser_runtime", "web_recon")),
         ("workspace_navigation_events", "workspace/navigation-events.json", "/workspace/browser/", "navigation-events.json", "trace", ("browser_runtime", "web_recon")),
+        ("workspace_browser_provider_smoke", "workspace/browser-provider-smoke.json", "/workspace/browser/", "browser-provider-smoke.json", "runtime-context", ("browser_runtime", "review")),
         ("workspace_runtime_context", "workspace/runtime-context.json", "/workspace/runtime/", "runtime-context.json", "runtime-context", ("browser_runtime",)),
         ("workspace_runtime_context_diff", "workspace/runtime-context-diff.json", "/workspace/runtime/", "runtime-context-diff.json", "runtime-context", ("browser_runtime",)),
         ("workspace_runtime_capabilities", "workspace/runtime-capabilities.json", "/workspace/runtime/", "runtime-capabilities.json", "runtime-context", ("router", "browser_runtime")),

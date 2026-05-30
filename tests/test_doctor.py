@@ -46,6 +46,7 @@ class DoctorTests(unittest.TestCase):
             "check_mcp": False,
             "legacy_mcp": False,
             "browser": None,
+            "browser_provider_matrix": False,
             "browser_profile_dir": None,
             "browser_headless": None,
             "browser_executable_path": None,
@@ -144,6 +145,7 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("--check-mcp", result.stdout)
         self.assertIn("--legacy-mcp", result.stdout)
         self.assertIn("--browser", result.stdout)
+        self.assertIn("--browser-provider-matrix", result.stdout)
         self.assertIn("--launch-browser-smoke", result.stdout)
 
     def test_doctor_can_check_fake_mcp(self) -> None:
@@ -195,6 +197,31 @@ class DoctorTests(unittest.TestCase):
         self.assertFalse(provider["launched"])
         self.assertIn("capabilities", provider)
         self.assertEqual(provider["capabilities"]["provider_id"], "playwright-chromium")
+        self.assertIn("smoke_matrix", provider)
+        lifecycle = {item["stage"]: item["status"] for item in provider["smoke_matrix"]["lifecycle"]}
+        self.assertIn("availability_checked", lifecycle)
+        self.assertEqual(lifecycle["session_start_requested"], "skipped")
+
+    def test_doctor_can_emit_side_effect_free_browser_provider_matrix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = run_doctor(self.make_args(Path(tmp), browser_provider_matrix=True, jsreverser_mcp_command=str(Path(tmp) / "missing-mcp")))
+        matrix = payload["browser_provider_smoke_matrix"]
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertTrue(matrix["ok"])
+        self.assertFalse(matrix["side_effect_policy"]["availability_check_requested"])
+        self.assertFalse(matrix["side_effect_policy"]["launch_smoke_requested"])
+        self.assertEqual(matrix["summary"]["provider_count"], 3)
+        by_provider = {item["provider_id"]: item for item in matrix["providers"]}
+        self.assertIn("playwright-chromium", by_provider)
+        self.assertIn("cloakbrowser", by_provider)
+        self.assertIn("remote-cdp", by_provider)
+        self.assertEqual(by_provider["remote-cdp"]["supported_modes"], ["connect", "cdp", "runtime-eval", "debugger"])
+        for row in matrix["providers"]:
+            lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
+            self.assertEqual(lifecycle["availability_checked"], "not_checked")
+            self.assertEqual(lifecycle["session_start_requested"], "skipped")
 
     def test_doctor_redacts_cloakbrowser_proxy_and_does_not_launch_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

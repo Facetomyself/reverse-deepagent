@@ -67,6 +67,7 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/stitched-flow.json"].virtual_folder, "/workspace/timeline/")
         self.assertEqual(routes["workspace/review-gate.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/rebuild-plan.json"].virtual_folder, "/workspace/rebuild/")
+        self.assertEqual(routes["workspace/browser-provider-smoke.json"].virtual_folder, "/workspace/browser/")
         self.assertEqual(routes["workspace/workspace-contract.json"].future_path, "/workspace/delivery/workspace-contract.json")
         self.assertTrue(all(item.migration_status == "indexed-only" for item in routes.values()))
 

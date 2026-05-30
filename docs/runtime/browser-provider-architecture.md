@@ -166,6 +166,28 @@ This lets routing and doctor commands answer precise questions:
 - Can it run breakpoints?
 - Is it stealth-oriented?
 
+## 5.1 BrowserProvider smoke matrix and lifecycle baseline
+
+`reverse_deepagent.browser.smoke` defines the reusable BrowserProvider smoke matrix contract. The default matrix covers:
+
+- `playwright-chromium`
+- `cloakbrowser`
+- `remote-cdp`
+
+The matrix records standard capability flags, supported modes, and lifecycle stages:
+
+```text
+configured -> capability_described -> availability_checked -> session_start_requested -> session_opened -> page_ready -> session_closed
+```
+
+The default matrix path is metadata-only and side-effect free: it instantiates provider objects and reads `describe()` output, but does not import optional browser binaries, probe remote CDP endpoints, launch browsers, or touch MCP. Availability checks and launch smoke are explicit knobs. Doctor exposes this through:
+
+```bash
+reverse-agent-doctor --browser-provider-matrix
+```
+
+Single-provider doctor checks keep the existing `browser_provider` shape and add `browser_provider.smoke_matrix`; explicit `--launch-browser-smoke` is still the only path that can open a real provider session. Future runtime artifacts can use `workspace/browser-provider-smoke.json`; the workspace contract already indexes that path as `/workspace/browser/browser-provider-smoke.json` without migrating existing outputs.
+
 ## 6. Provider candidates
 
 | Provider | Purpose | Notes |
@@ -367,6 +389,7 @@ Current implementation status:
 | BrowserProvider capability schema | Implemented | `src/reverse_deepagent/browser/capabilities.py` |
 | BrowserProvider / BrowserSession / BrowserPage Protocols | Implemented | `src/reverse_deepagent/browser/base.py` |
 | BrowserProvider registry | Implemented | `src/reverse_deepagent/browser/registry.py` |
+| BrowserProvider smoke matrix / lifecycle | Baseline implemented | `src/reverse_deepagent/browser/smoke.py`, `tests/test_browser_smoke_matrix.py`; doctor supports `--browser-provider-matrix` without launching browsers or probing remote endpoints |
 | Native collectors | Baseline implemented | `src/reverse_deepagent/browser/collectors/` |
 | DeepAgents workspace contract | Indexed-only baseline implemented | `src/reverse_deepagent/workspace_contract.py`, `tests/test_workspace_contract.py`; emits `workspace/workspace-contract.json` without migrating existing flat workspace paths |
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |

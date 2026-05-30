@@ -126,6 +126,14 @@ BrowserProvider doctor 示例，默认不启动真实浏览器，也不依赖 MC
 reverse-agent-doctor --browser cloakbrowser
 ```
 
+如果只想看内置 BrowserProvider 能力 / lifecycle smoke matrix，而不导入可选依赖、不探测 CDP 端点、不启动浏览器：
+
+```bash
+reverse-agent-doctor --browser-provider-matrix
+```
+
+输出里的 `browser_provider_smoke_matrix` 会列出 `playwright-chromium`、`cloakbrowser`、`remote-cdp` 的 capability flags、supported modes 和标准 lifecycle stages。单 provider doctor 输出也会保留旧字段，并额外带 `browser_provider.smoke_matrix`，方便 CI 或人工 review 对比 provider 差异。
+
 需要真实启动 smoke 时显式打开：
 
 ```bash
