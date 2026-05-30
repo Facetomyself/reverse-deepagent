@@ -40,6 +40,14 @@ class FakeCDPPage:
     def cdp_session(self):
         return self.session
 
+    def content(self):
+        return """
+        <html>
+          <head><script src="/assets/app.js"></script></head>
+          <body><script>function buildSign(){ return "x-sign"; }</script></body>
+        </html>
+        """
+
     def evaluate(self, expression):
         return [
             {
@@ -83,7 +91,10 @@ class CDPEnhancedCollectorTests(unittest.TestCase):
         self.assertEqual(payload["request_initiators"]["items"][0]["initiatorType"], "fetch")
         self.assertEqual(payload["response_bodies"]["status"], "success")
         self.assertEqual(payload["response_bodies"]["items"][0]["bodySize"], len('{"ok":true}'))
-        self.assertEqual(payload["script_sources"]["status"], "unsupported")
+        self.assertEqual(payload["script_sources"]["status"], "success")
+        self.assertEqual(payload["script_sources"]["count"], 2)
+        self.assertIn("buildSign", payload["script_sources"]["items"][1]["sourcePreview"])
+        self.assertEqual(payload["script_sources"]["items"][1]["fallback"], "html_script_inventory")
         self.assertEqual(payload["websocket_frames"]["status"], "unsupported")
         self.assertIn(("Network.getResponseBody", {"requestId": "req-1"}), page.session.calls)
 
@@ -131,6 +142,29 @@ class CDPEnhancedCollectorTests(unittest.TestCase):
         self.assertEqual(payload["response_bodies"]["status"], "success")
         self.assertEqual(payload["script_sources"]["status"], "success")
         self.assertEqual(payload["websocket_frames"]["status"], "success")
+
+    def test_enhanced_collector_uses_hook_timeline_for_websocket_frame_fallback(self) -> None:
+        page = FakeCDPPage()
+        hook_timeline = {
+            "snapshot": {
+                "events": [
+                    {
+                        "type": "websocket_frame",
+                        "ts": 1000,
+                        "payload": {
+                            "direction": "sent",
+                            "url": "wss://example.test/socket",
+                            "payloadSize": 5,
+                            "payloadPreview": "hello",
+                        },
+                    }
+                ]
+            }
+        }
+        payload = CDPEnhancedCollector().collect(page, {"requests": []}, {}, hook_timeline)
+        self.assertEqual(payload["websocket_frames"]["status"], "success")
+        self.assertEqual(payload["websocket_frames"]["source"], "runtime_hook_timeline")
+        self.assertEqual(payload["websocket_frames"]["items"][0]["payloadPreview"], "hello")
 
 
 if __name__ == "__main__":

@@ -28,8 +28,8 @@
 | 5. CloakBrowser provider skeleton | 已完成 | `tests.test_cloakbrowser_provider`，optional `.[cloak]` 已接入 |
 | 6. Browser doctor provider mode | 已完成 | `reverse-agent-doctor --browser ...` 已实现并测试 |
 | 7. Native artifact parity | 已完成 | DOM、console、script inventory、navigation events 已落盘，manifest 带 BrowserProvider metadata，63 项相关测试通过 |
-| 8. CDP-enhanced collectors | 已完成 | requestWillBeSent、response body metadata、Debugger.scriptParsed source cache、WebSocket frame cache 已实现并测试；真实浏览器 smoke 待后续 |
-| 9. Hook / breakpoint migration | 已完成（真实浏览器 smoke 待后续） | fetch/xhr、cookie、anti-debug hook baseline 已实现；BreakpointManager 通过 CDP capability gate 接入 `apply_minimal_protection`，`breakpoints.json` artifact ref 与 evidence 映射已补齐 |
+| 8. CDP-enhanced collectors | 已完成（fallback 增强已补） | requestWillBeSent、response body metadata、Debugger.scriptParsed source cache、WebSocket frame cache 已实现并测试；缺 CDP event cache 时，script source 可回落到 provider-neutral script inventory，WebSocket frame 可回落到 hook timeline；真实浏览器 smoke 待后续 |
+| 9. Hook / breakpoint migration | 已完成（WebSocket hook 已补，真实浏览器 smoke 待后续） | fetch/xhr、cookie、WebSocket、anti-debug hook baseline 已实现；BreakpointManager 通过 CDP capability gate 接入 `apply_minimal_protection`，`breakpoints.json` artifact ref 与 evidence 映射已补齐 |
 | 10. MCP legacy downgrade | 已完成 | `legacy-mcp` canonical backend 已实现，`mcp` / `jsreverser-mcp` 保留 alias；doctor 支持 `--legacy-mcp`；README / runtime docs 默认推荐 `native-web` |
 
 ## 阶段执行记录与剩余顺序
@@ -113,10 +113,13 @@ git diff --check
 - response body metadata collector
 - script source cache collector
 - WebSocket frame collector
+- script source inventory fallback
+- WebSocket hook timeline fallback
 
 验收：
 
 - provider 支持 CDP 时输出增强 artifact。
+- CDP event cache 缺失时，script source 和 hook-observed WebSocket frame 仍能尽量输出结构化 evidence。
 - provider 不支持 CDP 时输出 `unsupported` evidence，不失败整个 recon。
 
 ### Step 9：Hook / breakpoint migration
@@ -127,6 +130,7 @@ git diff --check
 
 - fetch/xhr hook
 - cookie write hook
+- WebSocket send/message hook
 - minimal anti-debug preload patches
 - breakpoint manager with capability gate
 - `virtual://workspace/breakpoints.json` protection artifact ref / evidence mapping

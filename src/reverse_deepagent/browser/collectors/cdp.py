@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from reverse_deepagent.browser.base import BrowserCDPSession, BrowserPage
+from reverse_deepagent.browser.collectors.scripts import ScriptCollector
 
 PERFORMANCE_RESOURCE_EXPRESSION = """
 (() => performance.getEntriesByType('resource').slice(-50).map((entry) => ({
@@ -136,7 +137,13 @@ class CDPEventCacheCollector:
 class CDPEnhancedCollector:
     """Collect best-effort CDP-enhanced metadata with explicit unsupported fallback."""
 
-    def collect(self, page: BrowserPage, network_snapshot: dict[str, Any] | None = None, event_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+    def collect(
+        self,
+        page: BrowserPage,
+        network_snapshot: dict[str, Any] | None = None,
+        event_snapshot: dict[str, Any] | None = None,
+        hook_timeline: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         session = page.cdp_session()
         if session is None:
             return self._unsupported("cdp_session_unavailable")
@@ -145,8 +152,12 @@ class CDPEnhancedCollector:
         event_snapshot = event_snapshot or {}
         request_initiators = self._prefer_event_bucket(event_snapshot, "request_initiators") or self._collect_request_initiators(page)
         response_bodies = self._collect_response_bodies(session, network_snapshot or {}, event_snapshot)
-        script_sources = self._prefer_event_bucket(event_snapshot, "script_sources") or self._collect_script_sources(session)
-        websocket_frames = self._prefer_event_bucket(event_snapshot, "websocket_frames") or self._collect_websocket_frames_placeholder(domains)
+        script_sources = self._prefer_event_bucket(event_snapshot, "script_sources") or self._collect_script_sources(page, session)
+        websocket_frames = (
+            self._prefer_event_bucket(event_snapshot, "websocket_frames")
+            or self._collect_websocket_frames_from_hooks(hook_timeline or {})
+            or self._collect_websocket_frames_placeholder(domains)
+        )
         ok = any(
             item.get("status") == "success"
             for item in (request_initiators, response_bodies, script_sources, websocket_frames)
@@ -253,12 +264,74 @@ class CDPEnhancedCollector:
         return {"status": status, "reason": reason, "count": len(items), "missing_request_id": missing_request_id, "items": items}
 
     @staticmethod
-    def _collect_script_sources(session: BrowserCDPSession) -> dict[str, Any]:
+    def _collect_script_sources(page: BrowserPage, session: BrowserCDPSession) -> dict[str, Any]:
+        debugger_enabled = True
         try:
             session.send("Debugger.enable", {})
         except Exception as exc:
-            return {"status": "failed", "error": str(exc), "count": 0, "items": []}
-        return {"status": "unsupported", "reason": "scriptParsed_event_cache_not_implemented", "count": 0, "items": []}
+            debugger_enabled = False
+            debugger_error = str(exc)
+        else:
+            debugger_error = None
+
+        try:
+            inventory = ScriptCollector().collect(page)
+        except Exception as exc:
+            if debugger_enabled:
+                return {"status": "unsupported", "reason": "script_inventory_unavailable", "error": str(exc), "count": 0, "items": []}
+            return {"status": "failed", "error": debugger_error or str(exc), "count": 0, "items": []}
+
+        items: list[dict[str, Any]] = []
+        for item in inventory.get("scripts", []) or []:
+            if not isinstance(item, dict):
+                continue
+            source = str(item.get("source") or "")
+            items.append(
+                {
+                    "scriptId": item.get("scriptId"),
+                    "url": item.get("url"),
+                    "kind": item.get("kind"),
+                    "ok": True,
+                    "sourceSize": len(source),
+                    "sourcePreview": source[:240],
+                    "fallback": "html_script_inventory",
+                }
+            )
+        if not items:
+            return {"status": "unsupported", "reason": "script_inventory_empty", "count": 0, "items": [], "debuggerEnabled": debugger_enabled}
+        has_source = any(bool(item.get("sourcePreview")) for item in items)
+        return {
+            "status": "success" if has_source else "partial",
+            "reason": None if has_source else "script_inventory_has_urls_without_inline_source",
+            "count": len(items),
+            "items": items,
+            "debuggerEnabled": debugger_enabled,
+            "debuggerError": debugger_error,
+        }
+
+    @staticmethod
+    def _collect_websocket_frames_from_hooks(hook_timeline: dict[str, Any]) -> dict[str, Any] | None:
+        snapshot = hook_timeline.get("snapshot") if isinstance(hook_timeline, dict) else None
+        events = snapshot.get("events", []) if isinstance(snapshot, dict) else []
+        items: list[dict[str, Any]] = []
+        for event in events:
+            if not isinstance(event, dict) or event.get("type") != "websocket_frame":
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            items.append(
+                {
+                    "direction": payload.get("direction"),
+                    "url": payload.get("url"),
+                    "timestamp": event.get("ts"),
+                    "opcode": payload.get("opcode"),
+                    "payloadSize": payload.get("payloadSize"),
+                    "payloadPreview": payload.get("payloadPreview", ""),
+                    "source": "runtime_hook_timeline",
+                }
+            )
+        if not items:
+            return None
+        return {"status": "success", "count": len(items), "items": items, "source": "runtime_hook_timeline"}
 
     @staticmethod
     def _collect_websocket_frames_placeholder(domains: dict[str, Any]) -> dict[str, Any]:

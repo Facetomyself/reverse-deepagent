@@ -132,7 +132,7 @@ class NativeWebRuntime(WebReverseRuntime):
         hook_snapshot = hooks.snapshot(page)
         hook_timeline = {"install": hook_install.to_dict(), "snapshot": hook_snapshot.to_dict()}
         cdp_event_snapshot = cdp_events.snapshot()
-        cdp_snapshot = CDPEnhancedCollector().collect(page, network_snapshot, cdp_event_snapshot)
+        cdp_snapshot = CDPEnhancedCollector().collect(page, network_snapshot, cdp_event_snapshot, hook_timeline)
 
         evidence = self._build_evidence(dom, storage, script_inventory, source_hits, network_snapshot, console_snapshot, navigation_events, cdp_snapshot, hook_timeline)
         artifacts = self._build_artifacts(network_snapshot, source_hits, storage, dom, console_snapshot, cdp_snapshot, hook_timeline)
@@ -336,7 +336,7 @@ class NativeWebRuntime(WebReverseRuntime):
 
 
 def create_native_web_runtime(*, browser_provider: BrowserProvider | None = None, browser: str | None = None, **kwargs: Any) -> NativeWebRuntime:
-    """Create a NativeWebRuntime. Currently supports the Playwright Chromium provider skeleton."""
+    """Create a NativeWebRuntime with a selectable BrowserProvider."""
 
     if browser_provider is not None:
         return NativeWebRuntime(browser_provider=browser_provider)

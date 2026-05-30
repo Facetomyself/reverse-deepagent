@@ -281,5 +281,5 @@ The project can then add Android-specific methods or higher-level workflows with
 - `ReverseRuntime` intentionally does not expose mobile-specific operations yet; future adapters should add separate capability layers rather than reusing browser method names.
 - The registry is in-process Python registration, not package entry-point plugin loading.
 - Real MCP smoke still requires a self-hosted runner with Chrome and JSReverser MCP installed.
-- `native-web` and BrowserProvider contracts are planned but not yet implemented as the default runtime.
+- `native-web` and BrowserProvider contracts are implemented as selectable Web runtime infrastructure; the CLI default still stays on `mock` for deterministic public CI, and real BrowserProvider smoke remains explicit / environment-gated.
 - MCP is retained as a compatibility backend during migration; it is not the long-term Web architecture center.

@@ -28,6 +28,18 @@ HOOK_SCRIPT = r"""
       return String(value || '').split(/[?#]/)[0];
     }
   };
+  const payloadPreview = (value) => {
+    try {
+      if (typeof value === 'string') return { size: value.length, preview: value.slice(0, 240) };
+      if (value instanceof ArrayBuffer) return { size: value.byteLength, preview: '<arraybuffer>' };
+      if (ArrayBuffer.isView(value)) return { size: value.byteLength, preview: '<typed-array>' };
+      if (typeof Blob !== 'undefined' && value instanceof Blob) return { size: value.size, preview: '<blob>' };
+      const text = String(value == null ? '' : value);
+      return { size: text.length, preview: text.slice(0, 240) };
+    } catch (_) {
+      return { size: 0, preview: '<unavailable>' };
+    }
+  };
 
   if (!root.installed.fetch_xhr) {
     root.installed.fetch_xhr = true;
@@ -74,6 +86,43 @@ HOOK_SCRIPT = r"""
       }
     } catch (error) {
       root.push('hook_error', { hook: 'cookie', message: String(error && error.message || error) });
+    }
+  }
+
+  if (!root.installed.websocket) {
+    root.installed.websocket = true;
+    try {
+      const OriginalWebSocket = window.WebSocket;
+      if (typeof OriginalWebSocket === 'function') {
+        const WrappedWebSocket = function reverseAgentWebSocket(url, protocols) {
+          const socket = protocols === undefined ? new OriginalWebSocket(url) : new OriginalWebSocket(url, protocols);
+          const safeUrl = sanitizeUrl(url || '');
+          root.push('websocket_open', { url: safeUrl });
+          const originalSend = socket.send;
+          socket.send = function reverseAgentWebSocketSend(data) {
+            const preview = payloadPreview(data);
+            root.push('websocket_frame', { direction: 'sent', url: safeUrl, payloadSize: preview.size, payloadPreview: preview.preview });
+            return originalSend.apply(this, arguments);
+          };
+          if (typeof socket.addEventListener === 'function') {
+            socket.addEventListener('message', function reverseAgentWebSocketMessage(event) {
+              const preview = payloadPreview(event && event.data);
+              root.push('websocket_frame', { direction: 'received', url: safeUrl, payloadSize: preview.size, payloadPreview: preview.preview });
+            });
+            socket.addEventListener('error', function reverseAgentWebSocketError() {
+              root.push('websocket_error', { url: safeUrl });
+            });
+          }
+          return socket;
+        };
+        WrappedWebSocket.prototype = OriginalWebSocket.prototype;
+        for (const key of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED']) {
+          try { WrappedWebSocket[key] = OriginalWebSocket[key]; } catch (_) {}
+        }
+        window.WebSocket = WrappedWebSocket;
+      }
+    } catch (error) {
+      root.push('hook_error', { hook: 'websocket', message: String(error && error.message || error) });
     }
   }
 

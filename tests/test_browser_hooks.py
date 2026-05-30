@@ -12,8 +12,14 @@ class HookPage:
     def evaluate(self, expression):
         if "__reverseDeepAgentHooks" in expression and "namespace:" in expression:
             self.installed = True
-            self.installed_flags = {"fetch_xhr": True, "cookie": True, "anti_debug": True}
+            self.installed_flags = {"fetch_xhr": True, "cookie": True, "websocket": True, "anti_debug": True}
             self.events.append({"type": "fetch", "payload": {"url": "https://example.test/api", "method": "GET"}})
+            self.events.append(
+                {
+                    "type": "websocket_frame",
+                    "payload": {"direction": "sent", "url": "wss://example.test/socket", "payloadSize": 5, "payloadPreview": "hello"},
+                }
+            )
             return {"ok": True, "installed": self.installed_flags, "eventCount": len(self.events)}
         if "not_installed" in expression:
             return {"ok": self.installed, "installed": self.installed_flags, "events": self.events, "eventCount": len(self.events)}
@@ -33,13 +39,16 @@ class BrowserHookManagerTests(unittest.TestCase):
         snapshot = manager.snapshot(page)
         self.assertTrue(install.ok)
         self.assertTrue(install.installed["fetch_xhr"])
+        self.assertTrue(install.installed["websocket"])
         self.assertTrue(snapshot.ok)
-        self.assertEqual(snapshot.event_count, 1)
+        self.assertEqual(snapshot.event_count, 2)
         self.assertEqual(snapshot.events[0]["type"], "fetch")
+        self.assertEqual(snapshot.events[1]["type"], "websocket_frame")
         payload = manager.protection_result_payload()
-        self.assertEqual(payload["snapshot"]["eventCount"], 1)
+        self.assertEqual(payload["snapshot"]["eventCount"], 2)
         self.assertNotIn("valuePreview", manager.script)
         self.assertIn("sanitizeUrl", manager.script)
+        self.assertIn("WrappedWebSocket", manager.script)
 
     def test_install_failure_is_structured(self) -> None:
         manager = BrowserHookManager()

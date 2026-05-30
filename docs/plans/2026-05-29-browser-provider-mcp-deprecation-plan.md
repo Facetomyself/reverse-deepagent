@@ -268,7 +268,7 @@ Acceptance:
 
 ### Phase 8: CDP-enhanced collectors
 
-Status: CDP event cache and metadata collector implemented and tested locally; real browser smoke remains pending.
+Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, and WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable. Real browser smoke remains pending.
 
 Deliverables:
 
@@ -277,17 +277,20 @@ Deliverables:
 - response body metadata capture.
 - `Debugger.scriptParsed` script cache support.
 - WebSocket frame capture.
+- HTML script-inventory fallback for source metadata when `Debugger.scriptParsed` events are unavailable.
+- runtime hook timeline fallback for WebSocket frame metadata when CDP frame events are unavailable.
 
 Acceptance:
 
 - Native runtime can produce `request-initiators.json` without MCP when provider supports CDP.
 - Native runtime can produce `source-contexts.json` from cached script sources.
 - WebSocket metadata is captured when available.
+- Missing CDP event cache no longer means immediate placeholder output for script sources or hook-observed WebSocket frames.
 - Providers without CDP degrade with explicit `unsupported` evidence rather than failing the run.
 
 ### Phase 9: Hook and breakpoint migration
 
-Status: hook baseline and provider-neutral BreakpointManager baseline are implemented and tested locally; real browser breakpoint smoke remains pending.
+Status: hook baseline, WebSocket send/message capture, and provider-neutral BreakpointManager baseline are implemented and tested locally; real browser breakpoint smoke remains pending.
 
 Deliverables:
 
@@ -295,6 +298,7 @@ Deliverables:
 - `hooks/cookie.py`
 - `hooks/anti_debug.py`
 - `hooks/breakpoints.py`
+- WebSocket send/message hook capture through the shared hook timeline.
 - `virtual://workspace/breakpoints.json` protection artifact ref / evidence mapping
 - runtime-observe playbook integration.
 
