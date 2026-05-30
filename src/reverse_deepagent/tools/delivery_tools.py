@@ -21,6 +21,7 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         delivery_root: str | None = None,
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         overwrite: bool = False,
+        commit_manifest_revision: bool = False,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or apply local filesystem delivery for reviewed artifact paths."""
@@ -38,6 +39,7 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
             transaction_id=transaction_id,
             mode=DeliveryExecutionMode(mode),
             overwrite=overwrite,
+            commit_manifest_revision=commit_manifest_revision,
             metadata=metadata,
         )
         return LocalDeliveryExecutor(config).execute(artifacts).to_dict()
@@ -45,7 +47,7 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
     execute_local_delivery.__name__ = "execute_local_delivery"
     execute_local_delivery.__doc__ = (
         "Plan or apply local filesystem delivery. artifacts_json is a JSON list with source_path, optional artifact_key, "
-        "destination_name, required, and metadata. mode defaults to dry-run; apply copies files locally and writes receipt/journal."
+        "destination_name, required, and metadata. mode defaults to dry-run; apply copies files locally and writes receipt/journal. commit_manifest_revision can additionally write a local delivery-manifest-revision.json."
     )
     return execute_local_delivery
 

@@ -59,6 +59,26 @@ class DeliveryToolTests(TestCase):
             self.assertTrue((root / "delivery" / "delivery-receipt.json").exists())
             self.assertTrue((root / "delivery" / "delivery-transaction-journal.json").exists())
 
+    def test_local_delivery_tool_can_commit_manifest_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-manifest",
+                mode="apply",
+                commit_manifest_revision=True,
+            )
+
+            self.assertTrue(result["manifest_revision_committed"])
+            self.assertEqual(result["manifest_revision"]["status"], "committed")
+            self.assertFalse(result["manifest_revision"]["backend_manifest_mutated"])
+            self.assertTrue((root / "delivery" / "delivery-manifest-revision.json").exists())
+
 
 class DeliverySubagentToolTests(TestCase):
     def test_delivery_subagent_exposes_rebuild_and_local_delivery_tools(self) -> None:

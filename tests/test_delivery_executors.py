@@ -88,6 +88,65 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertFalse(journal["manifest_revision_committed"])
             self.assertIn("does_not_publish_external_delivery", journal["metadata"]["limitations"])
 
+
+    def test_apply_can_commit_local_manifest_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-manifest",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_manifest_revision=True,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            revision_path = delivery_root / "delivery-manifest-revision.json"
+            journal_path = delivery_root / "delivery-transaction-journal.json"
+            self.assertEqual(result.status, "delivered")
+            self.assertTrue(result.manifest_revision_committed)
+            self.assertIsNotNone(result.manifest_revision)
+            self.assertTrue(result.manifest_revision.committed)
+            self.assertFalse(result.manifest_revision.backend_manifest_mutated)
+            self.assertTrue(revision_path.exists())
+            revision = json.loads(revision_path.read_text(encoding="utf-8"))
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(revision["status"], "committed")
+            self.assertEqual(revision["revision_id"], "manifest-revision-tx-manifest")
+            self.assertFalse(revision["backend_manifest_mutated"])
+            self.assertEqual(journal["manifest_revision_path"], str(revision_path.resolve()))
+            self.assertTrue(journal["manifest_revision_committed"])
+
+    def test_dry_run_manifest_revision_request_is_plan_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-manifest-dry-run",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    commit_manifest_revision=True,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "planned")
+            self.assertFalse(result.manifest_revision_committed)
+            self.assertIsNotNone(result.manifest_revision)
+            self.assertEqual(result.manifest_revision.status, "planned")
+            self.assertFalse(result.manifest_revision.committed)
+            self.assertTrue(result.manifest_revision.dry_run)
+            self.assertFalse((delivery_root / "delivery-manifest-revision.json").exists())
+
     def test_missing_required_source_blocks_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

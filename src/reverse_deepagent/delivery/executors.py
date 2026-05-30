@@ -52,6 +52,8 @@ class DeliveryExecutorConfig:
     write_receipt: bool = True
     overwrite: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    commit_manifest_revision: bool = False
+    manifest_revision_name: str = "delivery-manifest-revision.json"
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -84,6 +86,38 @@ class DeliveryReceipt:
 
 
 @dataclass(frozen=True)
+class DeliveryManifestRevision:
+    transaction_id: str
+    status: str
+    revision_id: str
+    revision_path: str | None
+    delivery_root: str
+    committed: bool
+    dry_run: bool
+    backend_manifest_mutated: bool
+    delivered_artifacts: list[dict[str, Any]]
+    source_artifact_count: int
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "revision_id": self.revision_id,
+            "revision_path": self.revision_path,
+            "delivery_root": self.delivery_root,
+            "committed": self.committed,
+            "dry_run": self.dry_run,
+            "backend_manifest_mutated": self.backend_manifest_mutated,
+            "delivered_artifacts": self.delivered_artifacts,
+            "source_artifact_count": self.source_artifact_count,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class DeliveryTransactionJournal:
     transaction_id: str
     status: str
@@ -92,6 +126,7 @@ class DeliveryTransactionJournal:
     filesystem_artifact_mutated: bool
     external_delivery_performed: bool
     rollback_available: bool
+    manifest_revision_path: str | None
     entries: list[dict[str, Any]]
     created_at: str
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -105,6 +140,7 @@ class DeliveryTransactionJournal:
             "filesystem_artifact_mutated": self.filesystem_artifact_mutated,
             "external_delivery_performed": self.external_delivery_performed,
             "rollback_available": self.rollback_available,
+            "manifest_revision_path": self.manifest_revision_path,
             "entries": self.entries,
             "created_at": self.created_at,
             "metadata": self.metadata,
@@ -123,6 +159,7 @@ class DeliveryExecutionResult:
     manifest_revision_committed: bool
     receipt: DeliveryReceipt
     transaction_journal: DeliveryTransactionJournal
+    manifest_revision: DeliveryManifestRevision | None
     planned_artifacts: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
     next_action: str = "review_delivery_receipt_before_external_handoff"
@@ -139,6 +176,7 @@ class DeliveryExecutionResult:
             "manifest_revision_committed": self.manifest_revision_committed,
             "receipt": self.receipt.to_dict(),
             "transaction_journal": self.transaction_journal.to_dict(),
+            "manifest_revision": self.manifest_revision.to_dict() if self.manifest_revision else None,
             "planned_artifacts": self.planned_artifacts,
             "errors": self.errors,
             "next_action": self.next_action,
@@ -188,6 +226,11 @@ class LocalDeliveryExecutor:
 
         receipt_path = str(delivery_root / "delivery-receipt.json") if self.config.write_receipt and not dry_run and not errors else None
         journal_path = str(delivery_root / "delivery-transaction-journal.json") if self.config.write_receipt and not dry_run and not errors else None
+        manifest_revision_path = (
+            str(delivery_root / self.config.manifest_revision_name)
+            if self.config.write_receipt and self.config.commit_manifest_revision and not dry_run and not errors
+            else None
+        )
         receipt = DeliveryReceipt(
             transaction_id=self.config.transaction_id,
             status=status,
@@ -199,14 +242,24 @@ class LocalDeliveryExecutor:
             created_at=created_at,
             metadata={**self.config.metadata, "executor": "local-filesystem"},
         )
+        manifest_revision = self._build_manifest_revision(
+            delivery_root=delivery_root,
+            delivered=delivered,
+            planned=planned,
+            status=status,
+            dry_run=dry_run,
+            created_at=created_at,
+            revision_path=manifest_revision_path,
+        )
         journal = DeliveryTransactionJournal(
             transaction_id=self.config.transaction_id,
             status=status,
             journal_path=journal_path,
-            manifest_revision_committed=False,
+            manifest_revision_committed=bool(manifest_revision and manifest_revision.committed),
             filesystem_artifact_mutated=bool(delivered),
             external_delivery_performed=False,
             rollback_available=bool(delivered),
+            manifest_revision_path=manifest_revision_path,
             entries=[
                 {
                     "action": "copy_artifact",
@@ -223,13 +276,16 @@ class LocalDeliveryExecutor:
                 "scope": "local-delivery-transaction-baseline",
                 "limitations": [
                     "does_not_publish_external_delivery",
-                    "does_not_commit_manifest_revision",
+                    "does_not_mutate_backend_artifact_manifest",
                     "rollback_is_journal_only_baseline",
+                    "backend_manifest_is_not_mutated",
                 ],
             },
         )
         if receipt_path:
             _write_json(Path(receipt_path), receipt.to_dict())
+        if manifest_revision_path and manifest_revision:
+            _write_json(Path(manifest_revision_path), manifest_revision.to_dict())
         if journal_path:
             _write_json(Path(journal_path), journal.to_dict())
         return DeliveryExecutionResult(
@@ -240,12 +296,52 @@ class LocalDeliveryExecutor:
             delivery_allowed=not bool(errors),
             filesystem_artifact_mutated=bool(delivered),
             external_delivery_performed=False,
-            manifest_revision_committed=False,
+            manifest_revision_committed=bool(manifest_revision and manifest_revision.committed),
             receipt=receipt,
             transaction_journal=journal,
+            manifest_revision=manifest_revision,
             planned_artifacts=planned,
             errors=errors,
             next_action=next_action,
+        )
+
+    def _build_manifest_revision(
+        self,
+        *,
+        delivery_root: Path,
+        delivered: list[dict[str, Any]],
+        planned: list[dict[str, Any]],
+        status: str,
+        dry_run: bool,
+        created_at: str,
+        revision_path: str | None,
+    ) -> DeliveryManifestRevision | None:
+        if not self.config.commit_manifest_revision:
+            return None
+        committed = bool(delivered) and not dry_run and status == "delivered"
+        revision_status = "committed" if committed else "planned" if dry_run else "skipped"
+        return DeliveryManifestRevision(
+            transaction_id=self.config.transaction_id,
+            status=revision_status,
+            revision_id=f"manifest-revision-{self.config.transaction_id}",
+            revision_path=revision_path,
+            delivery_root=str(delivery_root),
+            committed=committed,
+            dry_run=dry_run,
+            backend_manifest_mutated=False,
+            delivered_artifacts=list(delivered),
+            source_artifact_count=len(planned),
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "local-delivery-manifest-revision-baseline",
+                "limitations": [
+                    "does_not_mutate_backend_artifact_manifest",
+                    "does_not_publish_external_delivery",
+                    "cross_run_recovery_state_machine_not_implemented",
+                ],
+            },
         )
 
     def _plan_artifacts(self, artifacts: list[DeliveryArtifact], delivery_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
