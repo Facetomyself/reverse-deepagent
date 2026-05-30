@@ -1094,14 +1094,19 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.status.value, "success")
         self.assertIn("record_review_approved_rollback_execution", result.applied_actions)
         self.assertIn("recompute_review_gate_after_rollback", result.applied_actions)
+        self.assertIn("plan_physical_rollback_dry_run_diff", result.applied_actions)
         self.assertIn("flow_timeline_auto_stitch_rollback_execution_result_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_rollback_review_gate_recomputation_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_physical_rollback_dry_run_diff_count=1", result.verification)
 
         flow_metadata = result.artifacts[0].metadata
         self.assertEqual(flow_metadata["auto_stitch_rollback_execution_result_count"], 1)
         self.assertEqual(flow_metadata["auto_stitch_rollback_review_gate_recomputation_count"], 1)
         self.assertEqual(flow_metadata["auto_stitch_rollback_review_gate_recomputation_summary"]["blocked_count"], 1)
         self.assertFalse(flow_metadata["auto_stitch_rollback_review_gate_recomputation_summary"]["physical_artifact_mutated"])
+        self.assertEqual(flow_metadata["auto_stitch_physical_rollback_dry_run_diff_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_physical_rollback_dry_run_diff_summary"]["dry_run_diff_count"], 1)
+        self.assertFalse(flow_metadata["auto_stitch_physical_rollback_dry_run_diff_summary"]["physical_artifact_mutated"])
 
         artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
         gate_artifact = artifacts_by_path["virtual://workspace/review-gate-after-rollback.json"]
@@ -1111,6 +1116,14 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(gate_artifact.metadata["delivery_allowed"])
         self.assertFalse(gate_artifact.metadata["target_artifact_mutated"])
         self.assertFalse(gate_artifact.metadata["automatic_rollback"])
+        diff_artifact = artifacts_by_path["virtual://workspace/stitched-flow-physical-rollback-diff.json"]
+        self.assertEqual(diff_artifact.metadata["count"], 1)
+        self.assertEqual(diff_artifact.metadata["summary"]["dry_run_diff_count"], 1)
+        self.assertTrue(diff_artifact.metadata["dry_run_only"])
+        self.assertTrue(diff_artifact.metadata["would_mutate_if_approved"])
+        self.assertFalse(diff_artifact.metadata["would_replace_review_gate"])
+        self.assertFalse(diff_artifact.metadata["target_artifact_mutated"])
+        self.assertFalse(diff_artifact.metadata["automatic_rollback"])
 
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()

@@ -928,6 +928,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_evidence_candidates": "evidence",
     "workspace_evidence_validated": "evidence",
     "workspace_evidence_promotion": "evidence",
+    "workspace_stitched_flow_physical_rollback_diff": "trace",
     "workspace_review_gate_after_rollback": "triage",
     "workspace_review_gate": "triage",
 }
