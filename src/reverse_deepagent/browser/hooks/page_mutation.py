@@ -278,3 +278,205 @@ class PageMutationAuditManager:
                 return None
             current = current.get(part)
         return current
+
+    @staticmethod
+    def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+@dataclass(slots=True)
+class MutationObserverTimelineSpec:
+    """Explicit MutationObserver timeline request around a trigger expression."""
+
+    trigger_expression: str | None = None
+    wait_after_trigger_ms: int = 50
+    max_records: int = 100
+    max_preview_length: int = 240
+    observe_child_list: bool = True
+    observe_attributes: bool = True
+    observe_character_data: bool = True
+    subtree: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "MutationObserverTimelineSpec | None":
+        context = context or {}
+        trigger_expression = context.get("trigger_expression", context.get("triggerExpression"))
+        wait_raw = context.get(
+            "wait_after_trigger_ms",
+            context.get("waitAfterTriggerMs", context.get("observer_wait_ms", context.get("observerWaitMs", 50))),
+        )
+        max_records = int(context.get("max_records", context.get("maxRecords", context.get("mutation_record_limit", context.get("mutationRecordLimit", 100)))) or 100)
+        max_preview_length = int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)
+        return cls(
+            trigger_expression=str(trigger_expression) if trigger_expression else None,
+            wait_after_trigger_ms=int(wait_raw or 0),
+            max_records=max(1, max_records),
+            max_preview_length=max(1, max_preview_length),
+            observe_child_list=bool(context.get("observe_child_list", context.get("observeChildList", True))),
+            observe_attributes=bool(context.get("observe_attributes", context.get("observeAttributes", True))),
+            observe_character_data=bool(context.get("observe_character_data", context.get("observeCharacterData", True))),
+            subtree=bool(context.get("subtree", True)),
+        )
+
+
+@dataclass(slots=True)
+class MutationObserverTimelineResult:
+    status: str
+    records: list[dict[str, Any]] = field(default_factory=list)
+    trigger: dict[str, Any] = field(default_factory=dict)
+    observer: dict[str, Any] = field(default_factory=dict)
+    summary: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "record_count": len(self.records),
+            "records": self.records,
+            "trigger": self.trigger,
+            "observer": self.observer,
+            "summary": self.summary,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class MutationObserverTimelineManager:
+    """Capture MutationObserver records around an explicit trigger expression."""
+
+    def observe(self, page: BrowserPage, spec: MutationObserverTimelineSpec | None) -> MutationObserverTimelineResult:
+        if spec is None:
+            return MutationObserverTimelineResult(status="unsupported", reason="missing_mutation_observer_timeline_spec")
+        try:
+            payload = page.evaluate(self._timeline_expression(spec))
+        except Exception as exc:
+            return MutationObserverTimelineResult(status="failed", error=str(exc))
+        if not isinstance(payload, dict):
+            return MutationObserverTimelineResult(status="failed", error="non_object_timeline_payload")
+        records = PageMutationAuditManager._list_of_dicts(payload.get("records"))
+        trigger = payload.get("trigger") if isinstance(payload.get("trigger"), dict) else {"attempted": False}
+        observer = payload.get("observer") if isinstance(payload.get("observer"), dict) else {}
+        summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else self._summary(records)
+        error = payload.get("error")
+        reason = payload.get("reason")
+        if payload.get("ok") is False:
+            return MutationObserverTimelineResult(
+                status="failed",
+                records=records,
+                trigger=trigger,
+                observer=observer,
+                summary=summary,
+                error=str(error or "mutation_observer_timeline_failed"),
+                reason=str(reason) if reason else None,
+            )
+        status = "success" if records else "partial"
+        return MutationObserverTimelineResult(status=status, records=records, trigger=trigger, observer=observer, summary=summary, reason=str(reason) if reason else None)
+
+    @classmethod
+    def _timeline_expression(cls, spec: MutationObserverTimelineSpec) -> str:
+        config = {
+            "triggerExpression": spec.trigger_expression,
+            "waitAfterTriggerMs": spec.wait_after_trigger_ms,
+            "maxRecords": spec.max_records,
+            "maxPreviewLength": spec.max_preview_length,
+            "options": {
+                "childList": spec.observe_child_list,
+                "attributes": spec.observe_attributes,
+                "characterData": spec.observe_character_data,
+                "subtree": spec.subtree,
+                "attributeOldValue": spec.observe_attributes,
+                "characterDataOldValue": spec.observe_character_data,
+            },
+        }
+        config_json = json.dumps(config, ensure_ascii=False)
+        template = """(async () => {
+  const marker = "__REVERSE_AGENT_MUTATION_OBSERVER_TIMELINE__";
+  const config = __MUTATION_OBSERVER_TIMELINE_CONFIG__;
+  const startedAt = Date.now();
+  const records = [];
+  const preview = (node) => {
+    try {
+      if (!node) return null;
+      if (node.nodeType === Node.TEXT_NODE) return { nodeType: "text", text: String(node.textContent || "").slice(0, config.maxPreviewLength) };
+      if (node.nodeType !== Node.ELEMENT_NODE) return { nodeType: node.nodeType, name: node.nodeName };
+      return {
+        nodeType: "element",
+        tag: String(node.tagName || "").toLowerCase(),
+        id: node.id || "",
+        className: String(node.className || "").slice(0, config.maxPreviewLength),
+        text: String(node.textContent || "").slice(0, config.maxPreviewLength)
+      };
+    } catch (error) {
+      return { nodeType: "unavailable", error: String(error && error.message || error) };
+    }
+  };
+  const pushRecord = (mutation) => {
+    const item = {
+      index: records.length,
+      ts: Date.now(),
+      type: mutation.type,
+      target: preview(mutation.target),
+      attributeName: mutation.attributeName || null,
+      oldValue: mutation.oldValue == null ? null : String(mutation.oldValue).slice(0, config.maxPreviewLength),
+      addedNodes: Array.from(mutation.addedNodes || []).map(preview),
+      removedNodes: Array.from(mutation.removedNodes || []).map(preview)
+    };
+    records.push(item);
+    if (records.length > config.maxRecords) records.shift();
+  };
+  const summary = () => {
+    const byType = {};
+    for (const record of records) byType[record.type] = (byType[record.type] || 0) + 1;
+    return { record_count: records.length, types: Object.keys(byType).sort(), by_type: byType };
+  };
+  if (typeof MutationObserver === "undefined") {
+    return { marker, ok: false, status: "unsupported", reason: "mutation_observer_unavailable", records, summary: summary(), trigger: { attempted: false } };
+  }
+  const target = document && (document.body || document.documentElement);
+  if (!target) {
+    return { marker, ok: false, status: "unsupported", reason: "mutation_observer_target_unavailable", records, summary: summary(), trigger: { attempted: false } };
+  }
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) pushRecord(mutation);
+  });
+  const observerInfo = { target: target === document.body ? "document.body" : "document.documentElement", options: config.options, started_at_ms: startedAt };
+  let trigger = { attempted: false };
+  try {
+    observer.observe(target, config.options);
+    if (config.triggerExpression) {
+      trigger = { attempted: true };
+      try {
+        let value;
+        try {
+          value = Function("return (" + config.triggerExpression + ")")();
+        } catch (_) {
+          value = Function(config.triggerExpression)();
+        }
+        if (value && typeof value.then === "function") value = await value;
+        trigger.ok = true;
+        trigger.result = typeof value === "object" && value !== null ? value : { value };
+      } catch (error) {
+        trigger.ok = false;
+        trigger.error = String(error && error.message || error);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, config.waitAfterTriggerMs || 0)));
+    observer.takeRecords().forEach(pushRecord);
+    observer.disconnect();
+    observerInfo.stopped_at_ms = Date.now();
+    return { marker, ok: true, status: records.length ? "success" : "partial", records, summary: summary(), trigger, observer: observerInfo };
+  } catch (error) {
+    try { observer.disconnect(); } catch (_) {}
+    return { marker, ok: false, status: "failed", error: String(error && error.message || error), records, summary: summary(), trigger, observer: observerInfo };
+  }
+})()"""
+        return template.replace("__MUTATION_OBSERVER_TIMELINE_CONFIG__", config_json)
+
+    @staticmethod
+    def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+        by_type: dict[str, int] = {}
+        for record in records:
+            record_type = str(record.get("type") or "unknown")
+            by_type[record_type] = by_type.get(record_type, 0) + 1
+        return {"record_count": len(records), "types": sorted(by_type), "by_type": by_type}

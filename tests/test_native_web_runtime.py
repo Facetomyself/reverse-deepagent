@@ -158,6 +158,41 @@ class FakeRawPage:
         """
 
     def evaluate(self, expression):
+        if "__REVERSE_AGENT_MUTATION_OBSERVER_TIMELINE__" in expression:
+            return {
+                "marker": "__REVERSE_AGENT_MUTATION_OBSERVER_TIMELINE__",
+                "ok": True,
+                "status": "success",
+                "records": [
+                    {
+                        "index": 0,
+                        "ts": 1,
+                        "type": "childList",
+                        "target": {"nodeType": "element", "tag": "body"},
+                        "attributeName": None,
+                        "oldValue": None,
+                        "addedNodes": [{"nodeType": "element", "tag": "div", "text": "after"}],
+                        "removedNodes": [],
+                    },
+                    {
+                        "index": 1,
+                        "ts": 2,
+                        "type": "attributes",
+                        "target": {"nodeType": "element", "tag": "main"},
+                        "attributeName": "data-token",
+                        "oldValue": None,
+                        "addedNodes": [],
+                        "removedNodes": [],
+                    },
+                ],
+                "trigger": {"attempted": True, "ok": True, "result": {"value": "mutated"}},
+                "observer": {"target": "document.body", "options": {"childList": True, "attributes": True}},
+                "summary": {
+                    "record_count": 2,
+                    "types": ["attributes", "childList"],
+                    "by_type": {"attributes": 1, "childList": 1},
+                },
+            }
         if "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__" in expression:
             return {
                 "marker": "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__",
@@ -679,6 +714,30 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["changed"])
         self.assertEqual(result.artifacts[0].metadata["change_count"], 7)
         self.assertEqual(result.artifacts[0].metadata["categories"], ["cookie", "dom", "global", "storage"])
+
+    def test_native_web_runtime_apply_minimal_protection_captures_mutation_observer_timeline(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "mutation-observer-timeline",
+            {
+                "trigger_expression": "mutateNativePage()",
+                "observer_wait_ms": 1,
+                "mutation_record_limit": 20,
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["observe_page_mutations"])
+        self.assertIn("mutation_observer_timeline_status=success", result.verification)
+        self.assertIn("mutation_observer_record_count=2", result.verification)
+        self.assertIn("mutation_observer_types=['attributes', 'childList']", result.verification)
+        self.assertIn("trigger_attempted=True", result.verification)
+        self.assertEqual(result.next_action, "inspect_mutation_observer_timeline")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/mutation-observer-timeline.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "success")
+        self.assertEqual(result.artifacts[0].metadata["record_count"], 2)
+        self.assertEqual(result.artifacts[0].metadata["types"], ["attributes", "childList"])
 
     def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
         provider = FakeProvider()

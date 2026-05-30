@@ -17,6 +17,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleDiscoverySpec,
     ModuleHookManager,
     ModuleHookSpec,
+    MutationObserverTimelineManager,
+    MutationObserverTimelineSpec,
     PageMutationAuditManager,
     PageMutationAuditSpec,
     PausedSessionActionSpec,
@@ -239,6 +241,46 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=[],
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_mutation_observer_timeline_request(protection_name, context):
+            spec = MutationObserverTimelineSpec.from_context(context)
+            result = MutationObserverTimelineManager().observe(page, spec)
+            record_count = len(result.records)
+            mutation_types = result.summary.get("types") if isinstance(result.summary.get("types"), list) else []
+            verification = [
+                f"mutation_observer_timeline_status={result.status}",
+                f"mutation_observer_record_count={record_count}",
+                f"mutation_observer_types={mutation_types}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"mutation_observer_reason={result.reason}")
+            if result.error:
+                verification.append(f"mutation_observer_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/mutation-observer-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime MutationObserver timeline around an explicit trigger.",
+                    metadata={
+                        "status": result.status,
+                        "record_count": record_count,
+                        "types": mutation_types,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["observe_page_mutations"] if result.trigger.get("attempted") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action="inspect_mutation_observer_timeline" if record_count else "trigger_dom_mutation_or_adjust_observer_scope",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
             )
         if self._is_page_mutation_audit_request(protection_name, context):
             spec = PageMutationAuditSpec.from_context(context)
@@ -911,6 +953,31 @@ class NativeWebRuntime(WebReverseRuntime):
                 "selectedGlobals",
                 "global_names",
                 "globalNames",
+            )
+        )
+
+    @staticmethod
+    def _is_mutation_observer_timeline_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "mutation-observer",
+            "mutation-observer-timeline",
+            "mutation-timeline",
+            "page-mutation-timeline",
+            "dom-mutation-timeline",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "mutation_observer_timeline",
+                "mutationObserverTimeline",
+                "mutation_timeline",
+                "mutationTimeline",
+                "observer_wait_ms",
+                "observerWaitMs",
+                "mutation_record_limit",
+                "mutationRecordLimit",
             )
         )
 
