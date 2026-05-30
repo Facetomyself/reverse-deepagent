@@ -97,9 +97,31 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(groups_by_strategy["function_name"]["verification"]["status"], "ready_for_manual_stitch_review")
         self.assertEqual(groups_by_strategy["function_name"]["verification"]["missing_for_ready"], [])
         self.assertFalse(groups_by_strategy["function_name"]["verification"]["automatic_stitching"])
+        self.assertEqual(len(result.stitch_candidates), 3)
+        candidates_by_group = {candidate["group_id"]: candidate for candidate in result.stitch_candidates}
+        ready_candidate = candidates_by_group[groups_by_strategy["function_name"]["group_id"]]
+        self.assertEqual(ready_candidate["candidate_id"], "stitch-1")
+        self.assertEqual(ready_candidate["readiness"], "ready_for_manual_stitch_review")
+        self.assertEqual(ready_candidate["confidence"], "medium")
+        self.assertEqual(ready_candidate["strategy"], "function_name")
+        self.assertEqual(ready_candidate["path_length"], 3)
+        self.assertFalse(ready_candidate["automatic_stitching"])
+        self.assertFalse(ready_candidate["stitching"])
+        self.assertEqual(ready_candidate["scope"], "manual-stitch-candidate-only")
+        self.assertEqual(ready_candidate["next_action"], "manual_stitch_review")
+        self.assertTrue(ready_candidate["evidence"]["request_initiator"])
+        self.assertTrue(ready_candidate["evidence"]["runtime_hook"])
+        self.assertTrue(ready_candidate["evidence"]["replay_validation"])
+        reviewable_candidate = candidates_by_group[groups_by_strategy["url_path_method"]["group_id"]]
+        self.assertEqual(reviewable_candidate["readiness"], "reviewable")
+        self.assertEqual(reviewable_candidate["confidence"], "low")
+        self.assertIn("replay_validation", reviewable_candidate["missing_for_ready"])
+        self.assertEqual(reviewable_candidate["next_action"], "collect_missing_evidence_or_review_manually")
         result_dict = result.to_dict()
         self.assertEqual(result_dict["correlation_group_count"], 3)
         self.assertEqual(result_dict["correlation_groups"][0]["stitching"], False)
+        self.assertEqual(result_dict["stitch_candidate_count"], 3)
+        self.assertEqual(result_dict["stitch_candidates"][0]["automatic_stitching"], False)
 
     def test_missing_inputs_is_not_a_flow_timeline_request(self) -> None:
         self.assertIsNone(FlowTimelineSpec.from_context({"flow_id": "empty"}))
@@ -124,6 +146,8 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(groups_by_strategy["candidate_id"]["verification"]["evidence"]["replay_validation"], True)
         self.assertIn("request_initiator", groups_by_strategy["candidate_id"]["verification"]["missing_for_ready"])
         self.assertFalse(groups_by_strategy["candidate_id"]["verification"]["automatic_stitching"])
+        self.assertEqual(result.stitch_candidates, [])
+        self.assertEqual(result.to_dict()["stitch_candidate_count"], 0)
 
 
 if __name__ == "__main__":

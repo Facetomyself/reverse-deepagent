@@ -605,6 +605,12 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(groups_by_strategy["url_path_method"]["verification"]["status"], "reviewable")
         self.assertEqual(groups_by_strategy["function_name"]["verification"]["status"], "reviewable")
         self.assertFalse(groups_by_strategy["function_name"]["verification"]["automatic_stitching"])
+        self.assertGreaterEqual(flow_timeline["stitch_candidate_count"], 3)
+        candidates_by_strategy = {candidate["strategy"]: candidate for candidate in flow_timeline["stitch_candidates"]}
+        self.assertEqual(candidates_by_strategy["function_name"]["readiness"], "reviewable")
+        self.assertFalse(candidates_by_strategy["function_name"]["automatic_stitching"])
+        self.assertFalse(candidates_by_strategy["function_name"]["stitching"])
+        self.assertEqual(candidates_by_strategy["function_name"]["scope"], "manual-stitch-candidate-only")
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")
@@ -807,6 +813,8 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("flow_timeline_previous_entry_count=1", result.verification)
         self.assertIn("flow_timeline_new_entry_count=3", result.verification)
         self.assertIn("flow_timeline_correlation_group_count=1", result.verification)
+        self.assertIn("flow_timeline_stitch_candidate_count=1", result.verification)
+        self.assertIn("flow_timeline_automatic_stitching=False", result.verification)
         self.assertIn("flow_timeline_continued_from_previous=True", result.verification)
         self.assertEqual(result.next_action, "inspect_flow_timeline_or_continue_next_request")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/flow-timeline.json")
@@ -815,6 +823,8 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["previous_entry_count"], 1)
         self.assertEqual(result.artifacts[0].metadata["new_entry_count"], 3)
         self.assertEqual(result.artifacts[0].metadata["correlation_group_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["stitch_candidate_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_stitching"])
         self.assertTrue(result.artifacts[0].metadata["continued_from_previous"])
         self.assertEqual(result.artifacts[0].metadata["source_counts"]["network_requests"], 1)
 

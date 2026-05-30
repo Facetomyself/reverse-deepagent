@@ -123,6 +123,7 @@ class FlowTimelineResult:
     run_id: str | None = None
     entries: list[dict[str, Any]] = field(default_factory=list)
     correlation_groups: list[dict[str, Any]] = field(default_factory=list)
+    stitch_candidates: list[dict[str, Any]] = field(default_factory=list)
     previous_entry_count: int = 0
     new_entry_count: int = 0
     source_counts: dict[str, int] = field(default_factory=dict)
@@ -143,6 +144,8 @@ class FlowTimelineResult:
             "entries": self.entries,
             "correlation_group_count": len(self.correlation_groups),
             "correlation_groups": self.correlation_groups,
+            "stitch_candidate_count": len(self.stitch_candidates),
+            "stitch_candidates": self.stitch_candidates,
             "error": self.error,
             "reason": self.reason,
         }
@@ -169,6 +172,7 @@ class FlowTimelineManager:
 
         entries.extend(new_entries)
         correlation_groups = self._correlation_groups(entries)
+        stitch_candidates = self._stitch_candidates(correlation_groups, entries)
         status = "success" if new_entries else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -176,6 +180,7 @@ class FlowTimelineManager:
             run_id=spec.run_id,
             entries=entries,
             correlation_groups=correlation_groups,
+            stitch_candidates=stitch_candidates,
             previous_entry_count=len(previous_entries),
             new_entry_count=len(new_entries),
             source_counts=source_counts,
@@ -448,6 +453,75 @@ class FlowTimelineManager:
             group["scope"] = "correlation-hints-only"
             group["verification"] = self._group_verification(group)
         return groups
+
+    def _stitch_candidates(self, groups: list[dict[str, Any]], entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Promote reviewable correlation groups into manual stitch candidates.
+
+        These candidates are intentionally conservative: they provide an
+        ordered review path for humans or later review-gated agents, but they do
+        not assert that the flow is stitched and they never enable automatic
+        stitching.
+        """
+
+        entries_by_sequence = {entry.get("sequence"): entry for entry in entries}
+        candidates: list[dict[str, Any]] = []
+        allowed_statuses = {"reviewable", "ready_for_manual_stitch_review"}
+        confidence_order = {"ready_for_manual_stitch_review": 0, "reviewable": 1}
+        candidate_groups = []
+        for group in groups:
+            verification = group.get("verification") if isinstance(group.get("verification"), dict) else {}
+            status = str(verification.get("status") or "weak")
+            if status not in allowed_statuses:
+                continue
+            candidate_groups.append((confidence_order.get(status, 9), group))
+        candidate_groups.sort(
+            key=lambda item: (
+                item[0],
+                str(item[1].get("group_id")),
+                str(item[1].get("strategy")),
+            )
+        )
+        for index, (_rank, group) in enumerate(candidate_groups, 1):
+            verification = group.get("verification") if isinstance(group.get("verification"), dict) else {}
+            path = []
+            for sequence in group.get("entry_sequences", []):
+                entry = entries_by_sequence.get(sequence)
+                if not isinstance(entry, dict):
+                    continue
+                path.append(
+                    {
+                        "sequence": entry.get("sequence"),
+                        "source": entry.get("source"),
+                        "type": entry.get("type"),
+                        "request_id": entry.get("request_id"),
+                        "correlation": entry.get("correlation") if isinstance(entry.get("correlation"), dict) else {},
+                    }
+                )
+            evidence = verification.get("evidence") if isinstance(verification.get("evidence"), dict) else {}
+            readiness = str(verification.get("status") or "reviewable")
+            candidates.append(
+                {
+                    "candidate_id": f"stitch-{index}",
+                    "group_id": group.get("group_id"),
+                    "strategy": group.get("strategy"),
+                    "key": group.get("key", {}),
+                    "readiness": readiness,
+                    "confidence": "medium" if readiness == "ready_for_manual_stitch_review" else "low",
+                    "entry_sequences": list(group.get("entry_sequences", [])),
+                    "entry_types": list(group.get("entry_types", [])),
+                    "sources": list(group.get("sources", [])),
+                    "path": path,
+                    "path_length": len(path),
+                    "evidence": evidence,
+                    "missing_for_ready": list(verification.get("missing_for_ready", [])) if isinstance(verification.get("missing_for_ready"), list) else [],
+                    "reasons": list(verification.get("reasons", [])) if isinstance(verification.get("reasons"), list) else [],
+                    "next_action": "manual_stitch_review" if readiness == "ready_for_manual_stitch_review" else "collect_missing_evidence_or_review_manually",
+                    "automatic_stitching": False,
+                    "stitching": False,
+                    "scope": "manual-stitch-candidate-only",
+                }
+            )
+        return candidates
 
     @staticmethod
     def _group_verification(group: dict[str, Any]) -> dict[str, Any]:
