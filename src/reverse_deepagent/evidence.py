@@ -54,8 +54,10 @@ def promote_evidence(
     validated: list[EvidencePromotionRecord] = []
     promoted: list[EvidencePromotionRecord] = []
     rejected: list[EvidencePromotionRecord] = []
+    review_required_items: list[dict[str, Any]] = []
 
     for index, item in enumerate(evidence):
+        review_required_items.extend(_review_required_items(item))
         candidate = _build_record(index, item, related_artifacts)
         candidates.append(candidate)
         validation = _with_status(candidate, *_decide_validation(candidate, item))
@@ -79,6 +81,9 @@ def promote_evidence(
         "promoted_evidence_ids": [item.evidence_id for item in promoted],
         "validated_evidence_ids": [item.evidence_id for item in validated],
         "rejected_evidence_ids": [item.evidence_id for item in rejected],
+        "review_required_count": len(review_required_items),
+        "review_required_codes": sorted({str(item.get("code")) for item in review_required_items if item.get("code")}),
+        "review_required_items": review_required_items,
     }
     return EvidencePromotionResult(
         candidates=candidates,
@@ -231,6 +236,50 @@ def _decide_promotion(record: EvidencePromotionRecord, item: EvidenceItem) -> tu
         return "promoted", score, reasons, blockers
     blockers.append("promotion_threshold_not_met")
     return record.status, score, reasons, blockers
+
+
+def _review_required_items(item: EvidenceItem) -> list[dict[str, Any]]:
+    """Extract evidence-level manual review requirements from structured details."""
+
+    if item.source != "flow_timeline":
+        return []
+    proposals = item.details.get("stitch_proposals")
+    if not isinstance(proposals, list):
+        return []
+    required: list[dict[str, Any]] = []
+    for proposal in proposals:
+        if not isinstance(proposal, dict):
+            continue
+        raw_decision = proposal.get("review_decision")
+        decision = raw_decision if isinstance(raw_decision, dict) else {}
+        review_required = bool(decision.get("review_required"))
+        approved = bool(decision.get("approved"))
+        status = str(decision.get("status") or "")
+        if not review_required and status != "pending_review":
+            continue
+        if approved and status in {"approved", "passed"}:
+            continue
+        required.append(
+            {
+                "code": "flow_timeline_stitch_proposal_pending_review",
+                "source": item.source,
+                "proposal_id": proposal.get("proposal_id"),
+                "candidate_id": proposal.get("candidate_id"),
+                "group_id": proposal.get("group_id"),
+                "strategy": proposal.get("strategy"),
+                "scope": proposal.get("scope"),
+                "review_status": status or "pending_review",
+                "blocking_conditions": _blocking_conditions(proposal),
+            }
+        )
+    return required
+
+
+def _blocking_conditions(proposal: dict[str, Any]) -> list[Any]:
+    blocking_conditions = proposal.get("blocking_conditions")
+    if not isinstance(blocking_conditions, list):
+        return []
+    return list(blocking_conditions)
 
 
 def _with_status(

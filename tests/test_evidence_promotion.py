@@ -55,7 +55,6 @@ class EvidencePromotionTests(unittest.TestCase):
         self.assertIn("evidence-promotion.json", payloads)
         self.assertEqual(payloads["evidence-promotion.json"]["summary"]["candidate_count"], 3)
 
-
     def test_candidate_below_threshold_is_not_validated(self) -> None:
         evidence = [
             EvidenceItem(
@@ -113,6 +112,79 @@ class EvidencePromotionTests(unittest.TestCase):
             manifest = json.loads(Path(output.artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
             manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
             self.assertEqual(manifest_by_key["workspace_evidence_promotion"]["category"], "evidence")
+
+    def test_promote_evidence_extracts_pending_flow_stitch_proposal_review_requirement(self) -> None:
+        evidence = [
+            EvidenceItem(
+                summary="Native Web recon flow timeline assembled",
+                kind=EvidenceKind.NOTE,
+                source="flow_timeline",
+                details={
+                    "stitch_proposals": [
+                        {
+                            "proposal_id": "stitch-proposal-1",
+                            "candidate_id": "stitch-1",
+                            "group_id": "cg-1",
+                            "strategy": "function_name",
+                            "scope": "review-gated-stitch-proposal-only",
+                            "review_decision": {
+                                "status": "pending_review",
+                                "approved": False,
+                                "review_required": True,
+                            },
+                            "blocking_conditions": ["missing_reviewer_approval"],
+                        }
+                    ]
+                },
+                confidence=ConfidenceLevel.MEDIUM,
+            )
+        ]
+
+        result = promote_evidence(evidence)
+
+        self.assertEqual(result.summary["review_required_count"], 1)
+        self.assertEqual(
+            result.summary["review_required_codes"],
+            ["flow_timeline_stitch_proposal_pending_review"],
+        )
+        self.assertEqual(result.summary["review_required_items"][0]["proposal_id"], "stitch-proposal-1")
+        self.assertEqual(result.summary["review_required_items"][0]["review_status"], "pending_review")
+        self.assertEqual(
+            result.summary["review_required_items"][0]["blocking_conditions"],
+            ["missing_reviewer_approval"],
+        )
+
+    def test_promote_evidence_ignores_approved_flow_stitch_proposal(self) -> None:
+        evidence = [
+            EvidenceItem(
+                summary="Native Web recon flow timeline assembled",
+                kind=EvidenceKind.NOTE,
+                source="flow_timeline",
+                details={
+                    "stitch_proposals": [
+                        {
+                            "proposal_id": "stitch-proposal-1",
+                            "candidate_id": "stitch-1",
+                            "group_id": "cg-1",
+                            "strategy": "function_name",
+                            "scope": "review-gated-stitch-proposal-only",
+                            "review_decision": {
+                                "status": "approved",
+                                "approved": True,
+                                "review_required": True,
+                            },
+                        }
+                    ]
+                },
+                confidence=ConfidenceLevel.MEDIUM,
+            )
+        ]
+
+        result = promote_evidence(evidence)
+
+        self.assertEqual(result.summary["review_required_count"], 0)
+        self.assertEqual(result.summary["review_required_codes"], [])
+        self.assertEqual(result.summary["review_required_items"], [])
 
 
 if __name__ == "__main__":

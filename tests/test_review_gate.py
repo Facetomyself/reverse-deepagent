@@ -192,6 +192,111 @@ class ReviewGateTests(unittest.TestCase):
             self.assertEqual(index["review_gate"]["status"], "pass")
             self.assertTrue(Path(index["review_gate_artifact"]).exists())
 
+    def test_gate_blocks_pending_flow_stitch_proposal_review_requirement(self) -> None:
+        rebuild = RebuildResult(
+            status=ExecutionStatus.SUCCESS,
+            rebuild_plan={"ready": True, "review_hints": []},
+            next_action="run_replay_demo_or_integrate_scrapy",
+        )
+        evidence = promote_evidence(
+            [
+                EvidenceItem(
+                    summary="验证摘要 replay ready",
+                    kind=EvidenceKind.NOTE,
+                    source="function_validation_summary",
+                    anchor="candidate-1",
+                    details={"replay_ready": True, "best_candidate_id": "candidate-1"},
+                    confidence=ConfidenceLevel.HIGH,
+                ),
+                EvidenceItem(
+                    summary="Native Web recon flow timeline assembled",
+                    kind=EvidenceKind.NOTE,
+                    source="flow_timeline",
+                    details={
+                        "stitch_proposals": [
+                            {
+                                "proposal_id": "stitch-proposal-1",
+                                "candidate_id": "stitch-1",
+                                "group_id": "cg-1",
+                                "strategy": "function_name",
+                                "scope": "review-gated-stitch-proposal-only",
+                                "review_decision": {
+                                    "status": "pending_review",
+                                    "approved": False,
+                                    "review_required": True,
+                                },
+                                "blocking_conditions": ["missing_reviewer_approval"],
+                            }
+                        ]
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+            ]
+        )
+
+        gate = evaluate_review_gate(rebuild, evidence)
+
+        self.assertEqual(gate.status, "block")
+        self.assertTrue(gate.blocked)
+        self.assertEqual(gate.next_action, "review_stitch_proposals_before_delivery")
+        self.assertEqual(gate.evidence_review_required_count, 1)
+        self.assertEqual(
+            gate.evidence_review_required_codes,
+            ["flow_timeline_stitch_proposal_pending_review"],
+        )
+        self.assertIn("evidence_review_required", gate.reasons)
+        self.assertIn("flow_timeline_stitch_proposal_pending_review", gate.reasons)
+        self.assertEqual(gate.evidence_review_required_items[0]["proposal_id"], "stitch-proposal-1")
+
+    def test_gate_does_not_block_approved_flow_stitch_proposal_review_requirement(self) -> None:
+        rebuild = RebuildResult(
+            status=ExecutionStatus.SUCCESS,
+            rebuild_plan={"ready": True, "review_hints": []},
+            next_action="run_replay_demo_or_integrate_scrapy",
+        )
+        evidence = promote_evidence(
+            [
+                EvidenceItem(
+                    summary="验证摘要 replay ready",
+                    kind=EvidenceKind.NOTE,
+                    source="function_validation_summary",
+                    anchor="candidate-1",
+                    details={"replay_ready": True, "best_candidate_id": "candidate-1"},
+                    confidence=ConfidenceLevel.HIGH,
+                ),
+                EvidenceItem(
+                    summary="Native Web recon flow timeline assembled",
+                    kind=EvidenceKind.NOTE,
+                    source="flow_timeline",
+                    details={
+                        "stitch_proposals": [
+                            {
+                                "proposal_id": "stitch-proposal-1",
+                                "candidate_id": "stitch-1",
+                                "group_id": "cg-1",
+                                "strategy": "function_name",
+                                "scope": "review-gated-stitch-proposal-only",
+                                "review_decision": {
+                                    "status": "approved",
+                                    "approved": True,
+                                    "review_required": True,
+                                },
+                            }
+                        ]
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+            ]
+        )
+
+        gate = evaluate_review_gate(rebuild, evidence)
+
+        self.assertEqual(gate.status, "pass")
+        self.assertFalse(gate.blocked)
+        self.assertEqual(gate.next_action, "delivery_allowed")
+        self.assertEqual(gate.evidence_review_required_count, 0)
+        self.assertEqual(gate.evidence_review_required_codes, [])
+
 
 if __name__ == "__main__":
     unittest.main()

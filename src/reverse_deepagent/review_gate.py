@@ -24,6 +24,18 @@ class ReviewGateResult(SchemaBaseModel):
     info_hint_codes: list[str] = Field(default_factory=list, description="Informational hint codes.")
     evidence_status: str | None = Field(default=None, description="Evidence promotion summary status, if available.")
     evidence_counts: dict[str, int] = Field(default_factory=dict, description="Evidence promotion counts used by the gate.")
+    evidence_review_required_count: int = Field(
+        default=0,
+        description="Evidence-level pending review requirements that block automated delivery.",
+    )
+    evidence_review_required_codes: list[str] = Field(
+        default_factory=list,
+        description="Evidence-level review requirement codes, such as pending stitch proposal review.",
+    )
+    evidence_review_required_items: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured evidence-level review requirements surfaced by evidence promotion.",
+    )
     reasons: list[str] = Field(default_factory=list, description="Human-readable reasons for the gate outcome.")
     next_action: str = Field(description="Recommended action after evaluating the gate.")
 
@@ -54,6 +66,9 @@ def evaluate_review_gate(
         "rejected": int(evidence_summary.get("rejected_count") or 0),
     }
     evidence_status = str(evidence_summary.get("status")) if evidence_summary else None
+    evidence_review_required_count = int(evidence_summary.get("review_required_count") or 0)
+    evidence_review_required_codes = _string_list(evidence_summary.get("review_required_codes"))
+    evidence_review_required_items = _dict_list(evidence_summary.get("review_required_items"))
 
     reasons: list[str] = []
     if not ready:
@@ -67,6 +82,9 @@ def evaluate_review_gate(
             reasons.append("promoted_evidence_missing")
         if evidence_counts["rejected"] > 0:
             reasons.append("rejected_evidence_present")
+        if evidence_review_required_count > 0:
+            reasons.append("evidence_review_required")
+            reasons.extend(evidence_review_required_codes)
     if warning_codes:
         reasons.append("warning_review_hints_present")
 
@@ -76,9 +94,16 @@ def evaluate_review_gate(
     if evidence_promotion is not None and evidence_counts["promoted"] <= 0 and ready:
         # Ready delivery without promoted evidence is contradictory enough to block automation.
         blocked = True
+    if evidence_promotion is not None and evidence_review_required_count > 0:
+        # Review-gated evidence such as pending flow stitch proposals must not be
+        # treated as confirmed delivery evidence until a reviewer approves it.
+        blocked = True
     if blocked:
         status: ReviewGateStatus = "block"
-        next_action = "manual_review_or_expand_evidence"
+        if evidence_review_required_count > 0:
+            next_action = "review_stitch_proposals_before_delivery"
+        else:
+            next_action = "manual_review_or_expand_evidence"
     elif warning_codes or (evidence_promotion is not None and evidence_counts["rejected"] > 0):
         status = "warn"
         next_action = "manual_review_before_delivery"
@@ -98,6 +123,9 @@ def evaluate_review_gate(
         info_hint_codes=info_codes,
         evidence_status=evidence_status,
         evidence_counts=evidence_counts,
+        evidence_review_required_count=evidence_review_required_count,
+        evidence_review_required_codes=evidence_review_required_codes,
+        evidence_review_required_items=evidence_review_required_items,
         reasons=_dedupe(reasons),
         next_action=next_action,
     )
@@ -127,6 +155,18 @@ def _coerce_review_hints(payload: Any) -> list[ReviewHint]:
                 )
             )
     return hints
+
+
+def _string_list(payload: Any) -> list[str]:
+    if not isinstance(payload, list):
+        return []
+    return [str(item) for item in payload if item is not None]
+
+
+def _dict_list(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
 
 
 def _dedupe(items: list[str]) -> list[str]:
