@@ -512,11 +512,94 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_physical_rollback_dry_run_diff_summary["would_mutate_if_approved_count"], 1)
         self.assertTrue(result.auto_stitch_physical_rollback_dry_run_diff_summary["dry_run_only"])
         self.assertFalse(result.auto_stitch_physical_rollback_dry_run_diff_summary["physical_artifact_mutated"])
+        self.assertEqual(result.auto_stitch_physical_rollback_review_decisions, [])
+        self.assertEqual(result.auto_stitch_physical_rollback_results, [])
+        self.assertEqual(result.auto_stitch_physical_rollback_result_summary["physical_rollback_result_count"], 0)
+        self.assertFalse(result.auto_stitch_physical_rollback_result_summary["target_artifact_mutated"])
         result_dict = result.to_dict()
         self.assertEqual(result_dict["auto_stitch_rollback_review_gate_recomputation_count"], 1)
         self.assertEqual(result_dict["auto_stitch_rollback_review_gate_recomputation_summary"]["blocked_count"], 1)
         self.assertEqual(result_dict["auto_stitch_physical_rollback_dry_run_diff_count"], 1)
         self.assertEqual(result_dict["auto_stitch_physical_rollback_dry_run_diff_summary"]["dry_run_diff_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_physical_rollback_result_count"], 0)
+
+    def test_approved_physical_rollback_review_decision_mutates_stitched_flow(self) -> None:
+        context = self._ready_flow_context()
+        context["auto_stitch_policy"] = {
+            "policy_id": "unit-policy",
+            "min_confidence_score": 0.85,
+            "allow_conflicts": True,
+            "enable_automatic_materialization": True,
+        }
+        context["auto_stitch_materialization_review_decisions"] = [
+            {"plan_id": "auto-stitch-materialization-plan-1", "status": "approved", "approved": True, "reviewer": "materialization-reviewer"}
+        ]
+        context["auto_stitch_rollback_execution_review_decisions"] = [
+            {
+                "rollback_execution_plan_id": "stitched-flow-rollback-execution-plan-1",
+                "status": "approved",
+                "approved": True,
+                "reviewer": "rollback-reviewer",
+            }
+        ]
+        context["auto_stitch_physical_rollback_review_decisions"] = [
+            {
+                "dry_run_id": "stitched-flow-physical-rollback-diff-1",
+                "status": "approved",
+                "approved": True,
+                "reviewer": "physical-rollback-reviewer",
+                "reviewed_at": "2026-05-31T11:00:00Z",
+            }
+        ]
+
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(len(result.auto_stitch_physical_rollback_review_decisions), 1)
+        self.assertEqual(len(result.auto_stitch_physical_rollback_dry_run_diffs), 1)
+        dry_run = result.auto_stitch_physical_rollback_dry_run_diffs[0]
+        self.assertEqual(dry_run["status"], "approved_for_physical_rollback")
+        self.assertEqual(dry_run["diff_mode"], "review_approved_physical_rollback")
+        self.assertFalse(dry_run["dry_run"])
+        self.assertFalse(dry_run["review_required"])
+        self.assertTrue(dry_run["writes_artifact"])
+        self.assertEqual(dry_run["review_decision"]["review_gate"], "auto_stitch_physical_rollback_review_decision")
+        self.assertEqual(result.auto_stitch_physical_rollback_dry_run_diff_summary["approved_for_physical_rollback_count"], 1)
+        self.assertFalse(result.auto_stitch_physical_rollback_dry_run_diff_summary["dry_run_only"])
+
+        self.assertEqual(len(result.auto_stitch_physical_rollback_results), 1)
+        rollback_result = result.auto_stitch_physical_rollback_results[0]
+        self.assertEqual(rollback_result["status"], "physical_rollback_applied")
+        self.assertEqual(rollback_result["dry_run_id"], "stitched-flow-physical-rollback-diff-1")
+        self.assertEqual(rollback_result["result_artifact"], "workspace/stitched-flow-physical-rollback-results.json")
+        self.assertEqual(rollback_result["virtual_result_artifact"], "virtual://workspace/stitched-flow-physical-rollback-results.json")
+        self.assertEqual(rollback_result["matched_stitched_flow_ids"], ["stitched-flow-1"])
+        self.assertEqual(rollback_result["matched_materialization_result_ids"], ["auto-stitch-materialization-result-1"])
+        self.assertEqual(rollback_result["removed_entry_sequences"], [1, 2, 3])
+        self.assertTrue(rollback_result["physical_rollback_applied"])
+        self.assertTrue(rollback_result["physical_artifact_mutated"])
+        self.assertTrue(rollback_result["target_artifact_mutated"])
+        self.assertTrue(rollback_result["manifest_update_required"])
+        self.assertTrue(rollback_result["standard_review_gate_rerun_required"])
+        self.assertFalse(rollback_result["would_replace_review_gate"])
+        self.assertFalse(rollback_result["automatic_rollback"])
+        self.assertFalse(rollback_result["automatic_stitching"])
+        self.assertIn("standard_review_gate_replacement_not_performed", rollback_result["limitations"])
+
+        self.assertEqual(result.stitched_flows, [])
+        self.assertEqual(result.auto_stitch_physical_rollback_result_summary["physical_rollback_result_count"], 1)
+        self.assertEqual(result.auto_stitch_physical_rollback_result_summary["physical_rollback_applied_count"], 1)
+        self.assertTrue(result.auto_stitch_physical_rollback_result_summary["target_artifact_mutated"])
+        self.assertTrue(result.auto_stitch_physical_rollback_result_summary["manifest_update_required"])
+        self.assertTrue(result.auto_stitch_physical_rollback_result_summary["standard_review_gate_rerun_required"])
+        self.assertFalse(result.auto_stitch_physical_rollback_result_summary["would_replace_review_gate"])
+        self.assertEqual(
+            result.auto_stitch_physical_rollback_result_summary["next_action"],
+            "rerun_standard_review_gate_after_physical_rollback",
+        )
+        result_dict = result.to_dict()
+        self.assertEqual(result_dict["auto_stitch_physical_rollback_review_decision_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_physical_rollback_result_count"], 1)
+        self.assertEqual(result_dict["stitched_flow_count"], 0)
 
     def test_rejected_auto_stitch_materialization_review_decision_does_not_materialize_plan(self) -> None:
         context = self._ready_flow_context()

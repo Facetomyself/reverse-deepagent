@@ -27,6 +27,7 @@ class FlowTimelineSpec:
     auto_stitch_policy: dict[str, Any] = field(default_factory=dict)
     auto_stitch_materialization_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_rollback_execution_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_physical_rollback_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     max_payload_preview_length: int = 480
 
     @classmethod
@@ -79,6 +80,16 @@ class FlowTimelineSpec:
             "stitchedFlowRollbackReviewDecisions",
         )
         rollback_execution_review_decisions = cls._coerce_events(raw_rollback_execution_review_decisions)
+        raw_physical_rollback_review_decisions = cls._first_present(
+            context,
+            "auto_stitch_physical_rollback_review_decisions",
+            "autoStitchPhysicalRollbackReviewDecisions",
+            "physical_rollback_review_decisions",
+            "physicalRollbackReviewDecisions",
+            "stitched_flow_physical_rollback_review_decisions",
+            "stitchedFlowPhysicalRollbackReviewDecisions",
+        )
+        physical_rollback_review_decisions = cls._coerce_events(raw_physical_rollback_review_decisions)
         if (
             not previous
             and not flow_events
@@ -87,6 +98,7 @@ class FlowTimelineSpec:
             and not auto_stitch_policy
             and not materialization_review_decisions
             and not rollback_execution_review_decisions
+            and not physical_rollback_review_decisions
         ):
             return None
         flow_id = str(context.get("flow_id", context.get("flowId", previous.get("flow_id", "default-flow"))) or "default-flow")
@@ -101,6 +113,7 @@ class FlowTimelineSpec:
             auto_stitch_policy=auto_stitch_policy,
             auto_stitch_materialization_review_decisions=materialization_review_decisions,
             auto_stitch_rollback_execution_review_decisions=rollback_execution_review_decisions,
+            auto_stitch_physical_rollback_review_decisions=physical_rollback_review_decisions,
             max_payload_preview_length=int(context.get("max_payload_preview_length", context.get("maxPayloadPreviewLength", 480)) or 480),
         )
 
@@ -210,6 +223,9 @@ class FlowTimelineResult:
     auto_stitch_rollback_review_gate_recomputation_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_physical_rollback_dry_run_diffs: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_physical_rollback_dry_run_diff_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_physical_rollback_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_physical_rollback_results: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_physical_rollback_result_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -274,6 +290,11 @@ class FlowTimelineResult:
             "auto_stitch_physical_rollback_dry_run_diff_count": len(self.auto_stitch_physical_rollback_dry_run_diffs),
             "auto_stitch_physical_rollback_dry_run_diffs": self.auto_stitch_physical_rollback_dry_run_diffs,
             "auto_stitch_physical_rollback_dry_run_diff_summary": self.auto_stitch_physical_rollback_dry_run_diff_summary,
+            "auto_stitch_physical_rollback_review_decision_count": len(self.auto_stitch_physical_rollback_review_decisions),
+            "auto_stitch_physical_rollback_review_decisions": self.auto_stitch_physical_rollback_review_decisions,
+            "auto_stitch_physical_rollback_result_count": len(self.auto_stitch_physical_rollback_results),
+            "auto_stitch_physical_rollback_results": self.auto_stitch_physical_rollback_results,
+            "auto_stitch_physical_rollback_result_summary": self.auto_stitch_physical_rollback_result_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -403,9 +424,25 @@ class FlowTimelineManager:
             auto_stitch_rollback_execution_results,
             auto_stitch_rollback_review_gate_recomputations,
         )
+        auto_stitch_physical_rollback_dry_run_diffs = self._apply_physical_rollback_review_decisions(
+            auto_stitch_physical_rollback_dry_run_diffs,
+            spec.auto_stitch_physical_rollback_review_decisions,
+        )
         auto_stitch_physical_rollback_dry_run_diff_summary = self._auto_stitch_physical_rollback_dry_run_diff_summary(
             auto_stitch_physical_rollback_dry_run_diffs,
             auto_stitch_rollback_execution_results,
+        )
+        auto_stitch_physical_rollback_results = self._auto_stitch_physical_rollback_results(
+            auto_stitch_physical_rollback_dry_run_diffs,
+            stitched_flows,
+        )
+        stitched_flows = self._stitched_flows_after_physical_rollback_results(
+            stitched_flows,
+            auto_stitch_physical_rollback_results,
+        )
+        auto_stitch_physical_rollback_result_summary = self._auto_stitch_physical_rollback_result_summary(
+            auto_stitch_physical_rollback_results,
+            spec.auto_stitch_physical_rollback_review_decisions,
         )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
@@ -440,6 +477,9 @@ class FlowTimelineManager:
             auto_stitch_rollback_review_gate_recomputation_summary=auto_stitch_rollback_review_gate_recomputation_summary,
             auto_stitch_physical_rollback_dry_run_diffs=auto_stitch_physical_rollback_dry_run_diffs,
             auto_stitch_physical_rollback_dry_run_diff_summary=auto_stitch_physical_rollback_dry_run_diff_summary,
+            auto_stitch_physical_rollback_review_decisions=list(spec.auto_stitch_physical_rollback_review_decisions),
+            auto_stitch_physical_rollback_results=auto_stitch_physical_rollback_results,
+            auto_stitch_physical_rollback_result_summary=auto_stitch_physical_rollback_result_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -2289,10 +2329,12 @@ class FlowTimelineManager:
         dry_run_diffs: list[dict[str, Any]],
         rollback_execution_results: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        approved_count = sum(1 for item in dry_run_diffs if item.get("status") == "approved_for_physical_rollback")
         return {
             "dry_run_diff_count": len(dry_run_diffs),
             "source_rollback_execution_result_count": len(rollback_execution_results),
             "review_required_count": sum(1 for item in dry_run_diffs if item.get("review_required")),
+            "approved_for_physical_rollback_count": approved_count,
             "would_mutate_if_approved_count": sum(1 for item in dry_run_diffs if item.get("would_mutate_if_approved")),
             "would_update_manifest_count": sum(1 for item in dry_run_diffs if item.get("would_update_manifest")),
             "would_replace_review_gate": False,
@@ -2301,14 +2343,272 @@ class FlowTimelineManager:
             "target_artifact_mutated": False,
             "automatic_rollback": False,
             "automatic_stitching": False,
-            "dry_run_only": True,
+            "dry_run_only": not bool(approved_count),
             "diff_artifact": "workspace/stitched-flow-physical-rollback-diff.json",
             "virtual_diff_artifact": "virtual://workspace/stitched-flow-physical-rollback-diff.json",
             "scope": "physical-rollback-dry-run-diff-baseline",
             "next_action": (
-                "review_physical_rollback_diff_before_any_artifact_mutation"
+                "apply_review_approved_physical_rollback"
+                if approved_count
+                else "review_physical_rollback_diff_before_any_artifact_mutation"
                 if dry_run_diffs
                 else "record_logical_rollback_and_post_rollback_gate_before_physical_diff"
+            ),
+        }
+
+    def _apply_physical_rollback_review_decisions(
+        self,
+        dry_run_diffs: list[dict[str, Any]],
+        decisions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not decisions:
+            return dry_run_diffs
+        output: list[dict[str, Any]] = []
+        for dry_run in dry_run_diffs:
+            next_dry_run = dict(dry_run)
+            decision = self._matching_physical_rollback_review_decision(next_dry_run, decisions)
+            if decision is not None:
+                next_dry_run = self._physical_rollback_dry_run_with_review_decision(next_dry_run, decision)
+            output.append(next_dry_run)
+        return output
+
+    @staticmethod
+    def _matching_physical_rollback_review_decision(
+        dry_run: dict[str, Any],
+        decisions: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            if decision.get("dry_run_id") and decision.get("dry_run_id") == dry_run.get("dry_run_id"):
+                return decision
+            if decision.get("dryRunId") and decision.get("dryRunId") == dry_run.get("dry_run_id"):
+                return decision
+            if decision.get("rollback_execution_result_id") and decision.get("rollback_execution_result_id") == dry_run.get("rollback_execution_result_id"):
+                return decision
+            if decision.get("rollbackExecutionResultId") and decision.get("rollbackExecutionResultId") == dry_run.get("rollback_execution_result_id"):
+                return decision
+            if decision.get("rollback_execution_plan_id") and decision.get("rollback_execution_plan_id") == dry_run.get("rollback_execution_plan_id"):
+                return decision
+            if decision.get("rollbackExecutionPlanId") and decision.get("rollbackExecutionPlanId") == dry_run.get("rollback_execution_plan_id"):
+                return decision
+            if decision.get("transaction_id") and decision.get("transaction_id") == dry_run.get("transaction_id"):
+                return decision
+            if decision.get("transactionId") and decision.get("transactionId") == dry_run.get("transaction_id"):
+                return decision
+            if decision.get("materialization_result_id") and decision.get("materialization_result_id") == dry_run.get("materialization_result_id"):
+                return decision
+            if decision.get("materializationResultId") and decision.get("materializationResultId") == dry_run.get("materialization_result_id"):
+                return decision
+        return None
+
+    @classmethod
+    def _physical_rollback_dry_run_with_review_decision(
+        cls,
+        dry_run: dict[str, Any],
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        next_dry_run = dict(dry_run)
+        status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+        approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed"}
+        rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+        review_decision = {
+            "status": "approved" if approved else "rejected" if rejected else status or "pending_review",
+            "approved": approved and not rejected,
+            "review_required": not approved,
+            "review_gate": "auto_stitch_physical_rollback_review_decision",
+        }
+        for key in ("reviewer", "reviewed_by", "reviewedBy", "reviewed_at", "reviewedAt", "reason", "notes"):
+            if decision.get(key) is not None:
+                review_decision[key] = decision.get(key)
+        next_dry_run["review_decision"] = review_decision
+        next_dry_run["review_decision_input"] = dict(decision)
+        if approved and not rejected:
+            next_dry_run["status"] = "approved_for_physical_rollback"
+            next_dry_run["diff_mode"] = "review_approved_physical_rollback"
+            next_dry_run["dry_run"] = False
+            next_dry_run["review_required"] = False
+            next_dry_run["writes_artifact"] = True
+            next_dry_run["blocking_conditions"] = [
+                condition
+                for condition in cls._string_values(next_dry_run.get("blocking_conditions"))
+                if condition != "physical_rollback_reviewer_approval_required"
+            ]
+            next_dry_run["next_action"] = "apply_review_approved_physical_rollback"
+        elif rejected:
+            next_dry_run["status"] = "rejected"
+            next_dry_run["blocking_conditions"] = cls._unique_strings(
+                [*cls._string_values(next_dry_run.get("blocking_conditions")), "physical_rollback_reviewer_rejected"]
+            )
+            next_dry_run["next_action"] = "revise_physical_rollback_diff_or_collect_more_evidence"
+        return next_dry_run
+
+    @classmethod
+    def _auto_stitch_physical_rollback_results(
+        cls,
+        dry_run_diffs: list[dict[str, Any]],
+        stitched_flows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for dry_run in dry_run_diffs:
+            review_decision = dry_run.get("review_decision") if isinstance(dry_run.get("review_decision"), dict) else {}
+            if dry_run.get("status") != "approved_for_physical_rollback" or not review_decision.get("approved"):
+                continue
+            matched = cls._matching_stitched_flows_for_physical_rollback(dry_run, stitched_flows)
+            matched_ids = [str(flow.get("stitched_flow_id")) for flow in matched if flow.get("stitched_flow_id")]
+            matched_materialization_ids = [
+                str(flow.get("materialization_result_id"))
+                for flow in matched
+                if flow.get("materialization_result_id")
+            ]
+            entry_sequences_to_remove = list(dry_run.get("diff", {}).get("entry_sequences_to_remove", [])) if isinstance(dry_run.get("diff"), dict) else []
+            result_status = "physical_rollback_applied" if matched else "physical_rollback_noop_missing_target"
+            results.append(
+                {
+                    "physical_rollback_result_id": f"stitched-flow-physical-rollback-result-{len(results) + 1}",
+                    "dry_run_id": dry_run.get("dry_run_id"),
+                    "rollback_execution_result_id": dry_run.get("rollback_execution_result_id"),
+                    "rollback_execution_plan_id": dry_run.get("rollback_execution_plan_id"),
+                    "review_gate_recomputation_id": dry_run.get("review_gate_recomputation_id"),
+                    "transaction_id": dry_run.get("transaction_id"),
+                    "rollback_id": dry_run.get("rollback_id"),
+                    "audit_id": dry_run.get("audit_id"),
+                    "materialization_result_id": dry_run.get("materialization_result_id"),
+                    "candidate_id": dry_run.get("candidate_id"),
+                    "group_id": dry_run.get("group_id"),
+                    "status": result_status,
+                    "execution_mode": "review_approved_physical_rollback",
+                    "target_artifact": dry_run.get("target_artifact", "workspace/stitched-flow.json"),
+                    "virtual_target_artifact": dry_run.get("virtual_target_artifact", "virtual://workspace/stitched-flow.json"),
+                    "result_artifact": "workspace/stitched-flow-physical-rollback-results.json",
+                    "virtual_result_artifact": "virtual://workspace/stitched-flow-physical-rollback-results.json",
+                    "diff_artifact": dry_run.get("diff_artifact", "workspace/stitched-flow-physical-rollback-diff.json"),
+                    "matched_stitched_flow_ids": matched_ids,
+                    "matched_materialization_result_ids": matched_materialization_ids,
+                    "removed_entry_sequences": entry_sequences_to_remove,
+                    "removed_entry_count": len(entry_sequences_to_remove),
+                    "remove_selectors": dict(dry_run.get("diff", {}).get("remove_selectors", {})) if isinstance(dry_run.get("diff"), dict) and isinstance(dry_run.get("diff", {}).get("remove_selectors"), dict) else {},
+                    "review_decision": review_decision,
+                    "review_decision_input": dict(dry_run.get("review_decision_input", {})) if isinstance(dry_run.get("review_decision_input"), dict) else {},
+                    "physical_rollback_applied": bool(matched),
+                    "physical_artifact_mutated": bool(matched),
+                    "target_artifact_mutated": bool(matched),
+                    "writes_artifact": True,
+                    "manifest_update_required": bool(matched),
+                    "standard_review_gate_rerun_required": bool(matched),
+                    "would_replace_review_gate": False,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "review_required": False,
+                    "limitations": [
+                        "review_approved_not_automatic",
+                        "standard_review_gate_replacement_not_performed",
+                        "artifact_model_mutation_only",
+                    ],
+                    "next_action": (
+                        "rerun_standard_review_gate_after_physical_rollback"
+                        if matched
+                        else "inspect_stitched_flow_state_before_retrying_physical_rollback"
+                    ),
+                }
+            )
+        return results
+
+    @classmethod
+    def _matching_stitched_flows_for_physical_rollback(
+        cls,
+        dry_run: dict[str, Any],
+        stitched_flows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        diff = dry_run.get("diff") if isinstance(dry_run.get("diff"), dict) else {}
+        selectors = diff.get("remove_selectors") if isinstance(diff.get("remove_selectors"), dict) else {}
+        entry_sequences = set(diff.get("entry_sequences_to_remove", [])) if isinstance(diff.get("entry_sequences_to_remove"), list) else set()
+        matched: list[dict[str, Any]] = []
+        for flow in stitched_flows:
+            if not isinstance(flow, dict):
+                continue
+            if selectors.get("materialization_result_id") and selectors.get("materialization_result_id") == flow.get("materialization_result_id"):
+                matched.append(flow)
+                continue
+            if selectors.get("plan_id") and selectors.get("plan_id") == flow.get("plan_id"):
+                matched.append(flow)
+                continue
+            if selectors.get("candidate_id") and selectors.get("candidate_id") == flow.get("candidate_id"):
+                matched.append(flow)
+                continue
+            if selectors.get("group_id") and selectors.get("group_id") == flow.get("group_id"):
+                matched.append(flow)
+                continue
+            flow_sequences = set(flow.get("entry_sequences", [])) if isinstance(flow.get("entry_sequences"), list) else set()
+            if entry_sequences and flow_sequences and entry_sequences.issubset(flow_sequences):
+                matched.append(flow)
+        return matched
+
+    @classmethod
+    def _stitched_flows_after_physical_rollback_results(
+        cls,
+        stitched_flows: list[dict[str, Any]],
+        physical_rollback_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        removed_ids = {
+            stitched_flow_id
+            for result in physical_rollback_results
+            if result.get("physical_rollback_applied")
+            for stitched_flow_id in cls._string_values(result.get("matched_stitched_flow_ids"))
+        }
+        if not removed_ids:
+            return stitched_flows
+        return [
+            flow
+            for flow in stitched_flows
+            if not isinstance(flow, dict) or str(flow.get("stitched_flow_id")) not in removed_ids
+        ]
+
+    @classmethod
+    def _auto_stitch_physical_rollback_result_summary(
+        cls,
+        results: list[dict[str, Any]],
+        review_decisions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        approved_count = 0
+        rejected_count = 0
+        pending_count = 0
+        for decision in review_decisions:
+            if not isinstance(decision, dict):
+                continue
+            status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+            approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed"}
+            rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+            if approved and not rejected:
+                approved_count += 1
+            elif rejected:
+                rejected_count += 1
+            else:
+                pending_count += 1
+        applied_count = sum(1 for result in results if result.get("physical_rollback_applied"))
+        return {
+            "physical_rollback_result_count": len(results),
+            "physical_rollback_applied_count": applied_count,
+            "noop_missing_target_count": sum(1 for result in results if result.get("status") == "physical_rollback_noop_missing_target"),
+            "review_decision_count": len(review_decisions),
+            "approved_review_decision_count": approved_count,
+            "rejected_review_decision_count": rejected_count,
+            "pending_review_decision_count": pending_count,
+            "writes_artifact": bool(results),
+            "physical_artifact_mutated": bool(applied_count),
+            "target_artifact_mutated": bool(applied_count),
+            "manifest_update_required": bool(applied_count),
+            "standard_review_gate_rerun_required": bool(applied_count),
+            "would_replace_review_gate": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "result_artifact": "workspace/stitched-flow-physical-rollback-results.json",
+            "virtual_result_artifact": "virtual://workspace/stitched-flow-physical-rollback-results.json",
+            "scope": "review-approved-physical-rollback-mutation-baseline",
+            "next_action": (
+                "rerun_standard_review_gate_after_physical_rollback"
+                if applied_count
+                else "review_physical_rollback_diff_before_any_artifact_mutation"
             ),
         }
 
