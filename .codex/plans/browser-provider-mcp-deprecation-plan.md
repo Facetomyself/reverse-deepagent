@@ -29,12 +29,12 @@
 | 6. Browser doctor provider mode | 已完成 | `reverse-agent-doctor --browser ...` 已实现并测试 |
 | 7. Native artifact parity | 已完成 | DOM、console、script inventory、navigation events 已落盘，manifest 带 BrowserProvider metadata，63 项相关测试通过 |
 | 8. CDP-enhanced collectors | 已完成（fallback 增强已补） | requestWillBeSent、response body metadata、Debugger.scriptParsed source cache、WebSocket frame cache 已实现并测试；缺 CDP event cache 时，script source 可回落到 provider-neutral script inventory，WebSocket frame 可回落到 hook timeline；`remote-cdp` 提供真实 smoke 路径，Playwright system Chrome smoke 与 CloakBrowser fixture smoke 均已验证 |
-| 9. Hook / breakpoint migration | 已完成（持久 pause 管理待后续） | fetch/xhr、cookie、WebSocket、anti-debug hook baseline 已实现；BreakpointManager 通过 CDP capability gate 接入 `apply_minimal_protection`，`breakpoints.json` / `debugger-paused.json` / `callframes.json` / 显式 `callframe-evaluations.json` / `debugger-actions.json` artifact ref 与 evidence 映射已补齐；native-web runtime-eval 候选验证已作为迁移中的最小 replay baseline |
+| 9. Hook / breakpoint migration | 已完成（跨请求 pause 生命周期待后续） | fetch/xhr、cookie、WebSocket、anti-debug hook baseline 已实现；BreakpointManager 通过 CDP capability gate 接入 `apply_minimal_protection`，`breakpoints.json` / `debugger-paused.json` / `callframes.json` / 显式 `callframe-evaluations.json` / `debugger-actions.json` / `debugger-session.json` artifact ref 与 evidence 映射已补齐；native-web runtime-eval 候选验证已作为迁移中的最小 replay baseline |
 | 10. MCP legacy downgrade | 已完成 | `legacy-mcp` canonical backend 已实现，`mcp` / `jsreverser-mcp` 保留 deprecated alias 并输出 CLI warning；doctor 支持 `--legacy-mcp`；README / runtime docs 默认推荐 `native-web` |
 
 ## 阶段执行记录与剩余顺序
 
-当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline 和 debugger step-control baseline 均已验证，MCP alias deprecation warning 已接入，后续进入持久 paused-session 管理、target-specific function hook 评估和最终 code review。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
+当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline、debugger step-control baseline 和 paused-session snapshot baseline 均已验证，MCP alias deprecation warning 已接入，后续进入跨请求 paused session 生命周期管理、target-specific function hook 评估和最终 code review。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
 
 ### Step 5.1：完成 CloakBrowser provider skeleton
 

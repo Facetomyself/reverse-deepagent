@@ -22,6 +22,8 @@ class BreakpointSpec:
     callframe_evaluations: list[str] = field(default_factory=list)
     callframe_index: int = 0
     debugger_actions: list[str] = field(default_factory=list)
+    preserve_pause_state: bool = False
+    pause_session_id: str | None = None
 
     @classmethod
     def from_context(cls, context: dict[str, Any] | None = None) -> "BreakpointSpec | None":
@@ -50,6 +52,13 @@ class BreakpointSpec:
             or context.get("stepActions")
         )
         callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex", 0))
+        preserve_pause_state = bool(
+            context.get(
+                "preserve_pause_state",
+                context.get("preservePauseState", context.get("keep_paused", context.get("keepPaused", False))),
+            )
+        )
+        auto_resume_raw = context.get("auto_resume", context.get("autoResume"))
         return cls(
             url_pattern=str(url_pattern),
             line_number=line_number,
@@ -57,10 +66,12 @@ class BreakpointSpec:
             condition=str(condition) if condition else None,
             trigger_expression=str(trigger_expression) if trigger_expression else None,
             wait_after_trigger_ms=int(wait_raw or 0),
-            auto_resume=bool(context.get("auto_resume", context.get("autoResume", True))),
+            auto_resume=bool(auto_resume_raw) if auto_resume_raw is not None else not preserve_pause_state,
             callframe_evaluations=cls._coerce_evaluations(evaluations_raw),
             callframe_index=int(callframe_index_raw or 0),
             debugger_actions=cls._coerce_actions(debugger_actions_raw),
+            preserve_pause_state=preserve_pause_state,
+            pause_session_id=str(context.get("pause_session_id", context.get("pauseSessionId"))) if context.get("pause_session_id", context.get("pauseSessionId")) else None,
         )
 
     def to_cdp_params(self) -> dict[str, Any]:
@@ -120,6 +131,7 @@ class BreakpointResult:
     callframes: list[dict[str, Any]] = field(default_factory=list)
     callframe_evaluations: list[dict[str, Any]] = field(default_factory=list)
     debugger_actions: list[dict[str, Any]] = field(default_factory=list)
+    debugger_session: dict[str, Any] = field(default_factory=dict)
     trigger: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     reason: str | None = None
@@ -137,6 +149,7 @@ class BreakpointResult:
             "callframe_evaluation_count": len(self.callframe_evaluations),
             "debugger_actions": self.debugger_actions,
             "debugger_action_count": len(self.debugger_actions),
+            "debugger_session": self.debugger_session,
             "trigger": self.trigger,
             "error": self.error,
             "reason": self.reason,
@@ -158,7 +171,7 @@ class BreakpointManager:
         try:
             session.send("Debugger.enable", {})
             payload = session.send("Debugger.setBreakpointByUrl", spec.to_cdp_params())
-            trigger = self._run_trigger_expression(session, spec)
+            trigger = self._run_trigger_expression(page, session, spec)
         except Exception as exc:
             return BreakpointResult(
                 status="failed",
@@ -167,6 +180,7 @@ class BreakpointManager:
                 callframes=self._callframes_from_paused(paused_events),
                 callframe_evaluations=self._evaluations_from_paused(paused_events),
                 debugger_actions=self._debugger_actions_from_paused(paused_events),
+                debugger_session=self._debugger_session_snapshot(paused_events, spec),
                 trigger=trigger,
                 error=str(exc),
             )
@@ -176,6 +190,7 @@ class BreakpointManager:
         callframes = self._callframes_from_paused(paused_events)
         evaluations = self._evaluations_from_paused(paused_events)
         debugger_actions = self._debugger_actions_from_paused(paused_events)
+        debugger_session = self._debugger_session_snapshot(paused_events, spec)
         return BreakpointResult(
             status="success" if breakpoint_id else "partial",
             supported=True,
@@ -193,6 +208,7 @@ class BreakpointManager:
             callframes=callframes,
             callframe_evaluations=evaluations,
             debugger_actions=debugger_actions,
+            debugger_session=debugger_session,
             trigger=trigger,
         )
 
@@ -223,14 +239,20 @@ class BreakpointManager:
             return {"supported": False, "reason": "cdp_event_subscription_failed", "error": str(exc)}
         return {"supported": True}
 
-    def _run_trigger_expression(self, session: Any, spec: BreakpointSpec) -> dict[str, Any]:
+    def _run_trigger_expression(self, page: BrowserPage, session: Any, spec: BreakpointSpec) -> dict[str, Any]:
         if not spec.trigger_expression:
             return {"attempted": False}
+        if not spec.auto_resume:
+            expression = self._scheduled_trigger_expression(spec.trigger_expression)
+            trigger_mode = "scheduled"
+        else:
+            expression = spec.trigger_expression
+            trigger_mode = "direct"
         try:
             payload = session.send(
                 "Runtime.evaluate",
                 {
-                    "expression": spec.trigger_expression,
+                    "expression": expression,
                     "awaitPromise": False,
                     "returnByValue": True,
                     "userGesture": True,
@@ -238,9 +260,30 @@ class BreakpointManager:
             )
         except Exception as exc:
             return {"attempted": True, "ok": False, "error": str(exc)}
-        if spec.wait_after_trigger_ms > 0:
-            time.sleep(spec.wait_after_trigger_ms / 1000)
-        return {"attempted": True, "ok": True, "result": payload if isinstance(payload, dict) else {"value": payload}}
+        wait_after_trigger_ms = spec.wait_after_trigger_ms if spec.wait_after_trigger_ms > 0 else (1000 if trigger_mode == "scheduled" else 0)
+        self._wait_after_trigger(page, wait_after_trigger_ms)
+        return {
+            "attempted": True,
+            "ok": True,
+            "mode": trigger_mode,
+            "wait_after_trigger_ms": wait_after_trigger_ms,
+            "result": payload if isinstance(payload, dict) else {"value": payload},
+        }
+
+    @staticmethod
+    def _scheduled_trigger_expression(expression: str) -> str:
+        return "setTimeout(() => {\n" + expression + "\n}, 0); 'reverse-agent-trigger-scheduled'"
+
+    @staticmethod
+    def _wait_after_trigger(page: BrowserPage, wait_after_trigger_ms: int) -> None:
+        if wait_after_trigger_ms <= 0:
+            return
+        raw_page = getattr(page, "raw_page", None)
+        wait_for_timeout = getattr(raw_page, "wait_for_timeout", None)
+        if callable(wait_for_timeout):
+            wait_for_timeout(wait_after_trigger_ms)
+            return
+        time.sleep(wait_after_trigger_ms / 1000)
 
     @classmethod
     def _paused_summary(cls, paused_events: list[dict[str, Any]], subscription: dict[str, Any]) -> dict[str, Any]:
@@ -277,6 +320,60 @@ class BreakpointManager:
             return []
         actions = paused_events[0].get("debugger_actions", [])
         return actions if isinstance(actions, list) else []
+
+    def _debugger_session_snapshot(self, paused_events: list[dict[str, Any]], spec: BreakpointSpec) -> dict[str, Any]:
+        session_id = spec.pause_session_id or self._default_pause_session_id(spec)
+        events = [self._pause_event_summary(index, event) for index, event in enumerate(paused_events)]
+        callframes = self._callframes_from_paused(paused_events)
+        selected_callframe = callframes[spec.callframe_index] if 0 <= spec.callframe_index < len(callframes) else None
+        selected_callframe_id = selected_callframe.get("callFrameId") if isinstance(selected_callframe, dict) else None
+        debugger_actions = self._debugger_actions_from_paused(paused_events)
+        lifecycle = self._pause_lifecycle(paused_events, spec, debugger_actions)
+        return {
+            "session_id": session_id,
+            "status": "success" if paused_events else "not_observed",
+            "lifecycle": lifecycle,
+            "preserve_pause_state": spec.preserve_pause_state,
+            "auto_resume": spec.auto_resume,
+            "paused_event_count": len(paused_events),
+            "selected_callframe_index": spec.callframe_index,
+            "selected_callframe_id": selected_callframe_id,
+            "selected_callframe": selected_callframe,
+            "events": events,
+            "debugger_action_count": len(debugger_actions),
+        }
+
+    @staticmethod
+    def _default_pause_session_id(spec: BreakpointSpec) -> str:
+        return f"breakpoint:{spec.url_pattern}:{spec.line_number}:{spec.column_number if spec.column_number is not None else 0}"
+
+    @staticmethod
+    def _pause_event_summary(index: int, event: dict[str, Any]) -> dict[str, Any]:
+        frames = event.get("callFrames", []) if isinstance(event.get("callFrames"), list) else []
+        top = frames[0] if frames and isinstance(frames[0], dict) else {}
+        summary = {
+            "index": index,
+            "reason": event.get("reason"),
+            "hitBreakpoints": event.get("hitBreakpoints", []),
+            "callframe_count": len(frames),
+            "top_function": top.get("functionName"),
+            "top_url": top.get("url"),
+            "top_location": top.get("location"),
+        }
+        if event.get("autoResumeError"):
+            summary["autoResumeError"] = event.get("autoResumeError")
+        return summary
+
+    @staticmethod
+    def _pause_lifecycle(paused_events: list[dict[str, Any]], spec: BreakpointSpec, debugger_actions: list[dict[str, Any]]) -> str:
+        if not paused_events:
+            return "not_observed"
+        successful_methods = {str(item.get("method")) for item in debugger_actions if item.get("ok") and item.get("method")}
+        if successful_methods:
+            return "action_controlled"
+        if not spec.auto_resume:
+            return "retained_paused"
+        return "auto_resumed"
 
     @classmethod
     def _normalize_paused(cls, params: Any) -> dict[str, Any]:

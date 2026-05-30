@@ -297,7 +297,7 @@ Acceptance:
 
 ### Phase 9: Hook and breakpoint migration
 
-Status: hook baseline, WebSocket send/message capture, provider-neutral BreakpointManager baseline, native-web runtime-eval candidate validation, basic paused/callframe breakpoint smoke, explicit evaluateOnCallFrame baseline, and debugger step-control baseline are implemented and tested locally. Deeper persistent pause management, side-effectful evaluation policy, and multi-step timeline tracking remain future debugger-scope work.
+Status: hook baseline, WebSocket send/message capture, provider-neutral BreakpointManager baseline, native-web runtime-eval candidate validation, basic paused/callframe breakpoint smoke, explicit evaluateOnCallFrame baseline, debugger step-control baseline, and paused-session snapshot baseline are implemented and tested locally. Deeper cross-request pause lifecycle management, side-effectful evaluation policy, and richer multi-step timeline tracking remain future debugger-scope work.
 
 Deliverables:
 
@@ -310,6 +310,7 @@ Deliverables:
 - `virtual://workspace/debugger-paused.json` and `virtual://workspace/callframes.json` breakpoint smoke artifact refs
 - `virtual://workspace/callframe-evaluations.json` artifact ref when explicit callframe evaluations are requested
 - `virtual://workspace/debugger-actions.json` artifact ref when explicit debugger step-control actions are requested
+- `virtual://workspace/debugger-session.json` artifact ref with selected callFrame and pause lifecycle metadata
 - runtime-observe playbook integration.
 
 Acceptance:

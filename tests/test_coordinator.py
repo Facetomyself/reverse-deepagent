@@ -86,6 +86,13 @@ class CoordinatorTests(unittest.TestCase):
                     source="debugger_actions",
                     details={"actions": [{"action": "step_over", "method": "Debugger.stepOver", "ok": True}]},
                     confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native debugger paused session",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="debugger_session",
+                    details={"session_id": "unit-paused-session", "lifecycle": "action_controlled"},
+                    confidence=ConfidenceLevel.MEDIUM,
                 )
             ],
             artifacts=[],
@@ -96,9 +103,11 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["breakpoints.json"], {"status": "success", "count": 1})
         self.assertEqual(payloads["callframe-evaluations.json"]["evaluations"][0]["value"], "function")
         self.assertEqual(payloads["debugger-actions.json"]["actions"][0]["method"], "Debugger.stepOver")
+        self.assertEqual(payloads["debugger-session.json"]["session_id"], "unit-paused-session")
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
 
     def test_build_runtime_threads_legacy_mcp_config_summary_and_alias(self) -> None:
         runtime = build_runtime(

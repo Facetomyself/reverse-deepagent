@@ -235,16 +235,20 @@ class NativeWebRuntime(WebReverseRuntime):
                 status = ExecutionStatus.FAILED
             pattern = spec.url_pattern if spec else "<missing>"
             paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
+            debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
             callframe_count = len(result.callframes)
             callframe_evaluation_count = len(result.callframe_evaluations)
             debugger_action_count = len(result.debugger_actions)
+            debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
             verification = [
                 f"breakpoint_status={result.status}",
                 f"breakpoint_supported={result.supported}",
                 f"paused_status={paused_status or 'unknown'}",
+                f"debugger_lifecycle={debugger_lifecycle or 'unknown'}",
                 f"callframe_count={callframe_count}",
                 f"callframe_evaluation_count={callframe_evaluation_count}",
                 f"debugger_action_count={debugger_action_count}",
+                f"debugger_session_count={debugger_session_count}",
                 f"context_keys={sorted(context.keys())}",
             ]
             if result.trigger:
@@ -311,8 +315,26 @@ class NativeWebRuntime(WebReverseRuntime):
                         },
                     )
                 )
+            if result.debugger_session:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-session.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger paused-session snapshot.",
+                        metadata={
+                            "status": result.debugger_session.get("status", "unknown"),
+                            "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
+                            "paused_event_count": result.debugger_session.get("paused_event_count", 0),
+                        },
+                    )
+                )
             if paused_status == "success":
-                next_action = "inspect_debugger_action_result" if debugger_action_count else "inspect_callframes_or_resume"
+                if debugger_action_count:
+                    next_action = "inspect_debugger_action_result"
+                elif result.debugger_session.get("lifecycle") == "retained_paused":
+                    next_action = "inspect_debugger_session_or_resume"
+                else:
+                    next_action = "inspect_callframes_or_resume"
             elif result.status in {"success", "partial"}:
                 next_action = "wait_for_breakpoint"
             else:

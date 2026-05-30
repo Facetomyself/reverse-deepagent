@@ -132,6 +132,8 @@ class BreakpointManagerTests(unittest.TestCase):
                 "evaluateOnCallFrame": ["typeof buildSign", " this && typeof this "],
                 "callFrameIndex": "0",
                 "debuggerActions": ["step-over"],
+                "preservePauseState": True,
+                "pauseSessionId": "session-1",
             }
         )
         self.assertIsNotNone(eval_spec)
@@ -139,6 +141,9 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(eval_spec.callframe_evaluations, ["typeof buildSign", "this && typeof this"])
         self.assertEqual(eval_spec.callframe_index, 0)
         self.assertEqual(eval_spec.debugger_actions, ["step-over"])
+        self.assertTrue(eval_spec.preserve_pause_state)
+        self.assertFalse(eval_spec.auto_resume)
+        self.assertEqual(eval_spec.pause_session_id, "session-1")
 
         script_url = BreakpointSpec.from_context({"script_url": "https://cdn.example/app.js"})
         self.assertIsNotNone(script_url)
@@ -229,6 +234,8 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "success")
         self.assertEqual(result.paused["status"], "success")
         self.assertEqual(result.to_dict()["debugger_action_count"], 1)
+        self.assertEqual(result.to_dict()["debugger_session"]["lifecycle"], "action_controlled")
+        self.assertEqual(result.to_dict()["debugger_session"]["selected_callframe_id"], "cf-1")
         self.assertEqual(result.debugger_actions[0]["action"], "step_over")
         self.assertEqual(result.debugger_actions[0]["method"], "Debugger.stepOver")
         self.assertTrue(result.debugger_actions[0]["ok"])
@@ -238,6 +245,28 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertLess(evaluate_index, step_index)
         self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.stepOver"), 1)
         self.assertIn(("Debugger.resume", {}), session.calls)
+
+    def test_set_breakpoint_can_preserve_paused_session_without_auto_resume(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_evaluate=True)
+        spec = BreakpointSpec.from_context(
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 3,
+                "trigger_expression": "debugger; 'scheduled'",
+                "wait_after_trigger_ms": 1,
+                "keep_paused": True,
+                "pause_session_id": "unit-paused-session",
+            }
+        )
+        result = BreakpointManager().set_breakpoint(FakeBreakpointPage(session), spec)
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.paused["status"], "success")
+        self.assertEqual(result.debugger_session["session_id"], "unit-paused-session")
+        self.assertEqual(result.debugger_session["lifecycle"], "retained_paused")
+        self.assertEqual(result.debugger_session["selected_callframe_id"], "cf-1")
+        self.assertEqual(result.debugger_session["events"][0]["top_function"], "buildSign")
+        self.assertEqual(result.trigger["mode"], "scheduled")
+        self.assertNotIn(("Debugger.resume", {}), session.calls)
 
     def test_set_breakpoint_failure_is_structured(self) -> None:
         result = BreakpointManager().set_breakpoint(

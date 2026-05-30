@@ -289,6 +289,7 @@ The native runtime should preserve current artifact semantics:
 - `workspace/callframes.json`
 - `workspace/callframe-evaluations.json`
 - `workspace/debugger-actions.json`
+- `workspace/debugger-session.json`
 - `workspace/backend-artifact-manifest.json`
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
@@ -316,9 +317,9 @@ Current hook baseline support:
 - XHR `open` / `send` wrapper records sanitized URL, method, and body type.
 - cookie setter wrapper records cookie names and value sizes, not raw cookie values.
 - minimal anti-debug patch disables `console.clear` and emits blocked clear events.
-- explicit breakpoint requests can set `Debugger.setBreakpointByUrl`, optionally trigger a runtime expression, capture `Debugger.paused`, normalize callframes, run explicit `Debugger.evaluateOnCallFrame` expressions, run opt-in `Debugger.stepOver` / `Debugger.stepInto` / `Debugger.stepOut` / `Debugger.resume` control actions, and auto-resume when no explicit debugger action already resumed execution.
+- explicit breakpoint requests can set `Debugger.setBreakpointByUrl`, optionally trigger a runtime expression, capture `Debugger.paused`, normalize callframes, run explicit `Debugger.evaluateOnCallFrame` expressions, run opt-in `Debugger.stepOver` / `Debugger.stepInto` / `Debugger.stepOut` / `Debugger.resume` control actions, emit a paused-session snapshot with selected callFrame metadata, and auto-resume when no explicit debugger action already resumed execution.
 
-Persistent pause management, selected callFrame state, multi-event stepping timelines, and side-effectful evaluation policy remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
+Cross-request paused session lifecycle, side-effectful evaluation policy, and richer multi-step timelines remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
 
 ## 11.3 Native candidate validation status
 
@@ -333,8 +334,9 @@ Current baseline emits:
 - `workspace/callframes.json`
 - `workspace/callframe-evaluations.json` when explicit `callframe_evaluations` / `evaluate_on_callframe` expressions are provided.
 - `workspace/debugger-actions.json` when explicit `debugger_actions` / `pause_actions` are provided.
+- `workspace/debugger-session.json` with session id, selected callFrame, pause lifecycle, and event summaries.
 
-This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe/evaluateOnCallFrame/step smoke path with the existing artifact contract. It is still intentionally narrower than the legacy MCP path: persistent pause management, side-effectful callframe mutation policy, multi-step timelines, and target-specific function hooks remain separate capability-gated follow-up work.
+This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe/evaluateOnCallFrame/step/session smoke path with the existing artifact contract. It is still intentionally narrower than the legacy MCP path: cross-request paused session lifecycle, side-effectful callframe mutation policy, richer multi-step timelines, and target-specific function hooks remain separate capability-gated follow-up work.
 
 ## 12. Implementation status
 
