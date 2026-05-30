@@ -131,6 +131,7 @@ class BreakpointManagerTests(unittest.TestCase):
                 "script_url": "https://cdn.example/app.js",
                 "evaluateOnCallFrame": ["typeof buildSign", " this && typeof this "],
                 "callFrameIndex": "0",
+                "evaluationPolicy": "block-dangerous",
                 "debuggerActions": ["step-over"],
                 "preservePauseState": True,
                 "pauseSessionId": "session-1",
@@ -140,10 +141,16 @@ class BreakpointManagerTests(unittest.TestCase):
         assert eval_spec is not None
         self.assertEqual(eval_spec.callframe_evaluations, ["typeof buildSign", "this && typeof this"])
         self.assertEqual(eval_spec.callframe_index, 0)
+        self.assertEqual(eval_spec.callframe_evaluation_policy, "block_dangerous")
         self.assertEqual(eval_spec.debugger_actions, ["step-over"])
         self.assertTrue(eval_spec.preserve_pause_state)
         self.assertFalse(eval_spec.auto_resume)
         self.assertEqual(eval_spec.pause_session_id, "session-1")
+
+        unsafe_spec = BreakpointSpec.from_context({"url": ".*", "allowCallframeSideEffects": True})
+        self.assertIsNotNone(unsafe_spec)
+        assert unsafe_spec is not None
+        self.assertEqual(unsafe_spec.callframe_evaluation_policy, "allow_side_effects")
 
         script_url = BreakpointSpec.from_context({"script_url": "https://cdn.example/app.js"})
         self.assertIsNotNone(script_url)
@@ -216,10 +223,50 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.callframe_evaluations[0]["value"], "function")
         self.assertEqual(result.callframe_evaluations[0]["valueType"], "string")
         self.assertEqual(result.callframe_evaluations[0]["callFrameId"], "cf-1")
+        self.assertEqual(result.callframe_evaluations[0]["policy"], "read_only")
+        self.assertTrue(result.callframe_evaluations[0]["throw_on_side_effect"])
         self.assertEqual(result.callframe_evaluations[1]["value"], True)
         evaluate_index = next(index for index, call in enumerate(session.calls) if call[0] == "Debugger.evaluateOnCallFrame")
         resume_index = next(index for index, call in enumerate(session.calls) if call[0] == "Debugger.resume")
         self.assertLess(evaluate_index, resume_index)
+
+    def test_callframe_evaluation_policy_blocks_dangerous_default_expressions(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_evaluate=True)
+        spec = BreakpointSpec(
+            url_pattern=".*app\\.js$",
+            line_number=3,
+            trigger_expression="debugger; 'scheduled'",
+            callframe_evaluations=["typeof buildSign", "window.__sideEffect = 1"],
+        )
+        result = BreakpointManager().set_breakpoint(FakeBreakpointPage(session), spec)
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.to_dict()["callframe_evaluation_count"], 2)
+        self.assertTrue(result.callframe_evaluations[0]["ok"])
+        self.assertFalse(result.callframe_evaluations[1]["ok"])
+        self.assertTrue(result.callframe_evaluations[1]["blocked"])
+        self.assertEqual(result.callframe_evaluations[1]["error"], "blocked_by_callframe_evaluation_policy")
+        self.assertEqual(result.callframe_evaluations[1]["side_effect_risk"], "high")
+        self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)
+
+    def test_callframe_evaluation_policy_can_explicitly_allow_side_effects(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_evaluate=True)
+        spec = BreakpointSpec.from_context(
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 3,
+                "trigger_expression": "debugger; 'scheduled'",
+                "callframe_evaluations": ["window.__sideEffect = 1"],
+                "allow_callframe_side_effects": True,
+            }
+        )
+        result = BreakpointManager().set_breakpoint(FakeBreakpointPage(session), spec)
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.to_dict()["callframe_evaluation_count"], 1)
+        self.assertTrue(result.callframe_evaluations[0]["ok"])
+        self.assertFalse(result.callframe_evaluations[0]["blocked"])
+        self.assertEqual(result.callframe_evaluations[0]["policy"], "allow_side_effects")
+        evaluate_call = next(call for call in session.calls if call[0] == "Debugger.evaluateOnCallFrame")
+        self.assertFalse(evaluate_call[1]["throwOnSideEffect"])
 
     def test_set_breakpoint_runs_explicit_debugger_step_actions_without_auto_resume(self) -> None:
         session = RecordingCDPSession(emit_pause_on_evaluate=True, emit_pause_on_step=True)

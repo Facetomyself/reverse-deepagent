@@ -34,7 +34,7 @@
 
 ## 阶段执行记录与剩余顺序
 
-当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline、debugger step-control baseline 和 paused-session snapshot baseline 均已验证，MCP alias deprecation warning 已接入，后续进入跨请求 paused session 生命周期管理、target-specific function hook 评估和最终 code review。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
+当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline、callframe evaluation policy baseline、debugger step-control baseline 和 paused-session snapshot baseline 均已验证，MCP alias deprecation warning 已接入，后续进入跨请求 paused session 生命周期管理、target-specific function hook 评估和最终 code review。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
 
 ### Step 5.1：完成 CloakBrowser provider skeleton
 

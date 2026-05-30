@@ -407,6 +407,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("debugger_lifecycle=action_controlled", result.verification)
         self.assertIn("callframe_count=1", result.verification)
         self.assertIn("callframe_evaluation_count=2", result.verification)
+        self.assertIn("callframe_evaluation_policy=read_only", result.verification)
         self.assertIn("debugger_action_count=1", result.verification)
         self.assertIn("debugger_session_count=1", result.verification)
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/debugger-paused.json")
@@ -415,13 +416,17 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[2].metadata["count"], 1)
         self.assertEqual(result.artifacts[3].path, "virtual://workspace/callframe-evaluations.json")
         self.assertEqual(result.artifacts[3].metadata["count"], 2)
+        self.assertEqual(result.artifacts[3].metadata["policy"], "read_only")
         self.assertEqual(result.artifacts[4].path, "virtual://workspace/debugger-actions.json")
         self.assertEqual(result.artifacts[4].metadata["count"], 1)
         self.assertEqual(result.artifacts[5].path, "virtual://workspace/debugger-session.json")
         self.assertEqual(result.artifacts[5].metadata["lifecycle"], "action_controlled")
         self.assertEqual(result.artifacts[5].metadata["paused_event_count"], 1)
         self.assertIn(("Runtime.evaluate", {"expression": "setTimeout(() => { debugger; }, 0); 'scheduled'", "awaitPromise": False, "returnByValue": True, "userGesture": True}), page._cdp_session.calls)
-        self.assertIn(("Debugger.evaluateOnCallFrame", {"callFrameId": "native-cf-1", "expression": "typeof buildSign", "returnByValue": True, "silent": True}), page._cdp_session.calls)
+        self.assertIn(
+            ("Debugger.evaluateOnCallFrame", {"callFrameId": "native-cf-1", "expression": "typeof buildSign", "returnByValue": True, "silent": True, "throwOnSideEffect": True}),
+            page._cdp_session.calls,
+        )
         self.assertIn(("Debugger.stepOver", {}), page._cdp_session.calls)
         self.assertNotIn(("Debugger.resume", {}), page._cdp_session.calls)
 

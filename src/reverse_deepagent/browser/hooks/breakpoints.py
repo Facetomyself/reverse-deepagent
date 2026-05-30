@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ class BreakpointSpec:
     auto_resume: bool = True
     callframe_evaluations: list[str] = field(default_factory=list)
     callframe_index: int = 0
+    callframe_evaluation_policy: str = "read_only"
     debugger_actions: list[str] = field(default_factory=list)
     preserve_pause_state: bool = False
     pause_session_id: str | None = None
@@ -52,6 +54,14 @@ class BreakpointSpec:
             or context.get("stepActions")
         )
         callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex", 0))
+        evaluation_policy_raw = context.get(
+            "callframe_evaluation_policy",
+            context.get("callframeEvaluationPolicy", context.get("evaluation_policy", context.get("evaluationPolicy"))),
+        )
+        allow_side_effects_raw = context.get(
+            "allow_callframe_side_effects",
+            context.get("allowCallframeSideEffects", context.get("allow_side_effects", context.get("allowSideEffects"))),
+        )
         preserve_pause_state = bool(
             context.get(
                 "preserve_pause_state",
@@ -69,6 +79,10 @@ class BreakpointSpec:
             auto_resume=bool(auto_resume_raw) if auto_resume_raw is not None else not preserve_pause_state,
             callframe_evaluations=cls._coerce_evaluations(evaluations_raw),
             callframe_index=int(callframe_index_raw or 0),
+            callframe_evaluation_policy=cls._normalize_evaluation_policy(
+                evaluation_policy_raw,
+                allow_side_effects=bool(allow_side_effects_raw),
+            ),
             debugger_actions=cls._coerce_actions(debugger_actions_raw),
             preserve_pause_state=preserve_pause_state,
             pause_session_id=str(context.get("pause_session_id", context.get("pauseSessionId"))) if context.get("pause_session_id", context.get("pauseSessionId")) else None,
@@ -120,6 +134,17 @@ class BreakpointSpec:
                     actions.append(action)
             return actions
         return []
+
+    @staticmethod
+    def _normalize_evaluation_policy(raw: Any, *, allow_side_effects: bool = False) -> str:
+        if allow_side_effects:
+            return "allow_side_effects"
+        value = str(raw or "read_only").strip().replace("-", "_").lower()
+        if value in {"allow", "allow_side_effect", "allow_side_effects", "unsafe", "mutation", "mutating"}:
+            return "allow_side_effects"
+        if value in {"block", "block_dangerous", "strict", "deny_dangerous"}:
+            return "block_dangerous"
+        return "read_only"
 
 
 @dataclass(slots=True)
@@ -414,6 +439,20 @@ class BreakpointManager:
             ]
         evaluations: list[dict[str, Any]] = []
         for expression in spec.callframe_evaluations:
+            decision = self._evaluation_policy_decision(expression, spec.callframe_evaluation_policy)
+            if decision["blocked"]:
+                evaluations.append(
+                    {
+                        "expression": expression,
+                        "ok": False,
+                        "blocked": True,
+                        "error": "blocked_by_callframe_evaluation_policy",
+                        "callframe_index": spec.callframe_index,
+                        "callFrameId": callframe_id,
+                        **decision,
+                    }
+                )
+                continue
             try:
                 payload = session.send(
                     "Debugger.evaluateOnCallFrame",
@@ -422,9 +461,15 @@ class BreakpointManager:
                         "expression": expression,
                         "returnByValue": True,
                         "silent": True,
+                        "throwOnSideEffect": decision["throw_on_side_effect"],
                     },
                 )
-                evaluations.append(self._normalize_callframe_evaluation(expression, payload, spec.callframe_index, str(callframe_id)))
+                evaluations.append(
+                    self._with_evaluation_policy_metadata(
+                        self._normalize_callframe_evaluation(expression, payload, spec.callframe_index, str(callframe_id)),
+                        decision,
+                    )
+                )
             except Exception as exc:
                 evaluations.append(
                     {
@@ -433,9 +478,47 @@ class BreakpointManager:
                         "error": str(exc),
                         "callframe_index": spec.callframe_index,
                         "callFrameId": callframe_id,
+                        **decision,
                     }
                 )
         return evaluations
+
+    @staticmethod
+    def _evaluation_policy_decision(expression: str, policy: str) -> dict[str, Any]:
+        risk, reason = BreakpointManager._side_effect_risk(expression)
+        blocked = policy in {"read_only", "block_dangerous"} and risk == "high"
+        return {
+            "policy": policy,
+            "side_effect_risk": risk,
+            "side_effect_reason": reason,
+            "blocked": blocked,
+            "throw_on_side_effect": policy != "allow_side_effects",
+        }
+
+    @staticmethod
+    def _side_effect_risk(expression: str) -> tuple[str, str]:
+        compact = expression.strip()
+        high_risk_patterns = (
+            (r"(?<![=!<>])=(?!=|>)", "assignment-like expression"),
+            (r"\+\+|--", "increment/decrement operator"),
+            (r"\bdelete\s+", "delete operator"),
+            (r"\bdocument\s*\.\s*cookie\s*=", "document.cookie write"),
+            (r"\b(?:localStorage|sessionStorage)\s*\.\s*(?:setItem|removeItem|clear)\s*\(", "storage mutation"),
+            (r"\b(?:fetch|XMLHttpRequest|sendBeacon)\s*\(", "network side effect candidate"),
+            (r"\b(?:eval|Function)\s*\(", "dynamic code execution"),
+            (r"\b(?:location|window\.location|document\.location)\s*=", "navigation mutation"),
+        )
+        for pattern, reason in high_risk_patterns:
+            if re.search(pattern, compact):
+                return "high", reason
+        if re.search(r"\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?\s*\(", compact):
+            return "medium", "function call; guarded by CDP throwOnSideEffect unless explicitly allowed"
+        return "low", "read-only expression shape"
+
+    @staticmethod
+    def _with_evaluation_policy_metadata(result: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+        result.update(decision)
+        return result
 
     def _run_debugger_actions(self, session: Any, spec: BreakpointSpec) -> list[dict[str, Any]]:
         if not spec.debugger_actions:

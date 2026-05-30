@@ -238,6 +238,7 @@ class NativeWebRuntime(WebReverseRuntime):
             debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
             callframe_count = len(result.callframes)
             callframe_evaluation_count = len(result.callframe_evaluations)
+            callframe_evaluation_policy = spec.callframe_evaluation_policy if spec else "unknown"
             debugger_action_count = len(result.debugger_actions)
             debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
             verification = [
@@ -247,6 +248,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"debugger_lifecycle={debugger_lifecycle or 'unknown'}",
                 f"callframe_count={callframe_count}",
                 f"callframe_evaluation_count={callframe_evaluation_count}",
+                f"callframe_evaluation_policy={callframe_evaluation_policy}",
                 f"debugger_action_count={debugger_action_count}",
                 f"debugger_session_count={debugger_session_count}",
                 f"context_keys={sorted(context.keys())}",
@@ -300,6 +302,7 @@ class NativeWebRuntime(WebReverseRuntime):
                         metadata={
                             "count": callframe_evaluation_count,
                             "paused_status": paused_status or "unknown",
+                            "policy": callframe_evaluation_policy,
                         },
                     )
                 )
