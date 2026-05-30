@@ -99,7 +99,7 @@ Current evidence:
 
 ### Phase 2: Playwright-compatible session layer
 
-Status: contract and provider skeleton implemented; real browser smoke pending optional Playwright installation and browser binary availability.
+Status: contract and provider skeleton implemented; real browser smoke verified locally via Playwright using the system Chrome executable path; Playwright-managed browser download remains environment-dependent.
 
 Deliverables:
 
@@ -123,8 +123,8 @@ Current evidence:
 
 Remaining validation:
 
-- Install `.[browser]` in an environment allowed to download/use Playwright browsers.
-- Run a headed/headless smoke that opens a URL, captures title/content/screenshot, and closes without residual browser processes.
+- Keep the Playwright-managed browser binary installation path documented for environments that allow it.
+- Re-run headed/headless smoke against a freshly installed Playwright Chromium binary when available to confirm the package-managed browser path as well.
 
 ### Phase 3: Native collector baseline
 
@@ -160,7 +160,7 @@ Remaining validation:
 
 ### Phase 4: NativeWebRuntime
 
-Status: minimal runtime implemented and registered; `remote-cdp` smoke path and advanced BrowserProvider option forwarding are implemented; Playwright / CloakBrowser real browser smoke remains pending.
+Status: minimal runtime implemented and registered; `remote-cdp` smoke path and advanced BrowserProvider option forwarding are implemented; Playwright real browser smoke is verified locally, while CloakBrowser real browser smoke remains pending.
 
 Deliverables:
 
@@ -191,7 +191,7 @@ Current evidence:
 
 Remaining validation:
 
-- Run real `reverse-agent-demo --runtime native-web --browser playwright-chromium` after installing `.[browser]` and a Playwright browser binary.
+- Re-run `reverse-agent-demo --runtime native-web --browser playwright-chromium` against a freshly installed Playwright browser binary when available, to confirm the package-managed browser path in addition to the system Chrome smoke.
 - Validate `--browser-humanize`, `--browser-proxy`, `--browser-locale`, and `--browser-timezone` on real CloakBrowser once the binary is available.
 - Ensure backend manifest carries provider metadata in downstream artifact entries.
 
@@ -269,7 +269,7 @@ Acceptance:
 
 ### Phase 8: CDP-enhanced collectors
 
-Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable, and `remote-cdp` provides a real smoke path against an existing Chrome DevTools endpoint. Playwright / CloakBrowser real browser smoke remains pending.
+Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable, and `remote-cdp` provides a real smoke path against an existing Chrome DevTools endpoint. Playwright real browser smoke is verified locally; CloakBrowser real browser smoke remains pending.
 
 Deliverables:
 

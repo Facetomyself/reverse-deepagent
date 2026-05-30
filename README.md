@@ -62,6 +62,16 @@ reverse-agent-demo \
   --task-text "https://example.com 找 sign 入口"
 ```
 
+如果还没有下载 Playwright 自带的 Chromium，也可以临时把 `--browser-executable-path` 指向系统 Chrome 做真实 smoke：
+
+```bash
+reverse-agent-demo \
+  --runtime native-web \
+  --browser playwright-chromium \
+  --browser-executable-path "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --task-text "https://example.com 找 sign 入口"
+```
+
 如果本机已经有可用的 Chrome DevTools 端点，但还没有装 Playwright 或 CloakBrowser，`remote-cdp` 可以直接作为 BrowserProvider smoke 路径使用；它和 `chrome-cdp` 轻量探测后端不是一回事：前者接入 `native-web` 的采集栈，后者只是做端点探测。
 
 ```bash
