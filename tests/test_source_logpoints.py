@@ -1,6 +1,7 @@
 import unittest
 
 from reverse_deepagent.browser.hooks import SourceLogpointManager, SourceLogpointSpec
+from tests.test_source_maps import encode_vlq_segment
 
 
 class SourceLogpointPage:
@@ -83,6 +84,77 @@ class SourceLogpointCDP:
 
 
 class SourceLogpointManagerTests(unittest.TestCase):
+    def test_from_context_remaps_bundle_offset_to_generated_location(self) -> None:
+        spec = SourceLogpointSpec.from_context(
+            {
+                "url_pattern": ".*bundle\\.js$",
+                "line_number": 99,
+                "column_number": 9,
+                "bundle_source": "alpha\nbeta\ngamma",
+                "bundle_offset": 6,
+                "log_expression": "raw",
+            }
+        )
+
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec.line_number, 1)
+        self.assertEqual(spec.column_number, 0)
+        self.assertEqual(spec.remap["status"], "success")
+        self.assertEqual(spec.remap["strategy"], "bundle_offset")
+        self.assertEqual(spec.remap["requested"], {"line_number": 99, "column_number": 9})
+        self.assertEqual(spec.remap["generated"]["line_number"], 1)
+        self.assertEqual(spec.remap["generated"]["column_number"], 0)
+
+    def test_from_context_remaps_source_map_original_location(self) -> None:
+        spec = SourceLogpointSpec.from_context(
+            {
+                "url_pattern": ".*bundle\\.js$",
+                "line_number": 99,
+                "column_number": 9,
+                "source_map": {"version": 3, "sources": ["src/app.js"], "names": [], "mappings": "AAAA"},
+                "original_source": "src/app.js",
+                "original_line": 0,
+                "original_column": 0,
+                "log_expression": "raw",
+            }
+        )
+
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec.line_number, 0)
+        self.assertEqual(spec.column_number, 0)
+        self.assertEqual(spec.remap["status"], "success")
+        self.assertEqual(spec.remap["strategy"], "source_map_exact")
+
+    def test_from_context_remaps_source_map_with_bias(self) -> None:
+        source_map = {
+            "version": 3,
+            "sources": ["src/app.js"],
+            "names": [],
+            "mappings": f"{encode_vlq_segment([0, 0, 0, 0])},{encode_vlq_segment([10, 0, 0, 5])}",
+        }
+        spec = SourceLogpointSpec.from_context(
+            {
+                "url_pattern": ".*bundle\\.js$",
+                "line_number": 99,
+                "column_number": 9,
+                "source_map": source_map,
+                "original_source": "src/app.js",
+                "original_line": 0,
+                "original_column": 7,
+                "log_expression": "raw",
+            }
+        )
+
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec.line_number, 0)
+        self.assertEqual(spec.column_number, 10)
+        self.assertEqual(spec.remap["status"], "success")
+        self.assertEqual(spec.remap["strategy"], "source_map_bias_glb")
+        self.assertEqual(spec.remap["generated"]["metadata"]["matched_original_column_number"], 5)
+
     def test_install_and_snapshot_source_logpoint(self) -> None:
         page = SourceLogpointPage()
         manager = SourceLogpointManager()
@@ -106,6 +178,33 @@ class SourceLogpointManagerTests(unittest.TestCase):
         self.assertEqual(result.trigger["result"]["result"]["value"], "scheduled")
         self.assertEqual(page.set_breakpoint_params["condition"].count("source_logpoint"), 1)
         self.assertIn("return false", page.set_breakpoint_params["condition"])
+
+    def test_install_uses_remapped_location_for_breakpoint(self) -> None:
+        page = SourceLogpointPage()
+        manager = SourceLogpointManager()
+        spec = SourceLogpointSpec.from_context(
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 99,
+                "column_number": 9,
+                "bundle_source": "alpha\nbeta\ngamma",
+                "bundle_offset": 6,
+                "log_expression": "window.buildSign('sign', 1700000000000)",
+                "label": "smoke",
+                "trigger_expression": "window.buildSign('sign', 1700000000000)",
+            }
+        )
+
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        result = manager.install(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(page.set_breakpoint_params["lineNumber"], 1)
+        self.assertEqual(page.set_breakpoint_params["columnNumber"], 0)
+        self.assertEqual(result.remap["status"], "success")
+        self.assertEqual(result.remap["strategy"], "bundle_offset")
+        self.assertIn('"remap"', page.set_breakpoint_params["condition"])
 
 
 if __name__ == "__main__":

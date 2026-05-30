@@ -13,6 +13,12 @@ from reverse_deepagent.browser.hooks import (
     BrowserHookManager,
     FunctionHookManager,
     FunctionHookSpec,
+    ModuleDiscoveryManager,
+    ModuleDiscoverySpec,
+    ModuleHookManager,
+    ModuleHookSpec,
+    PageMutationAuditManager,
+    PageMutationAuditSpec,
     PausedSessionActionSpec,
     SourceLogpointManager,
     SourceLogpointSpec,
@@ -234,6 +240,48 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
             )
+        if self._is_page_mutation_audit_request(protection_name, context):
+            spec = PageMutationAuditSpec.from_context(context)
+            result = PageMutationAuditManager().audit(page, spec)
+            change_count = int(result.diff.get("change_count") or 0)
+            categories = result.diff.get("categories") if isinstance(result.diff.get("categories"), list) else []
+            verification = [
+                f"page_mutation_audit_status={result.status}",
+                f"page_mutation_audit_changed={bool(result.diff.get('changed'))}",
+                f"page_mutation_audit_change_count={change_count}",
+                f"page_mutation_audit_categories={categories}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"page_mutation_audit_reason={result.reason}")
+            if result.error:
+                verification.append(f"page_mutation_audit_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/page-mutation-audit.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime page-level before/after mutation audit.",
+                    metadata={
+                        "status": result.status,
+                        "changed": bool(result.diff.get("changed")),
+                        "change_count": change_count,
+                        "categories": categories,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["audit_page_mutation"] if result.trigger.get("attempted") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
         if self._is_paused_session_request(protection_name, context):
             spec = PausedSessionActionSpec.from_context(context)
             result = BreakpointManager().run_paused_session_action(page, spec)
@@ -242,18 +290,36 @@ class NativeWebRuntime(WebReverseRuntime):
             debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
             callframe_count = len(result.callframes)
             callframe_evaluation_count = len(result.callframe_evaluations)
+            mutation_audit_count = len(result.mutation_audit)
             debugger_action_count = len(result.debugger_actions)
             debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
             debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
+            continued_from_store = bool(result.debugger_session.get("continued_from_store")) if isinstance(result.debugger_session, dict) else False
+            continued_from_registry = bool(result.debugger_session.get("continued_from_registry")) if isinstance(result.debugger_session, dict) else False
+            live_continuation_available = bool(
+                result.debugger_session.get(
+                    "live_continuation_available",
+                    continued_from_registry and debugger_lifecycle != "resumed",
+                )
+            ) if isinstance(result.debugger_session, dict) else False
+            paused_session_metadata = {
+                "continued_from_store": continued_from_store,
+                "continued_from_registry": continued_from_registry,
+                "live_continuation_available": live_continuation_available,
+            }
             verification = [
                 f"paused_session_status={result.status}",
                 f"paused_session_paused_status={paused_status or 'unknown'}",
                 f"paused_session_lifecycle={debugger_lifecycle or 'unknown'}",
                 f"paused_session_callframe_count={callframe_count}",
                 f"paused_session_callframe_evaluation_count={callframe_evaluation_count}",
+                f"paused_session_mutation_audit_count={mutation_audit_count}",
                 f"paused_session_debugger_action_count={debugger_action_count}",
                 f"paused_session_debugger_session_count={debugger_session_count}",
                 f"paused_session_debugger_timeline_count={debugger_timeline_count}",
+                f"paused_session_continued_from_store={continued_from_store}",
+                f"paused_session_continued_from_registry={continued_from_registry}",
+                f"paused_session_live_continuation_available={live_continuation_available}",
                 f"context_keys={sorted(context.keys())}",
             ]
             if result.error:
@@ -271,7 +337,7 @@ class NativeWebRuntime(WebReverseRuntime):
                             "status": result.debugger_session.get("status", "unknown"),
                             "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
                             "paused_event_count": result.debugger_session.get("paused_event_count", 0),
-                            "continued_from_registry": True,
+                            **paused_session_metadata,
                         },
                     )
                 )
@@ -286,7 +352,7 @@ class NativeWebRuntime(WebReverseRuntime):
                             "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
                             "entry_count": result.debugger_timeline.get("entry_count", 0),
                             "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
-                            "continued_from_registry": True,
+                            **paused_session_metadata,
                         },
                     )
                 )
@@ -296,7 +362,7 @@ class NativeWebRuntime(WebReverseRuntime):
                         path="virtual://workspace/callframes.json",
                         kind=ArtifactKind.JSON,
                         description="Native Web runtime retained paused-session callframes.",
-                        metadata={"count": callframe_count, "continued_from_registry": True},
+                        metadata={"count": callframe_count, **paused_session_metadata},
                     )
                 )
             if result.callframe_evaluations:
@@ -305,7 +371,16 @@ class NativeWebRuntime(WebReverseRuntime):
                         path="virtual://workspace/callframe-evaluations.json",
                         kind=ArtifactKind.JSON,
                         description="Native Web runtime retained paused-session callframe evaluations.",
-                        metadata={"count": callframe_evaluation_count, "continued_from_registry": True},
+                        metadata={"count": callframe_evaluation_count, **paused_session_metadata},
+                    )
+                )
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session mutation audit.",
+                        metadata={"count": mutation_audit_count, **paused_session_metadata},
                     )
                 )
             if result.debugger_actions:
@@ -314,7 +389,7 @@ class NativeWebRuntime(WebReverseRuntime):
                         path="virtual://workspace/debugger-actions.json",
                         kind=ArtifactKind.JSON,
                         description="Native Web runtime retained paused-session debugger actions.",
-                        metadata={"count": debugger_action_count, "continued_from_registry": True},
+                        metadata={"count": debugger_action_count, **paused_session_metadata},
                     )
                 )
             next_action = "inspect_debugger_session" if debugger_lifecycle != "resumed" else "continue_recon"
@@ -338,6 +413,10 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"source_logpoint_event_count={event_count}",
                 f"context_keys={sorted(context.keys())}",
             ]
+            if spec and spec.remap:
+                verification.append(f"source_logpoint_remap_status={spec.remap.get('status')}")
+                if spec.remap.get("strategy"):
+                    verification.append(f"source_logpoint_remap_strategy={spec.remap['strategy']}")
             if result.trigger:
                 verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
                 if result.trigger.get("error"):
@@ -356,6 +435,8 @@ class NativeWebRuntime(WebReverseRuntime):
                         "breakpoint_count": breakpoint_count,
                         "url_pattern": spec.url_pattern if spec else "<missing>",
                         "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "remap": spec.remap if spec else {},
                     },
                 ),
                 ArtifactRef(
@@ -366,6 +447,9 @@ class NativeWebRuntime(WebReverseRuntime):
                         "status": "success" if event_count else "not_observed",
                         "event_count": event_count,
                         "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "remap": spec.remap if spec else {},
                     },
                 ),
             ]
@@ -435,6 +519,124 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
+        if self._is_module_discovery_request(protection_name, context):
+            discovery_context = {**context, "discover_modules": True}
+            spec = ModuleDiscoverySpec.from_context(discovery_context)
+            result = ModuleDiscoveryManager().discover(page, spec)
+            module_count = len(result.modules)
+            candidate_count = len(result.candidates)
+            script_count = len(result.scripts)
+            runtime_status = result.runtime.get("status") if result.runtime else "not_attempted"
+            runtime_module_count = int(result.runtime.get("module_count") or 0) if result.runtime else 0
+            verification = [
+                f"module_discovery_status={result.status}",
+                f"module_discovery_script_count={script_count}",
+                f"module_discovery_module_count={module_count}",
+                f"module_discovery_candidate_count={candidate_count}",
+                f"module_discovery_runtime_status={runtime_status}",
+                f"module_discovery_runtime_module_count={runtime_module_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"module_discovery_reason={result.reason}")
+            if result.error:
+                verification.append(f"module_discovery_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-registry.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module registry discovery.",
+                    metadata={
+                        "status": result.status,
+                        "script_count": script_count,
+                        "module_count": module_count,
+                        "runtime_status": runtime_status,
+                        "runtime_module_count": runtime_module_count,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/module-candidates.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module export hook candidates.",
+                    metadata={
+                        "status": result.status,
+                        "candidate_count": candidate_count,
+                    },
+                ),
+            ]
+            next_action = "install_module_hook_from_candidate" if candidate_count else "provide_module_id_or_expand_source_context"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["discover_module_exports"] if module_count or candidate_count else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if candidate_count else ExecutionStatus.PARTIAL if script_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if candidate_count else ConfidenceLevel.LOW,
+            )
+        if self._is_module_hook_request(protection_name, context):
+            spec = ModuleHookSpec.from_context(context)
+            result = ModuleHookManager().install(page, spec)
+            installed_count = len(result.installed)
+            missing_count = len(result.missing)
+            event_count = len(result.events)
+            verification = [
+                f"module_hook_status={result.status}",
+                f"module_hook_installed_count={installed_count}",
+                f"module_hook_missing_count={missing_count}",
+                f"module_hook_event_count={event_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.error:
+                verification.append(f"module_hook_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-hooks.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module export hook install result.",
+                    metadata={
+                        "status": result.status,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "module_id": spec.module_id if spec else "<missing>",
+                        "export_name": spec.export_name if spec else "<missing>",
+                        "require_path": spec.require_path if spec else "<missing>",
+                        "hook_path": spec.hook_path() if spec else "<missing>",
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/module-hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module export hook timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "module_id": spec.module_id if spec else "<missing>",
+                        "export_name": spec.export_name if spec else "<missing>",
+                        "hook_path": spec.hook_path() if spec else "<missing>",
+                    },
+                ),
+            ]
+            next_action = "inspect_module_hook_events" if event_count else "invoke_module_export_or_adjust_hook"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"install_module_hook:{spec.module_id}:{spec.export_name}"] if spec and result.installed else []
+                ),
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if installed_count else ExecutionStatus.PARTIAL if missing_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
         if self._is_breakpoint_request(protection_name, context):
             spec = BreakpointSpec.from_context(context)
             result = BreakpointManager().set_breakpoint(page, spec)
@@ -449,6 +651,7 @@ class NativeWebRuntime(WebReverseRuntime):
             callframe_count = len(result.callframes)
             callframe_evaluation_count = len(result.callframe_evaluations)
             callframe_evaluation_policy = spec.callframe_evaluation_policy if spec else "unknown"
+            mutation_audit_count = len(result.mutation_audit)
             debugger_action_count = len(result.debugger_actions)
             debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
             debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
@@ -460,6 +663,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"callframe_count={callframe_count}",
                 f"callframe_evaluation_count={callframe_evaluation_count}",
                 f"callframe_evaluation_policy={callframe_evaluation_policy}",
+                f"mutation_audit_count={mutation_audit_count}",
                 f"debugger_action_count={debugger_action_count}",
                 f"debugger_session_count={debugger_session_count}",
                 f"debugger_timeline_count={debugger_timeline_count}",
@@ -513,6 +717,19 @@ class NativeWebRuntime(WebReverseRuntime):
                         description="Native Web runtime debugger callframe evaluation snapshot.",
                         metadata={
                             "count": callframe_evaluation_count,
+                            "paused_status": paused_status or "unknown",
+                            "policy": callframe_evaluation_policy,
+                        },
+                    )
+                )
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger mutation audit.",
+                        metadata={
+                            "count": mutation_audit_count,
                             "paused_status": paused_status or "unknown",
                             "policy": callframe_evaluation_policy,
                         },
@@ -673,6 +890,31 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_page_mutation_audit_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "page-mutation-audit",
+            "page-mutation",
+            "audit-page-mutation",
+            "mutation-audit-page",
+            "dom-mutation-audit",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "page_mutation_audit",
+                "pageMutationAudit",
+                "audit_page_mutation",
+                "auditPageMutation",
+                "selected_globals",
+                "selectedGlobals",
+                "global_names",
+                "globalNames",
+            )
+        )
+
+    @staticmethod
     def _is_source_logpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {"source-logpoint", "logpoint"}:
@@ -690,8 +932,49 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_module_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"discover-module", "discover-modules", "module-discovery", "webpack-discovery"}:
+            return True
+        return any(
+            key in context
+            for key in (
+                "discover_modules",
+                "discoverModules",
+                "module_discovery",
+                "moduleDiscovery",
+                "module_query",
+                "moduleQuery",
+            )
+        )
+
+    @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if normalized in {"discover-module", "discover-modules", "module-discovery", "webpack-discovery"} or any(
+            key in context
+            for key in (
+                "discover_modules",
+                "discoverModules",
+                "module_discovery",
+                "moduleDiscovery",
+                "module_query",
+                "moduleQuery",
+            )
+        ):
+            return False
+        if normalized in {"hook-module", "module-hook", "webpack-module-hook", "module-export-hook"} or any(
+            key in context
+            for key in (
+                "module_id",
+                "moduleId",
+                "webpack_module_id",
+                "webpackModuleId",
+                "export_name",
+                "exportName",
+            )
+        ):
+            return False
         if normalized in {"hook-function", "function-hook", "target-function-hook"}:
             return True
         return any(
@@ -707,6 +990,23 @@ class NativeWebRuntime(WebReverseRuntime):
                 "hookPaths",
                 "candidate_id",
                 "candidateId",
+            )
+        )
+
+    @staticmethod
+    def _is_module_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"hook-module", "module-hook", "webpack-module-hook", "module-export-hook"}:
+            return True
+        return any(
+            key in context
+            for key in (
+                "module_id",
+                "moduleId",
+                "webpack_module_id",
+                "webpackModuleId",
+                "export_name",
+                "exportName",
             )
         )
 

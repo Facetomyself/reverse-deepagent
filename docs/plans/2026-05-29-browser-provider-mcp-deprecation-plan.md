@@ -297,7 +297,7 @@ Acceptance:
 
 ### Phase 9: Hook and breakpoint migration
 
-Status: hook baseline, WebSocket send/message capture, target-function wrapper baseline, source-level logpoint baseline, provider-neutral BreakpointManager baseline, in-process paused-session registry baseline, native-web runtime-eval candidate validation, basic paused/callframe breakpoint smoke, explicit evaluateOnCallFrame baseline, callframe evaluation policy baseline, debugger step-control baseline, paused-session snapshot baseline, and single-run debugger timeline baseline are implemented and tested locally. Deeper cross-process paused session persistence, source map / bundle offset remapping, webpack / module-internal function hooks, fine-grained mutation auditing, and richer cross-request timeline continuation remain future debugger-scope work.
+Status: hook baseline, WebSocket send/message capture, target-function wrapper baseline, webpack-like module export hook baseline, webpack-like module discovery baseline with script inventory plus read-only `require.c` / `require.m` runtime cache introspection, source-level logpoint baseline with bundle offset, Source Map exact, GLB bias, sourceRoot, and indexed section remap support, provider-neutral BreakpointManager baseline, in-process paused-session registry baseline, durable paused-session snapshot inspect-only baseline, native-web runtime-eval candidate validation, basic paused/callframe breakpoint smoke, explicit evaluateOnCallFrame baseline, callframe evaluation policy baseline, callframe mutation audit baseline, page-level coarse mutation audit baseline, debugger step-control baseline, and single-run debugger timeline baseline are implemented and tested locally. Cross-process live CDP paused execution continuation, arbitrary runtime module cache / module federation introspection, arbitrary closure-internal function hooks, source-map name resolution / complex URL semantics / complex indexed section semantics, MutationObserver-level timelines, JS heap fine-grained mutation auditing, and richer cross-request timeline continuation remain future debugger-scope work.
 
 Deliverables:
 
@@ -306,14 +306,20 @@ Deliverables:
 - `hooks/anti_debug.py`
 - `hooks/breakpoints.py`
 - `hooks/function_hooks.py`
+- `hooks/module_hooks.py`
 - `hooks/source_logpoints.py`
 - WebSocket send/message hook capture through the shared hook timeline.
 - `virtual://workspace/function-hooks.json` and `virtual://workspace/function-hook-timeline.json` target-function hook artifact refs / evidence mapping
+- `virtual://workspace/module-hooks.json` and `virtual://workspace/module-hook-timeline.json` explicit webpack-like module export hook artifact refs / evidence mapping
+- `virtual://workspace/module-registry.json` and `virtual://workspace/module-candidates.json` webpack-like module discovery artifact refs / evidence mapping, including runtime introspection status and module counts when `require.c` / `require.m` are available
 - `virtual://workspace/source-logpoints.json` and `virtual://workspace/source-logpoint-timeline.json` source logpoint artifact refs / evidence mapping
 - retained paused-session registry baseline via `pause_session_id` and `paused-session` follow-up actions
+- durable paused-session snapshot inspect-only baseline via `persist_paused_session` / `paused_session_store_dir`, with structured `live_paused_session_required` rejection for cross-process resume / step / evaluate attempts
 - `virtual://workspace/breakpoints.json` protection artifact ref / evidence mapping
 - `virtual://workspace/debugger-paused.json` and `virtual://workspace/callframes.json` breakpoint smoke artifact refs
 - `virtual://workspace/callframe-evaluations.json` artifact ref when explicit callframe evaluations are requested
+- `virtual://workspace/mutation-audit.json` artifact ref with callframe evaluation side-effect risk summaries
+- `virtual://workspace/page-mutation-audit.json` artifact ref with explicit page before/after mutation summary diffs
 - `virtual://workspace/debugger-actions.json` artifact ref when explicit debugger step-control actions are requested
 - `virtual://workspace/debugger-session.json` artifact ref with selected callFrame and pause lifecycle metadata
 - `virtual://workspace/debugger-timeline.json` artifact ref with ordered single-run debugger timeline entries
@@ -325,7 +331,7 @@ Acceptance:
 - Anti-debug patches are minimal and auditable.
 - Breakpoint features are behind provider capability checks and only run for explicit protection/debug requests.
 - Hook output is emitted as normalized evidence and artifact files.
-- Target-function hook baseline is limited to globally reachable paths such as `window.buildSign`; source-level logpoint baseline is limited to explicit script URL / line-number observations; retained paused sessions are in-process only; source map / bundle offset remapping and webpack internal hook support are intentionally separate follow-up capabilities.
+- Target-function hook baseline is limited to globally reachable paths such as `window.buildSign`; module discovery baseline is limited to best-effort source inventory extraction plus read-only webpack-like `require.c` / `require.m` runtime cache and registry introspection, and does not introspect arbitrary module federation or custom runtime caches; source-level logpoint baseline can remap generated offsets and Source Map v3 original locations with exact, GLB bias, sourceRoot, and indexed section support, but remains limited to script URL / line-number style breakpoints; retained paused-session live continuation is in-process only, while durable paused-session snapshots are inspect-only and cannot resume / step / evaluate the original CDP paused execution; page-level mutation audit is a coarse before/after summary rather than MutationObserver or JS heap timeline; source-map name resolution / complex URL semantics / complex indexed section semantics, fine-grained mutation audit, arbitrary runtime cache introspection, arbitrary closure-internal hook support, and cross-process live CDP paused execution continuation are intentionally separate follow-up capabilities.
 
 ### Phase 10: MCP legacy downgrade
 

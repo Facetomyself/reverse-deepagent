@@ -6,6 +6,7 @@ from typing import Any
 
 from reverse_deepagent.browser.base import BrowserPage
 from reverse_deepagent.browser.hooks.breakpoints import BreakpointManager, BreakpointSpec
+from reverse_deepagent.browser.source_maps import SourceMapRemapper
 
 
 @dataclass(slots=True)
@@ -21,6 +22,7 @@ class SourceLogpointSpec:
     wait_after_trigger_ms: int = 0
     pause_on_hit: bool = False
     logpoint_id: str | None = None
+    remap: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_context(cls, context: dict[str, Any] | None = None) -> "SourceLogpointSpec | None":
@@ -31,6 +33,12 @@ class SourceLogpointSpec:
         line_number = int(context.get("line_number", context.get("lineNumber", 0)) or 0)
         column_raw = context.get("column_number", context.get("columnNumber"))
         column_number = None if column_raw is None else int(column_raw)
+        requested_location = {"line_number": line_number, "column_number": column_number}
+        remap = cls._resolve_remap(context, requested_location)
+        generated_location = remap.get("generated") if remap.get("status") == "success" else None
+        if isinstance(generated_location, dict):
+            line_number = int(generated_location["line_number"])
+            column_number = int(generated_location["column_number"])
         log_expression = context.get("log_expression", context.get("logExpression", context.get("expression", context.get("source_expression", "undefined"))))
         label = context.get("label")
         pause_on_hit_raw = context.get("pause_on_hit", context.get("pauseOnHit"))
@@ -46,6 +54,52 @@ class SourceLogpointSpec:
             wait_after_trigger_ms=int(context.get("wait_after_trigger_ms", context.get("waitAfterTriggerMs", 0)) or 0),
             pause_on_hit=bool(pause_on_hit_raw) if pause_on_hit_raw is not None else False,
             logpoint_id=str(logpoint_id) if logpoint_id else None,
+            remap=remap,
+        )
+
+    @classmethod
+    def _resolve_remap(cls, context: dict[str, Any], requested_location: dict[str, Any]) -> dict[str, Any]:
+        if not cls._has_remap_context(context):
+            return {}
+        try:
+            location = SourceMapRemapper.resolve_from_context(context)
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "error": str(exc),
+                "requested": requested_location,
+            }
+        if location is None:
+            return {
+                "status": "unresolved",
+                "reason": "no_matching_generated_location",
+                "requested": requested_location,
+            }
+        return {
+            "status": "success",
+            "strategy": location.strategy,
+            "requested": requested_location,
+            "generated": location.to_dict(),
+        }
+
+    @staticmethod
+    def _has_remap_context(context: dict[str, Any]) -> bool:
+        return any(
+            key in context
+            for key in (
+                "bundle_offset",
+                "bundleOffset",
+                "generated_offset",
+                "generatedOffset",
+                "source_map",
+                "sourceMap",
+                "original_source",
+                "originalSource",
+                "original_line",
+                "originalLine",
+                "original_line_number",
+                "originalLineNumber",
+            )
         )
 
     def effective_logpoint_id(self) -> str:
@@ -74,6 +128,7 @@ class SourceLogpointSpec:
             "label": self.label,
             "pauseOnHit": self.pause_on_hit,
             "logExpression": self.log_expression,
+            "remap": self.remap,
         }
         payload_json = json.dumps(payload, ensure_ascii=False)
         pause_literal = "true" if self.pause_on_hit else "false"
@@ -120,6 +175,7 @@ class SourceLogpointSpec:
       columnNumber: metadata.columnNumber,
       label: metadata.label,
       pauseOnHit: metadata.pauseOnHit,
+      remap: metadata.remap,
       ok,
       value: ok ? root.preview(value) : null,
       error
@@ -140,6 +196,7 @@ class SourceLogpointResult:
     breakpoints: list[dict[str, Any]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     trigger: dict[str, Any] = field(default_factory=dict)
+    remap: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     reason: str | None = None
 
@@ -151,6 +208,7 @@ class SourceLogpointResult:
             "events": self.events,
             "event_count": len(self.events),
             "trigger": self.trigger,
+            "remap": self.remap,
             "error": self.error,
             "reason": self.reason,
         }
@@ -165,7 +223,7 @@ class SourceLogpointManager:
         try:
             page.evaluate(self._install_expression(spec))
         except Exception as exc:
-            return SourceLogpointResult(status="failed", error=str(exc))
+            return SourceLogpointResult(status="failed", remap=spec.remap, error=str(exc))
         breakpoint_result = BreakpointManager().set_breakpoint(page, spec.to_breakpoint_spec())
         try:
             snapshot_payload = page.evaluate(self._snapshot_expression(spec))
@@ -179,6 +237,7 @@ class SourceLogpointManager:
             breakpoints=breakpoints,
             events=events,
             trigger=breakpoint_result.trigger,
+            remap=spec.remap,
             error=breakpoint_result.error,
             reason=breakpoint_result.reason,
         )
@@ -192,6 +251,7 @@ class SourceLogpointManager:
             "columnNumber": spec.column_number,
             "label": spec.label,
             "pauseOnHit": spec.pause_on_hit,
+            "remap": spec.remap,
         }
         payload_json = json.dumps(payload, ensure_ascii=False)
         template = """(() => {
@@ -222,7 +282,7 @@ class SourceLogpointManager:
   const metadata = __LOGPOINT_METADATA__;
   root.installed.source_logpoints = root.installed.source_logpoints || {};
   root.installed.source_logpoints[metadata.logpointId] = true;
-  return { ok: true, installed: [{ logpointId: metadata.logpointId, urlPattern: metadata.urlPattern, lineNumber: metadata.lineNumber, columnNumber: metadata.columnNumber, label: metadata.label, pauseOnHit: metadata.pauseOnHit }], missing: [], eventCount: root.events.length };
+  return { ok: true, installed: [{ logpointId: metadata.logpointId, urlPattern: metadata.urlPattern, lineNumber: metadata.lineNumber, columnNumber: metadata.columnNumber, label: metadata.label, pauseOnHit: metadata.pauseOnHit, remap: metadata.remap }], missing: [], eventCount: root.events.length };
 })()"""
         return template.replace("__LOGPOINT_METADATA__", payload_json)
 

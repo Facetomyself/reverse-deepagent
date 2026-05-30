@@ -8,6 +8,10 @@ from reverse_deepagent.adapters.native_web import NativeWebRuntime
 from reverse_deepagent.browser import BrowserPageRef, BrowserProviderCapabilities, PlaywrightBrowserPageAdapter
 from reverse_deepagent.browser.hooks import BreakpointManager
 from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
+from reverse_deepagent.fixtures.web_sign import FixtureProfile, _build_js
+
+
+WEBPACK_MINIFIED_SOURCE = _build_js(FixtureProfile.WEBPACK_MINIFIED)
 
 
 class FakeCDPSession:
@@ -103,6 +107,17 @@ class FakeRawPage:
         self.hook_events = []
         self.function_hook_installed = False
         self.function_hook_events = []
+        self.module_hook_installed = False
+        self.module_hook_events = []
+        self.external_source = ""
+        self.runtime_module_payload = None
+        self.page_mutation_html_length = 10
+        self.page_mutation_text_length = 4
+        self.page_mutation_body_child_count = 1
+        self.page_mutation_local_storage_keys = ["demo"]
+        self.page_mutation_session_storage_keys = []
+        self.page_mutation_cookie_names = []
+        self.page_mutation_globals = {"window.__token": {"type": "string", "preview": "before"}}
 
     def on(self, event, handler):
         self.handlers.setdefault(event, []).append(handler)
@@ -143,6 +158,56 @@ class FakeRawPage:
         """
 
     def evaluate(self, expression):
+        if "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__" in expression:
+            return {
+                "marker": "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__",
+                "ok": True,
+                "url": self.url,
+                "title": "Native Fixture",
+                "dom": {
+                    "html_length": self.page_mutation_html_length,
+                    "text_length": self.page_mutation_text_length,
+                    "body_child_count": self.page_mutation_body_child_count,
+                    "html_preview": "<main></main>",
+                    "text_preview": "demo",
+                },
+                "storage": {
+                    "localStorage": {
+                        "available": True,
+                        "count": len(self.page_mutation_local_storage_keys),
+                        "keys": list(self.page_mutation_local_storage_keys),
+                    },
+                    "sessionStorage": {
+                        "available": True,
+                        "count": len(self.page_mutation_session_storage_keys),
+                        "keys": list(self.page_mutation_session_storage_keys),
+                    },
+                },
+                "cookies": {"count": len(self.page_mutation_cookie_names), "names": list(self.page_mutation_cookie_names)},
+                "globals": dict(self.page_mutation_globals),
+            }
+        if "mutateNativePage()" in expression:
+            self.page_mutation_html_length = 44
+            self.page_mutation_text_length = 12
+            self.page_mutation_body_child_count = 2
+            self.page_mutation_local_storage_keys.append("nonce")
+            self.page_mutation_session_storage_keys.append("token")
+            self.page_mutation_cookie_names.append("sid")
+            self.page_mutation_globals["window.__token"] = {"type": "string", "preview": "after"}
+            return "mutated"
+        if "__REVERSE_AGENT_MODULE_DISCOVERY__" in expression:
+            if self.runtime_module_payload is not None:
+                return self.runtime_module_payload
+            return {
+                "ok": False,
+                "status": "unsupported",
+                "requirePath": "window.__webpack_require__",
+                "cacheModules": [],
+                "registryModules": [],
+                "reason": "require_path_unavailable",
+            }
+        if "fetch(" in expression and "/assets/app.js" in expression:
+            return self.external_source
         if "__REVERSE_AGENT_VALIDATE_CANDIDATE__" in expression:
             return {
                 "marker": "__REVERSE_AGENT_VALIDATE_CANDIDATE__",
@@ -199,8 +264,51 @@ class FakeRawPage:
                 "missing": [],
                 "eventCount": len(self.function_hook_events),
             }
-        if "__reverseDeepAgentHooks" in expression and "function_" in expression and "eventCount" in expression:
+        if "__reverseDeepAgentHooks" in expression and "function_" in expression and "eventCount" in expression and "module_hooks" not in expression:
             return {"ok": self.function_hook_installed, "events": list(self.function_hook_events), "eventCount": len(self.function_hook_events), "installed": {"window.buildSign": self.function_hook_installed}}
+        if "__reverseDeepAgentHooks" in expression and "module_hooks" in expression and "moduleIdValue" in expression:
+            self.module_hook_installed = True
+            return {
+                "ok": True,
+                "installed": [
+                    {
+                        "moduleId": "731",
+                        "exportName": "sign",
+                        "functionName": "sign",
+                        "requirePath": "window.__webpack_require__",
+                        "hookPath": "window.__webpack_require__(731).sign",
+                    }
+                ],
+                "missing": [],
+                "eventCount": len(self.module_hook_events),
+            }
+        if "__reverseDeepAgentHooks" in expression and "module_export_" in expression and "eventCount" in expression:
+            return {
+                "ok": self.module_hook_installed,
+                "events": list(self.module_hook_events),
+                "eventCount": len(self.module_hook_events),
+                "installed": {"window.__webpack_require__(731).sign": self.module_hook_installed},
+            }
+        if "__webpack_require__(731).sign" in expression:
+            if self.module_hook_installed:
+                self.module_hook_events.extend(
+                    [
+                        {
+                            "type": "module_export_call",
+                            "payload": {"moduleId": "731", "exportName": "sign", "hookPath": "window.__webpack_require__(731).sign", "argCount": 2},
+                        },
+                        {
+                            "type": "module_export_return",
+                            "payload": {
+                                "moduleId": "731",
+                                "exportName": "sign",
+                                "hookPath": "window.__webpack_require__(731).sign",
+                                "result": {"type": "string", "preview": "sig_native_1700000000000"},
+                            },
+                        },
+                    ]
+                )
+            return "sig_native_1700000000000"
         if "window.buildSign" in expression:
             if self.function_hook_installed:
                 self.function_hook_events.extend(
@@ -475,6 +583,103 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/function-hook-timeline.json")
         self.assertEqual(result.artifacts[1].metadata["event_count"], 2)
 
+    def test_native_web_runtime_apply_minimal_protection_installs_module_hook(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "hook-module",
+            {
+                "module_id": "731",
+                "export_name": "sign",
+                "require_path": "window.__webpack_require__",
+                "trigger_expression": "window.__webpack_require__(731).sign('sign', 1700000000000)",
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["install_module_hook:731:sign"])
+        self.assertIn("module_hook_status=success", result.verification)
+        self.assertIn("module_hook_installed_count=1", result.verification)
+        self.assertIn("module_hook_event_count=2", result.verification)
+        self.assertEqual(result.next_action, "inspect_module_hook_events")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-hooks.json")
+        self.assertEqual(result.artifacts[0].metadata["module_id"], "731")
+        self.assertEqual(result.artifacts[0].metadata["export_name"], "sign")
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/module-hook-timeline.json")
+        self.assertEqual(result.artifacts[1].metadata["event_count"], 2)
+
+    def test_native_web_runtime_apply_minimal_protection_discovers_module_candidates(self) -> None:
+        provider = FakeProvider()
+        provider.session.context.pages[0].external_source = WEBPACK_MINIFIED_SOURCE
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection("module-discovery", {"module_query": "sign"})
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["discover_module_exports"])
+        self.assertIn("module_discovery_status=success", result.verification)
+        self.assertIn("module_discovery_script_count=2", result.verification)
+        self.assertIn("module_discovery_module_count=1", result.verification)
+        self.assertIn("module_discovery_candidate_count=1", result.verification)
+        self.assertEqual(result.next_action, "install_module_hook_from_candidate")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-registry.json")
+        self.assertEqual(result.artifacts[0].metadata["module_count"], 1)
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/module-candidates.json")
+        self.assertEqual(result.artifacts[1].metadata["candidate_count"], 1)
+
+    def test_native_web_runtime_apply_minimal_protection_introspects_runtime_module_cache(self) -> None:
+        provider = FakeProvider()
+        provider.session.context.pages[0].runtime_module_payload = {
+            "ok": True,
+            "status": "success",
+            "requirePath": "window.__webpack_require__",
+            "cacheKeyCount": 1,
+            "registryKeyCount": 0,
+            "cacheModules": [
+                {
+                    "moduleId": "732",
+                    "exportNames": ["runtimeSign"],
+                    "exportTypes": {"runtimeSign": "function"},
+                    "sourcePreview": "function runtimeSign(keyword) { return keyword; }",
+                }
+            ],
+            "registryModules": [],
+        }
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection("module-discovery", {"module_query": "runtimeSign"})
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["discover_module_exports"])
+        self.assertIn("module_discovery_runtime_status=success", result.verification)
+        self.assertIn("module_discovery_runtime_module_count=1", result.verification)
+        self.assertIn("module_discovery_module_count=1", result.verification)
+        self.assertIn("module_discovery_candidate_count=1", result.verification)
+        self.assertEqual(result.artifacts[0].metadata["runtime_status"], "success")
+        self.assertEqual(result.artifacts[0].metadata["runtime_module_count"], 1)
+        self.assertEqual(result.artifacts[1].metadata["candidate_count"], 1)
+
+    def test_native_web_runtime_apply_minimal_protection_audits_page_mutation(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "page-mutation-audit",
+            {
+                "trigger_expression": "mutateNativePage()",
+                "global_names": ["window.__token"],
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["audit_page_mutation"])
+        self.assertIn("page_mutation_audit_status=success", result.verification)
+        self.assertIn("page_mutation_audit_changed=True", result.verification)
+        self.assertIn("page_mutation_audit_change_count=7", result.verification)
+        self.assertEqual(result.next_action, "inspect_page_mutation_audit")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/page-mutation-audit.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "success")
+        self.assertTrue(result.artifacts[0].metadata["changed"])
+        self.assertEqual(result.artifacts[0].metadata["change_count"], 7)
+        self.assertEqual(result.artifacts[0].metadata["categories"], ["cookie", "dom", "global", "storage"])
+
     def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
@@ -500,6 +705,34 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].metadata["event_count"], 1)
         page = provider.session.context.pages[0]
         self.assertIn("source_logpoint", page._cdp_session.last_breakpoint_params["condition"])
+
+    def test_native_web_runtime_source_logpoint_uses_bundle_offset_remap(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-logpoint",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 99,
+                "column_number": 9,
+                "bundle_source": "alpha\nbeta\ngamma",
+                "bundle_offset": 6,
+                "log_expression": "window.buildSign('sign', 1700000000000)",
+                "label": "smoke",
+                "trigger_expression": "window.buildSign('sign', 1700000000000)",
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["set_source_logpoint:.*app\\.js$:1"])
+        self.assertIn("source_logpoint_remap_status=success", result.verification)
+        self.assertIn("source_logpoint_remap_strategy=bundle_offset", result.verification)
+        self.assertEqual(result.artifacts[0].metadata["line_number"], 1)
+        self.assertEqual(result.artifacts[0].metadata["column_number"], 0)
+        self.assertEqual(result.artifacts[0].metadata["remap"]["strategy"], "bundle_offset")
+        page = provider.session.context.pages[0]
+        self.assertEqual(page._cdp_session.last_breakpoint_params["lineNumber"], 1)
+        self.assertEqual(page._cdp_session.last_breakpoint_params["columnNumber"], 0)
 
     def test_native_web_runtime_apply_minimal_protection_sets_breakpoint(self) -> None:
         provider = FakeProvider()
@@ -537,6 +770,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("callframe_count=1", result.verification)
         self.assertIn("callframe_evaluation_count=2", result.verification)
         self.assertIn("callframe_evaluation_policy=read_only", result.verification)
+        self.assertIn("mutation_audit_count=2", result.verification)
         self.assertIn("debugger_action_count=1", result.verification)
         self.assertIn("debugger_session_count=1", result.verification)
         self.assertIn("debugger_timeline_count=7", result.verification)
@@ -547,13 +781,16 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[3].path, "virtual://workspace/callframe-evaluations.json")
         self.assertEqual(result.artifacts[3].metadata["count"], 2)
         self.assertEqual(result.artifacts[3].metadata["policy"], "read_only")
-        self.assertEqual(result.artifacts[4].path, "virtual://workspace/debugger-actions.json")
-        self.assertEqual(result.artifacts[4].metadata["count"], 1)
-        self.assertEqual(result.artifacts[5].path, "virtual://workspace/debugger-session.json")
-        self.assertEqual(result.artifacts[5].metadata["lifecycle"], "action_controlled")
-        self.assertEqual(result.artifacts[5].metadata["paused_event_count"], 1)
-        self.assertEqual(result.artifacts[6].path, "virtual://workspace/debugger-timeline.json")
-        self.assertEqual(result.artifacts[6].metadata["entry_count"], 7)
+        self.assertEqual(result.artifacts[4].path, "virtual://workspace/mutation-audit.json")
+        self.assertEqual(result.artifacts[4].metadata["count"], 2)
+        self.assertEqual(result.artifacts[4].metadata["policy"], "read_only")
+        self.assertEqual(result.artifacts[5].path, "virtual://workspace/debugger-actions.json")
+        self.assertEqual(result.artifacts[5].metadata["count"], 1)
+        self.assertEqual(result.artifacts[6].path, "virtual://workspace/debugger-session.json")
+        self.assertEqual(result.artifacts[6].metadata["lifecycle"], "action_controlled")
+        self.assertEqual(result.artifacts[6].metadata["paused_event_count"], 1)
+        self.assertEqual(result.artifacts[7].path, "virtual://workspace/debugger-timeline.json")
+        self.assertEqual(result.artifacts[7].metadata["entry_count"], 7)
         self.assertIn(("Runtime.evaluate", {"expression": "setTimeout(() => { debugger; }, 0); 'scheduled'", "awaitPromise": False, "returnByValue": True, "userGesture": True}), page._cdp_session.calls)
         self.assertIn(
             ("Debugger.evaluateOnCallFrame", {"callFrameId": "native-cf-1", "expression": "typeof buildSign", "returnByValue": True, "silent": True, "throwOnSideEffect": True}),
@@ -592,6 +829,89 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/debugger-session.json")
         self.assertEqual(follow_up.artifacts[0].metadata["lifecycle"], "resumed")
         self.assertNotIn("native-paused-session", BreakpointManager._paused_sessions)
+
+    def test_native_web_runtime_can_inspect_durable_paused_session_snapshot(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            initial = runtime.apply_minimal_protection(
+                "set-breakpoint",
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 4,
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "keep_paused": True,
+                    "pause_session_id": "native-durable-session",
+                    "persist_paused_session": True,
+                    "paused_session_store_dir": tmpdir,
+                },
+            )
+            self.assertEqual(initial.status.value, "success")
+            self.assertTrue((Path(tmpdir) / "native-durable-session.json").exists())
+
+            BreakpointManager.clear_paused_sessions()
+            follow_up = runtime.apply_minimal_protection(
+                "paused-session",
+                {
+                    "pause_session_id": "native-durable-session",
+                    "paused_session_action": "inspect",
+                    "paused_session_store_dir": tmpdir,
+                },
+            )
+
+            self.assertEqual(follow_up.status.value, "success")
+            self.assertEqual(follow_up.applied_actions, ["run_paused_session_action:native-durable-session"])
+            self.assertIn("paused_session_lifecycle=retained_paused", follow_up.verification)
+            self.assertIn("paused_session_continued_from_store=True", follow_up.verification)
+            self.assertIn("paused_session_continued_from_registry=False", follow_up.verification)
+            self.assertIn("paused_session_live_continuation_available=False", follow_up.verification)
+            self.assertIn("paused_session_reason=durable_paused_session_snapshot_loaded", follow_up.verification)
+            self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/debugger-session.json")
+            self.assertTrue(follow_up.artifacts[0].metadata["continued_from_store"])
+            self.assertFalse(follow_up.artifacts[0].metadata["continued_from_registry"])
+            self.assertFalse(follow_up.artifacts[0].metadata["live_continuation_available"])
+            self.assertEqual(follow_up.artifacts[1].path, "virtual://workspace/debugger-timeline.json")
+            self.assertTrue(follow_up.artifacts[1].metadata["continued_from_store"])
+            self.assertFalse(follow_up.artifacts[1].metadata["live_continuation_available"])
+
+    def test_native_web_runtime_rejects_live_actions_from_durable_paused_session_snapshot(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            initial = runtime.apply_minimal_protection(
+                "set-breakpoint",
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 4,
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "keep_paused": True,
+                    "pause_session_id": "native-durable-session",
+                    "persist_paused_session": True,
+                    "paused_session_store_dir": tmpdir,
+                },
+            )
+            self.assertEqual(initial.status.value, "success")
+
+            BreakpointManager.clear_paused_sessions()
+            follow_up = runtime.apply_minimal_protection(
+                "paused-session",
+                {
+                    "pause_session_id": "native-durable-session",
+                    "paused_session_action": "resume",
+                    "paused_session_store_dir": tmpdir,
+                },
+            )
+
+            self.assertEqual(follow_up.status.value, "failed")
+            self.assertEqual(follow_up.applied_actions, [])
+            self.assertIn("paused_session_error=live_paused_session_required", follow_up.verification)
+            self.assertIn("paused_session_reason=durable_snapshot_is_inspect_only", follow_up.verification)
+            self.assertIn("paused_session_continued_from_store=True", follow_up.verification)
+            self.assertIn("paused_session_live_continuation_available=False", follow_up.verification)
+            self.assertTrue(follow_up.artifacts[0].metadata["continued_from_store"])
+            self.assertFalse(follow_up.artifacts[0].metadata["live_continuation_available"])
 
 
 if __name__ == "__main__":

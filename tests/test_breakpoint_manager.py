@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, PausedSessionActionSpec
 
@@ -226,6 +229,9 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.callframe_evaluations[0]["policy"], "read_only")
         self.assertTrue(result.callframe_evaluations[0]["throw_on_side_effect"])
         self.assertEqual(result.callframe_evaluations[1]["value"], True)
+        self.assertEqual(result.to_dict()["mutation_audit_count"], 2)
+        self.assertEqual(result.mutation_audit[0]["mutation_category"], "read_only_expression")
+        self.assertEqual(result.mutation_audit[0]["risk"], "low")
         self.assertEqual(result.debugger_timeline["status"], "success")
         self.assertEqual(result.debugger_timeline["evaluation_count"], 2)
         self.assertIn("callframe.evaluate", [entry["type"] for entry in result.debugger_timeline["entries"]])
@@ -249,6 +255,9 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertTrue(result.callframe_evaluations[1]["blocked"])
         self.assertEqual(result.callframe_evaluations[1]["error"], "blocked_by_callframe_evaluation_policy")
         self.assertEqual(result.callframe_evaluations[1]["side_effect_risk"], "high")
+        self.assertEqual(result.to_dict()["mutation_audit_count"], 2)
+        self.assertEqual(result.mutation_audit[1]["mutation_category"], "assignment_mutation")
+        self.assertTrue(result.mutation_audit[1]["blocked"])
         blocked_entries = [entry for entry in result.debugger_timeline["entries"] if entry["type"] == "callframe.evaluate" and entry.get("blocked")]
         self.assertEqual(blocked_entries[0]["error"], "blocked_by_callframe_evaluation_policy")
         self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)
@@ -270,6 +279,8 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertTrue(result.callframe_evaluations[0]["ok"])
         self.assertFalse(result.callframe_evaluations[0]["blocked"])
         self.assertEqual(result.callframe_evaluations[0]["policy"], "allow_side_effects")
+        self.assertEqual(result.to_dict()["mutation_audit_count"], 1)
+        self.assertEqual(result.mutation_audit[0]["mutation_category"], "assignment_mutation")
         evaluate_call = next(call for call in session.calls if call[0] == "Debugger.evaluateOnCallFrame")
         self.assertFalse(evaluate_call[1]["throwOnSideEffect"])
 
@@ -351,6 +362,95 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertIn("debugger.session_action", [entry["type"] for entry in follow_up.debugger_timeline["entries"]])
         self.assertNotIn("session-follow-up", BreakpointManager._paused_sessions)
         self.assertIn(("Debugger.resume", {}), session.calls)
+
+    def test_paused_session_can_persist_durable_snapshot_for_cross_process_inspect(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = RecordingCDPSession(emit_pause_on_evaluate=True)
+            manager = BreakpointManager()
+            spec = BreakpointSpec.from_context(
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 3,
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "keep_paused": True,
+                    "pause_session_id": "durable-session",
+                    "persist_paused_session": True,
+                    "paused_session_store_dir": tmpdir,
+                }
+            )
+
+            result = manager.set_breakpoint(FakeBreakpointPage(session), spec)
+
+            self.assertEqual(result.status, "success")
+            self.assertEqual(result.debugger_session["lifecycle"], "retained_paused")
+            snapshot_path = Path(tmpdir) / "durable-session.json"
+            self.assertTrue(snapshot_path.exists())
+            payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["kind"], "durable_paused_session_snapshot")
+            self.assertEqual(payload["session_id"], "durable-session")
+            self.assertFalse(payload["resume_supported"])
+            self.assertFalse(payload["live_continuation_available"])
+            self.assertEqual(payload["callframes"][0]["functionName"], "buildSign")
+
+            BreakpointManager.clear_paused_sessions()
+            follow_up = manager.run_paused_session_action(
+                FakeBreakpointPage(None),
+                PausedSessionActionSpec.from_context(
+                    {
+                        "pause_session_id": "durable-session",
+                        "paused_session_action": "inspect",
+                        "paused_session_store_dir": tmpdir,
+                    }
+                ),
+            )
+
+            self.assertEqual(follow_up.status, "success")
+            self.assertEqual(follow_up.reason, "durable_paused_session_snapshot_loaded")
+            self.assertTrue(follow_up.debugger_session["continued_from_store"])
+            self.assertFalse(follow_up.debugger_session["live_continuation_available"])
+            self.assertFalse(follow_up.debugger_session["resume_supported"])
+            self.assertTrue(follow_up.debugger_timeline["continued_from_store"])
+            self.assertEqual(follow_up.callframes[0]["functionName"], "buildSign")
+
+    def test_durable_paused_session_snapshot_rejects_live_resume(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = RecordingCDPSession(emit_pause_on_evaluate=True)
+            manager = BreakpointManager()
+            spec = BreakpointSpec.from_context(
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 3,
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "keep_paused": True,
+                    "pause_session_id": "durable-session",
+                    "persist_paused_session": True,
+                    "paused_session_store_dir": tmpdir,
+                }
+            )
+            initial = manager.set_breakpoint(FakeBreakpointPage(session), spec)
+            self.assertEqual(initial.status, "success")
+
+            BreakpointManager.clear_paused_sessions()
+            follow_up = manager.run_paused_session_action(
+                FakeBreakpointPage(None),
+                PausedSessionActionSpec.from_context(
+                    {
+                        "pause_session_id": "durable-session",
+                        "paused_session_action": "resume",
+                        "paused_session_store_dir": tmpdir,
+                    }
+                ),
+            )
+
+            self.assertEqual(follow_up.status, "failed")
+            self.assertEqual(follow_up.error, "live_paused_session_required")
+            self.assertEqual(follow_up.reason, "durable_snapshot_is_inspect_only")
+            self.assertTrue(follow_up.debugger_session["continued_from_store"])
+            self.assertFalse(follow_up.debugger_session["live_continuation_available"])
+            self.assertFalse(follow_up.debugger_session["resume_supported"])
+            self.assertNotIn(("Debugger.resume", {}), session.calls)
 
     def test_set_breakpoint_failure_is_structured(self) -> None:
         result = BreakpointManager().set_breakpoint(
