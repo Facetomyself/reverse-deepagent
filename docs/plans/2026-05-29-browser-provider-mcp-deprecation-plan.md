@@ -197,7 +197,7 @@ Remaining validation:
 
 ### Phase 5: CloakBrowser provider
 
-Status: provider skeleton, optional dependency, browser-provider doctor metadata checks, real launch smoke, persistent-context smoke, and native-web fixture smoke are verified locally.
+Status: provider skeleton, optional dependency, browser-provider doctor metadata checks, real launch smoke, persistent-context smoke, connect-mode baseline, and native-web fixture smoke are verified locally.
 
 Deliverables:
 

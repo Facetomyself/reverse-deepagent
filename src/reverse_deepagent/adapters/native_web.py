@@ -888,6 +888,7 @@ def create_native_web_runtime(*, browser_provider: BrowserProvider | None = None
             headless=False if browser_headless is None else bool(browser_headless),
             humanize=True if browser_humanize is None else bool(browser_humanize),
             profile_dir=kwargs.get("browser_profile_dir"),
+            browser_url=kwargs.get("browser_url") or kwargs.get("cdp_browser_url"),
             proxy=kwargs.get("browser_proxy"),
             geoip=bool(kwargs.get("browser_geoip", False)),
             locale=kwargs.get("browser_locale"),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import Field
 
@@ -17,6 +18,7 @@ class CloakBrowserConfig(SchemaBaseModel):
     headless: bool = Field(default=False, description="Launch CloakBrowser in headless mode.")
     humanize: bool = Field(default=True, description="Enable CloakBrowser humanized interaction when supported.")
     profile_dir: str | None = Field(default=None, description="Optional persistent profile directory.")
+    browser_url: str | None = Field(default=None, description="Optional existing CloakBrowser/cloakserve CDP browser URL for connect mode.")
     proxy: str | None = Field(default=None, description="Optional proxy URL; do not include this in public metadata if it contains credentials.")
     geoip: bool = Field(default=False, description="Let CloakBrowser derive timezone/locale from proxy IP when supported.")
     locale: str | None = Field(default=None, description="Optional locale, such as zh-CN.")
@@ -26,6 +28,8 @@ class CloakBrowserConfig(SchemaBaseModel):
 
     def safe_summary(self) -> dict[str, Any]:
         payload = self.model_dump(mode="json")
+        if payload.get("browser_url"):
+            payload["browser_url"] = _redact_url(str(payload["browser_url"]))
         if payload.get("proxy"):
             payload["proxy"] = "<configured>"
         return payload
@@ -47,7 +51,7 @@ class CloakBrowserProvider:
             engine="chromium",
             transport="cloakbrowser-playwright",
             supports_launch=True,
-            supports_connect=False,
+            supports_connect=True,
             supports_persistent_context=True,
             supports_cdp=True,
             supports_playwright_api=True,
@@ -67,6 +71,7 @@ class CloakBrowserProvider:
             notes=[
                 "optional stealth browser provider",
                 "downloads and uses CloakBrowser-managed Chromium binary when installed",
+                "connect mode expects an existing CloakBrowser/cloakserve-compatible CDP endpoint",
                 "binary must not be committed or redistributed by this repository",
             ],
             config=self.config.safe_summary(),
@@ -92,7 +97,20 @@ class CloakBrowserProvider:
         return session
 
     def connect(self) -> PlaywrightBrowserSessionAdapter:
-        raise BrowserProviderUnavailableError("CloakBrowserProvider does not support connect mode yet; use remote-cdp/cloakserve in a future provider")
+        if not self.config.browser_url:
+            raise BrowserProviderUnavailableError("CloakBrowser connect mode requires browser_url")
+        sync_playwright = self._load_sync_playwright()
+        manager = sync_playwright().start()
+        try:
+            browser = manager.chromium.connect_over_cdp(self.config.browser_url, timeout=self.config.launch_timeout * 1000)
+            contexts = list(getattr(browser, "contexts", []) or [])
+            context = contexts[0] if contexts else browser.new_context()
+            session = PlaywrightBrowserSessionAdapter(provider_id=self.provider_id, context=context, browser=browser, playwright_manager=manager)
+        except Exception:
+            manager.stop()
+            raise
+        self._session = session
+        return session
 
     def stop(self) -> None:
         if self._session is not None:
@@ -100,6 +118,12 @@ class CloakBrowserProvider:
             self._session = None
 
     def is_available(self) -> bool:
+        if self.config.browser_url:
+            try:
+                self._load_sync_playwright()
+            except BrowserProviderUnavailableError:
+                return False
+            return True
         try:
             self._load_cloakbrowser()
         except BrowserProviderUnavailableError:
@@ -133,3 +157,24 @@ class CloakBrowserProvider:
                 'uv pip install --python "<repo-root>/.venv/bin/python" -e ".[cloak]"'
             ) from exc
         return cloakbrowser
+
+    @staticmethod
+    def _load_sync_playwright() -> Any:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ModuleNotFoundError as exc:
+            raise BrowserProviderUnavailableError(
+                "playwright is not installed. CloakBrowser connect mode needs Playwright CDP support; install the optional browser dependency, for example: "
+                'uv pip install --python "<repo-root>/.venv/bin/python" -e ".[browser]"'
+            ) from exc
+        return sync_playwright
+
+
+def _redact_url(url: str) -> str:
+    parts = urlsplit(url)
+    if not parts.username and not parts.password:
+        return url
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))

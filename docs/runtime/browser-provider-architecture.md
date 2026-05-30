@@ -171,7 +171,7 @@ This lets routing and doctor commands answer precise questions:
 | Provider | Purpose | Notes |
 | --- | --- | --- |
 | `playwright-chromium` | Stable native default and CI baseline. | Good first native provider; lower stealth. |
-| `cloakbrowser` | Stealth-oriented browser provider. | Preferred for fingerprint-sensitive targets; optional dependency due binary and license constraints. |
+| `cloakbrowser` | Stealth-oriented browser provider. | Preferred for fingerprint-sensitive targets; supports launch / persistent context and CDP connect to an existing CloakBrowser or cloakserve endpoint. |
 | `chrome-cdp` | Connect to local Chrome DevTools endpoint. | Good for migration and local debugging. |
 | `remote-cdp` | Connect to browserless, Docker, remote Chrome, or `cloakserve`. | Good for self-hosted runner isolation. |
 | `legacy-mcp` | Existing JSReverser MCP adapter. | Compatibility only; not the default long-term path. |
@@ -196,7 +196,7 @@ Important constraints:
 - Do not commit or redistribute CloakBrowser binaries in this repository.
 - Prefer persistent profile support for login-state workflows.
 - Prefer native CloakBrowser API for humanized behavior; CDP-only connections may not inherit all wrapper-level humanization.
-- Treat `cloakserve` / remote CDP as an optional deployment mode, not the primary abstraction.
+- Treat `cloakserve` / remote CDP as an optional deployment mode: use `--browser cloakbrowser --browser-url ...` when preserving CloakBrowser provider metadata matters, or `remote-cdp` for a generic CDP endpoint.
 
 ## 8. Native collectors
 
