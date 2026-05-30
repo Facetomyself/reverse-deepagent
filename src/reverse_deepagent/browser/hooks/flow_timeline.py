@@ -26,6 +26,7 @@ class FlowTimelineSpec:
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_policy: dict[str, Any] = field(default_factory=dict)
     auto_stitch_materialization_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_rollback_execution_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     max_payload_preview_length: int = 480
 
     @classmethod
@@ -68,6 +69,16 @@ class FlowTimelineSpec:
             "materializationReviewDecisions",
         )
         materialization_review_decisions = cls._coerce_events(raw_materialization_review_decisions)
+        raw_rollback_execution_review_decisions = cls._first_present(
+            context,
+            "auto_stitch_rollback_execution_review_decisions",
+            "autoStitchRollbackExecutionReviewDecisions",
+            "rollback_execution_review_decisions",
+            "rollbackExecutionReviewDecisions",
+            "stitched_flow_rollback_review_decisions",
+            "stitchedFlowRollbackReviewDecisions",
+        )
+        rollback_execution_review_decisions = cls._coerce_events(raw_rollback_execution_review_decisions)
         if (
             not previous
             and not flow_events
@@ -75,6 +86,7 @@ class FlowTimelineSpec:
             and not stitch_review_decisions
             and not auto_stitch_policy
             and not materialization_review_decisions
+            and not rollback_execution_review_decisions
         ):
             return None
         flow_id = str(context.get("flow_id", context.get("flowId", previous.get("flow_id", "default-flow"))) or "default-flow")
@@ -88,6 +100,7 @@ class FlowTimelineSpec:
             stitch_review_decisions=stitch_review_decisions,
             auto_stitch_policy=auto_stitch_policy,
             auto_stitch_materialization_review_decisions=materialization_review_decisions,
+            auto_stitch_rollback_execution_review_decisions=rollback_execution_review_decisions,
             max_payload_preview_length=int(context.get("max_payload_preview_length", context.get("maxPayloadPreviewLength", 480)) or 480),
         )
 
@@ -188,6 +201,11 @@ class FlowTimelineResult:
     auto_stitch_materialization_rollback_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_materialization_transactions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_materialization_transaction_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_rollback_execution_plans: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_rollback_execution_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_rollback_execution_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_rollback_execution_results: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_rollback_execution_result_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -238,6 +256,14 @@ class FlowTimelineResult:
             "auto_stitch_materialization_transaction_count": len(self.auto_stitch_materialization_transactions),
             "auto_stitch_materialization_transactions": self.auto_stitch_materialization_transactions,
             "auto_stitch_materialization_transaction_summary": self.auto_stitch_materialization_transaction_summary,
+            "auto_stitch_rollback_execution_plan_count": len(self.auto_stitch_rollback_execution_plans),
+            "auto_stitch_rollback_execution_plans": self.auto_stitch_rollback_execution_plans,
+            "auto_stitch_rollback_execution_summary": self.auto_stitch_rollback_execution_summary,
+            "auto_stitch_rollback_execution_review_decision_count": len(self.auto_stitch_rollback_execution_review_decisions),
+            "auto_stitch_rollback_execution_review_decisions": self.auto_stitch_rollback_execution_review_decisions,
+            "auto_stitch_rollback_execution_result_count": len(self.auto_stitch_rollback_execution_results),
+            "auto_stitch_rollback_execution_results": self.auto_stitch_rollback_execution_results,
+            "auto_stitch_rollback_execution_result_summary": self.auto_stitch_rollback_execution_result_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -336,6 +362,26 @@ class FlowTimelineManager:
             auto_stitch_materialization_transactions,
             auto_stitch_materialization_results,
         )
+        auto_stitch_rollback_execution_plans = self._auto_stitch_rollback_execution_plans(
+            auto_stitch_materialization_rollback_plans,
+            auto_stitch_materialization_transactions,
+        )
+        auto_stitch_rollback_execution_plans = self._apply_rollback_execution_review_decisions(
+            auto_stitch_rollback_execution_plans,
+            spec.auto_stitch_rollback_execution_review_decisions,
+        )
+        auto_stitch_rollback_execution_summary = self._auto_stitch_rollback_execution_summary(
+            auto_stitch_rollback_execution_plans,
+            auto_stitch_materialization_transactions,
+        )
+        auto_stitch_rollback_execution_results = self._auto_stitch_rollback_execution_results(
+            auto_stitch_rollback_execution_plans,
+            auto_stitch_materialization_transactions,
+        )
+        auto_stitch_rollback_execution_result_summary = self._auto_stitch_rollback_execution_result_summary(
+            auto_stitch_rollback_execution_results,
+            spec.auto_stitch_rollback_execution_review_decisions,
+        )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -360,6 +406,11 @@ class FlowTimelineManager:
             auto_stitch_materialization_rollback_summary=auto_stitch_materialization_rollback_summary,
             auto_stitch_materialization_transactions=auto_stitch_materialization_transactions,
             auto_stitch_materialization_transaction_summary=auto_stitch_materialization_transaction_summary,
+            auto_stitch_rollback_execution_plans=auto_stitch_rollback_execution_plans,
+            auto_stitch_rollback_execution_summary=auto_stitch_rollback_execution_summary,
+            auto_stitch_rollback_execution_review_decisions=list(spec.auto_stitch_rollback_execution_review_decisions),
+            auto_stitch_rollback_execution_results=auto_stitch_rollback_execution_results,
+            auto_stitch_rollback_execution_result_summary=auto_stitch_rollback_execution_result_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -1775,6 +1826,265 @@ class FlowTimelineManager:
             "next_action": "review_materialization_transactions_before_rollback_executor"
             if transactions
             else "materialize_review_approved_plan_before_transaction_log",
+        }
+
+    @classmethod
+    def _auto_stitch_rollback_execution_plans(
+        cls,
+        rollback_plans: list[dict[str, Any]],
+        transactions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        transactions_by_id = {item.get("transaction_id"): item for item in transactions if isinstance(item, dict)}
+        execution_plans: list[dict[str, Any]] = []
+        for rollback in rollback_plans:
+            if rollback.get("status") != "rollback_ready":
+                continue
+            transaction = transactions_by_id.get(rollback.get("transaction_id"), {})
+            execution_plans.append(
+                {
+                    "rollback_execution_plan_id": f"stitched-flow-rollback-execution-plan-{len(execution_plans) + 1}",
+                    "transaction_id": rollback.get("transaction_id"),
+                    "rollback_id": rollback.get("rollback_id"),
+                    "audit_id": rollback.get("audit_id"),
+                    "result_id": rollback.get("result_id"),
+                    "plan_id": rollback.get("plan_id"),
+                    "candidate_id": rollback.get("candidate_id"),
+                    "group_id": rollback.get("group_id"),
+                    "status": "rollback_execution_plan_ready_for_review",
+                    "execution_mode": "dry_run_only",
+                    "target_artifact": rollback.get("target_artifact", "workspace/stitched-flow.json"),
+                    "virtual_target_artifact": rollback.get("virtual_target_artifact", "virtual://workspace/stitched-flow.json"),
+                    "execution_artifact": "workspace/stitched-flow-rollback-executions.json",
+                    "virtual_execution_artifact": "virtual://workspace/stitched-flow-rollback-executions.json",
+                    "entry_sequences": list(rollback.get("entry_sequences", [])) if isinstance(rollback.get("entry_sequences"), list) else [],
+                    "entry_count": int(rollback.get("entry_count") or 0),
+                    "remove_selectors": dict(rollback.get("remove_selectors", {})) if isinstance(rollback.get("remove_selectors"), dict) else {},
+                    "rollback_steps": list(rollback.get("rollback_steps", [])) if isinstance(rollback.get("rollback_steps"), list) else [],
+                    "verification_requirements": cls._unique_strings(
+                        [
+                            *cls._string_values(rollback.get("verification_requirements")),
+                            "confirm_rollback_execution_review_approved",
+                            "confirm_target_artifact_not_physically_deleted_by_baseline",
+                        ]
+                    ),
+                    "transaction_integrity": dict(transaction.get("integrity", {})) if isinstance(transaction.get("integrity"), dict) else {},
+                    "review_requirements": [
+                        "approve_rollback_execution_plan",
+                        "confirm_materialization_transaction_is_ready",
+                        "confirm_rollback_selectors_match_materialized_flow",
+                        "confirm_review_gate_recompute_plan_exists",
+                    ],
+                    "review_required": True,
+                    "dry_run": True,
+                    "would_revert": False,
+                    "writes_artifact": False,
+                    "target_artifact_mutated": False,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "scope": "stitched-flow-rollback-execution-plan-baseline",
+                    "next_action": "review_rollback_execution_plan_before_recording_logical_revert",
+                }
+            )
+        return execution_plans
+
+    def _apply_rollback_execution_review_decisions(
+        self,
+        plans: list[dict[str, Any]],
+        decisions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not decisions:
+            return plans
+        output: list[dict[str, Any]] = []
+        for plan in plans:
+            next_plan = dict(plan)
+            decision = self._matching_rollback_execution_review_decision(next_plan, decisions)
+            if decision is not None:
+                next_plan = self._rollback_execution_plan_with_review_decision(next_plan, decision)
+            output.append(next_plan)
+        return output
+
+    @staticmethod
+    def _matching_rollback_execution_review_decision(
+        plan: dict[str, Any],
+        decisions: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            if decision.get("rollback_execution_plan_id") and decision.get("rollback_execution_plan_id") == plan.get("rollback_execution_plan_id"):
+                return decision
+            if decision.get("rollbackExecutionPlanId") and decision.get("rollbackExecutionPlanId") == plan.get("rollback_execution_plan_id"):
+                return decision
+            if decision.get("rollback_id") and decision.get("rollback_id") == plan.get("rollback_id"):
+                return decision
+            if decision.get("rollbackId") and decision.get("rollbackId") == plan.get("rollback_id"):
+                return decision
+            if decision.get("transaction_id") and decision.get("transaction_id") == plan.get("transaction_id"):
+                return decision
+            if decision.get("transactionId") and decision.get("transactionId") == plan.get("transaction_id"):
+                return decision
+            if decision.get("result_id") and decision.get("result_id") == plan.get("result_id"):
+                return decision
+            if decision.get("resultId") and decision.get("resultId") == plan.get("result_id"):
+                return decision
+        return None
+
+    @classmethod
+    def _rollback_execution_plan_with_review_decision(
+        cls,
+        plan: dict[str, Any],
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        next_plan = dict(plan)
+        status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+        approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed"}
+        rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+        review_decision = {
+            "status": "approved" if approved else "rejected" if rejected else status or "pending_review",
+            "approved": approved and not rejected,
+            "review_required": not approved,
+            "review_gate": "auto_stitch_rollback_execution_review_decision",
+        }
+        for key in ("reviewer", "reviewed_by", "reviewedBy", "reviewed_at", "reviewedAt", "reason", "notes"):
+            if decision.get(key) is not None:
+                review_decision[key] = decision.get(key)
+        next_plan["review_decision"] = review_decision
+        next_plan["review_decision_input"] = dict(decision)
+        if approved and not rejected:
+            next_plan["status"] = "approved_for_rollback_execution"
+            next_plan["execution_mode"] = "review_approved_logical_revert_baseline"
+            next_plan["review_required"] = False
+            next_plan["dry_run"] = False
+            next_plan["would_revert"] = True
+            next_plan["next_action"] = "record_review_approved_rollback_execution_result"
+            next_plan["scope"] = "review-approved-rollback-execution-plan"
+        elif rejected:
+            next_plan["status"] = "rejected"
+            next_plan["blocking_conditions"] = cls._unique_strings(
+                [*cls._string_values(next_plan.get("blocking_conditions")), "rollback_execution_reviewer_rejected"]
+            )
+            next_plan["next_action"] = "revise_rollback_execution_plan_or_collect_more_evidence"
+        return next_plan
+
+    @staticmethod
+    def _auto_stitch_rollback_execution_summary(
+        plans: list[dict[str, Any]],
+        transactions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        approved_count = sum(1 for item in plans if item.get("status") == "approved_for_rollback_execution")
+        rejected_count = sum(1 for item in plans if item.get("status") == "rejected")
+        return {
+            "execution_plan_count": len(plans),
+            "transaction_count": len(transactions),
+            "approved_execution_plan_count": approved_count,
+            "rejected_execution_plan_count": rejected_count,
+            "pending_execution_plan_count": max(0, len(plans) - approved_count - rejected_count),
+            "execution_artifact": "workspace/stitched-flow-rollback-executions.json",
+            "virtual_execution_artifact": "virtual://workspace/stitched-flow-rollback-executions.json",
+            "dry_run_only_by_default": True,
+            "would_revert": bool(approved_count),
+            "writes_artifact": False,
+            "target_artifact_mutated": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "review_required": bool(plans) and not bool(approved_count),
+            "scope": "stitched-flow-rollback-execution-summary",
+            "next_action": "review_rollback_execution_plans" if plans and not approved_count else "record_approved_rollback_execution_results" if approved_count else "materialize_review_approved_plan_before_rollback_execution",
+        }
+
+    @classmethod
+    def _auto_stitch_rollback_execution_results(
+        cls,
+        plans: list[dict[str, Any]],
+        transactions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        transactions_by_id = {item.get("transaction_id"): item for item in transactions if isinstance(item, dict)}
+        results: list[dict[str, Any]] = []
+        for plan in plans:
+            if plan.get("status") != "approved_for_rollback_execution":
+                continue
+            transaction = transactions_by_id.get(plan.get("transaction_id"), {})
+            review_decision = plan.get("review_decision") if isinstance(plan.get("review_decision"), dict) else {}
+            results.append(
+                {
+                    "rollback_execution_result_id": f"stitched-flow-rollback-execution-result-{len(results) + 1}",
+                    "rollback_execution_plan_id": plan.get("rollback_execution_plan_id"),
+                    "transaction_id": plan.get("transaction_id"),
+                    "rollback_id": plan.get("rollback_id"),
+                    "audit_id": plan.get("audit_id"),
+                    "materialization_result_id": plan.get("result_id"),
+                    "candidate_id": plan.get("candidate_id"),
+                    "group_id": plan.get("group_id"),
+                    "status": "logical_revert_recorded",
+                    "execution_mode": "review_approved_logical_revert_baseline",
+                    "target_artifact": plan.get("target_artifact", "workspace/stitched-flow.json"),
+                    "virtual_target_artifact": plan.get("virtual_target_artifact", "virtual://workspace/stitched-flow.json"),
+                    "execution_artifact": plan.get("execution_artifact", "workspace/stitched-flow-rollback-executions.json"),
+                    "virtual_execution_artifact": plan.get("virtual_execution_artifact", "virtual://workspace/stitched-flow-rollback-executions.json"),
+                    "entry_sequences": list(plan.get("entry_sequences", [])) if isinstance(plan.get("entry_sequences"), list) else [],
+                    "entry_count": int(plan.get("entry_count") or 0),
+                    "remove_selectors": dict(plan.get("remove_selectors", {})) if isinstance(plan.get("remove_selectors"), dict) else {},
+                    "transaction_integrity": dict(transaction.get("integrity", {})) if isinstance(transaction.get("integrity"), dict) else {},
+                    "review_decision": review_decision,
+                    "review_decision_input": dict(plan.get("review_decision_input", {})) if isinstance(plan.get("review_decision_input"), dict) else {},
+                    "logical_rollback_recorded": True,
+                    "rollback_executed": True,
+                    "physical_artifact_mutated": False,
+                    "target_artifact_mutated": False,
+                    "writes_artifact": True,
+                    "would_revert": True,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "review_required": False,
+                    "scope": "review-approved-rollback-execution-result-baseline",
+                    "limitations": [
+                        "review_approved_not_automatic",
+                        "logical_revert_record_only",
+                        "target_artifact_not_physically_deleted",
+                        "review_gate_recompute_not_implemented",
+                    ],
+                    "next_action": "recompute_review_gate_after_rollback_before_delivery",
+                }
+            )
+        return results
+
+    @classmethod
+    def _auto_stitch_rollback_execution_result_summary(
+        cls,
+        results: list[dict[str, Any]],
+        review_decisions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        approved_count = 0
+        rejected_count = 0
+        pending_count = 0
+        for decision in review_decisions:
+            if not isinstance(decision, dict):
+                continue
+            status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+            approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed"}
+            rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+            if approved and not rejected:
+                approved_count += 1
+            elif rejected:
+                rejected_count += 1
+            else:
+                pending_count += 1
+        return {
+            "rollback_execution_result_count": len(results),
+            "logical_revert_recorded_count": sum(1 for item in results if item.get("logical_rollback_recorded")),
+            "review_decision_count": len(review_decisions),
+            "approved_review_decision_count": approved_count,
+            "rejected_review_decision_count": rejected_count,
+            "pending_review_decision_count": pending_count,
+            "writes_artifact": bool(results),
+            "would_revert": bool(results),
+            "physical_artifact_mutated": False,
+            "target_artifact_mutated": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "review_required": not bool(results),
+            "scope": "review-approved-rollback-execution-result-summary",
+            "next_action": "recompute_review_gate_after_rollback_before_delivery" if results else "review_rollback_execution_plans",
         }
 
     @staticmethod

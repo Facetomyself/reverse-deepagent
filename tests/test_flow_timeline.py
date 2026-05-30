@@ -377,6 +377,24 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_materialization_transaction_summary["missing_transaction_count"], 0)
         self.assertFalse(result.auto_stitch_materialization_transaction_summary["automatic_rollback"])
         self.assertTrue(result.auto_stitch_materialization_transaction_summary["transaction_log_only"])
+        self.assertEqual(len(result.auto_stitch_rollback_execution_plans), 1)
+        execution_plan = result.auto_stitch_rollback_execution_plans[0]
+        self.assertEqual(execution_plan["status"], "rollback_execution_plan_ready_for_review")
+        self.assertEqual(execution_plan["execution_mode"], "dry_run_only")
+        self.assertEqual(execution_plan["transaction_id"], "auto-stitch-materialization-txn-1")
+        self.assertEqual(execution_plan["rollback_id"], rollback["rollback_id"])
+        self.assertTrue(execution_plan["dry_run"])
+        self.assertTrue(execution_plan["review_required"])
+        self.assertFalse(execution_plan["would_revert"])
+        self.assertFalse(execution_plan["writes_artifact"])
+        self.assertFalse(execution_plan["target_artifact_mutated"])
+        self.assertFalse(execution_plan["automatic_rollback"])
+        self.assertIn("confirm_target_artifact_not_physically_deleted_by_baseline", execution_plan["verification_requirements"])
+        self.assertEqual(result.auto_stitch_rollback_execution_summary["execution_plan_count"], 1)
+        self.assertEqual(result.auto_stitch_rollback_execution_summary["pending_execution_plan_count"], 1)
+        self.assertTrue(result.auto_stitch_rollback_execution_summary["dry_run_only_by_default"])
+        self.assertEqual(result.auto_stitch_rollback_execution_results, [])
+        self.assertEqual(result.auto_stitch_rollback_execution_result_summary["rollback_execution_result_count"], 0)
         self.assertEqual(len(result.stitched_flows), 1)
         stitched = result.stitched_flows[0]
         self.assertEqual(stitched["stitched_flow_id"], "stitched-flow-1")
@@ -391,7 +409,61 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result_dict["auto_stitch_materialization_audit_count"], 1)
         self.assertEqual(result_dict["auto_stitch_materialization_rollback_plan_count"], 1)
         self.assertEqual(result_dict["auto_stitch_materialization_transaction_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_rollback_execution_plan_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_rollback_execution_result_count"], 0)
         self.assertEqual(result_dict["stitched_flow_count"], 1)
+
+    def test_approved_rollback_execution_review_decision_records_logical_revert(self) -> None:
+        context = self._ready_flow_context()
+        context["auto_stitch_policy"] = {
+            "policy_id": "unit-policy",
+            "min_confidence_score": 0.85,
+            "allow_conflicts": True,
+            "enable_automatic_materialization": True,
+        }
+        context["auto_stitch_materialization_review_decisions"] = [
+            {"plan_id": "auto-stitch-materialization-plan-1", "status": "approved", "approved": True, "reviewer": "materialization-reviewer"}
+        ]
+        context["auto_stitch_rollback_execution_review_decisions"] = [
+            {
+                "rollback_execution_plan_id": "stitched-flow-rollback-execution-plan-1",
+                "status": "approved",
+                "approved": True,
+                "reviewer": "rollback-reviewer",
+                "reviewed_at": "2026-05-31T10:00:00Z",
+            }
+        ]
+
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(len(result.auto_stitch_rollback_execution_review_decisions), 1)
+        self.assertEqual(len(result.auto_stitch_rollback_execution_plans), 1)
+        execution_plan = result.auto_stitch_rollback_execution_plans[0]
+        self.assertEqual(execution_plan["status"], "approved_for_rollback_execution")
+        self.assertEqual(execution_plan["execution_mode"], "review_approved_logical_revert_baseline")
+        self.assertFalse(execution_plan["review_required"])
+        self.assertFalse(execution_plan["dry_run"])
+        self.assertTrue(execution_plan["would_revert"])
+        self.assertEqual(execution_plan["next_action"], "record_review_approved_rollback_execution_result")
+        self.assertEqual(len(result.auto_stitch_rollback_execution_results), 1)
+        execution_result = result.auto_stitch_rollback_execution_results[0]
+        self.assertEqual(execution_result["status"], "logical_revert_recorded")
+        self.assertEqual(execution_result["transaction_id"], "auto-stitch-materialization-txn-1")
+        self.assertEqual(execution_result["rollback_execution_plan_id"], "stitched-flow-rollback-execution-plan-1")
+        self.assertTrue(execution_result["logical_rollback_recorded"])
+        self.assertTrue(execution_result["rollback_executed"])
+        self.assertTrue(execution_result["writes_artifact"])
+        self.assertTrue(execution_result["would_revert"])
+        self.assertFalse(execution_result["physical_artifact_mutated"])
+        self.assertFalse(execution_result["target_artifact_mutated"])
+        self.assertFalse(execution_result["automatic_rollback"])
+        self.assertFalse(execution_result["automatic_stitching"])
+        self.assertIn("review_gate_recompute_not_implemented", execution_result["limitations"])
+        self.assertEqual(result.auto_stitch_rollback_execution_result_summary["rollback_execution_result_count"], 1)
+        self.assertEqual(result.auto_stitch_rollback_execution_result_summary["logical_revert_recorded_count"], 1)
+        self.assertEqual(result.auto_stitch_rollback_execution_result_summary["approved_review_decision_count"], 1)
+        self.assertFalse(result.auto_stitch_rollback_execution_result_summary["physical_artifact_mutated"])
+        self.assertEqual(result.auto_stitch_rollback_execution_result_summary["next_action"], "recompute_review_gate_after_rollback_before_delivery")
 
     def test_rejected_auto_stitch_materialization_review_decision_does_not_materialize_plan(self) -> None:
         context = self._ready_flow_context()
