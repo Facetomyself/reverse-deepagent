@@ -157,6 +157,16 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertFalse(reviewable_dry_run["would_materialize"])
         self.assertIn("missing_replay_validation", reviewable_dry_run["blocking_conditions"])
         self.assertIn("missing_for_ready=replay_validation", reviewable_dry_run["score_reasons"])
+        self.assertEqual(len(result.auto_stitch_policy_decisions), 3)
+        policy_decisions_by_candidate = {decision["candidate_id"]: decision for decision in result.auto_stitch_policy_decisions}
+        ready_policy_decision = policy_decisions_by_candidate[ready_candidate["candidate_id"]]
+        self.assertEqual(ready_policy_decision["status"], "blocked")
+        self.assertFalse(ready_policy_decision["would_materialize"])
+        self.assertFalse(ready_policy_decision["automatic_stitching"])
+        self.assertIn("conflict_review_required", ready_policy_decision["policy_blocking_conditions"])
+        self.assertEqual(result.auto_stitch_policy_summary["decision_count"], 3)
+        self.assertEqual(result.auto_stitch_policy_summary["eligible_for_review_gate_count"], 0)
+        self.assertFalse(result.auto_stitch_policy_summary["automatic_materialization_enabled"])
         self.assertEqual(len(result.stitch_proposals), 1)
         proposal = result.stitch_proposals[0]
         self.assertEqual(proposal["proposal_id"], "stitch-proposal-1")
@@ -180,8 +190,36 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result_dict["auto_stitch_dry_run_count"], 3)
         self.assertEqual(result_dict["auto_stitch_dry_runs"][0]["scope"], "auto-stitch-dry-run-only")
         self.assertFalse(result_dict["auto_stitch_dry_runs"][0]["automatic_stitching"])
+        self.assertEqual(result_dict["auto_stitch_policy_decision_count"], 3)
+        self.assertEqual(result_dict["auto_stitch_policy_decisions"][0]["scope"], "auto-stitch-policy-decision-only")
+        self.assertFalse(result_dict["auto_stitch_policy_summary"]["would_materialize"])
         self.assertEqual(result_dict["stitch_proposal_count"], 1)
         self.assertEqual(result_dict["stitch_proposals"][0]["review_decision"]["status"], "pending_review")
+
+    def test_auto_stitch_policy_can_mark_high_confidence_dry_run_for_review_gate_without_materializing(self) -> None:
+        context = self._ready_flow_context()
+        context["auto_stitch_policy"] = {
+            "policy_id": "unit-policy",
+            "min_confidence_score": 0.85,
+            "allow_conflicts": True,
+            "enable_automatic_materialization": True,
+        }
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(result.auto_stitch_policy_summary["policy_id"], "unit-policy")
+        self.assertEqual(result.auto_stitch_policy_summary["decision_count"], len(result.auto_stitch_dry_runs))
+        self.assertEqual(result.auto_stitch_policy_summary["eligible_for_review_gate_count"], 1)
+        self.assertFalse(result.auto_stitch_policy_summary["automatic_materialization_enabled"])
+        ready_decisions = [decision for decision in result.auto_stitch_policy_decisions if decision["status"] == "ready_for_review_gate"]
+        self.assertEqual(len(ready_decisions), 1)
+        self.assertTrue(ready_decisions[0]["eligible_for_review_gate"])
+        self.assertTrue(ready_decisions[0]["automatic_materialization_requested"])
+        self.assertTrue(ready_decisions[0]["review_required"])
+        self.assertFalse(ready_decisions[0]["would_materialize"])
+        self.assertFalse(ready_decisions[0]["automatic_stitching"])
+        self.assertIn("automatic_materialization_not_implemented", ready_decisions[0]["policy_blocking_conditions"])
+        self.assertEqual(ready_decisions[0]["next_action"], "review_policy_eligible_candidate_before_materialization")
+        self.assertEqual(result.stitched_flows, [])
 
     def test_approved_stitch_review_decision_materializes_stitched_flow(self) -> None:
         context = self._ready_flow_context()
@@ -263,9 +301,12 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertFalse(groups_by_strategy["candidate_id"]["verification"]["automatic_stitching"])
         self.assertEqual(result.stitch_candidates, [])
         self.assertEqual(result.auto_stitch_dry_runs, [])
+        self.assertEqual(result.auto_stitch_policy_decisions, [])
+        self.assertEqual(result.auto_stitch_policy_summary["decision_count"], 0)
         self.assertEqual(result.stitch_proposals, [])
         self.assertEqual(result.to_dict()["stitch_candidate_count"], 0)
         self.assertEqual(result.to_dict()["auto_stitch_dry_run_count"], 0)
+        self.assertEqual(result.to_dict()["auto_stitch_policy_decision_count"], 0)
         self.assertEqual(result.to_dict()["stitch_proposal_count"], 0)
 
 

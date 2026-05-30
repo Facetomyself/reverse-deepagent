@@ -262,6 +262,7 @@ class NativeWebRuntime(WebReverseRuntime):
             entry_count = len(result.entries)
             stitch_candidate_count = len(result.stitch_candidates)
             auto_stitch_dry_run_count = len(result.auto_stitch_dry_runs)
+            auto_stitch_policy_decision_count = len(result.auto_stitch_policy_decisions)
             stitch_proposal_count = len(result.stitch_proposals)
             stitch_review_decision_count = len(result.stitch_review_decisions)
             stitched_flow_count = len(result.stitched_flows)
@@ -274,6 +275,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_correlation_group_count={len(result.correlation_groups)}",
                 f"flow_timeline_stitch_candidate_count={stitch_candidate_count}",
                 f"flow_timeline_auto_stitch_dry_run_count={auto_stitch_dry_run_count}",
+                f"flow_timeline_auto_stitch_policy_decision_count={auto_stitch_policy_decision_count}",
                 f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
                 f"flow_timeline_stitch_review_decision_count={stitch_review_decision_count}",
                 f"flow_timeline_stitched_flow_count={stitched_flow_count}",
@@ -301,6 +303,8 @@ class NativeWebRuntime(WebReverseRuntime):
                         "correlation_group_count": len(result.correlation_groups),
                         "stitch_candidate_count": stitch_candidate_count,
                         "auto_stitch_dry_run_count": auto_stitch_dry_run_count,
+                        "auto_stitch_policy_decision_count": auto_stitch_policy_decision_count,
+                        "auto_stitch_policy_summary": dict(result.auto_stitch_policy_summary),
                         "stitch_proposal_count": stitch_proposal_count,
                         "stitch_review_decision_count": stitch_review_decision_count,
                         "stitched_flow_count": stitched_flow_count,
@@ -1454,6 +1458,8 @@ class NativeWebRuntime(WebReverseRuntime):
                     "correlation_group_count": flow_timeline.get("correlation_group_count", 0),
                     "stitch_candidate_count": flow_timeline.get("stitch_candidate_count", 0),
                     "auto_stitch_dry_run_count": flow_timeline.get("auto_stitch_dry_run_count", 0),
+                    "auto_stitch_policy_decision_count": flow_timeline.get("auto_stitch_policy_decision_count", 0),
+                    "auto_stitch_policy_summary": flow_timeline.get("auto_stitch_policy_summary", {}),
                     "stitch_proposal_count": flow_timeline.get("stitch_proposal_count", 0),
                     "stitch_review_decision_count": flow_timeline.get("stitch_review_decision_count", 0),
                     "stitched_flow_count": flow_timeline.get("stitched_flow_count", 0),

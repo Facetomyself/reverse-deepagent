@@ -24,6 +24,7 @@ class FlowTimelineSpec:
     flow_events: list[dict[str, Any]] = field(default_factory=list)
     source_payloads: dict[str, Any] = field(default_factory=dict)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_policy: dict[str, Any] = field(default_factory=dict)
     max_payload_preview_length: int = 480
 
     @classmethod
@@ -47,7 +48,16 @@ class FlowTimelineSpec:
             "stitch_decisions",
         )
         stitch_review_decisions = cls._coerce_events(raw_review_decisions)
-        if not previous and not flow_events and not source_payloads and not stitch_review_decisions:
+        auto_stitch_policy = cls._coerce_mapping(
+            cls._first_present(
+                context,
+                "auto_stitch_policy",
+                "autoStitchPolicy",
+                "auto_stitching_policy",
+                "autoStitchingPolicy",
+            )
+        )
+        if not previous and not flow_events and not source_payloads and not stitch_review_decisions and not auto_stitch_policy:
             return None
         flow_id = str(context.get("flow_id", context.get("flowId", previous.get("flow_id", "default-flow"))) or "default-flow")
         return cls(
@@ -58,6 +68,7 @@ class FlowTimelineSpec:
             flow_events=flow_events,
             source_payloads=source_payloads,
             stitch_review_decisions=stitch_review_decisions,
+            auto_stitch_policy=auto_stitch_policy,
             max_payload_preview_length=int(context.get("max_payload_preview_length", context.get("maxPayloadPreviewLength", 480)) or 480),
         )
 
@@ -143,6 +154,8 @@ class FlowTimelineResult:
     correlation_groups: list[dict[str, Any]] = field(default_factory=list)
     stitch_candidates: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_dry_runs: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_policy_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_policy_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -170,6 +183,9 @@ class FlowTimelineResult:
             "stitch_candidates": self.stitch_candidates,
             "auto_stitch_dry_run_count": len(self.auto_stitch_dry_runs),
             "auto_stitch_dry_runs": self.auto_stitch_dry_runs,
+            "auto_stitch_policy_decision_count": len(self.auto_stitch_policy_decisions),
+            "auto_stitch_policy_decisions": self.auto_stitch_policy_decisions,
+            "auto_stitch_policy_summary": self.auto_stitch_policy_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -204,6 +220,8 @@ class FlowTimelineManager:
         correlation_groups = self._correlation_groups(entries)
         stitch_candidates = self._stitch_candidates(correlation_groups, entries)
         auto_stitch_dry_runs = self._auto_stitch_dry_runs(stitch_candidates)
+        auto_stitch_policy_decisions = self._auto_stitch_policy_decisions(auto_stitch_dry_runs, spec.auto_stitch_policy)
+        auto_stitch_policy_summary = self._auto_stitch_policy_summary(auto_stitch_policy_decisions, spec.auto_stitch_policy)
         stitch_proposals = self._stitch_proposals(stitch_candidates)
         stitch_proposals = self._apply_review_decisions(stitch_proposals, spec.stitch_review_decisions)
         stitched_flows = self._stitched_flows(stitch_proposals, stitch_candidates, entries)
@@ -216,6 +234,8 @@ class FlowTimelineManager:
             correlation_groups=correlation_groups,
             stitch_candidates=stitch_candidates,
             auto_stitch_dry_runs=auto_stitch_dry_runs,
+            auto_stitch_policy_decisions=auto_stitch_policy_decisions,
+            auto_stitch_policy_summary=auto_stitch_policy_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -665,6 +685,135 @@ class FlowTimelineManager:
             if other.get("strategy") == strategy and other.get("key") != candidate.get("key"):
                 conflicts.append(f"same_strategy_alternative={other.get('candidate_id')}")
         return cls._unique_strings(conflicts)
+
+
+    @classmethod
+    def _auto_stitch_policy_decisions(
+        cls,
+        dry_runs: list[dict[str, Any]],
+        policy: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Evaluate dry-run records against a conservative auto-stitch policy.
+
+        This prepares a future materialization gate without applying it.  Even
+        when a dry-run is high confidence, the current baseline keeps
+        ``would_materialize`` false and routes the item to review-gated
+        materialization.
+        """
+
+        policy = policy or {}
+        min_score = cls._float_policy_value(policy, "min_confidence_score", "minConfidenceScore", default=0.85)
+        allow_conflicts = cls._bool_policy_value(policy, "allow_conflicts", "allowConflicts", default=False)
+        require_review = cls._bool_policy_value(policy, "require_review_approval", "requireReviewApproval", default=True)
+        automatic_requested = cls._bool_policy_value(
+            policy,
+            "enable_automatic_materialization",
+            "enableAutomaticMaterialization",
+            "automatic_materialization_enabled",
+            "automaticMaterializationEnabled",
+            default=False,
+        )
+        decisions: list[dict[str, Any]] = []
+        for index, dry_run in enumerate(dry_runs, 1):
+            confidence_score = float(dry_run.get("confidence_score") or 0.0)
+            conflict_reasons = cls._string_values(dry_run.get("conflict_reasons"))
+            missing_for_ready = cls._string_values(dry_run.get("missing_for_ready"))
+            blockers: list[str] = ["review_required" if require_review else "policy_review_not_required_but_baseline_review_gate_still_required"]
+            reasons: list[str] = []
+            if confidence_score >= min_score:
+                reasons.append("confidence_score_meets_policy_threshold")
+            else:
+                blockers.append("confidence_score_below_policy_threshold")
+                reasons.append("confidence_score_below_policy_threshold")
+            if missing_for_ready:
+                blockers.extend(f"missing_{name}" for name in missing_for_ready)
+                reasons.append("missing_ready_evidence")
+            if conflict_reasons and not allow_conflicts:
+                blockers.append("conflict_review_required")
+                reasons.append("conflict_reasons_present")
+            if automatic_requested:
+                blockers.append("automatic_materialization_not_implemented")
+                reasons.append("automatic_materialization_requested_but_not_implemented")
+            else:
+                blockers.append("automatic_materialization_disabled")
+                reasons.append("automatic_materialization_disabled")
+            eligible_for_review_gate = confidence_score >= min_score and not missing_for_ready and (allow_conflicts or not conflict_reasons)
+            status = "ready_for_review_gate" if eligible_for_review_gate else "blocked"
+            decisions.append(
+                {
+                    "decision_id": f"auto-stitch-policy-decision-{index}",
+                    "dry_run_id": dry_run.get("dry_run_id"),
+                    "candidate_id": dry_run.get("candidate_id"),
+                    "group_id": dry_run.get("group_id"),
+                    "status": status,
+                    "eligible_for_review_gate": eligible_for_review_gate,
+                    "confidence_score": confidence_score,
+                    "min_confidence_score": min_score,
+                    "conflict_reasons": conflict_reasons,
+                    "missing_for_ready": missing_for_ready,
+                    "policy_reasons": cls._unique_strings(reasons),
+                    "policy_blocking_conditions": cls._unique_strings(blockers),
+                    "review_required": True,
+                    "would_materialize": False,
+                    "automatic_materialization_requested": automatic_requested,
+                    "automatic_stitching": False,
+                    "stitching": False,
+                    "scope": "auto-stitch-policy-decision-only",
+                    "next_action": "review_policy_eligible_candidate_before_materialization" if eligible_for_review_gate else "collect_missing_evidence_or_resolve_policy_blockers",
+                }
+            )
+        return decisions
+
+    @classmethod
+    def _auto_stitch_policy_summary(
+        cls,
+        decisions: list[dict[str, Any]],
+        policy: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        policy = policy or {}
+        eligible_count = sum(1 for item in decisions if item.get("eligible_for_review_gate"))
+        blocked_count = len(decisions) - eligible_count
+        return {
+            "policy_id": str(policy.get("policy_id") or policy.get("policyId") or "default-conservative-auto-stitch-policy"),
+            "decision_count": len(decisions),
+            "eligible_for_review_gate_count": eligible_count,
+            "blocked_count": blocked_count,
+            "automatic_materialization_enabled": False,
+            "automatic_stitching": False,
+            "would_materialize": False,
+            "review_required": True,
+            "scope": "auto-stitch-policy-summary-only",
+            "next_action": "review_policy_decisions_before_enabling_materialization" if decisions else "collect_reviewable_stitch_candidates",
+        }
+
+    @staticmethod
+    def _float_policy_value(policy: dict[str, Any], *keys: str, default: float) -> float:
+        for key in keys:
+            if key not in policy:
+                continue
+            try:
+                return float(policy[key])
+            except (TypeError, ValueError):
+                return default
+        return default
+
+    @staticmethod
+    def _bool_policy_value(policy: dict[str, Any], *keys: str, default: bool) -> bool:
+        for key in keys:
+            if key not in policy:
+                continue
+            value = policy[key]
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"1", "true", "yes", "on", "enabled"}:
+                    return True
+                if normalized in {"0", "false", "no", "off", "disabled"}:
+                    return False
+            if isinstance(value, (int, float)):
+                return bool(value)
+        return default
 
     @staticmethod
     def _stitch_proposals(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
