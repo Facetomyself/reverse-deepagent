@@ -911,7 +911,7 @@ print(capabilities.model_dump(mode="json"))
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
 - `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium`、`cloakbrowser` 和 `remote-cdp` provider；真实二进制 smoke 需要显式触发
-- `legacy-mcp`（别名：`mcp`, `jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 兼容运行时，`mcp` 仅作为旧命令 alias 保留
+- `legacy-mcp`（别名：`mcp`, `jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 兼容运行时；`mcp` / `jsreverser-mcp` 仅作为旧命令 alias 保留，CLI 会输出 deprecation warning，新脚本应改用 `legacy-mcp`
 - `playwright-cli`（别名：`playwright`, `pw-cli`）：轻量 Playwright CLI 探测与静态源码拉取，不主动启动浏览器
 - `chrome-cdp`（别名：`cdp`, `devtools`）：连接既有 Chrome DevTools 端点，不主动启动 Chrome
 - `browser-cli`（别名：`cli-browser`, `browser-command`）：通用浏览器 CLI 适配命令 backend，默认 command 未配置
@@ -931,6 +931,8 @@ print(capabilities.model_dump(mode="json"))
 
 JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、后端元数据和运行时采样参数。CLI 里的 `--jsreverser-mcp-command`、Chrome 调试端口等参数最终都会汇入这个配置，再创建 `legacy-mcp` 运行时。
 
+兼容期内 `--runtime mcp` 和 `--runtime jsreverser-mcp` 仍可解析到 `legacy-mcp`，但会向 stderr 打印 deprecation warning；`reverse-agent-doctor --check-mcp` 也只作为 `--legacy-mcp` 的旧别名保留。后续新增文档、脚本和 workflow 不应继续使用旧 alias。
+
 核心字段包括：
 
 - `backend_id`：稳定后端标识，例如 `mock`、`native-web`、`legacy-mcp`
@@ -939,6 +941,8 @@ JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `comm
 - `supports_web_recon` / `supports_runtime_context` / `supports_replay_validation`：能力开关
 - `managed_chrome` / `mcp_backed`：运行时约束提示
 - `evidence_kinds` / `artifact_kinds`：该后端常见输出类型
+
+`native-web` / `remote-cdp` 现在会在 BrowserProvider 支持 runtime eval 时执行最小候选函数验证，并沿用既有 artifact 名称输出 `workspace/function-candidates.json`、`workspace/function-validations.json` 和 `workspace/function-validation-summary.json`。这条 baseline 用于逐步替代 legacy MCP 的候选验证路径，但 debugger paused callframe、step/resume 等深调试能力仍是后续 capability-gated 工作。
 
 当前 Android / iOS / 小程序后端已具备 registry / factory / 能力元数据 / 轻副作用工具探测 / artifact 导出基础层，并可通过平台中立 `reverse-agent-platform` pipeline 落盘 capabilities、probe、export bundle、manifest 与报告；但还不包含真实 hook、静态分析或 replay 验证。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 

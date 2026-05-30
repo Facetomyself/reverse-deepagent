@@ -261,7 +261,7 @@ reverse-agent-demo \
   --ensure-chrome
 ```
 
-`legacy-mcp` is the explicit compatibility backend id; `mcp` and `jsreverser-mcp` remain temporary runnable aliases.
+`legacy-mcp` is the explicit compatibility backend id; `mcp` and `jsreverser-mcp` remain deprecated runnable aliases during the transition window.
 
 ## 11. Artifact compatibility
 
@@ -282,6 +282,9 @@ The native runtime should preserve current artifact semantics:
 - `workspace/script-inventory.json`
 - `workspace/console-messages.json`
 - `workspace/navigation-events.json`
+- `workspace/function-candidates.json`
+- `workspace/function-validations.json`
+- `workspace/function-validation-summary.json`
 - `workspace/backend-artifact-manifest.json`
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
@@ -312,6 +315,18 @@ Current hook baseline support:
 
 Breakpoint and callframe operations remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
 
+## 11.3 Native candidate validation status
+
+`NativeWebRuntime` now builds candidate function cards from project-owned script inventory and validates them with provider-neutral page runtime evaluation when the selected BrowserProvider exposes `supports_runtime_eval=true`.
+
+Current baseline emits:
+
+- `workspace/function-candidates.json`
+- `workspace/function-validations.json`
+- `workspace/function-validation-summary.json`
+
+This is enough for fixture-level runtime/replay validation parity with the existing artifact contract. It is still intentionally narrower than the legacy MCP path: advanced paused callframe inspection, debugger stepping, and target-specific function hooks remain separate capability-gated follow-up work.
+
 ## 12. Implementation status
 
 Current implementation status:
@@ -325,7 +340,7 @@ Current implementation status:
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
 | Remote CDP provider | Implemented | `src/reverse_deepagent/browser/providers/remote_cdp.py`, `tests/test_remote_cdp_provider.py` |
-| NativeWebRuntime | Native collectors and hook baseline implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
+| NativeWebRuntime | Native collectors, hook baseline, and runtime-eval candidate validation implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
 | MCP legacy alias | Implemented | `legacy-mcp` canonical id with `mcp` / `jsreverser-mcp` aliases |
 
 The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services. CloakBrowser-specific operational notes live in `docs/runtime/cloakbrowser-provider.md`.
@@ -337,6 +352,6 @@ Use these terms consistently:
 - `native-web`: preferred Web runtime family.
 - `browser-provider`: replaceable browser lifecycle and page/session implementation.
 - `legacy-mcp`: compatibility runtime backed by `jsreverser-mcp`.
-- `mcp`: temporary alias to `legacy-mcp` until CLI compatibility can be broken.
+- `mcp` / `jsreverser-mcp`: deprecated temporary aliases to `legacy-mcp` until CLI compatibility can be broken.
 
-Do not describe MCP as the default Web runtime in new docs.
+CLI entrypoints should emit a deprecation warning when a user explicitly selects `--runtime mcp` or `--runtime jsreverser-mcp`; doctor keeps `--check-mcp` only as a deprecated alias for `--legacy-mcp`. Do not describe MCP as the default Web runtime in new docs, scripts, workflows, or examples.

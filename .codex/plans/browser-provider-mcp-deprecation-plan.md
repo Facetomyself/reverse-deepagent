@@ -24,17 +24,17 @@
 | 1. BrowserProvider contract | 已完成 | `tests.test_browser_provider_contract`、`tests.test_browser_provider_registry` |
 | 2. Playwright provider skeleton | 已完成 | `tests.test_playwright_session`、`tests.test_playwright_provider`；系统 Chrome executable path 真实 smoke 已验证 |
 | 3. Native collector baseline | 已完成 | `tests.test_browser_collectors` |
-| 4. NativeWebRuntime 最小接入 | 已完成 | `tests.test_native_web_runtime`；`remote-cdp` smoke 路径已接入；Playwright system Chrome smoke 已验证 |
+| 4. NativeWebRuntime 最小接入 | 已完成 | `tests.test_native_web_runtime`；`remote-cdp` smoke 路径已接入；Playwright system Chrome smoke 已验证；runtime-eval 候选验证 baseline 已接入 |
 | 5. CloakBrowser provider skeleton | 已完成 | `tests.test_cloakbrowser_provider`，optional `.[cloak]` 已接入；真实 launch / persistent profile / native-web fixture smoke 已验证 |
 | 6. Browser doctor provider mode | 已完成 | `reverse-agent-doctor --browser ...` 已实现并测试 |
 | 7. Native artifact parity | 已完成 | DOM、console、script inventory、navigation events 已落盘，manifest 带 BrowserProvider metadata，63 项相关测试通过 |
 | 8. CDP-enhanced collectors | 已完成（fallback 增强已补） | requestWillBeSent、response body metadata、Debugger.scriptParsed source cache、WebSocket frame cache 已实现并测试；缺 CDP event cache 时，script source 可回落到 provider-neutral script inventory，WebSocket frame 可回落到 hook timeline；`remote-cdp` 提供真实 smoke 路径，Playwright system Chrome smoke 与 CloakBrowser fixture smoke 均已验证 |
-| 9. Hook / breakpoint migration | 已完成（WebSocket hook 已补，真实浏览器 smoke 待后续） | fetch/xhr、cookie、WebSocket、anti-debug hook baseline 已实现；BreakpointManager 通过 CDP capability gate 接入 `apply_minimal_protection`，`breakpoints.json` artifact ref 与 evidence 映射已补齐 |
-| 10. MCP legacy downgrade | 已完成 | `legacy-mcp` canonical backend 已实现，`mcp` / `jsreverser-mcp` 保留 alias；doctor 支持 `--legacy-mcp`；README / runtime docs 默认推荐 `native-web` |
+| 9. Hook / breakpoint migration | 已完成（WebSocket hook 已补，真实浏览器 smoke 待后续） | fetch/xhr、cookie、WebSocket、anti-debug hook baseline 已实现；BreakpointManager 通过 CDP capability gate 接入 `apply_minimal_protection`，`breakpoints.json` artifact ref 与 evidence 映射已补齐；native-web runtime-eval 候选验证已作为迁移中的最小 replay baseline |
+| 10. MCP legacy downgrade | 已完成 | `legacy-mcp` canonical backend 已实现，`mcp` / `jsreverser-mcp` 保留 deprecated alias 并输出 CLI warning；doctor 支持 `--legacy-mcp`；README / runtime docs 默认推荐 `native-web` |
 
 ## 阶段执行记录与剩余顺序
 
-当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke 与 CloakBrowser fixture smoke 均已验证，后续进入 README / docs 终扫、真实 breakpoint smoke、MCP alias deprecation 策略和最终 code review。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
+当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke 与 CloakBrowser fixture smoke 均已验证，MCP alias deprecation warning 已接入，后续进入 README / docs 终扫、真实 breakpoint smoke 和最终 code review。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
 
 ### Step 5.1：完成 CloakBrowser provider skeleton
 
@@ -144,14 +144,15 @@ git diff --check
 
 ### Step 10：MCP legacy downgrade
 
-目标：MCP 从默认心智模型降级成兼容后端。
+目标：MCP 从默认心智模型降级成兼容后端，并对旧 alias 给出明确迁移提示。
 
 交付物：
 
 - `legacy-mcp` backend id 文档化。
-- `mcp` alias 标注 temporary compatibility。
+- `mcp` / `jsreverser-mcp` alias 标注 temporary compatibility，并在 CLI 中输出 deprecation warning。
 - MCP smoke 文档移到 legacy section。
 - public quickstart 默认推荐 `native-web` 或 `mock`，不推荐 MCP。
+- 兼容 alias 仍可运行，但新文档 / 新脚本必须改用 `legacy-mcp`。
 
 验收：
 

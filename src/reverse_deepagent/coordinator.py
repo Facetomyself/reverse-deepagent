@@ -51,6 +51,10 @@ from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_
 
 LEGACY_MCP_BACKEND_ID = "legacy-mcp"
 LEGACY_MCP_ALIASES = ("mcp", "jsreverser-mcp")
+LEGACY_MCP_ALIAS_DEPRECATION_WARNING = (
+    "警告：`mcp` / `jsreverser-mcp` 只是 legacy 兼容别名，后续新脚本请改用 `legacy-mcp`；"
+    "Web 默认路径请优先使用 `native-web`。"
+)
 
 
 class ReversePipelineOutput(SchemaBaseModel):
@@ -538,7 +542,7 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                 notes=[
                     "legacy compatibility backend backed by jsreverser-mcp",
                     "requires jsreverser-mcp and a reachable Chrome DevTools endpoint",
-                    "mcp and jsreverser-mcp remain temporary compatibility aliases",
+                    "mcp and jsreverser-mcp remain deprecated temporary compatibility aliases",
                 ],
                 config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND, "aliases": list(LEGACY_MCP_ALIASES)},
             ),
@@ -560,7 +564,7 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                 supports_protection_patch=True,
                 supports_artifact_export=True,
                 supports_runtime_context=True,
-                supports_replay_validation=False,
+                supports_replay_validation=True,
                 managed_chrome=False,
                 mcp_backed=False,
                 evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
@@ -590,7 +594,7 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
                 supports_protection_patch=True,
                 supports_artifact_export=True,
                 supports_runtime_context=True,
-                supports_replay_validation=False,
+                supports_replay_validation=True,
                 managed_chrome=False,
                 mcp_backed=False,
                 evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
@@ -768,6 +772,14 @@ def list_runtime_backends() -> list[dict[str, Any]]:
     """Return JSON-serializable metadata for known runtime backends."""
 
     return DEFAULT_RUNTIME_BACKEND_REGISTRY.list_metadata()
+
+
+def legacy_mcp_alias_warning(runtime_kind: str) -> str | None:
+    """Return the deprecation warning for legacy MCP aliases, if applicable."""
+
+    if runtime_kind in LEGACY_MCP_ALIASES:
+        return LEGACY_MCP_ALIAS_DEPRECATION_WARNING
+    return None
 
 
 def build_runtime(

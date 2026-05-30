@@ -4,11 +4,12 @@ import argparse
 import json
 import os
 import shlex
+import sys
 from pathlib import Path
 from typing import Sequence
 
 from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
-from reverse_deepagent.coordinator import run_platform_pipeline, run_reverse_pipeline
+from reverse_deepagent.coordinator import legacy_mcp_alias_warning, run_platform_pipeline, run_reverse_pipeline
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT, DEFAULT_USER_DATA_DIR
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -34,14 +35,14 @@ def build_demo_parser() -> argparse.ArgumentParser:
         default="mock",
         help=(
             "Runtime backend to use. Common values: mock, native-web, legacy-mcp, playwright-cli, chrome-cdp, browser-cli. "
-            "The old mcp value remains a compatibility alias for legacy-mcp. "
+            "The old mcp value remains a deprecated compatibility alias for legacy-mcp and prints a warning. "
             "Aliases are resolved through the runtime registry."
         ),
     )
     parser.add_argument(
         "--ensure-chrome",
         action="store_true",
-        help="Before using --runtime legacy-mcp or the old mcp alias, run the recommended parameterized Chrome debug launcher.",
+        help="Before using --runtime legacy-mcp or the deprecated mcp alias, run the recommended parameterized Chrome debug launcher.",
     )
     parser.add_argument(
         "--keep-chrome",
@@ -80,6 +81,9 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
 
     parser = build_demo_parser()
     args = parser.parse_args(argv)
+    warning = legacy_mcp_alias_warning(args.runtime)
+    if warning:
+        print(warning, file=sys.stderr)
     chrome_config = ChromeDebugConfig(
         debug_port=args.chrome_debug_port,
         debug_address=args.chrome_debug_address,

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Sequence
 
 from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
-from reverse_deepagent.coordinator import run_reverse_pipeline
+from reverse_deepagent.coordinator import legacy_mcp_alias_warning, run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import FIXTURE_PROFILE_VALUES, start_fixture_server
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT
 
@@ -21,7 +22,12 @@ def build_fixture_smoke_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1", help="Bind host for the fixture server.")
     parser.add_argument("--port", type=int, default=0, help="Bind port for the fixture server. Default 0 picks a free port.")
     parser.add_argument("--profile", choices=FIXTURE_PROFILE_VALUES, default="default", help="Fixture algorithm/profile to smoke.")
-    parser.add_argument("--runtime", choices=["mock", "legacy-mcp", "mcp"], default="mock", help="Runtime backend for the reverse pipeline. mcp is a compatibility alias for legacy-mcp.")
+    parser.add_argument(
+        "--runtime",
+        choices=["mock", "legacy-mcp", "mcp"],
+        default="mock",
+        help="Runtime backend for the reverse pipeline. mcp is a deprecated compatibility alias for legacy-mcp.",
+    )
     parser.add_argument("--artifact-root", default=str(DEFAULT_ARTIFACT_ROOT), help="Artifact output root directory.")
     parser.add_argument("--ensure-chrome", action="store_true", help="Before using --runtime legacy-mcp or the old mcp alias, start a managed Chrome debug session.")
     parser.add_argument("--keep-chrome", action="store_true", help="When used with --ensure-chrome, keep managed Chrome running after the smoke.")
@@ -41,6 +47,9 @@ def main_fixture_smoke(argv: Sequence[str] | None = None) -> int:
     """Console entrypoint for fixture-backed reverse pipeline smoke."""
 
     args = build_fixture_smoke_parser().parse_args(argv)
+    warning = legacy_mcp_alias_warning(args.runtime)
+    if warning:
+        print(warning, file=sys.stderr)
     fixture = start_fixture_server(host=args.host, port=args.port, profile=args.profile)
     try:
         task_text = f"{fixture.base_url}/ 使用 {args.profile} profile 找 sign 入口，并给出下一步建议"

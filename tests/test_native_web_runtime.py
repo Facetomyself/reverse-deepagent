@@ -80,6 +80,24 @@ class FakeRawPage:
         """
 
     def evaluate(self, expression):
+        if "__REVERSE_AGENT_VALIDATE_CANDIDATE__" in expression:
+            return {
+                "marker": "__REVERSE_AGENT_VALIDATE_CANDIDATE__",
+                "function_name": "buildSign",
+                "located": True,
+                "callable_path": "window.buildSign",
+                "invocation_ok": True,
+                "invocation_result_type": "string",
+                "sign": "sig_native_1700000000000",
+                "sign_shape_ok": True,
+                "replay_result": {
+                    "attempted": True,
+                    "ok": True,
+                    "status": 200,
+                    "echoed_sign": "sig_native_1700000000000",
+                },
+                "runtime_url": self.url,
+            }
         if "__reverseDeepAgentHooks" in expression and "namespace:" in expression:
             self.hook_installed = True
             self.hook_events.append({"type": "fetch", "payload": {"url": self.url.rstrip("/") + "/api/search", "method": "GET"}})
@@ -208,12 +226,14 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("native-web", metadata)
         self.assertFalse(metadata["native-web"]["mcp_backed"])
         self.assertTrue(metadata["native-web"]["supports_protection_patch"])
+        self.assertTrue(metadata["native-web"]["supports_replay_validation"])
         self.assertEqual(metadata["native-web"]["config"]["default_browser_provider"], "playwright-chromium")
 
         runtime = build_runtime("native-web")
         capabilities = runtime.describe_capabilities().model_dump(mode="json")
         self.assertEqual(capabilities["backend_id"], "native-web")
         self.assertTrue(capabilities["supports_protection_patch"])
+        self.assertTrue(capabilities["supports_replay_validation"])
         self.assertEqual(capabilities["config"]["provider"]["provider_id"], "playwright-chromium")
 
     def test_registry_factory_preserves_browser_provider_config(self) -> None:
@@ -252,7 +272,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
             )
             artifacts = output.artifacts
             self.assertEqual(output.final_result.status.value, "success")
-            self.assertEqual(output.final_result.next_action, "move_to_source_analysis")
+            self.assertEqual(output.final_result.next_action, "extract_pure_logic_and_build_replay")
             self.assertIn("workspace_network_requests", artifacts)
             self.assertIn("workspace_source_hits", artifacts)
             self.assertIn("workspace_runtime_context", artifacts)
@@ -260,6 +280,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertIn("workspace_script_inventory", artifacts)
             self.assertIn("workspace_console_messages", artifacts)
             self.assertIn("workspace_navigation_events", artifacts)
+            self.assertIn("workspace_function_candidates", artifacts)
+            self.assertIn("workspace_function_validations", artifacts)
+            self.assertIn("workspace_function_validation_summary", artifacts)
             network = json.loads(Path(artifacts["workspace_network_requests"]).read_text(encoding="utf-8"))
             source_hits = json.loads(Path(artifacts["workspace_source_hits"]).read_text(encoding="utf-8"))
             runtime_context = json.loads(Path(artifacts["workspace_runtime_context"]).read_text(encoding="utf-8"))
@@ -272,12 +295,18 @@ class NativeWebRuntimeTests(unittest.TestCase):
             source_contexts = json.loads(Path(artifacts["workspace_source_contexts"]).read_text(encoding="utf-8"))
             websocket_frames = json.loads(Path(artifacts["workspace_websocket_frames"]).read_text(encoding="utf-8"))
             hook_timeline = json.loads(Path(artifacts["workspace_hook_timeline"]).read_text(encoding="utf-8"))
+            function_candidates = json.loads(Path(artifacts["workspace_function_candidates"]).read_text(encoding="utf-8"))
+            function_validations = json.loads(Path(artifacts["workspace_function_validations"]).read_text(encoding="utf-8"))
+            function_validation_summary = json.loads(Path(artifacts["workspace_function_validation_summary"]).read_text(encoding="utf-8"))
             manifest = json.loads(Path(artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
 
         self.assertEqual(provider.started, 1)
         self.assertEqual(network["count"], 1)
         self.assertEqual(source_hits["count"], 1)
         self.assertTrue(runtime_context["ok"])
+        self.assertEqual(function_candidates["candidates"][0]["function_name"], "buildSign")
+        self.assertEqual(function_validations["validations"][0]["validation_status"], "success")
+        self.assertTrue(function_validation_summary["replay_ready"])
         self.assertGreater(dom_snapshot["html_size"], 0)
         self.assertEqual(script_inventory["count"], 2)
         self.assertEqual(console_messages["count"], 0)
@@ -300,6 +329,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(manifest_by_key["workspace_response_bodies"]["category"], "network")
         self.assertEqual(manifest_by_key["workspace_websocket_frames"]["category"], "network")
         self.assertEqual(manifest_by_key["workspace_hook_timeline"]["category"], "hook-timeline")
+        self.assertEqual(manifest_by_key["workspace_function_validations"]["category"], "trace")
 
     def test_native_web_runtime_apply_minimal_protection_installs_hooks(self) -> None:
         provider = FakeProvider()

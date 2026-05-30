@@ -67,7 +67,7 @@ reverse-agent-demo \
   --ensure-chrome
 ```
 
-`legacy-mcp` is the explicit backend id; `mcp` and `jsreverser-mcp` remain runnable compatibility aliases for the transition window.
+`legacy-mcp` is the explicit backend id; `mcp` and `jsreverser-mcp` remain deprecated runnable compatibility aliases for the transition window.
 
 ## Milestones
 
@@ -160,7 +160,7 @@ Remaining validation:
 
 ### Phase 4: NativeWebRuntime
 
-Status: minimal runtime implemented and registered; `remote-cdp` smoke path and advanced BrowserProvider option forwarding are implemented; Playwright real browser smoke is verified locally, while CloakBrowser real browser smoke remains pending.
+Status: minimal runtime implemented and registered; `remote-cdp` smoke path, advanced BrowserProvider option forwarding, and runtime-eval candidate validation baseline are implemented. Playwright and CloakBrowser real browser smoke have been verified locally.
 
 Deliverables:
 
@@ -250,10 +250,11 @@ Acceptance:
 - Missing optional dependencies produce structured guidance.
 - Provider metadata is collected without browser launch.
 - Proxy configuration is redacted from doctor output.
+- BrowserProvider-backed runtime eval can emit `function-candidates.json`, `function-validations.json`, and `function-validation-summary.json` without going through MCP.
 
 ### Phase 7: Native artifact parity
 
-Status: native DOM, console, script inventory, and navigation evidence are mapped to workspace artifacts; related tests pass locally.
+Status: native DOM, console, script inventory, navigation evidence, and candidate validation evidence are mapped to workspace artifacts; related tests pass locally.
 
 Deliverables:
 
@@ -261,6 +262,9 @@ Deliverables:
 - `workspace/console-messages.json`
 - `workspace/script-inventory.json`
 - `workspace/navigation-events.json`
+- `workspace/function-candidates.json`
+- `workspace/function-validations.json`
+- `workspace/function-validation-summary.json`
 - backend manifest metadata containing `browser_provider` and `browser_provider_transport` when available
 
 Acceptance:
@@ -293,7 +297,7 @@ Acceptance:
 
 ### Phase 9: Hook and breakpoint migration
 
-Status: hook baseline, WebSocket send/message capture, and provider-neutral BreakpointManager baseline are implemented and tested locally; real browser breakpoint smoke remains pending.
+Status: hook baseline, WebSocket send/message capture, provider-neutral BreakpointManager baseline, and native-web runtime-eval candidate validation are implemented and tested locally; real browser breakpoint smoke remains pending.
 
 Deliverables:
 
@@ -314,12 +318,12 @@ Acceptance:
 
 ### Phase 10: MCP legacy downgrade
 
-Status: implemented locally. `legacy-mcp` is the canonical backend id; `mcp` and `jsreverser-mcp` remain compatibility aliases. Doctor now supports `--legacy-mcp`, and native-web remains the README quickstart recommendation.
+Status: implemented locally. `legacy-mcp` is the canonical backend id; `mcp` and `jsreverser-mcp` remain deprecated compatibility aliases and now emit CLI warnings when explicitly selected. Doctor supports `--legacy-mcp`; `--check-mcp` is kept only as a deprecated compatibility flag. `native-web` remains the README quickstart recommendation.
 
 Deliverables:
 
 - Rename docs wording from `mcp` preferred path to `legacy-mcp` compatibility path.
-- Keep CLI alias `mcp` temporarily for backward compatibility.
+- Keep CLI alias `mcp` temporarily for backward compatibility, but warn users to migrate to `legacy-mcp`.
 - Update doctor:
   - default checks native browser provider.
   - `--legacy-mcp` checks jsreverser-mcp.
@@ -329,6 +333,7 @@ Acceptance:
 
 - README quickstart uses `native-web`.
 - MCP smoke remains runnable for users who still need it.
+- Deprecated MCP aliases warn without breaking existing scripts.
 - Public CI does not require MCP.
 - Native Web runtime is the default recommendation.
 

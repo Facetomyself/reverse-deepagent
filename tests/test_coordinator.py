@@ -7,6 +7,7 @@ from reverse_deepagent.coordinator import (
     _artifact_category_from_key,
     _extract_workspace_artifact_payloads,
     build_runtime,
+    legacy_mcp_alias_warning,
     list_runtime_backends,
     run_reverse_pipeline,
 )
@@ -101,6 +102,11 @@ class CoordinatorTests(unittest.TestCase):
         finally:
             alias_runtime.close()
 
+    def test_legacy_mcp_alias_warning_only_targets_deprecated_aliases(self) -> None:
+        self.assertIsNone(legacy_mcp_alias_warning("legacy-mcp"))
+        self.assertIsNone(legacy_mcp_alias_warning("native-web"))
+        self.assertIn("legacy-mcp", legacy_mcp_alias_warning("mcp") or "")
+        self.assertIn("legacy-mcp", legacy_mcp_alias_warning("jsreverser-mcp") or "")
 
     def test_web_pipeline_rejects_platform_neutral_non_web_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

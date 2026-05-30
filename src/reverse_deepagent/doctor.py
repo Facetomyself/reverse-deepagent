@@ -26,6 +26,7 @@ from reverse_deepagent.runtime.mcp_stdio import McpBridgeError, StdioMcpBridge
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BROWSER_URL = "http://127.0.0.1:9222"
+CHECK_MCP_ALIAS_DEPRECATION_WARNING = "警告：`--check-mcp` 只是 `--legacy-mcp` 的兼容别名，后续新脚本请改用 `--legacy-mcp`。"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jsreverser-mcp-command", default=DEFAULT_JSREVERSER_MCP_COMMAND, help="Path to the jsreverser-mcp executable.")
     parser.add_argument("--ensure-chrome", action="store_true", help="Start the managed Chrome debug listener before checks.")
     parser.add_argument("--keep-chrome", action="store_true", help="Keep Chrome running when --ensure-chrome starts it.")
-    parser.add_argument("--check-mcp", action="store_true", help="Compatibility alias for --legacy-mcp.")
+    parser.add_argument("--check-mcp", action="store_true", help="Deprecated compatibility alias for --legacy-mcp.")
     parser.add_argument("--legacy-mcp", action="store_true", help="Start legacy jsreverser-mcp over stdio and call list_tools/check_browser_health.")
     parser.add_argument("--browser", default=None, help="BrowserProvider id to diagnose, such as playwright-chromium or cloakbrowser. Does not launch by default.")
     parser.add_argument("--browser-profile-dir", default=None, help="Optional BrowserProvider persistent profile directory for metadata/smoke checks.")
@@ -248,6 +249,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         },
         "port_before": _port_status(args.browser_url),
     }
+    if args.check_mcp:
+        payload["deprecation_warnings"] = [CHECK_MCP_ALIAS_DEPRECATION_WARNING]
     payload["legacy_mcp"] = payload["mcp"]
 
     should_stop = False
@@ -295,6 +298,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     payload = run_doctor(args)
+    for warning in payload.get("deprecation_warnings", []):
+        print(warning, file=sys.stderr)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if payload["ok"] or not args.strict else 1
 

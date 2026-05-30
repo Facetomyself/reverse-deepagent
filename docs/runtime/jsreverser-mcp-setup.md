@@ -6,6 +6,8 @@ This document describes the legacy JSReverser MCP wiring for local, authorized W
 
 `jsreverser-mcp` is treated as a **legacy runtime backend**, not as the agent architecture boundary. The target architecture is documented in [`browser-provider-architecture.md`](browser-provider-architecture.md).
 
+Use `--runtime legacy-mcp` in new commands. The old `--runtime mcp` and `--runtime jsreverser-mcp` values still resolve to `legacy-mcp` during the compatibility window, but CLI entrypoints print a deprecation warning when those aliases are used.
+
 ```text
 DeepAgents coordinator / subagents
   -> reverse_deepagent runtime adapter

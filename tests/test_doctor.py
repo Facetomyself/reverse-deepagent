@@ -147,6 +147,8 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["mcp_check"]["ok"])
         self.assertTrue(payload["legacy_mcp_check"]["ok"])
+        self.assertIn("deprecation_warnings", payload)
+        self.assertTrue(payload["deprecation_warnings"][0].startswith("警告：`--check-mcp`"))
         self.assertIn("check_browser_health", payload["mcp_check"]["tool_sample"])
 
     def test_doctor_legacy_mcp_flag_checks_fake_mcp(self) -> None:
