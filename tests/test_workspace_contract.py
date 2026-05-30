@@ -64,6 +64,7 @@ class WorkspaceContractTests(unittest.TestCase):
     def test_artifact_routes_index_existing_flat_paths_without_migration(self) -> None:
         routes = {item.legacy_path: item for item in default_workspace_artifact_routes()}
         self.assertEqual(routes["workspace/flow-timeline.json"].virtual_folder, "/workspace/timeline/")
+        self.assertEqual(routes["workspace/auto-stitch-materialization-results.json"].virtual_folder, "/workspace/timeline/")
         self.assertEqual(routes["workspace/stitched-flow.json"].virtual_folder, "/workspace/timeline/")
         self.assertEqual(routes["workspace/review-gate.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/rebuild-plan.json"].virtual_folder, "/workspace/rebuild/")

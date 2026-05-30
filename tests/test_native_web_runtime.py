@@ -901,6 +901,81 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].metadata["count"], 1)
         self.assertFalse(result.artifacts[1].metadata["automatic_stitching"])
 
+    def test_native_web_runtime_materializes_review_approved_auto_stitch_plan(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "flow-timeline",
+            {
+                "flow_id": "sign-flow",
+                "run_id": "run-2",
+                "request_id": "req-2",
+                "network_requests": {"items": [{"url": "https://example.test/api/sign", "method": "POST", "requestId": "req-2"}]},
+                "request_initiators": {
+                    "items": [
+                        {
+                            "requestId": "req-2",
+                            "url": "https://example.test/api/sign",
+                            "method": "POST",
+                            "initiator": {"stack": {"callFrames": [{"functionName": "buildSign"}]}},
+                        }
+                    ]
+                },
+                "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign", "method": "POST", "path": "window.buildSign", "functionName": "buildSign"}}]}},
+                "replay_validation": {"validations": [{"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": True}]},
+                "auto_stitch_policy": {
+                    "policy_id": "runtime-policy",
+                    "min_confidence_score": 0.85,
+                    "allow_conflicts": True,
+                    "enable_automatic_materialization": True,
+                },
+                "auto_stitch_materialization_review_decisions": [
+                    {
+                        "plan_id": "auto-stitch-materialization-plan-1",
+                        "status": "approved",
+                        "approved": True,
+                        "reviewer": "runtime-reviewer",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(
+            result.applied_actions,
+            [
+                "build_flow_timeline",
+                "materialize_review_approved_auto_stitch_plan",
+                "materialize_review_approved_stitched_flow",
+            ],
+        )
+        self.assertIn("flow_timeline_auto_stitch_materialization_plan_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_materialization_review_decision_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_materialization_result_count=1", result.verification)
+        self.assertIn("flow_timeline_stitch_review_decision_count=0", result.verification)
+        self.assertIn("flow_timeline_stitched_flow_count=1", result.verification)
+        self.assertIn("flow_timeline_automatic_stitching=False", result.verification)
+        self.assertEqual(result.next_action, "inspect_stitched_flow_or_use_for_replay_planning")
+
+        flow_metadata = result.artifacts[0].metadata
+        self.assertEqual(flow_metadata["auto_stitch_materialization_plan_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_review_decision_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_result_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_result_summary"]["materialized_count"], 1)
+        self.assertTrue(flow_metadata["auto_stitch_materialization_result_summary"]["writes_artifact"])
+        self.assertFalse(flow_metadata["auto_stitch_materialization_result_summary"]["automatic_stitching"])
+        self.assertEqual(flow_metadata["stitch_review_decision_count"], 0)
+        self.assertEqual(flow_metadata["stitched_flow_count"], 1)
+        self.assertFalse(flow_metadata["automatic_stitching"])
+
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/auto-stitch-materialization-results.json")
+        self.assertEqual(result.artifacts[1].metadata["count"], 1)
+        self.assertEqual(result.artifacts[1].metadata["summary"]["materialized_count"], 1)
+        self.assertFalse(result.artifacts[1].metadata["automatic_stitching"])
+        self.assertEqual(result.artifacts[2].path, "virtual://workspace/stitched-flow.json")
+        self.assertEqual(result.artifacts[2].metadata["count"], 1)
+        self.assertFalse(result.artifacts[2].metadata["automatic_stitching"])
+
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

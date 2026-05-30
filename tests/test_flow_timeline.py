@@ -240,6 +240,101 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_materialization_summary["eligible_decision_count"], 1)
         self.assertFalse(result.auto_stitch_materialization_summary["materialization_enabled"])
         self.assertFalse(result.auto_stitch_materialization_summary["writes_artifact"])
+        self.assertEqual(result.auto_stitch_materialization_results, [])
+        self.assertEqual(result.auto_stitch_materialization_result_summary["result_count"], 0)
+        self.assertFalse(result.auto_stitch_materialization_result_summary["writes_artifact"])
+        self.assertEqual(result.stitched_flows, [])
+
+    def test_approved_auto_stitch_materialization_review_decision_materializes_plan(self) -> None:
+        context = self._ready_flow_context()
+        context["auto_stitch_policy"] = {
+            "policy_id": "unit-policy",
+            "min_confidence_score": 0.85,
+            "allow_conflicts": True,
+            "enable_automatic_materialization": True,
+        }
+        context["auto_stitch_materialization_review_decisions"] = [
+            {
+                "plan_id": "auto-stitch-materialization-plan-1",
+                "status": "approved",
+                "approved": True,
+                "reviewer": "materialization-reviewer",
+                "reviewed_at": "2026-05-31T09:00:00Z",
+                "reason": "Plan path, conflict policy, and replay evidence are acceptable.",
+            }
+        ]
+
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(result.stitch_review_decisions, [])
+        self.assertEqual(len(result.auto_stitch_materialization_review_decisions), 1)
+        self.assertEqual(len(result.auto_stitch_materialization_plans), 1)
+        plan = result.auto_stitch_materialization_plans[0]
+        self.assertEqual(plan["status"], "approved_for_materialization")
+        self.assertEqual(plan["materialization_mode"], "review_approved_plan")
+        self.assertEqual(plan["review_decision"]["status"], "approved")
+        self.assertTrue(plan["review_decision"]["approved"])
+        self.assertFalse(plan["review_required"])
+        self.assertNotIn("missing_materialization_reviewer_approval", plan["policy_blocking_conditions"])
+        self.assertNotIn("automatic_materialization_not_implemented", plan["policy_blocking_conditions"])
+        self.assertEqual(plan["next_action"], "materialize_review_approved_auto_stitch_plan")
+
+        self.assertEqual(len(result.auto_stitch_materialization_results), 1)
+        materialized = result.auto_stitch_materialization_results[0]
+        self.assertEqual(materialized["status"], "materialized")
+        self.assertEqual(materialized["plan_id"], "auto-stitch-materialization-plan-1")
+        self.assertEqual(materialized["target_artifact"], "workspace/stitched-flow.json")
+        self.assertEqual(materialized["entry_sequences"], [1, 2, 3])
+        self.assertTrue(materialized["materialized"])
+        self.assertTrue(materialized["writes_artifact"])
+        self.assertTrue(materialized["would_materialize"])
+        self.assertTrue(materialized["stitching"])
+        self.assertFalse(materialized["automatic_stitching"])
+        self.assertEqual(materialized["source"], "review_approved_auto_stitch_materialization_plan")
+        self.assertEqual(materialized["audit"]["review_gate"], "auto_stitch_materialization_review_decision")
+        self.assertEqual(materialized["rollback_plan"]["strategy"], "manual_revert_review_approved_materialization")
+        self.assertIn("review_approved_not_fully_automatic", materialized["limitations"])
+
+        self.assertEqual(result.auto_stitch_materialization_result_summary["result_count"], 1)
+        self.assertEqual(result.auto_stitch_materialization_result_summary["materialized_count"], 1)
+        self.assertEqual(result.auto_stitch_materialization_result_summary["approved_review_decision_count"], 1)
+        self.assertTrue(result.auto_stitch_materialization_result_summary["writes_artifact"])
+        self.assertFalse(result.auto_stitch_materialization_result_summary["automatic_stitching"])
+        self.assertEqual(len(result.stitched_flows), 1)
+        stitched = result.stitched_flows[0]
+        self.assertEqual(stitched["stitched_flow_id"], "stitched-flow-1")
+        self.assertEqual(stitched["materialization_result_id"], "auto-stitch-materialization-result-1")
+        self.assertEqual(stitched["plan_id"], "auto-stitch-materialization-plan-1")
+        self.assertTrue(stitched["stitching"])
+        self.assertFalse(stitched["automatic_stitching"])
+        self.assertEqual(stitched["source"], "review_approved_auto_stitch_materialization_plan")
+        result_dict = result.to_dict()
+        self.assertEqual(result_dict["auto_stitch_materialization_review_decision_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_materialization_result_count"], 1)
+        self.assertEqual(result_dict["stitched_flow_count"], 1)
+
+    def test_rejected_auto_stitch_materialization_review_decision_does_not_materialize_plan(self) -> None:
+        context = self._ready_flow_context()
+        context["auto_stitch_policy"] = {
+            "policy_id": "unit-policy",
+            "min_confidence_score": 0.85,
+            "allow_conflicts": True,
+            "enable_automatic_materialization": True,
+        }
+        context["auto_stitch_materialization_review_decisions"] = [
+            {"plan_id": "auto-stitch-materialization-plan-1", "status": "rejected", "reviewer": "materialization-reviewer"}
+        ]
+
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(len(result.auto_stitch_materialization_plans), 1)
+        plan = result.auto_stitch_materialization_plans[0]
+        self.assertEqual(plan["status"], "rejected")
+        self.assertEqual(plan["review_decision"]["status"], "rejected")
+        self.assertIn("materialization_reviewer_rejected", plan["policy_blocking_conditions"])
+        self.assertEqual(result.auto_stitch_materialization_results, [])
+        self.assertEqual(result.auto_stitch_materialization_result_summary["materialized_count"], 0)
+        self.assertFalse(result.auto_stitch_materialization_result_summary["writes_artifact"])
         self.assertEqual(result.stitched_flows, [])
 
     def test_approved_stitch_review_decision_materializes_stitched_flow(self) -> None:
