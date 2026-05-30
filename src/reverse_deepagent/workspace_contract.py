@@ -291,6 +291,8 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_delivery_guard_after_review_gate_replacement", "workspace/delivery-guard-after-review-gate-replacement.json", "/workspace/delivery/", "delivery-guard-after-review-gate-replacement.json", "triage", ("delivery", "review")),
         ("workspace_final_delivery_package_after_review_gate_replacement", "workspace/final-delivery-package-after-review-gate-replacement.json", "/workspace/delivery/", "final-delivery-package-after-review-gate-replacement.json", "export", ("delivery", "review")),
         ("workspace_final_delivery_transaction_commit", "workspace/final-delivery-transaction-commit.json", "/workspace/delivery/", "final-delivery-transaction-commit.json", "export", ("delivery", "review")),
+        ("workspace_delivery_receipt", "workspace/delivery-receipt.json", "/workspace/delivery/", "delivery-receipt.json", "export", ("delivery", "review")),
+        ("workspace_delivery_transaction_journal", "workspace/delivery-transaction-journal.json", "/workspace/delivery/", "delivery-transaction-journal.json", "export", ("delivery", "review")),
         ("workspace_review_gate", "workspace/review-gate.json", "/workspace/review/", "review-gate.json", "triage", ("review", "delivery")),
         ("workspace_rebuild_plan", "workspace/rebuild-plan.json", "/workspace/rebuild/", "rebuild-plan.json", "rebuild", ("rebuild", "delivery")),
         ("workspace_final", "workspace/final-result.json", "/workspace/delivery/", "final-result.json", "workspace", ("delivery", "coordinator")),

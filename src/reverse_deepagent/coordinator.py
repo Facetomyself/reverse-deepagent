@@ -936,6 +936,8 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_delivery_guard_after_review_gate_replacement": "triage",
     "workspace_final_delivery_package_after_review_gate_replacement": "export",
     "workspace_final_delivery_transaction_commit": "export",
+    "workspace_delivery_receipt": "export",
+    "workspace_delivery_transaction_journal": "export",
     "workspace_review_gate": "triage",
 }
 

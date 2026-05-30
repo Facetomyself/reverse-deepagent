@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from reverse_deepagent.schemas import RebuildResult
+from reverse_deepagent.tools.delivery_tools import make_local_delivery_executor_tool
 from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool
 
 DELIVERY_SUBAGENT_NAME = "rebuild_delivery"
@@ -23,6 +24,6 @@ def build_delivery_subagent(
         "name": DELIVERY_SUBAGENT_NAME,
         "description": DELIVERY_SUBAGENT_DESCRIPTION,
         "system_prompt": load_delivery_prompt(prompt_path),
-        "tools": [make_build_rebuild_delivery_tool(artifact_root)],
+        "tools": [make_build_rebuild_delivery_tool(artifact_root), make_local_delivery_executor_tool(Path(artifact_root) / "delivery")],
         "response_format": RebuildResult,
     }
