@@ -319,9 +319,10 @@ Current hook baseline support:
 - cookie setter wrapper records cookie names and value sizes, not raw cookie values.
 - minimal anti-debug patch disables `console.clear` and emits blocked clear events.
 - target-function wrapper baseline can install around globally reachable function paths such as `window.buildSign`, capture call / return / throw events, and emit `workspace/function-hooks.json` plus `workspace/function-hook-timeline.json`.
+- source-level logpoint baseline can install at script URL / line-number breakpoints, capture a log expression into `workspace/source-logpoints.json` plus `workspace/source-logpoint-timeline.json`, and optionally pause if explicitly requested.
 - explicit breakpoint requests can set `Debugger.setBreakpointByUrl`, optionally trigger a runtime expression, capture `Debugger.paused`, normalize callframes, run explicit `Debugger.evaluateOnCallFrame` expressions, run opt-in `Debugger.stepOver` / `Debugger.stepInto` / `Debugger.stepOut` / `Debugger.resume` control actions, emit a paused-session snapshot with selected callFrame metadata, and auto-resume when no explicit debugger action already resumed execution.
 
-Cross-request paused session lifecycle, source-level logpoint support, webpack / module-internal function hooks, and finer-grained side-effectful mutation audit remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
+Cross-request paused session lifecycle, source map / bundle offset remapping, webpack / module-internal function hooks, and finer-grained side-effectful mutation audit remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
 
 ## 11.3 Native candidate validation status
 
@@ -339,7 +340,7 @@ Current baseline emits:
 - `workspace/debugger-session.json` with session id, selected callFrame, pause lifecycle, and event summaries.
 - `workspace/debugger-timeline.json` with ordered breakpoint set / trigger / pause / evaluation / action / resume entries for single-run debugger audit.
 
-This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe/evaluateOnCallFrame/step/session smoke path with the existing artifact contract. The current callframe evaluation baseline defaults to `read_only`, passes `throwOnSideEffect` to CDP, records side-effect risk metadata, and blocks obvious high-risk mutation expressions unless `allow_callframe_side_effects` is explicitly enabled. The target-function wrapper baseline is limited to globally reachable function paths and is not a source-level logpoint or webpack internal hook. It is still intentionally narrower than the legacy MCP path: cross-request paused session lifecycle, source-level logpoint support, webpack / module-internal function hooks, fine-grained mutation auditing, and cross-request timeline continuation remain separate capability-gated follow-up work.
+This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe/evaluateOnCallFrame/step/session smoke path with the existing artifact contract. The current callframe evaluation baseline defaults to `read_only`, passes `throwOnSideEffect` to CDP, records side-effect risk metadata, and blocks obvious high-risk mutation expressions unless `allow_callframe_side_effects` is explicitly enabled. The target-function wrapper baseline is limited to globally reachable function paths and is not a webpack internal hook. The source-level logpoint baseline is limited to explicit script URL / line-number observations and is not source map aware. It is still intentionally narrower than the legacy MCP path: cross-request paused session lifecycle, source map / bundle offset remapping, webpack / module-internal function hooks, fine-grained mutation auditing, and cross-request timeline continuation remain separate capability-gated follow-up work.
 
 ## 12. Implementation status
 
@@ -354,7 +355,7 @@ Current implementation status:
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
 | Remote CDP provider | Implemented | `src/reverse_deepagent/browser/providers/remote_cdp.py`, `tests/test_remote_cdp_provider.py` |
-| NativeWebRuntime | Native collectors, hook baseline, target-function wrapper baseline, runtime-eval candidate validation, and paused/callframe breakpoint snapshot implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
+| NativeWebRuntime | Native collectors, hook baseline, target-function wrapper baseline, source-level logpoint baseline, runtime-eval candidate validation, and paused/callframe breakpoint snapshot implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
 | MCP legacy alias | Implemented | `legacy-mcp` canonical id with `mcp` / `jsreverser-mcp` aliases |
 
 The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services. CloakBrowser-specific operational notes live in `docs/runtime/cloakbrowser-provider.md`.

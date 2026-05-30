@@ -10,9 +10,11 @@ from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, 
 
 
 class FakeCDPSession:
-    def __init__(self) -> None:
+    def __init__(self, owner=None) -> None:
         self.handlers = {}
         self.calls = []
+        self.owner = owner
+        self.last_breakpoint_params = {}
 
     def on(self, event_name, handler):
         self.handlers.setdefault(event_name, []).append(handler)
@@ -28,6 +30,7 @@ class FakeCDPSession:
         if method == "Debugger.getScriptSource":
             return {"scriptSource": "function buildSign(){ return 'x-sign'; }"}
         if method == "Debugger.setBreakpointByUrl":
+            self.last_breakpoint_params = params or {}
             return {"breakpointId": "bp-native-1", "locations": [{"scriptId": "script-1", "lineNumber": params.get("lineNumber", 0)}]}
         if method == "Runtime.evaluate":
             expression = (params or {}).get("expression", "")
@@ -49,6 +52,23 @@ class FakeCDPSession:
                         ],
                     },
                 )
+            if self.owner is not None and getattr(self.owner, "source_logpoint_installed", False):
+                self.owner.source_logpoint_events.append(
+                    {
+                        "type": "source_logpoint",
+                        "payload": {
+                            "logpointId": getattr(self.owner, "source_logpoint_id", "smoke-logpoint"),
+                            "urlPattern": getattr(self.owner, "source_logpoint_url_pattern", ".*app\\.js$"),
+                            "lineNumber": getattr(self.owner, "source_logpoint_line_number", 0),
+                            "columnNumber": getattr(self.owner, "source_logpoint_column_number", None),
+                            "label": getattr(self.owner, "source_logpoint_label", "smoke"),
+                            "pauseOnHit": getattr(self.owner, "source_logpoint_pause_on_hit", False),
+                            "ok": True,
+                            "value": {"type": "string", "preview": "sig_native_1700000000000"},
+                            "error": None,
+                        },
+                    }
+                )
             return {"result": {"type": "string", "value": "scheduled"}}
         if method == "Debugger.evaluateOnCallFrame":
             expression = (params or {}).get("expression", "")
@@ -69,7 +89,15 @@ class FakeRawPage:
         self.context = context
         self.url = "about:blank"
         self.handlers = {}
-        self._cdp_session = FakeCDPSession()
+        self.source_logpoint_installed = False
+        self.source_logpoint_events = []
+        self.source_logpoint_id = "smoke-logpoint"
+        self.source_logpoint_url_pattern = ".*app\\.js$"
+        self.source_logpoint_line_number = 0
+        self.source_logpoint_column_number = None
+        self.source_logpoint_label = "smoke"
+        self.source_logpoint_pause_on_hit = False
+        self._cdp_session = FakeCDPSession(owner=self)
         self.hook_installed = False
         self.hook_events = []
         self.function_hook_installed = False
@@ -131,6 +159,36 @@ class FakeRawPage:
                     "echoed_sign": "sig_native_1700000000000",
                 },
                 "runtime_url": self.url,
+            }
+        if "__reverseDeepAgentSourceLogpoints" in expression and "source_logpoints" in expression and "installed: [{" in expression:
+            self.source_logpoint_installed = True
+            self.source_logpoint_id = "smoke-logpoint"
+            self.source_logpoint_url_pattern = ".*app\\.js$"
+            self.source_logpoint_line_number = 7
+            self.source_logpoint_column_number = 0
+            self.source_logpoint_label = "smoke"
+            self.source_logpoint_pause_on_hit = False
+            return {
+                "ok": True,
+                "installed": [
+                    {
+                        "logpointId": self.source_logpoint_id,
+                        "urlPattern": self.source_logpoint_url_pattern,
+                        "lineNumber": self.source_logpoint_line_number,
+                        "columnNumber": self.source_logpoint_column_number,
+                        "label": self.source_logpoint_label,
+                        "pauseOnHit": self.source_logpoint_pause_on_hit,
+                    }
+                ],
+                "missing": [],
+                "eventCount": len(self.source_logpoint_events),
+            }
+        if "__reverseDeepAgentSourceLogpoints" in expression and "eventCount" in expression:
+            return {
+                "ok": self.source_logpoint_installed,
+                "events": list(self.source_logpoint_events),
+                "eventCount": len(self.source_logpoint_events),
+                "installed": {self.source_logpoint_id: self.source_logpoint_installed},
             }
         if "__reverseDeepAgentHooks" in expression and "functionPaths" in expression and "function_hooks" in expression:
             self.function_hook_installed = True
@@ -415,6 +473,32 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["function_name"], "buildSign")
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/function-hook-timeline.json")
         self.assertEqual(result.artifacts[1].metadata["event_count"], 2)
+
+    def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-logpoint",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 7,
+                "column_number": 0,
+                "log_expression": "window.buildSign('sign', 1700000000000)",
+                "label": "smoke",
+                "trigger_expression": "window.buildSign('sign', 1700000000000)",
+            },
+        )
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["set_source_logpoint:.*app\\.js$:7"])
+        self.assertIn("source_logpoint_status=success", result.verification)
+        self.assertIn("source_logpoint_breakpoint_count=1", result.verification)
+        self.assertIn("source_logpoint_event_count=1", result.verification)
+        self.assertEqual(result.next_action, "inspect_source_logpoint_events")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-logpoints.json")
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/source-logpoint-timeline.json")
+        self.assertEqual(result.artifacts[1].metadata["event_count"], 1)
+        page = provider.session.context.pages[0]
+        self.assertIn("source_logpoint", page._cdp_session.last_breakpoint_params["condition"])
 
     def test_native_web_runtime_apply_minimal_protection_sets_breakpoint(self) -> None:
         provider = FakeProvider()

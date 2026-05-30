@@ -924,6 +924,8 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_hook_timeline": "hook-timeline",
     "workspace_function_hooks": "hook-timeline",
     "workspace_function_hook_timeline": "hook-timeline",
+    "workspace_source_logpoints": "trace",
+    "workspace_source_logpoint_timeline": "trace",
     "workspace_breakpoints": "trace",
     "workspace_debugger_paused": "trace",
     "workspace_callframes": "trace",
@@ -1477,6 +1479,10 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["function-hooks.json"] = evidence.details
         elif evidence.source == "function_hook_timeline":
             payloads["function-hook-timeline.json"] = evidence.details
+        elif evidence.source == "source_logpoints":
+            payloads["source-logpoints.json"] = evidence.details
+        elif evidence.source == "source_logpoint_timeline":
+            payloads["source-logpoint-timeline.json"] = evidence.details
         elif evidence.source == "breakpoint_manager":
             payloads["breakpoints.json"] = evidence.details
         elif evidence.source == "debugger_paused":

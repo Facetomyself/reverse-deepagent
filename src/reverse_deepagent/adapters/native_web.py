@@ -7,7 +7,15 @@ from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
 from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
-from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, BrowserHookManager, FunctionHookManager, FunctionHookSpec
+from reverse_deepagent.browser.hooks import (
+    BreakpointManager,
+    BreakpointSpec,
+    BrowserHookManager,
+    FunctionHookManager,
+    FunctionHookSpec,
+    SourceLogpointManager,
+    SourceLogpointSpec,
+)
 from reverse_deepagent.browser.providers import (
     CloakBrowserConfig,
     CloakBrowserProvider,
@@ -224,6 +232,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=[],
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_source_logpoint_request(protection_name, context):
+            spec = SourceLogpointSpec.from_context(context)
+            result = SourceLogpointManager().install(page, spec)
+            breakpoint_count = len(result.breakpoints)
+            event_count = len(result.events)
+            verification = [
+                f"source_logpoint_status={result.status}",
+                f"source_logpoint_breakpoint_count={breakpoint_count}",
+                f"source_logpoint_event_count={event_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"source_logpoint_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_logpoint_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/source-logpoints.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime source logpoint install result.",
+                    metadata={
+                        "status": result.status,
+                        "breakpoint_count": breakpoint_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/source-logpoint-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime source logpoint timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                    },
+                ),
+            ]
+            next_action = "inspect_source_logpoint_events" if event_count else "trigger_code_path_or_adjust_logpoint"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"set_source_logpoint:{spec.url_pattern}:{spec.line_number}"] if spec and breakpoint_count else []
+                ),
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if breakpoint_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if breakpoint_count else ConfidenceLevel.LOW,
             )
         if self._is_function_hook_request(protection_name, context):
             spec = FunctionHookSpec.from_context(context)
@@ -493,9 +555,26 @@ class NativeWebRuntime(WebReverseRuntime):
         return any(key in context for key in ("url_pattern", "script_url", "line_number", "lineNumber"))
 
     @staticmethod
+    def _is_source_logpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"source-logpoint", "logpoint"}:
+            return True
+        return any(
+            key in context
+            for key in (
+                "log_expression",
+                "logExpression",
+                "source_expression",
+                "sourceExpression",
+                "logpoint_id",
+                "logpointId",
+            )
+        )
+
+    @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
-        if normalized in {"hook-function", "function-hook", "target-function-hook", "source-logpoint", "logpoint"}:
+        if normalized in {"hook-function", "function-hook", "target-function-hook"}:
             return True
         return any(
             key in context

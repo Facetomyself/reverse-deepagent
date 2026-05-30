@@ -115,6 +115,20 @@ class CoordinatorTests(unittest.TestCase):
                     details={"installed_count": 1, "installed": [{"path": "window.buildSign"}]},
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
+                EvidenceItem(
+                    summary="Native source logpoint timeline",
+                    kind=EvidenceKind.HOOK,
+                    source="source_logpoint_timeline",
+                    details={"event_count": 1, "events": [{"type": "source_logpoint"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source logpoint install result",
+                    kind=EvidenceKind.HOOK,
+                    source="source_logpoints",
+                    details={"count": 1, "breakpoints": [{"breakpointId": "bp-logpoint-1"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
             ],
             artifacts=[],
             next_action="wait_for_breakpoint",
@@ -128,9 +142,13 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["debugger-timeline.json"]["entry_count"], 4)
         self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
+        self.assertEqual(payloads["source-logpoints.json"]["count"], 1)
+        self.assertEqual(payloads["source-logpoint-timeline.json"]["event_count"], 1)
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_function_hooks"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
+        self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
