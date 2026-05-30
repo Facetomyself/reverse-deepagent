@@ -11,7 +11,7 @@ from .base import (
 )
 from .chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
 from .mcp_stdio import McpBridgeError, McpProtocolError, McpTimeoutError, StdioMcpBridge
-from .registry import RuntimeBackendRegistration, RuntimeBackendRegistry
+from .registry import RUNTIME_BACKEND_ENTRY_POINT_GROUP, RuntimeBackendRegistration, RuntimeBackendRegistry
 
 __all__ = [
     "BrowserSessionInfo",
@@ -25,6 +25,7 @@ __all__ = [
     "RuntimeArtifactManifest",
     "RuntimeArtifactManifestEntry",
     "RuntimeBackendCapabilities",
+    "RUNTIME_BACKEND_ENTRY_POINT_GROUP",
     "RuntimeBackendRegistration",
     "RuntimeBackendRegistry",
     "RuntimeExportBundle",

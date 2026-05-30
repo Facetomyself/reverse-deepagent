@@ -89,6 +89,7 @@ Responsibilities:
 2. Provide JSON-serializable capability metadata without starting external processes.
 3. Construct a backend only when explicitly requested by `build_runtime(...)`.
 4. Keep unknown backend failures explicit and actionable.
+5. Load optional backend plugins from the `reverse_deepagent.runtime_backends` Python entry-point group without invoking backend factories during metadata listing.
 
 Non-goals:
 
@@ -267,11 +268,12 @@ The project can then add Android-specific methods or higher-level workflows with
 1. Define a serializable config object.
 2. Implement or wrap `ReverseRuntime`; implement `WebReverseRuntime` only for genuine browser/Web backends.
 3. Implement `describe_capabilities()`.
-4. Register the backend in `RuntimeBackendRegistry` with aliases.
-5. Add tests for metadata listing without starting external processes.
-6. Add tests for backend construction.
-7. Add or update docs and smoke commands.
-8. Ensure generated artifacts are included in `workspace/backend-artifact-manifest.json`.
+4. Register the backend in `RuntimeBackendRegistry` with aliases, or expose a package entry point under `reverse_deepagent.runtime_backends` that returns one or more `RuntimeBackendRegistration` objects.
+5. Keep registration side-effect light: entry-point loading may import plugin Python code, but it must not start browsers, MCP processes, device tooling, or network sessions; backend factories run only when explicitly selected.
+6. Add tests for metadata listing without starting external processes.
+7. Add tests for backend construction.
+8. Add or update docs and smoke commands.
+9. Ensure generated artifacts are included in `workspace/backend-artifact-manifest.json`.
 
 ## Current limitations
 
@@ -279,7 +281,7 @@ The project can then add Android-specific methods or higher-level workflows with
 - `run_platform_pipeline(...)` / `reverse-agent-platform` now provide the platform-neutral baseline: task card, route decision, capability capture, runtime export bundle, optional platform tool probe, backend manifest, report, and artifact index. It does not yet perform Android/iOS/mini-program-specific hook, static-analysis, or replay-validation workflows.
 - `playwright-cli`, `chrome-cdp`, and `browser-cli` are intentionally lightweight Web backends. They expose Web runtime schemas, but they do not start Chrome, capture live network timelines, or execute page JavaScript validation unless a future transport explicitly implements those operations.
 - `ReverseRuntime` intentionally does not expose mobile-specific operations yet; future adapters should add separate capability layers rather than reusing browser method names.
-- The registry is in-process Python registration, not package entry-point plugin loading.
+- Runtime backend entry-point loading is implemented as the split seam for optional packages; built-in backends are still registered in-process until legacy MCP is physically moved out of the core distribution.
 - Real MCP smoke still requires a self-hosted runner with Chrome and JSReverser MCP installed.
 - `native-web` and BrowserProvider contracts are implemented as selectable Web runtime infrastructure; the CLI default still stays on `mock` for deterministic public CI, and real BrowserProvider smoke remains explicit / environment-gated.
 - MCP is retained as a compatibility backend during migration; it is not the long-term Web architecture center.

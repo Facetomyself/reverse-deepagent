@@ -493,7 +493,7 @@ def _remote_cdp_provider_runtime_factory(**kwargs: Any):
     return _native_web_runtime_factory(**kwargs)
 
 
-def build_default_runtime_registry() -> RuntimeBackendRegistry:
+def build_default_runtime_registry(*, include_entry_points: bool = True) -> RuntimeBackendRegistry:
     """Build the default runtime backend registry without starting external processes."""
 
     registry = RuntimeBackendRegistry()
@@ -762,6 +762,8 @@ def build_default_runtime_registry() -> RuntimeBackendRegistry:
             ),
         )
     )
+    if include_entry_points:
+        registry.load_entry_points()
     return registry
 
 

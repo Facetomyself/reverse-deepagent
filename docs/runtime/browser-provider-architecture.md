@@ -371,7 +371,8 @@ Current implementation status:
 | CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
 | Remote CDP provider | Implemented | `src/reverse_deepagent/browser/providers/remote_cdp.py`, `tests/test_remote_cdp_provider.py` |
 | NativeWebRuntime | Native collectors, hook baseline, target-function wrapper baseline, module export hook baseline, source-level logpoint baseline, retained paused-session registry baseline, durable paused-session snapshot inspect-only baseline, runtime-eval candidate validation, and paused/callframe breakpoint snapshot implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
-| MCP legacy alias | Implemented | `legacy-mcp` canonical id with `mcp` / `jsreverser-mcp` aliases |
+| Runtime backend entry-point discovery | Baseline implemented | `RuntimeBackendRegistry.load_entry_points()` loads `reverse_deepagent.runtime_backends` registrations without invoking backend factories |
+| MCP legacy alias | Implemented | `legacy-mcp` canonical id with `mcp` / `jsreverser-mcp` aliases; physical split remains future packaging work |
 
 The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services. CloakBrowser-specific operational notes live in `docs/runtime/cloakbrowser-provider.md`.
 

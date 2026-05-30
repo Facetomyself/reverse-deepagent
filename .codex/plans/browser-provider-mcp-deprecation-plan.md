@@ -34,7 +34,23 @@
 
 ## 阶段执行记录与剩余顺序
 
-当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline、callframe evaluation policy baseline、mutation audit baseline、page-level mutation audit baseline、MutationObserver timeline baseline、debugger step-control baseline、paused-session continuation preflight、durable paused-session snapshot inspect-only baseline、single-run debugger timeline baseline、target-function wrapper baseline、source-level logpoint baseline、source map / bundle offset remap baseline、source-map bias / sourceRoot / indexed section remap baseline、module export hook baseline、module discovery baseline、runtime module cache / registry introspection baseline、custom runtime / module federation function-path candidate baseline、closure-scope function discovery baseline、native-web recon flow timeline baseline、flow timeline correlation hints、conservative correlation groups、group verification readiness、manual stitch candidates、explicit flow timeline continuation baseline，以及 retained paused-session registry baseline 均已验证，MCP alias deprecation warning 已接入，最终 code review 已完成并修复 module-hook 路由、module hook path quoting 和 page-mutation global snapshot 副作用风险；后续进入跨进程 live CDP paused execution continuation、任意 custom loader / async chunk graph / 深层 module federation 执行式分析、任意闭包内部函数自动 wrapper hook、JS heap 级细粒度 mutation audit / object graph diff 和自动全链路跨请求 timeline stitching。Step 5.1 到 Step 10 保留为已执行阶段记录，便于 review 和回溯。
+当前下一步：Phase 0-10 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline、callframe evaluation policy baseline、mutation audit baseline、page-level mutation audit baseline、MutationObserver timeline baseline、debugger step-control baseline、paused-session continuation preflight、durable paused-session snapshot inspect-only baseline、single-run debugger timeline baseline、target-function wrapper baseline、source-level logpoint baseline、source map / bundle offset remap baseline、source-map bias / sourceRoot / indexed section remap baseline、module export hook baseline、module discovery baseline、runtime module cache / registry introspection baseline、custom runtime / module federation function-path candidate baseline、closure-scope function discovery baseline、native-web recon flow timeline baseline、flow timeline correlation hints、conservative correlation groups、group verification readiness、manual stitch candidates、explicit flow timeline continuation baseline，以及 retained paused-session registry baseline 均已验证，MCP alias deprecation warning 已接入，最终 code review 已完成并修复 module-hook 路由、module hook path quoting 和 page-mutation global snapshot 副作用风险；当前续作已启动 MCP 物理拆包前置步骤：RuntimeBackendRegistry 支持 `reverse_deepagent.runtime_backends` entry-point discovery，加载外部 backend registration 时不调用 backend factory。后续仍需完成 legacy MCP 真正移出主包、跨进程 live CDP paused execution continuation、任意 custom loader / async chunk graph / 深层 module federation 执行式分析、任意闭包内部函数自动 wrapper hook、JS heap 级细粒度 mutation audit / object graph diff 和自动全链路跨请求 timeline stitching。Step 5.1 到 Step 10.1 保留为已执行阶段记录，便于 review 和回溯。
+
+### Step 10.1：Runtime backend entry-point discovery baseline
+
+交付物：
+
+- `RuntimeBackendRegistry.load_entry_points()`：加载 `reverse_deepagent.runtime_backends` Python entry-point group
+- `RUNTIME_BACKEND_ENTRY_POINT_GROUP`：公开 entry-point group 常量
+- `build_default_runtime_registry(include_entry_points=True)`：默认加载外部 backend registration，同时保留测试用确定性开关
+- registry 硬约束：`RuntimeBackendRegistration.backend_id` 必须与 `RuntimeBackendCapabilities.backend_id` 一致
+- 单测覆盖：entry-point registration、callable 多 registration、invalid payload、load error、factory 不在 metadata listing 阶段调用
+
+边界：
+
+- 这是 legacy MCP 物理拆包的前置 seam，不等于 MCP 已经从主包移除
+- entry-point loading 可以 import 插件 Python 代码，但不得启动浏览器、MCP、设备工具或网络会话
+- backend factory 仍只在显式 `build_runtime(...)` / `registry.create(...)` 时调用
 
 ### Step 5.1：完成 CloakBrowser provider skeleton
 
