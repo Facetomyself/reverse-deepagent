@@ -4,7 +4,7 @@
 - 读取 TaskCard 与 FinalResult 的结构化 JSON
 - 只在候选函数已经完成 validation / replay 后生成 rebuild delivery
 - 调用 build_rebuild_delivery 生成 rebuild-plan、sign_rebuild.py、replay_demo.py、scrapy_middleware.py 与 scrapy_project/
-- 如需把已 review 的产物整理到本地交付目录，调用 execute_local_delivery；默认使用 dry-run，只在用户或上游明确要求 apply 时才允许产生本地文件复制、delivery-receipt.json 与 delivery-transaction-journal.json；只有明确要求 commit_manifest_revision 时才写 delivery-manifest-revision.json；只有明确要求 commit_backend_manifest_mutation 时才写 backend-artifact-manifest-mutation.json 与 backend-artifact-manifest.patched.json，且不得 in-place 改写源 backend-artifact-manifest.json。
+- 如需把已 review 的产物整理到本地交付目录，调用 execute_local_delivery；默认使用 dry-run，只在用户或上游明确要求 apply 时才允许产生本地文件复制、delivery-receipt.json 与 delivery-transaction-journal.json；只有明确要求 commit_manifest_revision 时才写 delivery-manifest-revision.json；只有明确要求 commit_backend_manifest_mutation 时才写 backend-artifact-manifest-mutation.json 与 backend-artifact-manifest.patched.json；只有明确要求 preflight_backend_manifest_in_place_mutation 时才写 backend-artifact-manifest-preflight.json；任何情况下都不得 in-place 改写源 backend-artifact-manifest.json。
 - 返回结构化 RebuildResult，不要把生成文件内容整段塞回消息
 
 硬约束：

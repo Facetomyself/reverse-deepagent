@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -240,6 +241,119 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertFalse(journal["backend_manifest_mutated"])
             self.assertIn("writes_local_patched_manifest_copy_only", mutation["metadata"]["limitations"])
 
+    def test_dry_run_backend_manifest_in_place_preflight_is_plan_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = root / "workspace" / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-preflight-dry-run",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "planned")
+            self.assertFalse(result.backend_manifest_in_place_preflight_passed)
+            self.assertFalse(result.backend_manifest_mutated)
+            self.assertIsNotNone(result.backend_manifest_in_place_preflight)
+            self.assertEqual(result.backend_manifest_in_place_preflight.status, "planned")
+            self.assertTrue(result.backend_manifest_in_place_preflight.dry_run)
+            self.assertFalse(result.backend_manifest_in_place_preflight.in_place_mutation_allowed)
+            self.assertFalse((delivery_root / "backend-artifact-manifest-preflight.json").exists())
+            self.assertFalse(delivery_root.exists())
+
+    def test_apply_writes_backend_manifest_in_place_preflight_without_mutating_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": [{"artifact_key": "existing", "path": "workspace/existing.json", "kind": "json"}]}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            expected_digest = _sha256_file(backend_manifest)
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=expected_digest,
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+
+            preflight_path = delivery_root / "backend-artifact-manifest-preflight.json"
+            journal_path = delivery_root / "delivery-transaction-journal.json"
+            self.assertTrue(result.backend_manifest_patch_written)
+            self.assertTrue(result.backend_manifest_in_place_preflight_passed)
+            self.assertFalse(result.backend_manifest_mutated)
+            self.assertIsNotNone(result.backend_manifest_in_place_preflight)
+            self.assertEqual(result.backend_manifest_in_place_preflight.status, "passed")
+            self.assertTrue(result.backend_manifest_in_place_preflight.in_place_mutation_allowed)
+            self.assertTrue(preflight_path.exists())
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+
+            preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(preflight["status"], "passed")
+            self.assertTrue(preflight["in_place_mutation_allowed"])
+            self.assertFalse(preflight["backend_manifest_mutated"])
+            self.assertEqual(preflight["source_manifest_digest_sha256"], expected_digest)
+            self.assertEqual(preflight["expected_source_manifest_digest_sha256"], expected_digest)
+            self.assertFalse(preflight["blocking_reasons"])
+            self.assertTrue(all(check["passed"] for check in preflight["checks"]))
+            self.assertEqual(journal["backend_manifest_preflight_path"], str(preflight_path.resolve()))
+            self.assertTrue(journal["backend_manifest_in_place_preflight_passed"])
+            self.assertFalse(journal["backend_manifest_mutated"])
+
+    def test_backend_manifest_in_place_preflight_blocks_digest_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-preflight-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256="0" * 64,
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertFalse(result.backend_manifest_in_place_preflight_passed)
+            self.assertFalse(result.backend_manifest_mutated)
+            self.assertIsNotNone(result.backend_manifest_in_place_preflight)
+            self.assertEqual(result.backend_manifest_in_place_preflight.status, "blocked")
+            self.assertIn("expected_source_manifest_digest_matches", result.backend_manifest_in_place_preflight.blocking_reasons)
+            preflight = json.loads((delivery_root / "backend-artifact-manifest-preflight.json").read_text(encoding="utf-8"))
+            self.assertEqual(preflight["status"], "blocked")
+            self.assertFalse(preflight["in_place_mutation_allowed"])
+            self.assertIn("expected_source_manifest_digest_matches", preflight["blocking_reasons"])
+
     def test_missing_required_source_blocks_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -257,3 +371,11 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(result.next_action, "fix_delivery_artifact_inputs")
             self.assertTrue(result.errors)
             self.assertIn("missing_source", result.errors[0])
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

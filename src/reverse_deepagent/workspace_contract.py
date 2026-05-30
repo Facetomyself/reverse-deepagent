@@ -296,6 +296,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_delivery_manifest_revision", "workspace/delivery-manifest-revision.json", "/workspace/delivery/", "delivery-manifest-revision.json", "export", ("delivery", "review")),
         ("workspace_backend_artifact_manifest_mutation", "workspace/backend-artifact-manifest-mutation.json", "/workspace/delivery/", "backend-artifact-manifest-mutation.json", "export", ("delivery", "review")),
         ("workspace_backend_artifact_manifest_patched", "workspace/backend-artifact-manifest.patched.json", "/workspace/delivery/", "backend-artifact-manifest.patched.json", "export", ("delivery", "review")),
+        ("workspace_backend_artifact_manifest_preflight", "workspace/backend-artifact-manifest-preflight.json", "/workspace/delivery/", "backend-artifact-manifest-preflight.json", "triage", ("delivery", "review")),
         ("workspace_review_gate", "workspace/review-gate.json", "/workspace/review/", "review-gate.json", "triage", ("review", "delivery")),
         ("workspace_rebuild_plan", "workspace/rebuild-plan.json", "/workspace/rebuild/", "rebuild-plan.json", "rebuild", ("rebuild", "delivery")),
         ("workspace_final", "workspace/final-result.json", "/workspace/delivery/", "final-result.json", "workspace", ("delivery", "coordinator")),

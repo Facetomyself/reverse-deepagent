@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .executors import (
+    BackendManifestInPlacePreflight,
     BackendManifestMutation,
     DeliveryArtifact,
     DeliveryExecutionMode,
@@ -13,6 +14,7 @@ from .executors import (
 )
 
 __all__ = [
+    "BackendManifestInPlacePreflight",
     "BackendManifestMutation",
     "DeliveryArtifact",
     "DeliveryExecutionMode",

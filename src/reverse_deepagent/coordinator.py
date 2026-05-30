@@ -941,6 +941,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_delivery_manifest_revision": "export",
     "workspace_backend_artifact_manifest_mutation": "export",
     "workspace_backend_artifact_manifest_patched": "export",
+    "workspace_backend_artifact_manifest_preflight": "triage",
     "workspace_review_gate": "triage",
 }
 
