@@ -1100,6 +1100,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("flow_timeline_auto_stitch_rollback_review_gate_recomputation_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_dry_run_diff_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_result_count=0", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_post_physical_rollback_review_gate_rerun_count=0", result.verification)
 
         flow_metadata = result.artifacts[0].metadata
         self.assertEqual(flow_metadata["auto_stitch_rollback_execution_result_count"], 1)
@@ -1111,6 +1112,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(flow_metadata["auto_stitch_physical_rollback_dry_run_diff_summary"]["physical_artifact_mutated"])
         self.assertEqual(flow_metadata["auto_stitch_physical_rollback_result_count"], 0)
         self.assertFalse(flow_metadata["auto_stitch_physical_rollback_result_summary"]["target_artifact_mutated"])
+        self.assertEqual(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_count"], 0)
 
         artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
         gate_artifact = artifacts_by_path["virtual://workspace/review-gate-after-rollback.json"]
@@ -1195,8 +1197,10 @@ class NativeWebRuntimeTests(unittest.TestCase):
 
         self.assertEqual(result.status.value, "success")
         self.assertIn("apply_review_approved_physical_rollback", result.applied_actions)
+        self.assertIn("rerun_review_gate_after_physical_rollback", result.applied_actions)
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_review_decision_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_result_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_post_physical_rollback_review_gate_rerun_count=1", result.verification)
         self.assertIn("flow_timeline_stitched_flow_count=0", result.verification)
 
         flow_metadata = result.artifacts[0].metadata
@@ -1205,6 +1209,12 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(flow_metadata["auto_stitch_physical_rollback_result_summary"]["target_artifact_mutated"])
         self.assertTrue(flow_metadata["auto_stitch_physical_rollback_result_summary"]["standard_review_gate_rerun_required"])
         self.assertFalse(flow_metadata["auto_stitch_physical_rollback_result_summary"]["would_replace_review_gate"])
+        self.assertEqual(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["rerun_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["blocked_count"], 1)
+        self.assertTrue(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["target_artifact_mutated"])
+        self.assertTrue(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["does_not_replace_review_gate"])
+        self.assertFalse(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["would_replace_review_gate"])
         self.assertEqual(flow_metadata["stitched_flow_count"], 0)
 
         artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
@@ -1214,6 +1224,13 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result_artifact.metadata["target_artifact_mutated"])
         self.assertFalse(result_artifact.metadata["automatic_rollback"])
         self.assertFalse(result_artifact.metadata["would_replace_review_gate"])
+        gate_artifact = artifacts_by_path["virtual://workspace/review-gate-after-physical-rollback.json"]
+        self.assertEqual(gate_artifact.metadata["count"], 1)
+        self.assertEqual(gate_artifact.metadata["summary"]["rerun_count"], 1)
+        self.assertTrue(gate_artifact.metadata["summary"]["does_not_replace_review_gate"])
+        self.assertFalse(gate_artifact.metadata["delivery_allowed"])
+        self.assertFalse(gate_artifact.metadata["automatic_rollback"])
+        self.assertTrue(gate_artifact.metadata["target_artifact_mutated"])
 
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()

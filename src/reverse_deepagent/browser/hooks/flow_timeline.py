@@ -226,6 +226,8 @@ class FlowTimelineResult:
     auto_stitch_physical_rollback_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_physical_rollback_results: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_physical_rollback_result_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_post_physical_rollback_review_gate_reruns: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_post_physical_rollback_review_gate_rerun_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -295,6 +297,9 @@ class FlowTimelineResult:
             "auto_stitch_physical_rollback_result_count": len(self.auto_stitch_physical_rollback_results),
             "auto_stitch_physical_rollback_results": self.auto_stitch_physical_rollback_results,
             "auto_stitch_physical_rollback_result_summary": self.auto_stitch_physical_rollback_result_summary,
+            "auto_stitch_post_physical_rollback_review_gate_rerun_count": len(self.auto_stitch_post_physical_rollback_review_gate_reruns),
+            "auto_stitch_post_physical_rollback_review_gate_reruns": self.auto_stitch_post_physical_rollback_review_gate_reruns,
+            "auto_stitch_post_physical_rollback_review_gate_rerun_summary": self.auto_stitch_post_physical_rollback_review_gate_rerun_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -444,6 +449,16 @@ class FlowTimelineManager:
             auto_stitch_physical_rollback_results,
             spec.auto_stitch_physical_rollback_review_decisions,
         )
+        auto_stitch_post_physical_rollback_review_gate_reruns = self._auto_stitch_post_physical_rollback_review_gate_reruns(
+            auto_stitch_physical_rollback_results,
+            stitched_flows,
+        )
+        auto_stitch_post_physical_rollback_review_gate_rerun_summary = (
+            self._auto_stitch_post_physical_rollback_review_gate_rerun_summary(
+                auto_stitch_post_physical_rollback_review_gate_reruns,
+                auto_stitch_physical_rollback_results,
+            )
+        )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -480,6 +495,8 @@ class FlowTimelineManager:
             auto_stitch_physical_rollback_review_decisions=list(spec.auto_stitch_physical_rollback_review_decisions),
             auto_stitch_physical_rollback_results=auto_stitch_physical_rollback_results,
             auto_stitch_physical_rollback_result_summary=auto_stitch_physical_rollback_result_summary,
+            auto_stitch_post_physical_rollback_review_gate_reruns=auto_stitch_post_physical_rollback_review_gate_reruns,
+            auto_stitch_post_physical_rollback_review_gate_rerun_summary=auto_stitch_post_physical_rollback_review_gate_rerun_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -2609,6 +2626,105 @@ class FlowTimelineManager:
                 "rerun_standard_review_gate_after_physical_rollback"
                 if applied_count
                 else "review_physical_rollback_diff_before_any_artifact_mutation"
+            ),
+        }
+
+    @classmethod
+    def _auto_stitch_post_physical_rollback_review_gate_reruns(
+        cls,
+        physical_rollback_results: list[dict[str, Any]],
+        stitched_flows_after_rollback: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        reruns: list[dict[str, Any]] = []
+        remaining_flow_ids = [
+            str(flow.get("stitched_flow_id"))
+            for flow in stitched_flows_after_rollback
+            if isinstance(flow, dict) and flow.get("stitched_flow_id")
+        ]
+        for result in physical_rollback_results:
+            if result.get("status") != "physical_rollback_applied" or not result.get("physical_rollback_applied"):
+                continue
+            reruns.append(
+                {
+                    "rerun_id": f"stitched-flow-post-physical-rollback-review-gate-rerun-{len(reruns) + 1}",
+                    "status": "standard_review_gate_rerun_required",
+                    "gate_name": "standard_review_gate_after_physical_rollback",
+                    "source": "review_approved_physical_rollback_result",
+                    "physical_rollback_result_id": result.get("physical_rollback_result_id"),
+                    "dry_run_id": result.get("dry_run_id"),
+                    "rollback_execution_result_id": result.get("rollback_execution_result_id"),
+                    "rollback_execution_plan_id": result.get("rollback_execution_plan_id"),
+                    "transaction_id": result.get("transaction_id"),
+                    "rollback_id": result.get("rollback_id"),
+                    "materialization_result_id": result.get("materialization_result_id"),
+                    "candidate_id": result.get("candidate_id"),
+                    "group_id": result.get("group_id"),
+                    "target_artifact": result.get("target_artifact", "workspace/stitched-flow.json"),
+                    "virtual_target_artifact": result.get("virtual_target_artifact", "virtual://workspace/stitched-flow.json"),
+                    "review_gate_artifact": "workspace/review-gate-after-physical-rollback.json",
+                    "virtual_review_gate_artifact": "virtual://workspace/review-gate-after-physical-rollback.json",
+                    "standard_review_gate_artifact": "workspace/review-gate.json",
+                    "virtual_standard_review_gate_artifact": "virtual://workspace/review-gate.json",
+                    "removed_stitched_flow_ids": cls._string_values(result.get("matched_stitched_flow_ids")),
+                    "removed_entry_sequences": list(result.get("removed_entry_sequences", [])) if isinstance(result.get("removed_entry_sequences"), list) else [],
+                    "remaining_stitched_flow_ids": remaining_flow_ids,
+                    "remaining_stitched_flow_count": len(remaining_flow_ids),
+                    "physical_artifact_mutated": bool(result.get("physical_artifact_mutated")),
+                    "target_artifact_mutated": bool(result.get("target_artifact_mutated")),
+                    "standard_review_gate_rerun_required": True,
+                    "does_not_replace_review_gate": True,
+                    "would_replace_review_gate": False,
+                    "delivery_allowed": False,
+                    "blocked": True,
+                    "review_required": True,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "recompute_baseline": True,
+                    "reasons": [
+                        "physical_rollback_applied",
+                        "stitched_flow_artifact_model_changed",
+                        "standard_review_gate_must_be_rerun_before_delivery",
+                    ],
+                    "blocking_conditions": [
+                        "review_physical_rollback_result",
+                        "confirm_backend_artifact_manifest_after_physical_rollback",
+                        "replace_standard_review_gate_after_rerun",
+                        "rerun_delivery_guard_after_physical_rollback",
+                    ],
+                    "next_action": "replace_standard_review_gate_after_physical_rollback_rerun",
+                }
+            )
+        return reruns
+
+    @classmethod
+    def _auto_stitch_post_physical_rollback_review_gate_rerun_summary(
+        cls,
+        reruns: list[dict[str, Any]],
+        physical_rollback_results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        blocked_count = sum(1 for item in reruns if item.get("blocked"))
+        return {
+            "rerun_count": len(reruns),
+            "source_physical_rollback_result_count": len(physical_rollback_results),
+            "physical_rollback_applied_count": sum(1 for result in physical_rollback_results if result.get("physical_rollback_applied")),
+            "blocked_count": blocked_count,
+            "delivery_allowed_count": sum(1 for item in reruns if item.get("delivery_allowed")),
+            "review_required": bool(reruns),
+            "physical_artifact_mutated": any(bool(item.get("physical_artifact_mutated")) for item in reruns),
+            "target_artifact_mutated": any(bool(item.get("target_artifact_mutated")) for item in reruns),
+            "standard_review_gate_rerun_required": bool(reruns),
+            "does_not_replace_review_gate": bool(reruns),
+            "would_replace_review_gate": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "review_gate_artifact": "workspace/review-gate-after-physical-rollback.json",
+            "virtual_review_gate_artifact": "virtual://workspace/review-gate-after-physical-rollback.json",
+            "standard_review_gate_artifact": "workspace/review-gate.json",
+            "scope": "post-physical-rollback-standard-review-gate-rerun-baseline",
+            "next_action": (
+                "replace_standard_review_gate_after_physical_rollback_rerun"
+                if reruns
+                else "apply_review_approved_physical_rollback_before_review_gate_rerun"
             ),
         }
 
