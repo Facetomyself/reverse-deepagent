@@ -41,6 +41,11 @@ class RecordingCDPSession:
                         }
                     )
             return {"result": {"type": "string", "value": "scheduled"}}
+        if method == "Debugger.evaluateOnCallFrame":
+            expression = (params or {}).get("expression")
+            value = "function" if expression == "typeof buildSign" else True if expression == "this && typeof this" else "ok"
+            value_type = "boolean" if isinstance(value, bool) else "string"
+            return {"result": {"type": value_type, "value": value, "description": str(value)}}
         if method == "Debugger.resume":
             return {}
         return {}
@@ -93,6 +98,18 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(camel.url_pattern, ".*bundle\\.js$")
         self.assertEqual(camel.line_number, 9)
         self.assertEqual(camel.column_number, 4)
+
+        eval_spec = BreakpointSpec.from_context(
+            {
+                "script_url": "https://cdn.example/app.js",
+                "evaluateOnCallFrame": ["typeof buildSign", " this && typeof this "],
+                "callFrameIndex": "0",
+            }
+        )
+        self.assertIsNotNone(eval_spec)
+        assert eval_spec is not None
+        self.assertEqual(eval_spec.callframe_evaluations, ["typeof buildSign", "this && typeof this"])
+        self.assertEqual(eval_spec.callframe_index, 0)
 
         script_url = BreakpointSpec.from_context({"script_url": "https://cdn.example/app.js"})
         self.assertIsNotNone(script_url)
@@ -147,6 +164,28 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertTrue(result.trigger["attempted"])
         self.assertIn(("Debugger.resume", {}), session.calls)
         self.assertEqual(result.to_dict()["callframe_count"], 1)
+
+    def test_set_breakpoint_evaluates_explicit_callframe_expressions_before_resume(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_evaluate=True)
+        spec = BreakpointSpec(
+            url_pattern=".*app\\.js$",
+            line_number=3,
+            trigger_expression="debugger; 'scheduled'",
+            callframe_evaluations=["typeof buildSign", "this && typeof this"],
+        )
+        result = BreakpointManager().set_breakpoint(FakeBreakpointPage(session), spec)
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.paused["status"], "success")
+        self.assertEqual(result.to_dict()["callframe_evaluation_count"], 2)
+        self.assertEqual(result.callframe_evaluations[0]["expression"], "typeof buildSign")
+        self.assertTrue(result.callframe_evaluations[0]["ok"])
+        self.assertEqual(result.callframe_evaluations[0]["value"], "function")
+        self.assertEqual(result.callframe_evaluations[0]["valueType"], "string")
+        self.assertEqual(result.callframe_evaluations[0]["callFrameId"], "cf-1")
+        self.assertEqual(result.callframe_evaluations[1]["value"], True)
+        evaluate_index = next(index for index, call in enumerate(session.calls) if call[0] == "Debugger.evaluateOnCallFrame")
+        resume_index = next(index for index, call in enumerate(session.calls) if call[0] == "Debugger.resume")
+        self.assertLess(evaluate_index, resume_index)
 
     def test_set_breakpoint_failure_is_structured(self) -> None:
         result = BreakpointManager().set_breakpoint(

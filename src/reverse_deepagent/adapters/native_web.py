@@ -236,11 +236,13 @@ class NativeWebRuntime(WebReverseRuntime):
             pattern = spec.url_pattern if spec else "<missing>"
             paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
             callframe_count = len(result.callframes)
+            callframe_evaluation_count = len(result.callframe_evaluations)
             verification = [
                 f"breakpoint_status={result.status}",
                 f"breakpoint_supported={result.supported}",
                 f"paused_status={paused_status or 'unknown'}",
                 f"callframe_count={callframe_count}",
+                f"callframe_evaluation_count={callframe_evaluation_count}",
                 f"context_keys={sorted(context.keys())}",
             ]
             if result.trigger:
@@ -283,6 +285,18 @@ class NativeWebRuntime(WebReverseRuntime):
                     },
                 ),
             ]
+            if (spec and spec.callframe_evaluations) or result.callframe_evaluations:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/callframe-evaluations.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger callframe evaluation snapshot.",
+                        metadata={
+                            "count": callframe_evaluation_count,
+                            "paused_status": paused_status or "unknown",
+                        },
+                    )
+                )
             if paused_status == "success":
                 next_action = "inspect_callframes_or_resume"
             elif result.status in {"success", "partial"}:

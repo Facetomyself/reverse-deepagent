@@ -226,9 +226,9 @@ Hooks and debugging should also be project-owned:
 | `CookieHook` | Observe cookie writes and auth-related mutations. |
 | `WebSocketHook` | Capture app-level WebSocket send/receive when CDP frame data is insufficient. |
 | `AntiDebugPatch` | Minimal patches for `debugger`, `console.clear`, redirect traps, and DevTools-size checks. |
-| `BreakpointManager` | Provider-neutral CDP breakpoint setup behind capability checks; callframe evaluation remains a later debugger-scope extension. |
+| `BreakpointManager` | Provider-neutral CDP breakpoint setup behind capability checks, including opt-in paused callframe evaluation. |
 
-Current baseline supports explicit `apply_minimal_protection` breakpoint requests and returns `breakpoints.json` artifact refs; default recon must not set breakpoints implicitly.
+Current baseline supports explicit `apply_minimal_protection` breakpoint requests and returns `breakpoints.json`, paused snapshot, callframe, and optional callframe-evaluation artifact refs; default recon must not set breakpoints implicitly.
 
 ## 10. NativeWebRuntime target
 
@@ -287,6 +287,7 @@ The native runtime should preserve current artifact semantics:
 - `workspace/function-validation-summary.json`
 - `workspace/debugger-paused.json`
 - `workspace/callframes.json`
+- `workspace/callframe-evaluations.json`
 - `workspace/backend-artifact-manifest.json`
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
@@ -314,13 +315,13 @@ Current hook baseline support:
 - XHR `open` / `send` wrapper records sanitized URL, method, and body type.
 - cookie setter wrapper records cookie names and value sizes, not raw cookie values.
 - minimal anti-debug patch disables `console.clear` and emits blocked clear events.
-- explicit breakpoint requests can set `Debugger.setBreakpointByUrl`, optionally trigger a runtime expression, capture `Debugger.paused`, normalize callframes, and auto-resume when requested.
+- explicit breakpoint requests can set `Debugger.setBreakpointByUrl`, optionally trigger a runtime expression, capture `Debugger.paused`, normalize callframes, run explicit `Debugger.evaluateOnCallFrame` expressions, and auto-resume when requested.
 
-Debugger stepping, persistent pause management, and callframe evaluation remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
+Advanced debugger stepping, persistent pause management, selected callFrame state, and side-effectful evaluation policy remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
 
 ## 11.3 Native candidate validation status
 
-`NativeWebRuntime` now builds candidate function cards from project-owned script inventory and validates them with provider-neutral page runtime evaluation when the selected BrowserProvider exposes `supports_runtime_eval=true`. When an explicit breakpoint trigger expression is supplied, the breakpoint manager can also capture a paused snapshot and normalized callframes, then auto-resume the page if requested.
+`NativeWebRuntime` now builds candidate function cards from project-owned script inventory and validates them with provider-neutral page runtime evaluation when the selected BrowserProvider exposes `supports_runtime_eval=true`. When an explicit breakpoint trigger expression is supplied, the breakpoint manager can also capture a paused snapshot and normalized callframes, run opt-in callframe evaluations, then auto-resume the page if requested.
 
 Current baseline emits:
 
@@ -329,8 +330,9 @@ Current baseline emits:
 - `workspace/function-validation-summary.json`
 - `workspace/debugger-paused.json`
 - `workspace/callframes.json`
+- `workspace/callframe-evaluations.json` when explicit `callframe_evaluations` / `evaluate_on_callframe` expressions are provided.
 
-This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe smoke path with the existing artifact contract. It is still intentionally narrower than the legacy MCP path: debugger stepping, persistent pause management, callframe evaluation, and target-specific function hooks remain separate capability-gated follow-up work.
+This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe/evaluateOnCallFrame smoke path with the existing artifact contract. It is still intentionally narrower than the legacy MCP path: debugger stepping, persistent pause management, side-effectful callframe mutation policy, and target-specific function hooks remain separate capability-gated follow-up work.
 
 ## 12. Implementation status
 

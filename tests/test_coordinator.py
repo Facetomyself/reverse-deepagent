@@ -72,6 +72,13 @@ class CoordinatorTests(unittest.TestCase):
                     source="breakpoint_manager",
                     details={"status": "success", "count": 1},
                     confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native debugger callframe evaluations",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="debugger_callframe_evaluations",
+                    details={"evaluations": [{"expression": "typeof buildSign", "ok": True, "value": "function"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
                 )
             ],
             artifacts=[],
@@ -80,7 +87,9 @@ class CoordinatorTests(unittest.TestCase):
         )
         payloads = _extract_workspace_artifact_payloads(final_result)
         self.assertEqual(payloads["breakpoints.json"], {"status": "success", "count": 1})
+        self.assertEqual(payloads["callframe-evaluations.json"]["evaluations"][0]["value"], "function")
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")
 
     def test_build_runtime_threads_legacy_mcp_config_summary_and_alias(self) -> None:
         runtime = build_runtime(

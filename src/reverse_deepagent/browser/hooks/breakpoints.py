@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,6 +19,8 @@ class BreakpointSpec:
     trigger_expression: str | None = None
     wait_after_trigger_ms: int = 0
     auto_resume: bool = True
+    callframe_evaluations: list[str] = field(default_factory=list)
+    callframe_index: int = 0
 
     @classmethod
     def from_context(cls, context: dict[str, Any] | None = None) -> "BreakpointSpec | None":
@@ -31,6 +34,13 @@ class BreakpointSpec:
         condition = context.get("condition")
         trigger_expression = context.get("trigger_expression", context.get("triggerExpression"))
         wait_raw = context.get("wait_after_trigger_ms", context.get("waitAfterTriggerMs", 0))
+        evaluations_raw = (
+            context.get("callframe_evaluations")
+            or context.get("callframeEvaluations")
+            or context.get("evaluate_on_callframe")
+            or context.get("evaluateOnCallFrame")
+        )
+        callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex", 0))
         return cls(
             url_pattern=str(url_pattern),
             line_number=line_number,
@@ -39,6 +49,8 @@ class BreakpointSpec:
             trigger_expression=str(trigger_expression) if trigger_expression else None,
             wait_after_trigger_ms=int(wait_raw or 0),
             auto_resume=bool(context.get("auto_resume", context.get("autoResume", True))),
+            callframe_evaluations=cls._coerce_evaluations(evaluations_raw),
+            callframe_index=int(callframe_index_raw or 0),
         )
 
     def to_cdp_params(self) -> dict[str, Any]:
@@ -52,6 +64,24 @@ class BreakpointSpec:
             params["condition"] = self.condition
         return params
 
+    @staticmethod
+    def _coerce_evaluations(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            stripped = value.strip()
+            return [stripped] if stripped else []
+        if isinstance(value, Iterable) and not isinstance(value, (dict, bytes, bytearray)):
+            expressions: list[str] = []
+            for item in value:
+                if item is None:
+                    continue
+                expression = str(item).strip()
+                if expression:
+                    expressions.append(expression)
+            return expressions
+        return []
+
 
 @dataclass(slots=True)
 class BreakpointResult:
@@ -60,6 +90,7 @@ class BreakpointResult:
     breakpoints: list[dict[str, Any]] = field(default_factory=list)
     paused: dict[str, Any] = field(default_factory=dict)
     callframes: list[dict[str, Any]] = field(default_factory=list)
+    callframe_evaluations: list[dict[str, Any]] = field(default_factory=list)
     trigger: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     reason: str | None = None
@@ -73,6 +104,8 @@ class BreakpointResult:
             "paused": self.paused,
             "callframes": self.callframes,
             "callframe_count": len(self.callframes),
+            "callframe_evaluations": self.callframe_evaluations,
+            "callframe_evaluation_count": len(self.callframe_evaluations),
             "trigger": self.trigger,
             "error": self.error,
             "reason": self.reason,
@@ -89,7 +122,7 @@ class BreakpointManager:
         if session is None:
             return BreakpointResult(status="unsupported", supported=False, reason="cdp_session_unavailable")
         paused_events: list[dict[str, Any]] = []
-        pause_subscription = self._subscribe_paused(session, paused_events, auto_resume=spec.auto_resume)
+        pause_subscription = self._subscribe_paused(session, paused_events, spec=spec)
         trigger: dict[str, Any] = {"attempted": False}
         try:
             session.send("Debugger.enable", {})
@@ -101,6 +134,7 @@ class BreakpointManager:
                 supported=True,
                 paused=self._paused_summary(paused_events, pause_subscription),
                 callframes=self._callframes_from_paused(paused_events),
+                callframe_evaluations=self._evaluations_from_paused(paused_events),
                 trigger=trigger,
                 error=str(exc),
             )
@@ -108,6 +142,7 @@ class BreakpointManager:
         locations = payload.get("locations", []) if isinstance(payload, dict) else []
         paused = self._paused_summary(paused_events, pause_subscription)
         callframes = self._callframes_from_paused(paused_events)
+        evaluations = self._evaluations_from_paused(paused_events)
         return BreakpointResult(
             status="success" if breakpoint_id else "partial",
             supported=True,
@@ -123,17 +158,20 @@ class BreakpointManager:
             ],
             paused=paused,
             callframes=callframes,
+            callframe_evaluations=evaluations,
             trigger=trigger,
         )
 
-    def _subscribe_paused(self, session: Any, paused_events: list[dict[str, Any]], *, auto_resume: bool) -> dict[str, Any]:
+    def _subscribe_paused(self, session: Any, paused_events: list[dict[str, Any]], *, spec: BreakpointSpec) -> dict[str, Any]:
         on = getattr(session, "on", None)
         if not callable(on):
             return {"supported": False, "reason": "cdp_event_subscription_unavailable"}
 
         def handle_paused(params: Any) -> None:
-            paused_events.append(self._normalize_paused(params))
-            if not auto_resume:
+            paused = self._normalize_paused(params)
+            paused["evaluations"] = self._evaluate_callframe_expressions(session, paused.get("callFrames", []), spec)
+            paused_events.append(paused)
+            if not spec.auto_resume:
                 return
             try:
                 session.send("Debugger.resume", {})
@@ -187,6 +225,13 @@ class BreakpointManager:
         frames = paused_events[0].get("callFrames", [])
         return frames if isinstance(frames, list) else []
 
+    @staticmethod
+    def _evaluations_from_paused(paused_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not paused_events:
+            return []
+        evaluations = paused_events[0].get("evaluations", [])
+        return evaluations if isinstance(evaluations, list) else []
+
     @classmethod
     def _normalize_paused(cls, params: Any) -> dict[str, Any]:
         if not isinstance(params, dict):
@@ -197,6 +242,101 @@ class BreakpointManager:
             "hitBreakpoints": params.get("hitBreakpoints", []) if isinstance(params.get("hitBreakpoints"), list) else [],
             "callFrames": callframes,
             "callframe_count": len(callframes),
+        }
+
+    def _evaluate_callframe_expressions(self, session: Any, callframes: list[dict[str, Any]], spec: BreakpointSpec) -> list[dict[str, Any]]:
+        if not spec.callframe_evaluations:
+            return []
+        if spec.callframe_index < 0 or spec.callframe_index >= len(callframes):
+            return [
+                {
+                    "expression": expression,
+                    "ok": False,
+                    "error": "callframe_index_out_of_range",
+                    "callframe_index": spec.callframe_index,
+                }
+                for expression in spec.callframe_evaluations
+            ]
+        callframe = callframes[spec.callframe_index]
+        callframe_id = callframe.get("callFrameId")
+        if not callframe_id:
+            return [
+                {
+                    "expression": expression,
+                    "ok": False,
+                    "error": "callframe_id_unavailable",
+                    "callframe_index": spec.callframe_index,
+                }
+                for expression in spec.callframe_evaluations
+            ]
+        evaluations: list[dict[str, Any]] = []
+        for expression in spec.callframe_evaluations:
+            try:
+                payload = session.send(
+                    "Debugger.evaluateOnCallFrame",
+                    {
+                        "callFrameId": callframe_id,
+                        "expression": expression,
+                        "returnByValue": True,
+                        "silent": True,
+                    },
+                )
+                evaluations.append(self._normalize_callframe_evaluation(expression, payload, spec.callframe_index, str(callframe_id)))
+            except Exception as exc:
+                evaluations.append(
+                    {
+                        "expression": expression,
+                        "ok": False,
+                        "error": str(exc),
+                        "callframe_index": spec.callframe_index,
+                        "callFrameId": callframe_id,
+                    }
+                )
+        return evaluations
+
+    @staticmethod
+    def _normalize_callframe_evaluation(expression: str, payload: Any, callframe_index: int, callframe_id: str) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {
+                "expression": expression,
+                "ok": True,
+                "value": payload,
+                "valueType": type(payload).__name__,
+                "callframe_index": callframe_index,
+                "callFrameId": callframe_id,
+            }
+        if payload.get("exceptionDetails"):
+            details = payload.get("exceptionDetails") if isinstance(payload.get("exceptionDetails"), dict) else {}
+            return {
+                "expression": expression,
+                "ok": False,
+                "error": details.get("text") or "evaluateOnCallFrame exception",
+                "callframe_index": callframe_index,
+                "callFrameId": callframe_id,
+            }
+        result = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+        if not isinstance(result, dict):
+            return {
+                "expression": expression,
+                "ok": True,
+                "value": result,
+                "valueType": type(result).__name__,
+                "callframe_index": callframe_index,
+                "callFrameId": callframe_id,
+            }
+        value = result.get("value")
+        if "unserializableValue" in result:
+            value = result.get("unserializableValue")
+        elif "value" not in result and "description" in result:
+            value = result.get("description")
+        return {
+            "expression": expression,
+            "ok": True,
+            "value": value,
+            "valueType": result.get("type"),
+            "description": result.get("description"),
+            "callframe_index": callframe_index,
+            "callFrameId": callframe_id,
         }
 
     @staticmethod

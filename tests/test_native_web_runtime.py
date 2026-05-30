@@ -50,6 +50,13 @@ class FakeCDPSession:
                     },
                 )
             return {"result": {"type": "string", "value": "scheduled"}}
+        if method == "Debugger.evaluateOnCallFrame":
+            expression = (params or {}).get("expression", "")
+            if expression == "typeof buildSign":
+                return {"result": {"type": "string", "value": "function", "description": "function"}}
+            if expression == "this && typeof this":
+                return {"result": {"type": "string", "value": "object", "description": "object"}}
+            return {"result": {"type": "undefined", "description": "undefined"}}
         if method == "Debugger.resume":
             return {}
         return {}
@@ -386,6 +393,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
                 "url_pattern": ".*app\\.js$",
                 "line_number": 4,
                 "trigger_expression": "setTimeout(() => { debugger; }, 0); 'scheduled'",
+                "callframe_evaluations": ["typeof buildSign", "this && typeof this"],
             },
         )
         page = provider.session.context.pages[0]
@@ -394,11 +402,15 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("capture_debugger_paused", result.applied_actions)
         self.assertIn("paused_status=success", result.verification)
         self.assertIn("callframe_count=1", result.verification)
+        self.assertIn("callframe_evaluation_count=2", result.verification)
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/debugger-paused.json")
         self.assertEqual(result.artifacts[1].metadata["status"], "success")
         self.assertEqual(result.artifacts[2].path, "virtual://workspace/callframes.json")
         self.assertEqual(result.artifacts[2].metadata["count"], 1)
+        self.assertEqual(result.artifacts[3].path, "virtual://workspace/callframe-evaluations.json")
+        self.assertEqual(result.artifacts[3].metadata["count"], 2)
         self.assertIn(("Runtime.evaluate", {"expression": "setTimeout(() => { debugger; }, 0); 'scheduled'", "awaitPromise": False, "returnByValue": True, "userGesture": True}), page._cdp_session.calls)
+        self.assertIn(("Debugger.evaluateOnCallFrame", {"callFrameId": "native-cf-1", "expression": "typeof buildSign", "returnByValue": True, "silent": True}), page._cdp_session.calls)
         self.assertIn(("Debugger.resume", {}), page._cdp_session.calls)
 
 
