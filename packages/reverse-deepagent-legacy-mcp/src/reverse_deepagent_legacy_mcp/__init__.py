@@ -67,7 +67,11 @@ def runtime_backend_registration() -> RuntimeBackendRegistration:
                 "requires jsreverser-mcp and a reachable Chrome DevTools endpoint",
                 "mcp and jsreverser-mcp remain deprecated temporary compatibility aliases",
             ],
-            config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND, "aliases": list(LEGACY_MCP_ALIASES), "package": "reverse-deepagent-legacy-mcp"},
+            config={
+                "default_command": DEFAULT_JSREVERSER_MCP_COMMAND,
+                "aliases": list(LEGACY_MCP_ALIASES),
+                "package": "reverse-deepagent-legacy-mcp",
+            },
         ),
     )
 

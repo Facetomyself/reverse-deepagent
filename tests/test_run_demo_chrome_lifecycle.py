@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+LEGACY_MCP_PACKAGE_SRC = REPO_ROOT / "packages" / "reverse-deepagent-legacy-mcp" / "src"
 JSREVERSER_MCP_AVAILABLE = Path("/opt/homebrew/bin/jsreverser-mcp").exists()
 
 
@@ -43,8 +44,37 @@ class RunDemoChromeLifecycleTests(unittest.TestCase):
         ]
         if keep:
             args.append("--keep-chrome")
+        if runtime in {"mcp", "legacy-mcp", "jsreverser-mcp"}:
+            env["PYTHONPATH"] = f"{REPO_ROOT / 'src'}{os.pathsep}{LEGACY_MCP_PACKAGE_SRC}"
         result = subprocess.run(args, check=True, text=True, capture_output=True, env=env)
         return json.loads(result.stdout)
+
+    def _run_demo_without_legacy_plugin(self, tmpdir: str, start_script: Path, stop_script: Path) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(REPO_ROOT / "src")
+        return subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/run_demo.py"),
+                "--runtime",
+                "mcp",
+                "--ensure-chrome",
+                "--chrome-start-script",
+                str(start_script),
+                "--chrome-stop-script",
+                str(stop_script),
+                "--chrome-debug-port",
+                "9444",
+                "--chrome-user-data-dir",
+                str(Path(tmpdir) / "profile"),
+                "--artifact-root",
+                str(Path(tmpdir) / "artifacts"),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+            env=env,
+        )
 
     def test_mock_runtime_does_not_start_chrome_even_if_flag_is_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -56,6 +86,21 @@ class RunDemoChromeLifecycleTests(unittest.TestCase):
             payload = self._run_demo(tmpdir, start_script, stop_script, runtime="mock", keep=False)
             self.assertNotIn("chrome_launch", payload)
             self.assertNotIn("chrome_stop", payload)
+            self.assertFalse(marker.exists())
+
+    def test_missing_legacy_mcp_plugin_does_not_start_chrome(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            marker = Path(tmpdir) / "lifecycle.txt"
+            start_script = Path(tmpdir) / "start.sh"
+            stop_script = Path(tmpdir) / "stop.sh"
+            self._write_fake_script(start_script, marker, "start")
+            self._write_fake_script(stop_script, marker, "stop")
+            result = self._run_demo_without_legacy_plugin(tmpdir, start_script, stop_script)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+            json_text = "\n".join(result.stderr.splitlines()[1:]) if result.stderr.startswith("警告：") else result.stderr
+            payload = json.loads(json_text)
+            self.assertEqual(payload["install_guidance"]["package"], "reverse-deepagent-legacy-mcp")
             self.assertFalse(marker.exists())
 
     @unittest.skipUnless(JSREVERSER_MCP_AVAILABLE, "jsreverser-mcp is required for MCP lifecycle integration tests")

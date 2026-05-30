@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reverse_deepagent.fixture_smoke import main_fixture_smoke
+from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REVERSE_AGENT_FIXTURE = shutil.which("reverse-agent-fixture") or str(REPO_ROOT / ".venv/bin/reverse-agent-fixture")
@@ -97,6 +98,34 @@ class FixtureCliTests(unittest.TestCase):
         self.assertIn("legacy-mcp", stderr.getvalue())
         self.assertIn("兼容别名", stderr.getvalue())
         self.assertEqual(run_pipeline.call_args.kwargs["runtime_kind"], "mcp")
+
+    def test_fixture_smoke_reports_missing_legacy_mcp_plugin_as_json(self) -> None:
+        class FakeProfile:
+            value = "default"
+
+        class FakeFixture:
+            base_url = "http://127.0.0.1:8765"
+            profile = FakeProfile()
+
+            def close(self) -> None:
+                pass
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("reverse_deepagent.fixture_smoke.start_fixture_server", return_value=FakeFixture()):
+            with patch(
+                "reverse_deepagent.fixture_smoke.run_reverse_pipeline",
+                side_effect=LegacyMcpPluginUnavailableError("legacy MCP optional backend is not installed"),
+            ):
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    exit_code = main_fixture_smoke(["--runtime", "legacy-mcp", "--artifact-root", str(REPO_ROOT / "artifacts/missing-fixture-legacy-mcp-plugin-test")])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        payload = json.loads(stderr.getvalue())
+        self.assertFalse(payload["ok"])
+        self.assertIn("legacy MCP optional backend is not installed", payload["error"])
+        self.assertEqual(payload["install_guidance"]["package"], "reverse-deepagent-legacy-mcp")
 
     def test_fixture_smoke_command_is_profile_driven_e2e(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -14,6 +14,7 @@ from reverse_deepagent.coordinator import (
     run_reverse_pipeline,
 )
 from reverse_deepagent.runtime import ReverseRuntime, RuntimeExportBundle
+from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError
 from reverse_deepagent.runtime import registry as runtime_registry
 from reverse_deepagent.runtime.registry import RuntimeBackendCapabilities, RuntimeBackendRegistration
 from reverse_deepagent.schemas import (
@@ -61,15 +62,14 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(capabilities.supports_web_recon)
         self.assertFalse(capabilities.mcp_backed)
 
-    def test_runtime_backend_metadata_lists_mock_and_legacy_mcp(self) -> None:
+    def test_runtime_backend_metadata_lists_mock_without_builtin_legacy_mcp(self) -> None:
         metadata = list_runtime_backends()
         by_id = {item["backend_id"]: item for item in metadata}
         self.assertIn("mock", by_id)
-        self.assertIn("legacy-mcp", by_id)
+        self.assertIn("native-web", by_id)
+        self.assertNotIn("legacy-mcp", by_id)
         self.assertNotIn("mcp", by_id)
-        self.assertEqual(by_id["legacy-mcp"]["transport"], "mcp-stdio")
-        self.assertTrue(by_id["legacy-mcp"]["mcp_backed"])
-        self.assertIn("mcp", by_id["legacy-mcp"]["config"]["aliases"])
+        self.assertFalse(any(item.get("mcp_backed") for item in by_id.values()))
 
     def test_default_registry_can_be_built_without_legacy_mcp(self) -> None:
         registry = build_default_runtime_registry(include_entry_points=False, include_legacy_mcp=False)
@@ -81,7 +81,7 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported runtime backend"):
             registry.resolve("legacy-mcp")
 
-    def test_entry_point_legacy_mcp_registration_takes_precedence_over_builtin_compat(self) -> None:
+    def test_entry_point_legacy_mcp_registration_is_loaded_when_installed(self) -> None:
         external_registration = RuntimeBackendRegistration(
             backend_id="legacy-mcp",
             aliases=("mcp", "jsreverser-mcp"),
@@ -206,25 +206,18 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_timeline"), "trace")
 
-    def test_build_runtime_threads_legacy_mcp_config_summary_and_alias(self) -> None:
-        runtime = build_runtime(
-            "legacy-mcp",
-            browser_url="http://127.0.0.1:9555",
-            mcp_command="/tmp/jsreverser-mcp",
-        )
-        try:
-            capabilities = runtime.describe_capabilities()
-            self.assertEqual(capabilities.backend_id, "legacy-mcp")
-            self.assertEqual(capabilities.config["command"], "/tmp/jsreverser-mcp")
-            self.assertEqual(capabilities.config["browser_url"], "http://127.0.0.1:9555")
-        finally:
-            runtime.close()
+    def test_build_runtime_legacy_mcp_without_optional_plugin_reports_guidance(self) -> None:
+        with self.assertRaisesRegex(LegacyMcpPluginUnavailableError, "install_hint") as ctx:
+            build_runtime(
+                "legacy-mcp",
+                browser_url="http://127.0.0.1:9555",
+                mcp_command="/tmp/jsreverser-mcp",
+            )
+        self.assertIn("reverse-deepagent-legacy-mcp", str(ctx.exception))
+        self.assertIn("native-web", str(ctx.exception))
 
-        alias_runtime = build_runtime("mcp", browser_url="http://127.0.0.1:9555", mcp_command="/tmp/jsreverser-mcp")
-        try:
-            self.assertEqual(alias_runtime.describe_capabilities().backend_id, "legacy-mcp")
-        finally:
-            alias_runtime.close()
+        with self.assertRaisesRegex(LegacyMcpPluginUnavailableError, "reverse-deepagent-legacy-mcp"):
+            build_runtime("mcp", browser_url="http://127.0.0.1:9555", mcp_command="/tmp/jsreverser-mcp")
 
     def test_legacy_mcp_alias_warning_only_targets_deprecated_aliases(self) -> None:
         self.assertIsNone(legacy_mcp_alias_warning("legacy-mcp"))

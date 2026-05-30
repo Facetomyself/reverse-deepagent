@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reverse_deepagent.cli import main_demo
+from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REVERSE_AGENT_DEMO = shutil.which("reverse-agent-demo") or str(REPO_ROOT / ".venv/bin/reverse-agent-demo")
@@ -47,6 +48,24 @@ class ConsoleScriptTests(unittest.TestCase):
         self.assertIn("legacy-mcp", stderr.getvalue())
         self.assertIn("兼容别名", stderr.getvalue())
         self.assertEqual(run_pipeline.call_args.kwargs["runtime_kind"], "mcp")
+
+    def test_reverse_agent_demo_reports_missing_legacy_mcp_plugin_as_json(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "reverse_deepagent.cli.run_reverse_pipeline",
+            side_effect=LegacyMcpPluginUnavailableError("legacy MCP optional backend is not installed"),
+        ):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = main_demo(["--runtime", "legacy-mcp", "--artifact-root", str(REPO_ROOT / "artifacts/missing-legacy-mcp-plugin-test")])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        payload = json.loads(stderr.getvalue())
+        self.assertFalse(payload["ok"])
+        self.assertIn("legacy MCP optional backend is not installed", payload["error"])
+        self.assertEqual(payload["install_guidance"]["package"], "reverse-deepagent-legacy-mcp")
+        self.assertEqual(payload["install_guidance"]["preferred_web_runtime"], "native-web")
 
 
 if __name__ == "__main__":

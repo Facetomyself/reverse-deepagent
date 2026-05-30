@@ -29,8 +29,9 @@ from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactMa
 from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
 from reverse_deepagent.runtime.legacy_mcp import (
     LEGACY_MCP_BACKEND_ID,
-    LEGACY_MCP_ALIASES,
+    LegacyMcpPluginUnavailableError,
     is_legacy_mcp_runtime_kind,
+    legacy_mcp_install_guidance,
     legacy_mcp_alias_warning as _legacy_mcp_alias_warning,
     legacy_mcp_backend_registration,
 )
@@ -711,7 +712,13 @@ def build_default_runtime_registry(*, include_entry_points: bool = True, include
     if include_entry_points:
         registry.load_entry_points()
     if include_legacy_mcp and not registry.is_registered(LEGACY_MCP_BACKEND_ID):
-        registry.register(legacy_mcp_backend_registration())
+        try:
+            registry.register(legacy_mcp_backend_registration())
+        except LegacyMcpPluginUnavailableError:
+            # Core no longer ships a built-in legacy MCP fallback. The optional
+            # plugin is loaded through entry points when installed; otherwise
+            # runtime construction will surface structured install guidance.
+            pass
     return registry
 
 
@@ -738,12 +745,23 @@ def build_runtime(
 ) -> ReverseRuntime:
     """Build a runtime backend by id or alias."""
 
-    return DEFAULT_RUNTIME_BACKEND_REGISTRY.create(
-        runtime_kind,
-        browser_url=browser_url,
-        mcp_command=mcp_command,
-        **runtime_kwargs,
-    )
+    try:
+        return DEFAULT_RUNTIME_BACKEND_REGISTRY.create(
+            runtime_kind,
+            browser_url=browser_url,
+            mcp_command=mcp_command,
+            **runtime_kwargs,
+        )
+    except ValueError as exc:
+        if is_legacy_mcp_runtime_kind(runtime_kind) and not DEFAULT_RUNTIME_BACKEND_REGISTRY.is_registered(runtime_kind):
+            guidance = legacy_mcp_install_guidance()
+            raise LegacyMcpPluginUnavailableError(
+                "Legacy MCP optional backend is not installed. "
+                f"runtime={runtime_kind!r}; package={guidance['package']!r}; "
+                f"install_hint={guidance['install_hint']!r}; "
+                f"preferred_web_runtime={guidance['preferred_web_runtime']!r}."
+            ) from exc
+        raise
 
 
 def write_outputs(
@@ -1317,12 +1335,6 @@ def run_reverse_pipeline(
     chrome_launch = None
     chrome_stop = None
     should_stop_chrome = False
-    if _is_legacy_mcp_runtime_kind(runtime_kind) and ensure_chrome:
-        chrome_launch = ensure_chrome_debug(chrome_config)
-        if not chrome_launch.ok:
-            raise RuntimeError(f"Failed to ensure Chrome debug session: {chrome_launch.stderr or chrome_launch.stdout}")
-        should_stop_chrome = not keep_chrome
-
     owns_runtime = runtime is None
     active_runtime = runtime or build_runtime(
         runtime_kind,
@@ -1330,14 +1342,21 @@ def run_reverse_pipeline(
         mcp_command=mcp_command,
         **runtime_kwargs,
     )
-    if not isinstance(active_runtime, WebReverseRuntime):
-        capabilities = active_runtime.describe_capabilities()
-        raise TypeError(
-            f"Runtime backend {capabilities.backend_id!r} does not implement WebReverseRuntime; "
-            "run_reverse_pipeline is the Web pipeline entrypoint."
-        )
-    runtime_capabilities = active_runtime.describe_capabilities()
     try:
+        if not isinstance(active_runtime, WebReverseRuntime):
+            capabilities = active_runtime.describe_capabilities()
+            raise TypeError(
+                f"Runtime backend {capabilities.backend_id!r} does not implement WebReverseRuntime; "
+                "run_reverse_pipeline is the Web pipeline entrypoint."
+            )
+        runtime_capabilities = active_runtime.describe_capabilities()
+
+        if _is_legacy_mcp_runtime_kind(runtime_kind) and ensure_chrome:
+            chrome_launch = ensure_chrome_debug(chrome_config)
+            if not chrome_launch.ok:
+                raise RuntimeError(f"Failed to ensure Chrome debug session: {chrome_launch.stderr or chrome_launch.stdout}")
+            should_stop_chrome = not keep_chrome
+
         recon_result = active_runtime.run_web_recon(task_card=task_card, route_result=route_result)
         final_result = _final_from_recon(task_card, route_result, recon_result)
         export_bundle = active_runtime.export_reverse_artifacts(final_result=final_result).model_dump(mode="json")

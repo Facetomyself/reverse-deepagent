@@ -359,20 +359,20 @@ Acceptance:
 
 ### Phase 10.1: Runtime backend entry-point discovery
 
-Status: baseline implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. `packages/reverse-deepagent-legacy-mcp/` now owns the optional legacy MCP registration / factory implementation, while `reverse_deepagent.runtime.legacy_mcp` is a compatibility shim with structured install guidance and a built-in fallback. `build_default_runtime_registry(include_legacy_mcp=False)` can construct a registry with no MCP backend. The default registry now loads external entry points before falling back to the built-in legacy MCP compatibility registration, so an installed plugin can own `legacy-mcp` without duplicate-key failure. The remaining physical split work is to remove the built-in fallback from the core distribution once the optional package becomes the supported installation path.
+Status: implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. `packages/reverse-deepagent-legacy-mcp/` owns the optional legacy MCP registration / factory implementation, while `reverse_deepagent.runtime.legacy_mcp` is a compatibility shim with alias warnings, plugin delegation, and structured install guidance. Core no longer ships a built-in legacy MCP factory fallback; if the optional package is missing, `legacy-mcp` / `mcp` runtime construction returns install guidance and does not start managed Chrome or MCP.
 
 Deliverables:
 
 - `RUNTIME_BACKEND_ENTRY_POINT_GROUP` exported from `reverse_deepagent.runtime`.
 - `RuntimeBackendRegistry.load_entry_points()` supports a single `RuntimeBackendRegistration`, a callable returning registrations, or an iterable of registrations.
 - `build_default_runtime_registry(include_entry_points=True, include_legacy_mcp=True)` loads external backend registrations by default, keeps a deterministic entry-point opt-out for tests, can explicitly exclude the built-in legacy MCP registration, and only falls back to the built-in legacy MCP registration when no external `legacy-mcp` entry point exists.
-- Unit tests cover plugin registration, callable multi-registration, invalid payload errors, entry-point load errors, capability id mismatch rejection, external `legacy-mcp` precedence over the built-in fallback, optional plugin package metadata, core shim install guidance / plugin delegation, and the invariant that backend factories are not invoked during metadata listing.
+- Unit tests cover plugin registration, callable multi-registration, invalid payload errors, entry-point load errors, capability id mismatch rejection, external `legacy-mcp` entry-point loading, optional plugin package metadata, core shim install guidance / plugin delegation, missing-plugin CLI guidance, Chrome lifecycle ordering, and the invariant that backend factories are not invoked during metadata listing.
 
 Acceptance:
 
 - External runtime backend packages have a stable discovery seam.
 - Metadata listing remains free of browser, MCP, device-tool, and network session side effects.
-- Legacy MCP physical split remains a separate packaging task, but coordinator no longer owns the MCP registration details inline.
+- Legacy MCP implementation is now optional-package owned; coordinator no longer owns MCP registration details inline, and core missing-plugin paths are guidance-only.
 
 ## Test strategy
 

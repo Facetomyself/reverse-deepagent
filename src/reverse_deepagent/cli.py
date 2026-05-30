@@ -11,6 +11,7 @@ from typing import Sequence
 from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
 from reverse_deepagent.coordinator import legacy_mcp_alias_warning, run_platform_pipeline, run_reverse_pipeline
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT, DEFAULT_USER_DATA_DIR
+from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError, legacy_mcp_install_guidance
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts"
@@ -95,29 +96,40 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
         start_script=args.chrome_start_script,
         stop_script=args.chrome_stop_script,
     )
-    output = run_reverse_pipeline(
-        task_text=args.task_text,
-        artifact_root=Path(args.artifact_root),
-        runtime_kind=args.runtime,
-        chrome_config=chrome_config,
-        ensure_chrome=args.ensure_chrome,
-        keep_chrome=args.keep_chrome,
-        mcp_command=args.jsreverser_mcp_command,
-        playwright_command=args.playwright_command,
-        cdp_browser_url=args.cdp_browser_url,
-        browser_cli_command=args.browser_cli_command,
-        request_timeout=args.lightweight_request_timeout,
-        browser=args.browser,
-        browser_profile_dir=args.browser_profile_dir,
-        browser_headless=args.browser_headless,
-        browser_executable_path=args.browser_executable_path,
-        browser_args=shlex.split(args.browser_args) if args.browser_args else None,
-        browser_humanize=args.browser_humanize,
-        browser_proxy=args.browser_proxy,
-        browser_geoip=args.browser_geoip,
-        browser_locale=args.browser_locale,
-        browser_timezone=args.browser_timezone,
-    )
+    try:
+        output = run_reverse_pipeline(
+            task_text=args.task_text,
+            artifact_root=Path(args.artifact_root),
+            runtime_kind=args.runtime,
+            chrome_config=chrome_config,
+            ensure_chrome=args.ensure_chrome,
+            keep_chrome=args.keep_chrome,
+            mcp_command=args.jsreverser_mcp_command,
+            playwright_command=args.playwright_command,
+            cdp_browser_url=args.cdp_browser_url,
+            browser_cli_command=args.browser_cli_command,
+            request_timeout=args.lightweight_request_timeout,
+            browser=args.browser,
+            browser_profile_dir=args.browser_profile_dir,
+            browser_headless=args.browser_headless,
+            browser_executable_path=args.browser_executable_path,
+            browser_args=shlex.split(args.browser_args) if args.browser_args else None,
+            browser_humanize=args.browser_humanize,
+            browser_proxy=args.browser_proxy,
+            browser_geoip=args.browser_geoip,
+            browser_locale=args.browser_locale,
+            browser_timezone=args.browser_timezone,
+        )
+    except LegacyMcpPluginUnavailableError as exc:
+        print(
+            json.dumps(
+                {"ok": False, "error": str(exc), "install_guidance": legacy_mcp_install_guidance()},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=sys.stderr,
+        )
+        return 2
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
     return 0
 

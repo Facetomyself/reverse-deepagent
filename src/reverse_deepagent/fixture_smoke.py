@@ -10,6 +10,7 @@ from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
 from reverse_deepagent.coordinator import legacy_mcp_alias_warning, run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import FIXTURE_PROFILE_VALUES, start_fixture_server
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT
+from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError, legacy_mcp_install_guidance
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts/fixture-smoke"
@@ -64,15 +65,26 @@ def main_fixture_smoke(argv: Sequence[str] | None = None) -> int:
             start_script=args.chrome_start_script,
             stop_script=args.chrome_stop_script,
         )
-        output = run_reverse_pipeline(
-            task_text=task_text,
-            artifact_root=Path(args.artifact_root),
-            runtime_kind=args.runtime,
-            chrome_config=chrome_config,
-            ensure_chrome=args.ensure_chrome,
-            keep_chrome=args.keep_chrome,
-            mcp_command=args.jsreverser_mcp_command,
-        )
+        try:
+            output = run_reverse_pipeline(
+                task_text=task_text,
+                artifact_root=Path(args.artifact_root),
+                runtime_kind=args.runtime,
+                chrome_config=chrome_config,
+                ensure_chrome=args.ensure_chrome,
+                keep_chrome=args.keep_chrome,
+                mcp_command=args.jsreverser_mcp_command,
+            )
+        except LegacyMcpPluginUnavailableError as exc:
+            print(
+                json.dumps(
+                    {"ok": False, "error": str(exc), "install_guidance": legacy_mcp_install_guidance()},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                file=sys.stderr,
+            )
+            return 2
         payload = {
             "fixture": {
                 "base_url": fixture.base_url,

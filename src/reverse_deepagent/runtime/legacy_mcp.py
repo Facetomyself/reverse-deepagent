@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any
+from typing import Any, NoReturn
 
-from reverse_deepagent.runtime.base import RuntimeBackendCapabilities, WebReverseRuntime
+from reverse_deepagent.runtime.base import WebReverseRuntime
 from reverse_deepagent.runtime.registry import RuntimeBackendRegistration
 
 LEGACY_MCP_BACKEND_ID = "legacy-mcp"
@@ -16,12 +16,19 @@ LEGACY_MCP_ALIAS_DEPRECATION_WARNING = (
 )
 
 
+class LegacyMcpPluginUnavailableError(ValueError):
+    """Raised when the optional legacy MCP backend package is not installed."""
+
+
 def legacy_mcp_install_guidance() -> dict[str, Any]:
     """Return structured guidance for enabling the optional legacy MCP backend."""
 
     return {
+        "error": "legacy_mcp_optional_backend_not_installed",
         "backend_id": LEGACY_MCP_BACKEND_ID,
+        "aliases": list(LEGACY_MCP_ALIASES),
         "package": LEGACY_MCP_PACKAGE,
+        "import_name": LEGACY_MCP_IMPORT_NAME,
         "entry_point_group": "reverse_deepagent.runtime_backends",
         "entry_point": "legacy-mcp = reverse_deepagent_legacy_mcp:runtime_backend_registration",
         "install_hint": f'Install the optional package, for example: uv pip install -e "packages/{LEGACY_MCP_PACKAGE}"',
@@ -39,64 +46,18 @@ def _plugin_module() -> Any | None:
         raise
 
 
-def _builtin_compat_create_legacy_mcp_runtime(
-    *,
-    browser_url: str | None = None,
-    mcp_command: str | None = None,
-    **_: Any,
-) -> WebReverseRuntime:
-    from reverse_deepagent.adapters.jsreverser import (
-        DEFAULT_JSREVERSER_MCP_COMMAND,
-        JSReverserMcpConfig,
-        create_jsreverser_mcp_runtime,
+def legacy_mcp_missing_plugin_message(runtime_kind: str = LEGACY_MCP_BACKEND_ID) -> str:
+    """Return a stable human-readable missing-plugin message."""
+
+    guidance = legacy_mcp_install_guidance()
+    return (
+        f"Legacy MCP runtime backend {runtime_kind!r} is optional and is not installed in the core package. "
+        f"{guidance['install_hint']}. Preferred Web runtime: {guidance['preferred_web_runtime']}."
     )
 
-    config = JSReverserMcpConfig(
-        command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
-        browser_url=browser_url or "http://127.0.0.1:9222",
-        backend_id=LEGACY_MCP_BACKEND_ID,
-        display_name="Legacy JSReverser MCP",
-        transport="mcp-stdio",
-    )
-    return create_jsreverser_mcp_runtime(config=config)
 
-
-def _builtin_compat_legacy_mcp_backend_registration() -> RuntimeBackendRegistration:
-    from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
-
-    return RuntimeBackendRegistration(
-        backend_id=LEGACY_MCP_BACKEND_ID,
-        aliases=LEGACY_MCP_ALIASES,
-        factory=_builtin_compat_create_legacy_mcp_runtime,
-        capabilities=RuntimeBackendCapabilities(
-            backend_id=LEGACY_MCP_BACKEND_ID,
-            display_name="Legacy JSReverser MCP",
-            transport="mcp-stdio",
-            target_platforms=["web"],
-            supports_browser_session=True,
-            supports_web_recon=True,
-            supports_protection_patch=True,
-            supports_artifact_export=True,
-            supports_runtime_context=True,
-            supports_replay_validation=True,
-            managed_chrome=True,
-            mcp_backed=True,
-            evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
-            artifact_kinds=["json", "export", "rebuild", "markdown"],
-            notes=[
-                "legacy compatibility backend backed by jsreverser-mcp",
-                "requires jsreverser-mcp and a reachable Chrome DevTools endpoint",
-                "mcp and jsreverser-mcp remain deprecated temporary compatibility aliases",
-                "built-in compatibility fallback; prefer the reverse-deepagent-legacy-mcp optional package",
-            ],
-            config={
-                "default_command": DEFAULT_JSREVERSER_MCP_COMMAND,
-                "aliases": list(LEGACY_MCP_ALIASES),
-                "compat_fallback": True,
-                "install_guidance": legacy_mcp_install_guidance(),
-            },
-        ),
-    )
+def _raise_missing_plugin(runtime_kind: str = LEGACY_MCP_BACKEND_ID) -> NoReturn:
+    raise LegacyMcpPluginUnavailableError(legacy_mcp_missing_plugin_message(runtime_kind))
 
 
 def create_legacy_mcp_runtime(
@@ -110,7 +71,7 @@ def create_legacy_mcp_runtime(
     plugin = _plugin_module()
     if plugin is not None and hasattr(plugin, "create_legacy_mcp_runtime"):
         return plugin.create_legacy_mcp_runtime(browser_url=browser_url, mcp_command=mcp_command, **kwargs)
-    return _builtin_compat_create_legacy_mcp_runtime(browser_url=browser_url, mcp_command=mcp_command, **kwargs)
+    _raise_missing_plugin()
 
 
 def legacy_mcp_backend_registration() -> RuntimeBackendRegistration:
@@ -119,7 +80,7 @@ def legacy_mcp_backend_registration() -> RuntimeBackendRegistration:
     plugin = _plugin_module()
     if plugin is not None and hasattr(plugin, "runtime_backend_registration"):
         return plugin.runtime_backend_registration()
-    return _builtin_compat_legacy_mcp_backend_registration()
+    _raise_missing_plugin()
 
 
 def legacy_mcp_alias_warning(runtime_kind: str) -> str | None:
