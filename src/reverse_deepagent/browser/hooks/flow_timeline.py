@@ -29,6 +29,7 @@ class FlowTimelineSpec:
     auto_stitch_rollback_execution_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_physical_rollback_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_standard_review_gate_replacement_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_transaction_commit_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     max_payload_preview_length: int = 480
 
     @classmethod
@@ -101,6 +102,16 @@ class FlowTimelineSpec:
             "reviewGateReplacementReviewDecisions",
         )
         standard_gate_replacement_review_decisions = cls._coerce_events(raw_standard_gate_replacement_review_decisions)
+        raw_transaction_commit_review_decisions = cls._first_present(
+            context,
+            "auto_stitch_transaction_commit_review_decisions",
+            "autoStitchTransactionCommitReviewDecisions",
+            "transaction_commit_review_decisions",
+            "transactionCommitReviewDecisions",
+            "final_delivery_transaction_review_decisions",
+            "finalDeliveryTransactionReviewDecisions",
+        )
+        transaction_commit_review_decisions = cls._coerce_events(raw_transaction_commit_review_decisions)
         if (
             not previous
             and not flow_events
@@ -111,6 +122,7 @@ class FlowTimelineSpec:
             and not rollback_execution_review_decisions
             and not physical_rollback_review_decisions
             and not standard_gate_replacement_review_decisions
+            and not transaction_commit_review_decisions
         ):
             return None
         flow_id = str(context.get("flow_id", context.get("flowId", previous.get("flow_id", "default-flow"))) or "default-flow")
@@ -127,6 +139,7 @@ class FlowTimelineSpec:
             auto_stitch_rollback_execution_review_decisions=rollback_execution_review_decisions,
             auto_stitch_physical_rollback_review_decisions=physical_rollback_review_decisions,
             auto_stitch_standard_review_gate_replacement_review_decisions=standard_gate_replacement_review_decisions,
+            auto_stitch_transaction_commit_review_decisions=transaction_commit_review_decisions,
             max_payload_preview_length=int(context.get("max_payload_preview_length", context.get("maxPayloadPreviewLength", 480)) or 480),
         )
 
@@ -248,6 +261,9 @@ class FlowTimelineResult:
     auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_post_standard_review_gate_replacement_final_delivery_packages: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_transaction_commit_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_transaction_commit_results: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_transaction_commit_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -343,6 +359,11 @@ class FlowTimelineResult:
             "auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary": (
                 self.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary
             ),
+            "auto_stitch_transaction_commit_review_decision_count": len(self.auto_stitch_transaction_commit_review_decisions),
+            "auto_stitch_transaction_commit_review_decisions": self.auto_stitch_transaction_commit_review_decisions,
+            "auto_stitch_transaction_commit_result_count": len(self.auto_stitch_transaction_commit_results),
+            "auto_stitch_transaction_commit_results": self.auto_stitch_transaction_commit_results,
+            "auto_stitch_transaction_commit_summary": self.auto_stitch_transaction_commit_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -537,6 +558,15 @@ class FlowTimelineManager:
                 auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns,
             )
         )
+        auto_stitch_transaction_commit_results = self._auto_stitch_transaction_commit_results(
+            auto_stitch_post_standard_review_gate_replacement_final_delivery_packages,
+            spec.auto_stitch_transaction_commit_review_decisions,
+        )
+        auto_stitch_transaction_commit_summary = self._auto_stitch_transaction_commit_summary(
+            auto_stitch_transaction_commit_results,
+            auto_stitch_post_standard_review_gate_replacement_final_delivery_packages,
+            spec.auto_stitch_transaction_commit_review_decisions,
+        )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -590,6 +620,9 @@ class FlowTimelineManager:
             auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary=(
                 auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary
             ),
+            auto_stitch_transaction_commit_review_decisions=list(spec.auto_stitch_transaction_commit_review_decisions),
+            auto_stitch_transaction_commit_results=auto_stitch_transaction_commit_results,
+            auto_stitch_transaction_commit_summary=auto_stitch_transaction_commit_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -3229,6 +3262,206 @@ class FlowTimelineManager:
                 "review_final_delivery_package_and_commit_transaction_or_deliver_manually"
                 if packaged_count
                 else "rerun_delivery_guard_after_standard_review_gate_replacement_before_packaging"
+            ),
+        }
+
+    @classmethod
+    def _auto_stitch_transaction_commit_results(
+        cls,
+        packages: list[dict[str, Any]],
+        decisions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        if not packages or not decisions:
+            return results
+        for package in packages:
+            if package.get("status") != "final_delivery_package_ready" or not package.get("package_ready"):
+                continue
+            decision = cls._matching_transaction_commit_review_decision(package, decisions)
+            if decision is None:
+                continue
+            status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+            approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed", "commit", "committed"}
+            rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+            if rejected or not approved:
+                continue
+            review_decision = {
+                "status": "approved",
+                "approved": True,
+                "review_required": False,
+                "review_gate": "auto_stitch_transaction_commit_review_decision",
+            }
+            for key in ("reviewer", "reviewed_by", "reviewedBy", "reviewed_at", "reviewedAt", "reason", "notes"):
+                if decision.get(key) is not None:
+                    review_decision[key] = decision.get(key)
+            results.append(
+                {
+                    "transaction_commit_id": f"final-delivery-transaction-commit-{len(results) + 1}",
+                    "status": "transaction_commit_recorded",
+                    "commit_mode": "explicit_review_only_artifact_model_commit",
+                    "source": "final_delivery_package_review_decision",
+                    "final_delivery_package_id": package.get("final_delivery_package_id"),
+                    "delivery_guard_rerun_id": package.get("delivery_guard_rerun_id"),
+                    "replacement_result_id": package.get("replacement_result_id"),
+                    "rerun_id": package.get("rerun_id"),
+                    "physical_rollback_result_id": package.get("physical_rollback_result_id"),
+                    "dry_run_id": package.get("dry_run_id"),
+                    "rollback_execution_result_id": package.get("rollback_execution_result_id"),
+                    "transaction_id": package.get("transaction_id"),
+                    "rollback_id": package.get("rollback_id"),
+                    "materialization_result_id": package.get("materialization_result_id"),
+                    "candidate_id": package.get("candidate_id"),
+                    "group_id": package.get("group_id"),
+                    "package_artifact": package.get("package_artifact", "workspace/final-delivery-package-after-review-gate-replacement.json"),
+                    "virtual_package_artifact": package.get(
+                        "virtual_package_artifact",
+                        "virtual://workspace/final-delivery-package-after-review-gate-replacement.json",
+                    ),
+                    "commit_artifact": "workspace/final-delivery-transaction-commit.json",
+                    "virtual_commit_artifact": "virtual://workspace/final-delivery-transaction-commit.json",
+                    "final_result_artifact": package.get("final_result_artifact", "workspace/final-result.json"),
+                    "backend_artifact_manifest": package.get("backend_artifact_manifest", "workspace/backend-artifact-manifest.json"),
+                    "included_artifacts": cls._unique_strings(
+                        [
+                            *cls._string_values(package.get("included_artifacts")),
+                            package.get("package_artifact"),
+                            package.get("final_result_artifact"),
+                            package.get("backend_artifact_manifest"),
+                        ]
+                    ),
+                    "virtual_included_artifacts": cls._unique_strings(
+                        [
+                            *cls._string_values(package.get("virtual_included_artifacts")),
+                            package.get("virtual_package_artifact"),
+                            package.get("virtual_final_result_artifact"),
+                            package.get("virtual_backend_artifact_manifest"),
+                        ]
+                    ),
+                    "review_decision": review_decision,
+                    "review_decision_input": dict(decision),
+                    "package_ready": True,
+                    "final_delivery_packaged": True,
+                    "delivery_allowed": True,
+                    "transaction_commit_recorded": True,
+                    "artifact_model_transaction_commit_recorded": True,
+                    "cross_run_transaction_committed": False,
+                    "manifest_revision_committed": False,
+                    "writes_artifact": True,
+                    "manual_delivery_required": True,
+                    "automatic_delivery": False,
+                    "external_delivery_performed": False,
+                    "filesystem_artifact_mutated": False,
+                    "physical_artifact_mutated": False,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "review_required": False,
+                    "checks": [
+                        "final_delivery_package_ready",
+                        "transaction_commit_review_approved",
+                        "commit_artifact_recorded",
+                        "automatic_delivery_disabled",
+                    ],
+                    "limitations": [
+                        "artifact_model_transaction_commit_record_only",
+                        "does_not_commit_cross_run_transaction",
+                        "does_not_perform_external_delivery",
+                        "does_not_mutate_filesystem_artifacts",
+                        "failure_recovery_state_machine_not_implemented",
+                    ],
+                    "next_action": "perform_manual_external_delivery_or_run_delivery_executor",
+                }
+            )
+        return results
+
+    @staticmethod
+    def _matching_transaction_commit_review_decision(
+        package: dict[str, Any],
+        decisions: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            if decision.get("final_delivery_package_id") and decision.get("final_delivery_package_id") == package.get("final_delivery_package_id"):
+                return decision
+            if decision.get("finalDeliveryPackageId") and decision.get("finalDeliveryPackageId") == package.get("final_delivery_package_id"):
+                return decision
+            if decision.get("package_id") and decision.get("package_id") == package.get("final_delivery_package_id"):
+                return decision
+            if decision.get("packageId") and decision.get("packageId") == package.get("final_delivery_package_id"):
+                return decision
+            if decision.get("delivery_guard_rerun_id") and decision.get("delivery_guard_rerun_id") == package.get("delivery_guard_rerun_id"):
+                return decision
+            if decision.get("deliveryGuardRerunId") and decision.get("deliveryGuardRerunId") == package.get("delivery_guard_rerun_id"):
+                return decision
+            if decision.get("replacement_result_id") and decision.get("replacement_result_id") == package.get("replacement_result_id"):
+                return decision
+            if decision.get("replacementResultId") and decision.get("replacementResultId") == package.get("replacement_result_id"):
+                return decision
+            if decision.get("transaction_id") and decision.get("transaction_id") == package.get("transaction_id"):
+                return decision
+            if decision.get("transactionId") and decision.get("transactionId") == package.get("transaction_id"):
+                return decision
+        return None
+
+    @classmethod
+    def _auto_stitch_transaction_commit_summary(
+        cls,
+        results: list[dict[str, Any]],
+        packages: list[dict[str, Any]],
+        review_decisions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        approved_count = 0
+        rejected_count = 0
+        pending_count = 0
+        for decision in review_decisions:
+            if not isinstance(decision, dict):
+                continue
+            status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+            approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed", "commit", "committed"}
+            rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+            if approved and not rejected:
+                approved_count += 1
+            elif rejected:
+                rejected_count += 1
+            else:
+                pending_count += 1
+        recorded_count = sum(1 for result in results if result.get("artifact_model_transaction_commit_recorded"))
+        return {
+            "transaction_commit_result_count": len(results),
+            "source_final_delivery_package_count": len(packages),
+            "review_decision_count": len(review_decisions),
+            "approved_review_decision_count": approved_count,
+            "rejected_review_decision_count": rejected_count,
+            "pending_review_decision_count": pending_count,
+            "transaction_commit_recorded_count": sum(1 for result in results if result.get("transaction_commit_recorded")),
+            "artifact_model_transaction_commit_recorded_count": recorded_count,
+            "cross_run_transaction_committed_count": sum(1 for result in results if result.get("cross_run_transaction_committed")),
+            "manifest_revision_committed_count": sum(1 for result in results if result.get("manifest_revision_committed")),
+            "external_delivery_performed_count": sum(1 for result in results if result.get("external_delivery_performed")),
+            "filesystem_artifact_mutated_count": sum(1 for result in results if result.get("filesystem_artifact_mutated")),
+            "review_required": bool(packages) and not bool(results),
+            "writes_artifact": bool(results),
+            "transaction_commit_recorded": bool(recorded_count),
+            "artifact_model_transaction_commit_recorded": bool(recorded_count),
+            "cross_run_transaction_committed": False,
+            "manifest_revision_committed": False,
+            "delivery_allowed": bool(recorded_count),
+            "automatic_delivery": False,
+            "manual_delivery_required": bool(recorded_count),
+            "external_delivery_performed": False,
+            "filesystem_artifact_mutated": False,
+            "physical_artifact_mutated": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "commit_artifact": "workspace/final-delivery-transaction-commit.json",
+            "virtual_commit_artifact": "virtual://workspace/final-delivery-transaction-commit.json",
+            "scope": "explicit-review-only-final-delivery-transaction-commit-baseline",
+            "next_action": (
+                "perform_manual_external_delivery_or_run_delivery_executor"
+                if recorded_count
+                else "review_final_delivery_package_before_transaction_commit"
+                if packages
+                else "package_final_delivery_before_transaction_commit_review"
             ),
         }
 

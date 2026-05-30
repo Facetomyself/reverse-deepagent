@@ -635,6 +635,10 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_post_standard_review_gate_replacement_final_delivery_packages, [])
         self.assertEqual(result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary["package_count"], 0)
         self.assertFalse(result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary["package_ready"])
+        self.assertEqual(result.auto_stitch_transaction_commit_review_decisions, [])
+        self.assertEqual(result.auto_stitch_transaction_commit_results, [])
+        self.assertEqual(result.auto_stitch_transaction_commit_summary["transaction_commit_result_count"], 0)
+        self.assertFalse(result.auto_stitch_transaction_commit_summary["cross_run_transaction_committed"])
         result_dict = result.to_dict()
         self.assertEqual(result_dict["auto_stitch_physical_rollback_review_decision_count"], 1)
         self.assertEqual(result_dict["auto_stitch_physical_rollback_result_count"], 1)
@@ -642,6 +646,7 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result_dict["auto_stitch_standard_review_gate_replacement_result_count"], 0)
         self.assertEqual(result_dict["auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count"], 0)
         self.assertEqual(result_dict["auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count"], 0)
+        self.assertEqual(result_dict["auto_stitch_transaction_commit_result_count"], 0)
         self.assertEqual(result_dict["stitched_flow_count"], 0)
 
     def test_approved_standard_review_gate_replacement_records_replacement_result(self) -> None:
@@ -801,11 +806,92 @@ class FlowTimelineManagerTests(unittest.TestCase):
             package_summary["next_action"],
             "review_final_delivery_package_and_commit_transaction_or_deliver_manually",
         )
+        self.assertEqual(result.auto_stitch_transaction_commit_review_decisions, [])
+        self.assertEqual(result.auto_stitch_transaction_commit_results, [])
+        self.assertEqual(result.auto_stitch_transaction_commit_summary["transaction_commit_result_count"], 0)
+        self.assertEqual(result.auto_stitch_transaction_commit_summary["source_final_delivery_package_count"], 1)
+        self.assertTrue(result.auto_stitch_transaction_commit_summary["review_required"])
+        self.assertFalse(result.auto_stitch_transaction_commit_summary["cross_run_transaction_committed"])
+        self.assertEqual(
+            result.auto_stitch_transaction_commit_summary["next_action"],
+            "review_final_delivery_package_before_transaction_commit",
+        )
         result_dict = result.to_dict()
         self.assertEqual(result_dict["auto_stitch_standard_review_gate_replacement_review_decision_count"], 1)
         self.assertEqual(result_dict["auto_stitch_standard_review_gate_replacement_result_count"], 1)
         self.assertEqual(result_dict["auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count"], 1)
         self.assertEqual(result_dict["auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_transaction_commit_result_count"], 0)
+
+    def test_approved_transaction_commit_review_decision_records_commit_result(self) -> None:
+        context = self._ready_flow_context()
+        context["auto_stitch_policy"] = {
+            "policy_id": "unit-policy",
+            "min_confidence_score": 0.85,
+            "allow_conflicts": True,
+            "enable_automatic_materialization": True,
+        }
+        context["auto_stitch_materialization_review_decisions"] = [
+            {"plan_id": "auto-stitch-materialization-plan-1", "status": "approved", "approved": True}
+        ]
+        context["auto_stitch_rollback_execution_review_decisions"] = [
+            {"rollback_execution_plan_id": "stitched-flow-rollback-execution-plan-1", "status": "approved", "approved": True}
+        ]
+        context["auto_stitch_physical_rollback_review_decisions"] = [
+            {"dry_run_id": "stitched-flow-physical-rollback-diff-1", "status": "approved", "approved": True}
+        ]
+        context["auto_stitch_standard_review_gate_replacement_review_decisions"] = [
+            {"rerun_id": "stitched-flow-post-physical-rollback-review-gate-rerun-1", "status": "approved", "approved": True}
+        ]
+        context["auto_stitch_transaction_commit_review_decisions"] = [
+            {
+                "final_delivery_package_id": "standard-review-gate-replacement-final-delivery-package-1",
+                "status": "approved",
+                "approved": True,
+                "reviewer": "transaction-reviewer",
+            }
+        ]
+
+        result = FlowTimelineManager().build(FlowTimelineSpec.from_context(context))
+
+        self.assertEqual(len(result.auto_stitch_transaction_commit_review_decisions), 1)
+        self.assertEqual(len(result.auto_stitch_transaction_commit_results), 1)
+        commit = result.auto_stitch_transaction_commit_results[0]
+        self.assertEqual(commit["status"], "transaction_commit_recorded")
+        self.assertEqual(commit["commit_mode"], "explicit_review_only_artifact_model_commit")
+        self.assertEqual(commit["final_delivery_package_id"], "standard-review-gate-replacement-final-delivery-package-1")
+        self.assertEqual(commit["commit_artifact"], "workspace/final-delivery-transaction-commit.json")
+        self.assertEqual(commit["virtual_commit_artifact"], "virtual://workspace/final-delivery-transaction-commit.json")
+        self.assertTrue(commit["transaction_commit_recorded"])
+        self.assertTrue(commit["artifact_model_transaction_commit_recorded"])
+        self.assertFalse(commit["cross_run_transaction_committed"])
+        self.assertFalse(commit["manifest_revision_committed"])
+        self.assertTrue(commit["writes_artifact"])
+        self.assertFalse(commit["automatic_delivery"])
+        self.assertTrue(commit["manual_delivery_required"])
+        self.assertFalse(commit["external_delivery_performed"])
+        self.assertFalse(commit["filesystem_artifact_mutated"])
+        self.assertFalse(commit["physical_artifact_mutated"])
+        self.assertIn("does_not_commit_cross_run_transaction", commit["limitations"])
+        self.assertIn("does_not_perform_external_delivery", commit["limitations"])
+        self.assertIn("does_not_mutate_filesystem_artifacts", commit["limitations"])
+        self.assertEqual(commit["next_action"], "perform_manual_external_delivery_or_run_delivery_executor")
+
+        summary = result.auto_stitch_transaction_commit_summary
+        self.assertEqual(summary["transaction_commit_result_count"], 1)
+        self.assertEqual(summary["source_final_delivery_package_count"], 1)
+        self.assertEqual(summary["approved_review_decision_count"], 1)
+        self.assertEqual(summary["artifact_model_transaction_commit_recorded_count"], 1)
+        self.assertEqual(summary["cross_run_transaction_committed_count"], 0)
+        self.assertTrue(summary["transaction_commit_recorded"])
+        self.assertTrue(summary["artifact_model_transaction_commit_recorded"])
+        self.assertFalse(summary["cross_run_transaction_committed"])
+        self.assertFalse(summary["manifest_revision_committed"])
+        self.assertFalse(summary["automatic_delivery"])
+        self.assertFalse(summary["external_delivery_performed"])
+        self.assertFalse(summary["filesystem_artifact_mutated"])
+        self.assertEqual(summary["next_action"], "perform_manual_external_delivery_or_run_delivery_executor")
+        self.assertEqual(result.to_dict()["auto_stitch_transaction_commit_result_count"], 1)
 
     def test_rejected_auto_stitch_materialization_review_decision_does_not_materialize_plan(self) -> None:
         context = self._ready_flow_context()

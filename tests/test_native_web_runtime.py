@@ -1298,6 +1298,14 @@ class NativeWebRuntimeTests(unittest.TestCase):
                         "reviewer": "gate-reviewer",
                     }
                 ],
+                "auto_stitch_transaction_commit_review_decisions": [
+                    {
+                        "final_delivery_package_id": "standard-review-gate-replacement-final-delivery-package-1",
+                        "status": "approved",
+                        "approved": True,
+                        "reviewer": "transaction-reviewer",
+                    }
+                ],
             },
         )
 
@@ -1305,10 +1313,12 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("replace_standard_review_gate_after_physical_rollback", result.applied_actions)
         self.assertIn("rerun_delivery_guard_after_standard_review_gate_replacement", result.applied_actions)
         self.assertIn("package_final_delivery_after_standard_review_gate_replacement", result.applied_actions)
+        self.assertIn("record_final_delivery_transaction_commit", result.applied_actions)
         self.assertIn("flow_timeline_auto_stitch_standard_review_gate_replacement_review_decision_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_standard_review_gate_replacement_result_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_transaction_commit_result_count=1", result.verification)
 
         flow_metadata = result.artifacts[0].metadata
         self.assertEqual(flow_metadata["auto_stitch_standard_review_gate_replacement_result_count"], 1)
@@ -1333,6 +1343,13 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(
             flow_metadata["auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary"]["cross_run_transaction_committed"]
         )
+        self.assertEqual(flow_metadata["auto_stitch_transaction_commit_result_count"], 1)
+        self.assertTrue(flow_metadata["auto_stitch_transaction_commit_summary"]["transaction_commit_recorded"])
+        self.assertTrue(flow_metadata["auto_stitch_transaction_commit_summary"]["artifact_model_transaction_commit_recorded"])
+        self.assertFalse(flow_metadata["auto_stitch_transaction_commit_summary"]["cross_run_transaction_committed"])
+        self.assertFalse(flow_metadata["auto_stitch_transaction_commit_summary"]["manifest_revision_committed"])
+        self.assertFalse(flow_metadata["auto_stitch_transaction_commit_summary"]["external_delivery_performed"])
+        self.assertFalse(flow_metadata["auto_stitch_transaction_commit_summary"]["filesystem_artifact_mutated"])
 
         artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
         gate_artifact = artifacts_by_path["virtual://workspace/review-gate-after-physical-rollback.json"]
@@ -1363,6 +1380,15 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(final_package_artifact.metadata["cross_run_transaction_committed"])
         self.assertFalse(final_package_artifact.metadata["manifest_revision_committed"])
         self.assertFalse(final_package_artifact.metadata["external_delivery_performed"])
+        commit_artifact = artifacts_by_path["virtual://workspace/final-delivery-transaction-commit.json"]
+        self.assertEqual(commit_artifact.metadata["count"], 1)
+        self.assertTrue(commit_artifact.metadata["transaction_commit_recorded"])
+        self.assertTrue(commit_artifact.metadata["artifact_model_transaction_commit_recorded"])
+        self.assertFalse(commit_artifact.metadata["cross_run_transaction_committed"])
+        self.assertFalse(commit_artifact.metadata["manifest_revision_committed"])
+        self.assertFalse(commit_artifact.metadata["automatic_delivery"])
+        self.assertFalse(commit_artifact.metadata["external_delivery_performed"])
+        self.assertFalse(commit_artifact.metadata["filesystem_artifact_mutated"])
 
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()
