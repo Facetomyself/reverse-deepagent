@@ -67,6 +67,9 @@ class DeliveryExecutorConfig:
     preflight_backend_manifest_recovery: bool = False
     backend_manifest_recovery_preflight_name: str = "backend-artifact-manifest-recovery-preflight.json"
     expected_recovery_transaction_id: str | None = None
+    commit_cross_run_transaction: bool = False
+    backend_manifest_transaction_commit_name: str = "backend-artifact-manifest-transaction-commit.json"
+    expected_commit_transaction_id: str | None = None
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -328,6 +331,62 @@ class BackendManifestRecoveryPreflight:
 
 
 @dataclass(frozen=True)
+class BackendManifestTransactionCommit:
+    transaction_id: str
+    status: str
+    commit_id: str
+    commit_path: str | None
+    delivery_root: str
+    source_transaction_id: str | None
+    source_manifest_path: str | None
+    transaction_journal_path: str | None
+    recovery_preflight_path: str | None
+    dry_run: bool
+    commit_requested: bool
+    committed: bool
+    backend_manifest_mutated: bool
+    backend_manifest_recovery_preflight_passed: bool
+    external_delivery_performed: bool
+    cross_run_transaction_committed: bool
+    source_manifest_digest_sha256: str | None
+    expected_commit_transaction_id: str | None
+    recovery_preflight_status: str | None
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    recommended_actions: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "commit_id": self.commit_id,
+            "commit_path": self.commit_path,
+            "delivery_root": self.delivery_root,
+            "source_transaction_id": self.source_transaction_id,
+            "source_manifest_path": self.source_manifest_path,
+            "transaction_journal_path": self.transaction_journal_path,
+            "recovery_preflight_path": self.recovery_preflight_path,
+            "dry_run": self.dry_run,
+            "commit_requested": self.commit_requested,
+            "committed": self.committed,
+            "backend_manifest_mutated": self.backend_manifest_mutated,
+            "backend_manifest_recovery_preflight_passed": self.backend_manifest_recovery_preflight_passed,
+            "external_delivery_performed": self.external_delivery_performed,
+            "cross_run_transaction_committed": self.cross_run_transaction_committed,
+            "source_manifest_digest_sha256": self.source_manifest_digest_sha256,
+            "expected_commit_transaction_id": self.expected_commit_transaction_id,
+            "recovery_preflight_status": self.recovery_preflight_status,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class DeliveryTransactionJournal:
     transaction_id: str
     status: str
@@ -343,11 +402,13 @@ class DeliveryTransactionJournal:
     backend_manifest_in_place_mutation_path: str | None
     backend_manifest_rollback_path: str | None
     backend_manifest_recovery_preflight_path: str | None
+    backend_manifest_transaction_commit_path: str | None
     backend_manifest_patch_written: bool
     backend_manifest_in_place_preflight_passed: bool
     backend_manifest_recovery_preflight_passed: bool
     backend_manifest_rollback_written: bool
     backend_manifest_mutated: bool
+    cross_run_transaction_committed: bool
     entries: list[dict[str, Any]]
     created_at: str
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -368,11 +429,13 @@ class DeliveryTransactionJournal:
             "backend_manifest_in_place_mutation_path": self.backend_manifest_in_place_mutation_path,
             "backend_manifest_rollback_path": self.backend_manifest_rollback_path,
             "backend_manifest_recovery_preflight_path": self.backend_manifest_recovery_preflight_path,
+            "backend_manifest_transaction_commit_path": self.backend_manifest_transaction_commit_path,
             "backend_manifest_patch_written": self.backend_manifest_patch_written,
             "backend_manifest_in_place_preflight_passed": self.backend_manifest_in_place_preflight_passed,
             "backend_manifest_recovery_preflight_passed": self.backend_manifest_recovery_preflight_passed,
             "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
             "backend_manifest_mutated": self.backend_manifest_mutated,
+            "cross_run_transaction_committed": self.cross_run_transaction_committed,
             "entries": self.entries,
             "created_at": self.created_at,
             "metadata": self.metadata,
@@ -388,6 +451,7 @@ class DeliveryExecutionResult:
     delivery_allowed: bool
     filesystem_artifact_mutated: bool
     external_delivery_performed: bool
+    cross_run_transaction_committed: bool
     manifest_revision_committed: bool
     backend_manifest_patch_written: bool
     backend_manifest_in_place_preflight_passed: bool
@@ -401,6 +465,7 @@ class DeliveryExecutionResult:
     backend_manifest_in_place_preflight: BackendManifestInPlacePreflight | None
     backend_manifest_in_place_mutation: BackendManifestInPlaceMutation | None
     backend_manifest_recovery_preflight: BackendManifestRecoveryPreflight | None
+    backend_manifest_transaction_commit: BackendManifestTransactionCommit | None
     planned_artifacts: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
     next_action: str = "review_delivery_receipt_before_external_handoff"
@@ -414,6 +479,7 @@ class DeliveryExecutionResult:
             "delivery_allowed": self.delivery_allowed,
             "filesystem_artifact_mutated": self.filesystem_artifact_mutated,
             "external_delivery_performed": self.external_delivery_performed,
+            "cross_run_transaction_committed": self.cross_run_transaction_committed,
             "manifest_revision_committed": self.manifest_revision_committed,
             "backend_manifest_patch_written": self.backend_manifest_patch_written,
             "backend_manifest_in_place_preflight_passed": self.backend_manifest_in_place_preflight_passed,
@@ -427,6 +493,7 @@ class DeliveryExecutionResult:
             "backend_manifest_in_place_preflight": self.backend_manifest_in_place_preflight.to_dict() if self.backend_manifest_in_place_preflight else None,
             "backend_manifest_in_place_mutation": self.backend_manifest_in_place_mutation.to_dict() if self.backend_manifest_in_place_mutation else None,
             "backend_manifest_recovery_preflight": self.backend_manifest_recovery_preflight.to_dict() if self.backend_manifest_recovery_preflight else None,
+            "backend_manifest_transaction_commit": self.backend_manifest_transaction_commit.to_dict() if self.backend_manifest_transaction_commit else None,
             "planned_artifacts": self.planned_artifacts,
             "errors": self.errors,
             "next_action": self.next_action,
@@ -451,6 +518,7 @@ class LocalDeliveryExecutor:
         mode = self.config.mode
         dry_run = mode == DeliveryExecutionMode.DRY_RUN
         recovery_only = self._is_recovery_preflight_only(artifacts)
+        transaction_commit_only = self._is_cross_run_transaction_commit_only(artifacts)
         delivered: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
 
@@ -464,6 +532,9 @@ class LocalDeliveryExecutor:
         elif recovery_only:
             status = "preflighted"
             next_action = "review_backend_manifest_recovery_preflight"
+        elif transaction_commit_only:
+            status = "commit_requested"
+            next_action = "review_backend_manifest_transaction_commit"
         else:
             delivery_root.mkdir(parents=True, exist_ok=True)
             for item in planned:
@@ -478,8 +549,16 @@ class LocalDeliveryExecutor:
             status = "delivered" if delivered and not errors else "failed" if errors else "partial"
             next_action = "review_delivery_receipt_before_external_handoff" if delivered else "fix_delivery_artifact_inputs"
 
-        receipt_path = str(delivery_root / "delivery-receipt.json") if self.config.write_receipt and not dry_run and not errors and not recovery_only else None
-        journal_path = str(delivery_root / "delivery-transaction-journal.json") if self.config.write_receipt and not dry_run and not errors and not recovery_only else None
+        receipt_path = (
+            str(delivery_root / "delivery-receipt.json")
+            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not transaction_commit_only
+            else None
+        )
+        journal_path = (
+            str(delivery_root / "delivery-transaction-journal.json")
+            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not transaction_commit_only
+            else None
+        )
         manifest_revision_path = (
             str(delivery_root / self.config.manifest_revision_name)
             if self.config.write_receipt and self.config.commit_manifest_revision and not dry_run and not errors
@@ -515,6 +594,27 @@ class LocalDeliveryExecutor:
             if self.config.write_receipt and self.config.preflight_backend_manifest_recovery and not dry_run and not errors
             else None
         )
+        backend_manifest_transaction_commit_path = (
+            str(delivery_root / self.config.backend_manifest_transaction_commit_name)
+            if self.config.write_receipt and self.config.commit_cross_run_transaction and not dry_run and not errors
+            else None
+        )
+        backend_manifest_transaction_commit = self._build_backend_manifest_transaction_commit(
+            commit_path=backend_manifest_transaction_commit_path,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        if transaction_commit_only and backend_manifest_transaction_commit:
+            if backend_manifest_transaction_commit.committed:
+                status = "committed"
+                next_action = "review_committed_transaction_before_external_delivery"
+                journal_path = backend_manifest_transaction_commit.transaction_journal_path
+            elif backend_manifest_transaction_commit.blocking_reasons:
+                status = "blocked"
+                next_action = "fix_backend_manifest_transaction_commit_blockers"
+            elif dry_run:
+                status = "planned"
+                next_action = "apply_cross_run_transaction_commit_after_review"
         receipt = DeliveryReceipt(
             transaction_id=self.config.transaction_id,
             status=status,
@@ -588,12 +688,24 @@ class LocalDeliveryExecutor:
             dry_run=dry_run,
             created_at=created_at,
         )
+        previous_journal: dict[str, Any] = {}
+        if transaction_commit_only and backend_manifest_transaction_commit and backend_manifest_transaction_commit.transaction_journal_path:
+            previous_journal_path = Path(backend_manifest_transaction_commit.transaction_journal_path)
+            if previous_journal_path.exists():
+                previous_journal = _read_json_object(previous_journal_path)
+        cross_run_transaction_committed = bool(
+            (backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed)
+            or previous_journal.get("cross_run_transaction_committed")
+        )
         journal_limitations = [
             "does_not_publish_external_delivery",
             "rollback_is_local_checkpoint_baseline",
-            "does_not_commit_cross_run_transaction",
             "cross_run_manifest_recovery_not_implemented",
         ]
+        if cross_run_transaction_committed:
+            journal_limitations.append("external_delivery_still_requires_separate_executor")
+        else:
+            journal_limitations.append("does_not_commit_cross_run_transaction")
         if not backend_manifest_mutated:
             journal_limitations.extend(
                 [
@@ -603,30 +715,59 @@ class LocalDeliveryExecutor:
                 ]
             )
         journal = DeliveryTransactionJournal(
-            transaction_id=self.config.transaction_id,
+            transaction_id=_journal_str(previous_journal, "transaction_id", self.config.transaction_id) or self.config.transaction_id,
             status=status,
             journal_path=journal_path,
-            manifest_revision_committed=bool(manifest_revision and manifest_revision.committed),
-            filesystem_artifact_mutated=bool(delivered),
+            manifest_revision_committed=_journal_bool(
+                previous_journal,
+                "manifest_revision_committed",
+                bool(manifest_revision and manifest_revision.committed),
+            ),
+            filesystem_artifact_mutated=_journal_bool(previous_journal, "filesystem_artifact_mutated", bool(delivered)),
             external_delivery_performed=False,
-            rollback_available=bool(delivered),
-            manifest_revision_path=manifest_revision_path,
-            backend_manifest_mutation_path=backend_manifest_mutation_path,
-            backend_manifest_patched_path=backend_manifest_patched_path,
-            backend_manifest_preflight_path=backend_manifest_preflight_path,
-            backend_manifest_in_place_mutation_path=backend_manifest_in_place_mutation_path,
-            backend_manifest_rollback_path=backend_manifest_rollback_path,
-            backend_manifest_recovery_preflight_path=backend_manifest_recovery_preflight_path,
-            backend_manifest_patch_written=bool(backend_manifest_mutation and backend_manifest_mutation.backend_manifest_patch_written),
-            backend_manifest_in_place_preflight_passed=bool(
-                backend_manifest_in_place_preflight and backend_manifest_in_place_preflight.in_place_mutation_allowed
+            rollback_available=_journal_bool(previous_journal, "rollback_available", bool(delivered)),
+            manifest_revision_path=_journal_str(previous_journal, "manifest_revision_path", manifest_revision_path),
+            backend_manifest_mutation_path=_journal_str(previous_journal, "backend_manifest_mutation_path", backend_manifest_mutation_path),
+            backend_manifest_patched_path=_journal_str(previous_journal, "backend_manifest_patched_path", backend_manifest_patched_path),
+            backend_manifest_preflight_path=_journal_str(previous_journal, "backend_manifest_preflight_path", backend_manifest_preflight_path),
+            backend_manifest_in_place_mutation_path=_journal_str(
+                previous_journal,
+                "backend_manifest_in_place_mutation_path",
+                backend_manifest_in_place_mutation_path,
             ),
-            backend_manifest_recovery_preflight_passed=bool(
-                backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.status in {"ready_for_review", "no_recovery_required"}
+            backend_manifest_rollback_path=_journal_str(previous_journal, "backend_manifest_rollback_path", backend_manifest_rollback_path),
+            backend_manifest_recovery_preflight_path=_journal_str(
+                previous_journal,
+                "backend_manifest_recovery_preflight_path",
+                backend_manifest_transaction_commit.recovery_preflight_path
+                if backend_manifest_transaction_commit and backend_manifest_transaction_commit.recovery_preflight_path
+                else backend_manifest_recovery_preflight_path,
             ),
-            backend_manifest_rollback_written=backend_manifest_rollback_written,
-            backend_manifest_mutated=backend_manifest_mutated,
-            entries=[
+            backend_manifest_transaction_commit_path=_journal_str(
+                previous_journal,
+                "backend_manifest_transaction_commit_path",
+                backend_manifest_transaction_commit_path if backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed else None,
+            ),
+            backend_manifest_patch_written=_journal_bool(
+                previous_journal,
+                "backend_manifest_patch_written",
+                bool(backend_manifest_mutation and backend_manifest_mutation.backend_manifest_patch_written),
+            ),
+            backend_manifest_in_place_preflight_passed=_journal_bool(
+                previous_journal,
+                "backend_manifest_in_place_preflight_passed",
+                bool(backend_manifest_in_place_preflight and backend_manifest_in_place_preflight.in_place_mutation_allowed),
+            ),
+            backend_manifest_recovery_preflight_passed=_journal_bool(
+                previous_journal,
+                "backend_manifest_recovery_preflight_passed",
+                bool(backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.status in {"ready_for_review", "no_recovery_required"}),
+            ),
+            backend_manifest_rollback_written=_journal_bool(previous_journal, "backend_manifest_rollback_written", backend_manifest_rollback_written),
+            backend_manifest_mutated=_journal_bool(previous_journal, "backend_manifest_mutated", backend_manifest_mutated),
+            cross_run_transaction_committed=cross_run_transaction_committed,
+            entries=_journal_entries(previous_journal)
+            or [
                 {
                     "action": "copy_artifact",
                     "source_path": item["source_path"],
@@ -657,7 +798,13 @@ class LocalDeliveryExecutor:
             _write_json(Path(backend_manifest_in_place_mutation_path), backend_manifest_in_place_mutation.to_dict())
         if backend_manifest_recovery_preflight_path and backend_manifest_recovery_preflight:
             _write_json(Path(backend_manifest_recovery_preflight_path), backend_manifest_recovery_preflight.to_dict())
-        if journal_path:
+        if backend_manifest_transaction_commit_path and backend_manifest_transaction_commit:
+            _write_json(Path(backend_manifest_transaction_commit_path), backend_manifest_transaction_commit.to_dict())
+        should_write_journal = bool(journal_path) and (
+            not transaction_commit_only
+            or bool(backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed)
+        )
+        if should_write_journal:
             _write_json(Path(journal_path), journal.to_dict())
         if backend_manifest_mutated:
             next_action = "review_backend_manifest_in_place_mutation_before_cross_run_commit"
@@ -675,6 +822,7 @@ class LocalDeliveryExecutor:
             delivery_allowed=not bool(errors),
             filesystem_artifact_mutated=bool(delivered),
             external_delivery_performed=False,
+            cross_run_transaction_committed=cross_run_transaction_committed,
             manifest_revision_committed=bool(manifest_revision and manifest_revision.committed),
             backend_manifest_patch_written=bool(backend_manifest_mutation and backend_manifest_mutation.backend_manifest_patch_written),
             backend_manifest_in_place_preflight_passed=bool(
@@ -692,6 +840,7 @@ class LocalDeliveryExecutor:
             backend_manifest_in_place_preflight=backend_manifest_in_place_preflight,
             backend_manifest_in_place_mutation=backend_manifest_in_place_mutation,
             backend_manifest_recovery_preflight=backend_manifest_recovery_preflight,
+            backend_manifest_transaction_commit=backend_manifest_transaction_commit,
             planned_artifacts=planned,
             errors=errors,
             next_action=next_action,
@@ -1278,6 +1427,159 @@ class LocalDeliveryExecutor:
             },
         )
 
+    def _build_backend_manifest_transaction_commit(
+        self,
+        *,
+        commit_path: str | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> BackendManifestTransactionCommit | None:
+        if not self.config.commit_cross_run_transaction:
+            return None
+        delivery_root = self.config.resolved_delivery_root()
+        source_manifest_path = self.config.resolved_backend_manifest_path()
+        source_manifest_exists = bool(source_manifest_path and source_manifest_path.exists())
+        source_digest = _file_sha256(source_manifest_path) if source_manifest_path and source_manifest_exists else None
+        journal_path = delivery_root / "delivery-transaction-journal.json"
+        journal_exists = journal_path.exists()
+        journal = _read_json_object(journal_path) if journal_exists else {}
+        source_transaction_id = str(journal["transaction_id"]) if journal.get("transaction_id") is not None else None
+        expected_transaction_id = self.config.expected_commit_transaction_id
+        backend_manifest_mutated = bool(journal.get("backend_manifest_mutated"))
+        external_delivery_performed = bool(journal.get("external_delivery_performed"))
+        already_committed = bool(journal.get("cross_run_transaction_committed"))
+        recovery_preflight_path = _resolve_record_path(journal.get("backend_manifest_recovery_preflight_path"), delivery_root)
+        if recovery_preflight_path is None:
+            recovery_preflight_path = (delivery_root / self.config.backend_manifest_recovery_preflight_name).resolve()
+        recovery_preflight_exists = recovery_preflight_path.exists()
+        recovery_preflight = _read_json_object(recovery_preflight_path) if recovery_preflight_exists else {}
+        recovery_preflight_status = (
+            str(recovery_preflight["status"]) if recovery_preflight.get("status") is not None else None
+        )
+        recovery_preflight_passed = recovery_preflight_status in {"ready_for_review", "no_recovery_required"}
+        recovery_journal_transaction_id = (
+            str(recovery_preflight["journal_transaction_id"])
+            if recovery_preflight.get("journal_transaction_id") is not None
+            else None
+        )
+        recovery_source_digest = (
+            recovery_preflight.get("source_manifest_digest_sha256")
+            if isinstance(recovery_preflight.get("source_manifest_digest_sha256"), str)
+            else None
+        )
+        rollback_path = _resolve_record_path(journal.get("backend_manifest_rollback_path"), delivery_root)
+        if backend_manifest_mutated and rollback_path is None:
+            rollback_path = (delivery_root / self.config.backend_manifest_rollback_name).resolve()
+        rollback_exists = bool(rollback_path and rollback_path.exists())
+        checks = [
+            {
+                "name": "source_manifest_exists",
+                "passed": source_manifest_exists,
+                "details": {"source_manifest_path": str(source_manifest_path) if source_manifest_path else None},
+            },
+            {
+                "name": "transaction_journal_exists",
+                "passed": journal_exists,
+                "details": {"transaction_journal_path": str(journal_path)},
+            },
+            {
+                "name": "expected_commit_transaction_matches",
+                "passed": expected_transaction_id is None or expected_transaction_id == source_transaction_id,
+                "details": {"expected": expected_transaction_id, "actual": source_transaction_id},
+            },
+            {
+                "name": "journal_reports_no_external_delivery",
+                "passed": not external_delivery_performed,
+                "details": {"external_delivery_performed": external_delivery_performed},
+            },
+            {
+                "name": "journal_not_already_cross_run_committed",
+                "passed": not already_committed,
+                "details": {"cross_run_transaction_committed": already_committed},
+            },
+            {
+                "name": "recovery_preflight_exists",
+                "passed": recovery_preflight_exists,
+                "details": {"recovery_preflight_path": str(recovery_preflight_path)},
+            },
+            {
+                "name": "recovery_preflight_status_allows_commit",
+                "passed": recovery_preflight_passed,
+                "details": {"status": recovery_preflight_status},
+            },
+            {
+                "name": "recovery_preflight_transaction_matches_journal",
+                "passed": recovery_journal_transaction_id == source_transaction_id,
+                "details": {"recovery_journal_transaction_id": recovery_journal_transaction_id, "journal_transaction_id": source_transaction_id},
+            },
+            {
+                "name": "recovery_preflight_source_digest_matches_current",
+                "passed": bool(source_digest and recovery_source_digest == source_digest),
+                "details": {"expected": recovery_source_digest, "actual": source_digest},
+            },
+            {
+                "name": "rollback_checkpoint_exists_if_mutated",
+                "passed": not backend_manifest_mutated or rollback_exists,
+                "details": {"backend_manifest_mutated": backend_manifest_mutated, "rollback_path": str(rollback_path) if rollback_path else None},
+            },
+            {
+                "name": "transaction_commit_does_not_publish_external_delivery",
+                "passed": True,
+                "details": {"external_delivery_performed_by_commit": False},
+            },
+        ]
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        if dry_run:
+            status = "planned"
+            committed = False
+            recommended_actions = ["run_apply_cross_run_transaction_commit_after_review"]
+        elif blocking_reasons:
+            status = "blocked"
+            committed = False
+            recommended_actions = ["inspect_recovery_preflight_and_transaction_journal_before_commit"]
+        else:
+            status = "committed"
+            committed = True
+            recommended_actions = ["review_committed_transaction_before_external_delivery"]
+        return BackendManifestTransactionCommit(
+            transaction_id=self.config.transaction_id,
+            status=status,
+            commit_id=f"backend-manifest-transaction-commit-{self.config.transaction_id}",
+            commit_path=commit_path,
+            delivery_root=str(delivery_root),
+            source_transaction_id=source_transaction_id,
+            source_manifest_path=str(source_manifest_path) if source_manifest_path else None,
+            transaction_journal_path=str(journal_path),
+            recovery_preflight_path=str(recovery_preflight_path),
+            dry_run=dry_run,
+            commit_requested=True,
+            committed=committed,
+            backend_manifest_mutated=backend_manifest_mutated,
+            backend_manifest_recovery_preflight_passed=recovery_preflight_passed,
+            external_delivery_performed=False,
+            cross_run_transaction_committed=committed,
+            source_manifest_digest_sha256=source_digest,
+            expected_commit_transaction_id=expected_transaction_id,
+            recovery_preflight_status=recovery_preflight_status,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=recommended_actions,
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "backend-manifest-cross-run-transaction-commit-baseline",
+                "external_delivery_performed": False,
+                "cross_run_transaction_committed": committed,
+                "limitations": [
+                    "local_filesystem_transaction_commit_only",
+                    "does_not_publish_external_delivery",
+                    "does_not_restore_manifest",
+                    "external_delivery_executor_not_implemented",
+                ],
+            },
+        )
+
     def _is_recovery_preflight_only(self, artifacts: list[DeliveryArtifact]) -> bool:
         return (
             self.config.preflight_backend_manifest_recovery
@@ -1286,6 +1588,18 @@ class LocalDeliveryExecutor:
             and not self.config.commit_backend_manifest_mutation
             and not self.config.preflight_backend_manifest_in_place_mutation
             and not self.config.approve_backend_manifest_in_place_mutation
+            and not self.config.commit_cross_run_transaction
+        )
+
+    def _is_cross_run_transaction_commit_only(self, artifacts: list[DeliveryArtifact]) -> bool:
+        return (
+            self.config.commit_cross_run_transaction
+            and not artifacts
+            and not self.config.commit_manifest_revision
+            and not self.config.commit_backend_manifest_mutation
+            and not self.config.preflight_backend_manifest_in_place_mutation
+            and not self.config.approve_backend_manifest_in_place_mutation
+            and not self.config.preflight_backend_manifest_recovery
         )
 
     def _plan_artifacts(self, artifacts: list[DeliveryArtifact], delivery_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
@@ -1366,6 +1680,26 @@ def _resolve_record_path(value: Any, base_dir: Path) -> Path | None:
     if not path.is_absolute():
         path = base_dir / path
     return path.resolve()
+
+
+def _journal_bool(journal: dict[str, Any], key: str, default: bool) -> bool:
+    if key in journal:
+        return bool(journal[key])
+    return default
+
+
+def _journal_str(journal: dict[str, Any], key: str, default: str | None) -> str | None:
+    value = journal.get(key)
+    if value is None:
+        return default
+    return str(value)
+
+
+def _journal_entries(journal: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = journal.get("entries")
+    if not isinstance(entries, list):
+        return []
+    return [dict(item) for item in entries if isinstance(item, dict)]
 
 
 def _backend_manifest_entry(

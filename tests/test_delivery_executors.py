@@ -626,6 +626,139 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertFalse(result.backend_manifest_recovery_preflight.recovery_available)
             self.assertEqual(result.next_action, "review_backend_manifest_recovery_preflight")
 
+    def test_backend_manifest_transaction_commit_updates_journal_after_recovery_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-recovery-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-commit-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-cross-run-commit",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-commit-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            commit_path = delivery_root / "backend-artifact-manifest-transaction-commit.json"
+            journal_path = delivery_root / "delivery-transaction-journal.json"
+            self.assertEqual(result.status, "committed")
+            self.assertTrue(result.cross_run_transaction_committed)
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.backend_manifest_transaction_commit)
+            self.assertEqual(result.backend_manifest_transaction_commit.status, "committed")
+            self.assertTrue(result.backend_manifest_transaction_commit.committed)
+            self.assertTrue(commit_path.exists())
+            commit = json.loads(commit_path.read_text(encoding="utf-8"))
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(commit["source_transaction_id"], "tx-commit-source")
+            self.assertTrue(commit["cross_run_transaction_committed"])
+            self.assertTrue(commit["backend_manifest_recovery_preflight_passed"])
+            self.assertFalse(commit["blocking_reasons"])
+            self.assertEqual(journal["transaction_id"], "tx-commit-source")
+            self.assertTrue(journal["cross_run_transaction_committed"])
+            self.assertEqual(
+                journal["backend_manifest_recovery_preflight_path"],
+                str((delivery_root / "backend-artifact-manifest-recovery-preflight.json").resolve()),
+            )
+            self.assertEqual(journal["backend_manifest_transaction_commit_path"], str(commit_path.resolve()))
+            self.assertEqual(journal["backend_manifest_in_place_mutation_path"], str((delivery_root / "backend-artifact-manifest-in-place-mutation.json").resolve()))
+            self.assertTrue(journal["backend_manifest_mutated"])
+            self.assertFalse(journal["external_delivery_performed"])
+
+    def test_backend_manifest_transaction_commit_blocks_stale_recovery_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-drift-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-drift-recovery-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-commit-drift-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+            mutated = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            mutated["entries"].append({"artifact_key": "late_drift", "path": "workspace/late.json", "kind": "json"})
+            backend_manifest.write_text(json.dumps(mutated, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-cross-run-commit-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-commit-drift-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            commit_path = delivery_root / "backend-artifact-manifest-transaction-commit.json"
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(result.status, "blocked")
+            self.assertFalse(result.cross_run_transaction_committed)
+            self.assertIsNotNone(result.backend_manifest_transaction_commit)
+            self.assertEqual(result.backend_manifest_transaction_commit.status, "blocked")
+            self.assertIn(
+                "recovery_preflight_source_digest_matches_current",
+                result.backend_manifest_transaction_commit.blocking_reasons,
+            )
+            self.assertTrue(commit_path.exists())
+            self.assertFalse(journal.get("cross_run_transaction_committed", False))
+            self.assertIsNone(journal.get("backend_manifest_transaction_commit_path"))
+
     def test_missing_required_source_blocks_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

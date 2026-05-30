@@ -202,6 +202,49 @@ class DeliveryToolTests(TestCase):
             self.assertTrue(result["backend_manifest_recovery_preflight"]["recovery_available"])
             self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery-preflight.json").exists())
 
+    def test_local_delivery_tool_can_commit_cross_run_transaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-commit-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            tool(
+                artifacts_json="[]",
+                transaction_id="tx-tool-commit-recovery-preflight",
+                mode="apply",
+                preflight_backend_manifest_recovery=True,
+                expected_recovery_transaction_id="tx-tool-commit-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = tool(
+                artifacts_json="[]",
+                transaction_id="tx-tool-cross-run-commit",
+                mode="apply",
+                commit_cross_run_transaction=True,
+                expected_commit_transaction_id="tx-tool-commit-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+
+            self.assertEqual(result["status"], "committed")
+            self.assertTrue(result["cross_run_transaction_committed"])
+            self.assertEqual(result["backend_manifest_transaction_commit"]["status"], "committed")
+            self.assertTrue((root / "delivery" / "backend-artifact-manifest-transaction-commit.json").exists())
+
 
 class DeliverySubagentToolTests(TestCase):
     def test_delivery_subagent_exposes_rebuild_and_local_delivery_tools(self) -> None:
