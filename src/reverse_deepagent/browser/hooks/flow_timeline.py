@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 
 @dataclass(slots=True)
@@ -233,16 +234,237 @@ class FlowTimelineManager:
 
     def _entry_from_event(self, event: dict[str, Any], spec: FlowTimelineSpec, source: str, sequence: int, *, event_type: str | None = None) -> dict[str, Any]:
         payload = self._safe_payload(event, spec.max_payload_preview_length)
+        event_request_id = event.get("request_id", event.get("requestId", event.get("requestID")))
+        request_id = event_request_id or spec.request_id
         return {
             "sequence": sequence,
             "flow_id": str(event.get("flow_id", event.get("flowId", spec.flow_id)) or spec.flow_id),
             "run_id": event.get("run_id", event.get("runId", spec.run_id)),
-            "request_id": event.get("request_id", event.get("requestId", event.get("requestID", spec.request_id))),
+            "request_id": request_id,
             "source": source,
             "type": event_type or str(event.get("type", "event")),
             "timestamp": event.get("timestamp", event.get("ts")),
             "payload": payload,
+            "correlation": self._correlation_hints(event, spec, request_id=event_request_id),
         }
+
+    def _correlation_hints(self, event: dict[str, Any], spec: FlowTimelineSpec, *, request_id: Any = None) -> dict[str, Any]:
+        """Extract conservative, machine-readable correlation hints.
+
+        These hints are intentionally not matches.  They help later review or a
+        separate stitching stage reason about likely request / hook / replay
+        relationships without claiming automatic cross-request correlation.
+        """
+
+        resolved_request_id = request_id or self._first_string(
+            event,
+            (
+                ("request_id",),
+                ("requestId",),
+                ("requestID",),
+                ("id",),
+                ("reqid",),
+                ("payload", "request_id"),
+                ("payload", "requestId"),
+                ("payload", "requestID"),
+                ("payload", "id"),
+                ("payload", "reqid"),
+                ("request", "requestId"),
+                ("request", "request_id"),
+            ),
+        )
+        url = self._first_string(
+            event,
+            (
+                ("url",),
+                ("name",),
+                ("request", "url"),
+                ("payload", "url"),
+                ("payload", "name"),
+                ("payload", "request", "url"),
+                ("raw_runtime_result", "runtime_url"),
+                ("payload", "raw_runtime_result", "runtime_url"),
+                ("runtime_url",),
+            ),
+        )
+        method = self._first_string(
+            event,
+            (
+                ("method",),
+                ("request", "method"),
+                ("payload", "method"),
+                ("payload", "request", "method"),
+            ),
+        )
+        url_path = self._url_path(url)
+        function_names = self._unique_strings(
+            [
+                *self._strings_for_paths(
+                    event,
+                    (
+                        ("function_name",),
+                        ("functionName",),
+                        ("function",),
+                        ("payload", "function_name"),
+                        ("payload", "functionName"),
+                        ("payload", "function"),
+                        ("sample_output", "function_name"),
+                        ("sample_output", "functionName"),
+                    ),
+                ),
+                *self._callframe_function_names(event),
+            ]
+        )
+        candidate_ids = self._unique_strings(
+            self._strings_for_paths(
+                event,
+                (
+                    ("candidate_id",),
+                    ("candidateId",),
+                    ("payload", "candidate_id"),
+                    ("payload", "candidateId"),
+                    ("raw_runtime_result", "candidate_id"),
+                    ("raw_runtime_result", "candidateId"),
+                ),
+            )
+        )
+        hook_paths = self._unique_strings(
+            self._strings_for_paths(
+                event,
+                (
+                    ("path",),
+                    ("hookPath",),
+                    ("hook_path",),
+                    ("callable_path",),
+                    ("payload", "path"),
+                    ("payload", "hookPath"),
+                    ("payload", "hook_path"),
+                    ("payload", "callable_path"),
+                    ("sample_output", "callable_path"),
+                    ("sample_output", "path"),
+                    ("sample_output", "hookPath"),
+                ),
+            )
+        )
+
+        hints: list[str] = []
+        correlation: dict[str, Any] = {}
+        if resolved_request_id:
+            request_id_text = str(resolved_request_id)
+            correlation["request_id"] = request_id_text
+            hints.append(f"request_id={request_id_text}")
+        if url:
+            correlation["url"] = url
+            hints.append(f"url={url}")
+        if url_path:
+            correlation["url_path"] = url_path
+            hints.append(f"url_path={url_path}")
+        if method:
+            method_text = method.upper()
+            correlation["method"] = method_text
+            hints.append(f"method={method_text}")
+        if function_names:
+            correlation["function_names"] = function_names
+            hints.extend(f"function_name={name}" for name in function_names)
+        if candidate_ids:
+            correlation["candidate_ids"] = candidate_ids
+            hints.extend(f"candidate_id={candidate_id}" for candidate_id in candidate_ids)
+        if hook_paths:
+            correlation["hook_paths"] = hook_paths
+            hints.extend(f"hook_path={path}" for path in hook_paths)
+
+        if resolved_request_id or url_path:
+            confidence = "medium"
+        elif function_names or candidate_ids or hook_paths:
+            confidence = "low"
+        else:
+            confidence = "none"
+        correlation["confidence"] = confidence
+        correlation["hints"] = hints
+        return correlation
+
+    @classmethod
+    def _first_string(cls, data: dict[str, Any], paths: Iterable[tuple[str, ...]]) -> str | None:
+        for value in cls._strings_for_paths(data, paths):
+            return value
+        return None
+
+    @classmethod
+    def _strings_for_paths(cls, data: Any, paths: Iterable[tuple[str, ...]]) -> list[str]:
+        values: list[str] = []
+        for path in paths:
+            value = cls._value_at_path(data, path)
+            values.extend(cls._string_values(value))
+        return cls._unique_strings(values)
+
+    @staticmethod
+    def _value_at_path(data: Any, path: tuple[str, ...]) -> Any:
+        current = data
+        for key in path:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(key)
+        return current
+
+    @classmethod
+    def _string_values(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return [stripped] if stripped else []
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return [str(value)]
+        if isinstance(value, list):
+            values: list[str] = []
+            for item in value:
+                values.extend(cls._string_values(item))
+            return values
+        return []
+
+    @classmethod
+    def _callframe_function_names(cls, event: dict[str, Any]) -> list[str]:
+        values: list[str] = []
+        for callframes in cls._callframe_lists(event):
+            if not isinstance(callframes, list):
+                continue
+            for frame in callframes:
+                if not isinstance(frame, dict):
+                    continue
+                values.extend(cls._string_values(frame.get("functionName")))
+                values.extend(cls._string_values(frame.get("function_name")))
+        return cls._unique_strings(values)
+
+    @classmethod
+    def _callframe_lists(cls, event: dict[str, Any]) -> list[Any]:
+        paths = (
+            ("callFrames",),
+            ("stack", "callFrames"),
+            ("initiator", "stack", "callFrames"),
+            ("payload", "callFrames"),
+            ("payload", "stack", "callFrames"),
+            ("payload", "initiator", "stack", "callFrames"),
+        )
+        return [cls._value_at_path(event, path) for path in paths]
+
+    @staticmethod
+    def _url_path(url: str | None) -> str | None:
+        if not url:
+            return None
+        parsed = urlparse(url)
+        path = parsed.path
+        if not path and url.startswith("/"):
+            path = url.split("?", 1)[0]
+        return path or None
+
+    @staticmethod
+    def _unique_strings(values: Iterable[str]) -> list[str]:
+        seen: set[str] = set()
+        unique: list[str] = []
+        for value in values:
+            if value in seen:
+                continue
+            seen.add(value)
+            unique.append(value)
+        return unique
 
     @staticmethod
     def _safe_payload(event: dict[str, Any], max_length: int) -> dict[str, Any]:

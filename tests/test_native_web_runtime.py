@@ -586,6 +586,14 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("network.request", {entry["type"] for entry in flow_timeline["entries"]})
         self.assertIn("hook.fetch", {entry["type"] for entry in flow_timeline["entries"]})
         self.assertIn("replay.validation", {entry["type"] for entry in flow_timeline["entries"]})
+        correlations = [entry["correlation"] for entry in flow_timeline["entries"]]
+        candidate_id = function_candidates["candidates"][0]["candidate_id"]
+        self.assertTrue(any(correlation.get("request_id") == "req-1" for correlation in correlations))
+        self.assertTrue(any(correlation.get("url_path") == "/app/api/search" for correlation in correlations))
+        self.assertTrue(any("buildSign" in correlation.get("function_names", []) for correlation in correlations))
+        self.assertTrue(any(candidate_id in correlation.get("candidate_ids", []) for correlation in correlations))
+        self.assertTrue(any(correlation.get("method") == "GET" for correlation in correlations))
+        self.assertTrue(all(correlation.get("confidence") in {"none", "low", "medium"} for correlation in correlations))
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")
