@@ -11,6 +11,8 @@ from reverse_deepagent.browser.hooks import (
     BreakpointManager,
     BreakpointSpec,
     BrowserHookManager,
+    ClosureScopeDiscoveryManager,
+    ClosureScopeDiscoverySpec,
     FunctionHookManager,
     FunctionHookSpec,
     ModuleDiscoveryManager,
@@ -443,6 +445,61 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_scope_discovery_request(protection_name, context):
+            spec = ClosureScopeDiscoverySpec.from_context(context)
+            result = ClosureScopeDiscoveryManager().discover(page, spec)
+            function_count = len(result.functions)
+            candidate_count = len(result.candidates)
+            callframe_count = int(result.scope_summary.get("callframe_count") or 0)
+            selected_callframe_id = result.scope_summary.get("selected_callframe_id")
+            verification = [
+                f"closure_scope_discovery_status={result.status}",
+                f"closure_scope_function_count={function_count}",
+                f"closure_scope_candidate_count={candidate_count}",
+                f"closure_scope_callframe_count={callframe_count}",
+                f"closure_scope_selected_callframe_id={selected_callframe_id or 'unknown'}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"closure_scope_reason={result.reason}")
+            if result.error:
+                verification.append(f"closure_scope_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-functions.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime closure-scope function discovery evidence.",
+                    metadata={
+                        "status": result.status,
+                        "function_count": function_count,
+                        "callframe_count": callframe_count,
+                        "selected_callframe_id": selected_callframe_id,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/closure-function-candidates.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime closure-scope function candidates.",
+                    metadata={
+                        "status": result.status,
+                        "candidate_count": candidate_count,
+                        "hook_supported": False,
+                    },
+                ),
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["discover_closure_scope_functions"] if result.supported else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if candidate_count else ExecutionStatus.PARTIAL if result.supported else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action="inspect_closure_function_candidates" if candidate_count else "provide_candidate_names_or_adjust_breakpoint",
+                confidence=ConfidenceLevel.MEDIUM if candidate_count else ConfidenceLevel.LOW,
             )
         if self._is_source_logpoint_request(protection_name, context):
             spec = SourceLogpointSpec.from_context(context)
@@ -993,6 +1050,30 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_closure_scope_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "closure-scope",
+            "closure-scope-discovery",
+            "closure-function",
+            "closure-function-discovery",
+            "closure-functions",
+            "discover-closure-functions",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "closure_function_names",
+                "closureFunctionNames",
+                "closure_query",
+                "closureQuery",
+                "closure_scope_discovery",
+                "closureScopeDiscovery",
+            )
+        )
+
+    @staticmethod
     def _is_source_logpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {"source-logpoint", "logpoint"}:
@@ -1029,6 +1110,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_scope_discovery_request(protection_name, context):
+            return False
         if normalized in {"discover-module", "discover-modules", "module-discovery", "webpack-discovery"} or any(
             key in context
             for key in (

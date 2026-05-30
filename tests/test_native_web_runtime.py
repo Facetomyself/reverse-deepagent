@@ -750,6 +750,32 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["federation_key_count"], 1)
         self.assertEqual(result.artifacts[1].metadata["candidate_count"], 2)
 
+    def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "closure-function-discovery",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 4,
+                "closure_function_names": ["buildSign", "nonce"],
+                "trigger_expression": "debugger; 'scheduled'",
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["discover_closure_scope_functions"])
+        self.assertIn("closure_scope_discovery_status=success", result.verification)
+        self.assertIn("closure_scope_function_count=2", result.verification)
+        self.assertIn("closure_scope_candidate_count=1", result.verification)
+        self.assertIn("closure_scope_callframe_count=1", result.verification)
+        self.assertEqual(result.next_action, "inspect_closure_function_candidates")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-functions.json")
+        self.assertEqual(result.artifacts[0].metadata["function_count"], 2)
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/closure-function-candidates.json")
+        self.assertEqual(result.artifacts[1].metadata["candidate_count"], 1)
+        self.assertFalse(result.artifacts[1].metadata["hook_supported"])
+
     def test_native_web_runtime_apply_minimal_protection_audits_page_mutation(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

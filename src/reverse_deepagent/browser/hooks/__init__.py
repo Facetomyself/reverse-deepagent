@@ -1,4 +1,5 @@
 from .breakpoints import BreakpointManager, BreakpointResult, BreakpointSpec, PausedSessionActionSpec
+from .closure_scope import ClosureScopeDiscoveryManager, ClosureScopeDiscoveryResult, ClosureScopeDiscoverySpec
 from .function_hooks import FunctionHookManager, FunctionHookResult, FunctionHookSpec
 from .module_hooks import ModuleDiscoveryManager, ModuleDiscoveryResult, ModuleDiscoverySpec, ModuleHookManager, ModuleHookResult, ModuleHookSpec
 from .page_mutation import (
@@ -18,6 +19,9 @@ __all__ = [
     "BreakpointSpec",
     "PausedSessionActionSpec",
     "BrowserHookManager",
+    "ClosureScopeDiscoveryManager",
+    "ClosureScopeDiscoveryResult",
+    "ClosureScopeDiscoverySpec",
     "FunctionHookManager",
     "FunctionHookResult",
     "FunctionHookSpec",
