@@ -75,6 +75,9 @@ class RuntimeBackendRegistry:
             raise ValueError(f"Unsupported runtime backend: {backend_id}. Known backends: {known}")
         return self._registrations[canonical]
 
+    def is_registered(self, backend_id: str) -> bool:
+        return backend_id in self._registrations or backend_id in self._aliases
+
     def create(self, backend_id: str, **kwargs: Any) -> ReverseRuntime:
         registration = self.resolve(backend_id)
         return registration.factory(**kwargs)

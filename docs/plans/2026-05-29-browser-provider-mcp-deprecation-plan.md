@@ -359,14 +359,14 @@ Acceptance:
 
 ### Phase 10.1: Runtime backend entry-point discovery
 
-Status: baseline implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. `legacy-mcp` registration / factory / alias warning now live in `reverse_deepagent.runtime.legacy_mcp`, and `build_default_runtime_registry(include_legacy_mcp=False)` can construct a registry with no MCP backend. This is the packaging seam for moving `legacy-mcp` into an optional package later; it does not mean MCP has already been physically removed from the core distribution.
+Status: baseline implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. `legacy-mcp` registration / factory / alias warning now live in `reverse_deepagent.runtime.legacy_mcp`, `build_default_runtime_registry(include_legacy_mcp=False)` can construct a registry with no MCP backend, and `packages/reverse-deepagent-legacy-mcp/` declares a repo-local optional plugin package skeleton. The default registry now loads external entry points before falling back to the built-in legacy MCP compatibility registration, so an installed plugin can own `legacy-mcp` without duplicate-key failure. This is the packaging seam for moving `legacy-mcp` into an optional package later; it does not mean MCP has already been physically removed from the core distribution.
 
 Deliverables:
 
 - `RUNTIME_BACKEND_ENTRY_POINT_GROUP` exported from `reverse_deepagent.runtime`.
 - `RuntimeBackendRegistry.load_entry_points()` supports a single `RuntimeBackendRegistration`, a callable returning registrations, or an iterable of registrations.
-- `build_default_runtime_registry(include_entry_points=True, include_legacy_mcp=True)` loads external backend registrations by default, keeps a deterministic entry-point opt-out for tests, and can explicitly exclude the built-in legacy MCP registration.
-- Unit tests cover plugin registration, callable multi-registration, invalid payload errors, entry-point load errors, capability id mismatch rejection, and the invariant that backend factories are not invoked during metadata listing.
+- `build_default_runtime_registry(include_entry_points=True, include_legacy_mcp=True)` loads external backend registrations by default, keeps a deterministic entry-point opt-out for tests, can explicitly exclude the built-in legacy MCP registration, and only falls back to the built-in legacy MCP registration when no external `legacy-mcp` entry point exists.
+- Unit tests cover plugin registration, callable multi-registration, invalid payload errors, entry-point load errors, capability id mismatch rejection, external `legacy-mcp` precedence over the built-in fallback, optional plugin package metadata, and the invariant that backend factories are not invoked during metadata listing.
 
 Acceptance:
 

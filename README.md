@@ -917,7 +917,7 @@ capabilities = runtime.describe_capabilities()
 print(capabilities.model_dump(mode="json"))
 ```
 
-`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。Registry 还会加载 `reverse_deepagent.runtime_backends` Python entry-point group 里的外部 backend registration，加载 metadata 时不会调用 backend factory；`legacy-mcp` 的 registration / factory / alias warning 已从 coordinator 内联代码挪到 `reverse_deepagent.runtime.legacy_mcp`，并且 `build_default_runtime_registry(include_legacy_mcp=False)` 可以构建不带 MCP backend 的 clean registry。这为后续把 legacy MCP 物理拆成 optional package 留出迁移缝。当前默认内置注册：
+`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。Registry 还会加载 `reverse_deepagent.runtime_backends` Python entry-point group 里的外部 backend registration，加载 metadata 时不会调用 backend factory；`legacy-mcp` 的 registration / factory / alias warning 已从 coordinator 内联代码挪到 `reverse_deepagent.runtime.legacy_mcp`，并且 `build_default_runtime_registry(include_legacy_mcp=False)` 可以构建不带 MCP backend 的 clean registry。仓库现在还包含 `packages/reverse-deepagent-legacy-mcp/` optional plugin package 骨架，声明同一个 entry-point group；默认 registry 会先加载外部 entry points，只有没有外部 `legacy-mcp` 时才回落到内置兼容 registration。这为后续把 legacy MCP 物理拆成 optional package 留出迁移缝。当前默认内置注册：
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
 - `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium`、`cloakbrowser` 和 `remote-cdp` provider；真实二进制 smoke 需要显式触发

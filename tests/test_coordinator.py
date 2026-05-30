@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from reverse_deepagent.coordinator import (
     _artifact_category_from_key,
@@ -13,6 +14,8 @@ from reverse_deepagent.coordinator import (
     run_reverse_pipeline,
 )
 from reverse_deepagent.runtime import ReverseRuntime, RuntimeExportBundle
+from reverse_deepagent.runtime import registry as runtime_registry
+from reverse_deepagent.runtime.registry import RuntimeBackendCapabilities, RuntimeBackendRegistration
 from reverse_deepagent.schemas import (
     ConfidenceLevel,
     EvidenceItem,
@@ -33,6 +36,20 @@ class NonWebRuntime(ReverseRuntime):
 
     def export_reverse_artifacts(self, final_result=None) -> RuntimeExportBundle:
         return RuntimeExportBundle(final_result=final_result)
+
+
+class FakeEntryPoint:
+    def __init__(self, name: str, value) -> None:
+        self.name = name
+        self.value = value
+
+    def load(self):
+        return self.value
+
+
+class FakeEntryPoints(list):
+    def select(self, *, group: str):
+        return FakeEntryPoints(self)
 
 
 class CoordinatorTests(unittest.TestCase):
@@ -63,6 +80,30 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(any(item.get("mcp_backed") for item in metadata.values()))
         with self.assertRaisesRegex(ValueError, "Unsupported runtime backend"):
             registry.resolve("legacy-mcp")
+
+    def test_entry_point_legacy_mcp_registration_takes_precedence_over_builtin_compat(self) -> None:
+        external_registration = RuntimeBackendRegistration(
+            backend_id="legacy-mcp",
+            aliases=("mcp", "jsreverser-mcp"),
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="legacy-mcp",
+                display_name="External Legacy MCP Plugin",
+                transport="external-mcp-plugin",
+                target_platforms=["web"],
+                supports_web_recon=True,
+                mcp_backed=True,
+                config={"source": "entry-point"},
+            ),
+            factory=lambda **_: NonWebRuntime(),
+        )
+        entry_points = FakeEntryPoints([FakeEntryPoint("legacy-mcp", external_registration)])
+        with patch.object(runtime_registry.importlib_metadata, "entry_points", return_value=entry_points):
+            registry = build_default_runtime_registry(include_entry_points=True, include_legacy_mcp=True)
+
+        metadata = {item["backend_id"]: item for item in registry.list_metadata()}
+        self.assertEqual(metadata["legacy-mcp"]["transport"], "external-mcp-plugin")
+        self.assertEqual(metadata["legacy-mcp"]["config"]["source"], "entry-point")
+        self.assertEqual(registry.resolve("mcp").capabilities.display_name, "External Legacy MCP Plugin")
 
     def test_workspace_artifact_payloads_include_breakpoint_manager(self) -> None:
         final_result = FinalResult(

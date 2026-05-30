@@ -495,9 +495,6 @@ def build_default_runtime_registry(*, include_entry_points: bool = True, include
             ),
         )
     )
-    if include_legacy_mcp:
-        registry.register(legacy_mcp_backend_registration())
-
     registry.register(
         RuntimeBackendRegistration(
             backend_id="native-web",
@@ -713,6 +710,8 @@ def build_default_runtime_registry(*, include_entry_points: bool = True, include
     )
     if include_entry_points:
         registry.load_entry_points()
+    if include_legacy_mcp and not registry.is_registered(LEGACY_MCP_BACKEND_ID):
+        registry.register(legacy_mcp_backend_registration())
     return registry
 
 
