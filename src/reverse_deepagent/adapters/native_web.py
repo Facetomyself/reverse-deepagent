@@ -280,6 +280,9 @@ class NativeWebRuntime(WebReverseRuntime):
             auto_stitch_post_physical_rollback_review_gate_rerun_count = len(result.auto_stitch_post_physical_rollback_review_gate_reruns)
             auto_stitch_standard_review_gate_replacement_review_decision_count = len(result.auto_stitch_standard_review_gate_replacement_review_decisions)
             auto_stitch_standard_review_gate_replacement_result_count = len(result.auto_stitch_standard_review_gate_replacement_results)
+            auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count = len(
+                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns
+            )
             stitch_proposal_count = len(result.stitch_proposals)
             stitch_review_decision_count = len(result.stitch_review_decisions)
             stitched_flow_count = len(result.stitched_flows)
@@ -310,6 +313,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_auto_stitch_post_physical_rollback_review_gate_rerun_count={auto_stitch_post_physical_rollback_review_gate_rerun_count}",
                 f"flow_timeline_auto_stitch_standard_review_gate_replacement_review_decision_count={auto_stitch_standard_review_gate_replacement_review_decision_count}",
                 f"flow_timeline_auto_stitch_standard_review_gate_replacement_result_count={auto_stitch_standard_review_gate_replacement_result_count}",
+                f"flow_timeline_auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count={auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count}",
                 f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
                 f"flow_timeline_stitch_review_decision_count={stitch_review_decision_count}",
                 f"flow_timeline_stitched_flow_count={stitched_flow_count}",
@@ -369,6 +373,12 @@ class NativeWebRuntime(WebReverseRuntime):
                         "auto_stitch_standard_review_gate_replacement_review_decision_count": auto_stitch_standard_review_gate_replacement_review_decision_count,
                         "auto_stitch_standard_review_gate_replacement_result_count": auto_stitch_standard_review_gate_replacement_result_count,
                         "auto_stitch_standard_review_gate_replacement_summary": dict(result.auto_stitch_standard_review_gate_replacement_summary),
+                        "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count": (
+                            auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count
+                        ),
+                        "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary": dict(
+                            result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary
+                        ),
                         "stitch_proposal_count": stitch_proposal_count,
                         "stitch_review_decision_count": stitch_review_decision_count,
                         "stitched_flow_count": stitched_flow_count,
@@ -574,6 +584,39 @@ class NativeWebRuntime(WebReverseRuntime):
                         },
                     )
                 )
+            if auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/delivery-guard-after-review-gate-replacement.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web post-standard-review-gate-replacement delivery guard rerun baseline.",
+                        metadata={
+                            "flow_id": result.flow_id,
+                            "count": auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count,
+                            "summary": dict(result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary),
+                            "delivery_guard_rerun_performed": bool(
+                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get(
+                                    "delivery_guard_rerun_performed"
+                                )
+                            ),
+                            "delivery_guard_passed": bool(
+                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get("delivery_guard_passed")
+                            ),
+                            "delivery_allowed": bool(
+                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get("delivery_allowed")
+                            ),
+                            "automatic_delivery": False,
+                            "manual_delivery_required": bool(
+                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get(
+                                    "manual_delivery_required"
+                                )
+                            ),
+                            "automatic_stitching": False,
+                            "automatic_rollback": False,
+                            "source": "post_standard_review_gate_replacement_delivery_guard_rerun_baseline",
+                        },
+                    )
+                )
             if stitched_flow_count:
                 artifact_paths.append(
                     ArtifactRef(
@@ -611,6 +654,8 @@ class NativeWebRuntime(WebReverseRuntime):
                 applied_actions.append("rerun_review_gate_after_physical_rollback")
             if auto_stitch_standard_review_gate_replacement_result_count:
                 applied_actions.append("replace_standard_review_gate_after_physical_rollback")
+            if auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count:
+                applied_actions.append("rerun_delivery_guard_after_standard_review_gate_replacement")
             if stitched_flow_count:
                 applied_actions.append("materialize_review_approved_stitched_flow")
             return ProtectionResult(
@@ -1772,6 +1817,14 @@ class NativeWebRuntime(WebReverseRuntime):
                     "auto_stitch_standard_review_gate_replacement_review_decision_count": flow_timeline.get("auto_stitch_standard_review_gate_replacement_review_decision_count", 0),
                     "auto_stitch_standard_review_gate_replacement_result_count": flow_timeline.get("auto_stitch_standard_review_gate_replacement_result_count", 0),
                     "auto_stitch_standard_review_gate_replacement_summary": flow_timeline.get("auto_stitch_standard_review_gate_replacement_summary", {}),
+                    "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count": flow_timeline.get(
+                        "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count",
+                        0,
+                    ),
+                    "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary": flow_timeline.get(
+                        "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary",
+                        {},
+                    ),
                     "stitch_proposal_count": flow_timeline.get("stitch_proposal_count", 0),
                     "stitch_review_decision_count": flow_timeline.get("stitch_review_decision_count", 0),
                     "stitched_flow_count": flow_timeline.get("stitched_flow_count", 0),
@@ -2043,6 +2096,37 @@ class NativeWebRuntime(WebReverseRuntime):
                         "automatic_rollback": False,
                         "target_artifact_mutated": bool(summary.get("target_artifact_mutated")),
                         "source": "review_approved_standard_review_gate_replacement_baseline",
+                    },
+                )
+            )
+        post_standard_review_gate_replacement_delivery_guard_reruns = (
+            flow_timeline.get("auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns")
+            if isinstance(flow_timeline.get("auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns"), list)
+            else []
+        )
+        if post_standard_review_gate_replacement_delivery_guard_reruns:
+            summary = (
+                flow_timeline.get("auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary", {})
+                if isinstance(flow_timeline.get("auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary"), dict)
+                else {}
+            )
+            artifacts.append(
+                ArtifactRef(
+                    path="virtual://workspace/delivery-guard-after-review-gate-replacement.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web post-standard-review-gate-replacement delivery guard rerun baseline.",
+                    metadata={
+                        "flow_id": flow_timeline.get("flow_id"),
+                        "count": len(post_standard_review_gate_replacement_delivery_guard_reruns),
+                        "summary": summary,
+                        "delivery_guard_rerun_performed": bool(summary.get("delivery_guard_rerun_performed")),
+                        "delivery_guard_passed": bool(summary.get("delivery_guard_passed")),
+                        "delivery_allowed": bool(summary.get("delivery_allowed")),
+                        "automatic_delivery": False,
+                        "manual_delivery_required": bool(summary.get("manual_delivery_required")),
+                        "automatic_stitching": False,
+                        "automatic_rollback": False,
+                        "source": "post_standard_review_gate_replacement_delivery_guard_rerun_baseline",
                     },
                 )
             )

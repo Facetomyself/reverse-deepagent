@@ -629,11 +629,15 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_standard_review_gate_replacement_results, [])
         self.assertEqual(result.auto_stitch_standard_review_gate_replacement_summary["replacement_result_count"], 0)
         self.assertFalse(result.auto_stitch_standard_review_gate_replacement_summary["standard_review_gate_replaced"])
+        self.assertEqual(result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns, [])
+        self.assertEqual(result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary["rerun_count"], 0)
+        self.assertFalse(result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary["delivery_allowed"])
         result_dict = result.to_dict()
         self.assertEqual(result_dict["auto_stitch_physical_rollback_review_decision_count"], 1)
         self.assertEqual(result_dict["auto_stitch_physical_rollback_result_count"], 1)
         self.assertEqual(result_dict["auto_stitch_post_physical_rollback_review_gate_rerun_count"], 1)
         self.assertEqual(result_dict["auto_stitch_standard_review_gate_replacement_result_count"], 0)
+        self.assertEqual(result_dict["auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count"], 0)
         self.assertEqual(result_dict["stitched_flow_count"], 0)
 
     def test_approved_standard_review_gate_replacement_records_replacement_result(self) -> None:
@@ -711,9 +715,47 @@ class FlowTimelineManagerTests(unittest.TestCase):
             result.auto_stitch_standard_review_gate_replacement_summary["next_action"],
             "rerun_delivery_guard_after_standard_review_gate_replacement",
         )
+        self.assertEqual(len(result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns), 1)
+        delivery_guard = result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns[0]
+        self.assertEqual(delivery_guard["status"], "delivery_guard_rerun_passed")
+        self.assertEqual(delivery_guard["guard_name"], "delivery_guard_after_standard_review_gate_replacement")
+        self.assertEqual(delivery_guard["replacement_result_id"], "standard-review-gate-replacement-result-1")
+        self.assertEqual(delivery_guard["delivery_guard_artifact"], "workspace/delivery-guard-after-review-gate-replacement.json")
+        self.assertEqual(
+            delivery_guard["virtual_delivery_guard_artifact"],
+            "virtual://workspace/delivery-guard-after-review-gate-replacement.json",
+        )
+        self.assertTrue(delivery_guard["standard_review_gate_replaced"])
+        self.assertTrue(delivery_guard["delivery_guard_rerun_performed"])
+        self.assertTrue(delivery_guard["delivery_guard_passed"])
+        self.assertTrue(delivery_guard["delivery_allowed"])
+        self.assertFalse(delivery_guard["automatic_delivery"])
+        self.assertTrue(delivery_guard["manual_delivery_required"])
+        self.assertFalse(delivery_guard["automatic_rollback"])
+        self.assertFalse(delivery_guard["blocked"])
+        self.assertIn("does_not_package_final_delivery", delivery_guard["limitations"])
+        self.assertEqual(
+            delivery_guard["next_action"],
+            "manual_delivery_or_package_final_artifacts_after_guard_review",
+        )
+
+        delivery_guard_summary = result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary
+        self.assertEqual(delivery_guard_summary["rerun_count"], 1)
+        self.assertEqual(delivery_guard_summary["source_replacement_result_count"], 1)
+        self.assertEqual(delivery_guard_summary["delivery_guard_passed_count"], 1)
+        self.assertTrue(delivery_guard_summary["delivery_guard_rerun_performed"])
+        self.assertTrue(delivery_guard_summary["delivery_guard_passed"])
+        self.assertTrue(delivery_guard_summary["delivery_allowed"])
+        self.assertFalse(delivery_guard_summary["automatic_delivery"])
+        self.assertTrue(delivery_guard_summary["manual_delivery_required"])
+        self.assertEqual(
+            delivery_guard_summary["next_action"],
+            "manual_delivery_or_package_final_artifacts_after_guard_review",
+        )
         result_dict = result.to_dict()
         self.assertEqual(result_dict["auto_stitch_standard_review_gate_replacement_review_decision_count"], 1)
         self.assertEqual(result_dict["auto_stitch_standard_review_gate_replacement_result_count"], 1)
+        self.assertEqual(result_dict["auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count"], 1)
 
     def test_rejected_auto_stitch_materialization_review_decision_does_not_materialize_plan(self) -> None:
         context = self._ready_flow_context()
