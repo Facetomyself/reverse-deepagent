@@ -263,6 +263,7 @@ class NativeWebRuntime(WebReverseRuntime):
             stitch_candidate_count = len(result.stitch_candidates)
             auto_stitch_dry_run_count = len(result.auto_stitch_dry_runs)
             auto_stitch_policy_decision_count = len(result.auto_stitch_policy_decisions)
+            auto_stitch_materialization_plan_count = len(result.auto_stitch_materialization_plans)
             stitch_proposal_count = len(result.stitch_proposals)
             stitch_review_decision_count = len(result.stitch_review_decisions)
             stitched_flow_count = len(result.stitched_flows)
@@ -276,6 +277,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_stitch_candidate_count={stitch_candidate_count}",
                 f"flow_timeline_auto_stitch_dry_run_count={auto_stitch_dry_run_count}",
                 f"flow_timeline_auto_stitch_policy_decision_count={auto_stitch_policy_decision_count}",
+                f"flow_timeline_auto_stitch_materialization_plan_count={auto_stitch_materialization_plan_count}",
                 f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
                 f"flow_timeline_stitch_review_decision_count={stitch_review_decision_count}",
                 f"flow_timeline_stitched_flow_count={stitched_flow_count}",
@@ -305,6 +307,8 @@ class NativeWebRuntime(WebReverseRuntime):
                         "auto_stitch_dry_run_count": auto_stitch_dry_run_count,
                         "auto_stitch_policy_decision_count": auto_stitch_policy_decision_count,
                         "auto_stitch_policy_summary": dict(result.auto_stitch_policy_summary),
+                        "auto_stitch_materialization_plan_count": auto_stitch_materialization_plan_count,
+                        "auto_stitch_materialization_summary": dict(result.auto_stitch_materialization_summary),
                         "stitch_proposal_count": stitch_proposal_count,
                         "stitch_review_decision_count": stitch_review_decision_count,
                         "stitched_flow_count": stitched_flow_count,
@@ -1460,6 +1464,8 @@ class NativeWebRuntime(WebReverseRuntime):
                     "auto_stitch_dry_run_count": flow_timeline.get("auto_stitch_dry_run_count", 0),
                     "auto_stitch_policy_decision_count": flow_timeline.get("auto_stitch_policy_decision_count", 0),
                     "auto_stitch_policy_summary": flow_timeline.get("auto_stitch_policy_summary", {}),
+                    "auto_stitch_materialization_plan_count": flow_timeline.get("auto_stitch_materialization_plan_count", 0),
+                    "auto_stitch_materialization_summary": flow_timeline.get("auto_stitch_materialization_summary", {}),
                     "stitch_proposal_count": flow_timeline.get("stitch_proposal_count", 0),
                     "stitch_review_decision_count": flow_timeline.get("stitch_review_decision_count", 0),
                     "stitched_flow_count": flow_timeline.get("stitched_flow_count", 0),

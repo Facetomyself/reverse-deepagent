@@ -156,6 +156,8 @@ class FlowTimelineResult:
     auto_stitch_dry_runs: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_policy_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_policy_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_materialization_plans: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_materialization_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -186,6 +188,9 @@ class FlowTimelineResult:
             "auto_stitch_policy_decision_count": len(self.auto_stitch_policy_decisions),
             "auto_stitch_policy_decisions": self.auto_stitch_policy_decisions,
             "auto_stitch_policy_summary": self.auto_stitch_policy_summary,
+            "auto_stitch_materialization_plan_count": len(self.auto_stitch_materialization_plans),
+            "auto_stitch_materialization_plans": self.auto_stitch_materialization_plans,
+            "auto_stitch_materialization_summary": self.auto_stitch_materialization_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -222,6 +227,17 @@ class FlowTimelineManager:
         auto_stitch_dry_runs = self._auto_stitch_dry_runs(stitch_candidates)
         auto_stitch_policy_decisions = self._auto_stitch_policy_decisions(auto_stitch_dry_runs, spec.auto_stitch_policy)
         auto_stitch_policy_summary = self._auto_stitch_policy_summary(auto_stitch_policy_decisions, spec.auto_stitch_policy)
+        auto_stitch_materialization_plans = self._auto_stitch_materialization_plans(
+            auto_stitch_policy_decisions,
+            auto_stitch_dry_runs,
+            stitch_candidates,
+            spec.auto_stitch_policy,
+        )
+        auto_stitch_materialization_summary = self._auto_stitch_materialization_summary(
+            auto_stitch_materialization_plans,
+            auto_stitch_policy_decisions,
+            spec.auto_stitch_policy,
+        )
         stitch_proposals = self._stitch_proposals(stitch_candidates)
         stitch_proposals = self._apply_review_decisions(stitch_proposals, spec.stitch_review_decisions)
         stitched_flows = self._stitched_flows(stitch_proposals, stitch_candidates, entries)
@@ -236,6 +252,8 @@ class FlowTimelineManager:
             auto_stitch_dry_runs=auto_stitch_dry_runs,
             auto_stitch_policy_decisions=auto_stitch_policy_decisions,
             auto_stitch_policy_summary=auto_stitch_policy_summary,
+            auto_stitch_materialization_plans=auto_stitch_materialization_plans,
+            auto_stitch_materialization_summary=auto_stitch_materialization_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -814,6 +832,108 @@ class FlowTimelineManager:
             if isinstance(value, (int, float)):
                 return bool(value)
         return default
+
+
+    @classmethod
+    def _auto_stitch_materialization_plans(
+        cls,
+        decisions: list[dict[str, Any]],
+        dry_runs: list[dict[str, Any]],
+        candidates: list[dict[str, Any]],
+        policy: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build plan-only materialization proposals for policy-eligible decisions.
+
+        The returned records describe how a future materializer would write a
+        stitched flow after review.  They deliberately do not write artifacts,
+        do not flip ``stitching`` to true, and do not replace reviewer-approved
+        ``stitch_review_decisions``.
+        """
+
+        policy = policy or {}
+        plan_enabled = cls._bool_policy_value(policy, "enable_materialization_plan", "enableMaterializationPlan", default=True)
+        if not plan_enabled:
+            return []
+        dry_runs_by_id = {dry_run.get("dry_run_id"): dry_run for dry_run in dry_runs}
+        candidates_by_id = {candidate.get("candidate_id"): candidate for candidate in candidates}
+        plans: list[dict[str, Any]] = []
+        for decision in decisions:
+            if decision.get("status") != "ready_for_review_gate" or not decision.get("eligible_for_review_gate"):
+                continue
+            dry_run = dry_runs_by_id.get(decision.get("dry_run_id"), {})
+            candidate = candidates_by_id.get(decision.get("candidate_id"), {})
+            conflict_reasons = cls._string_values(decision.get("conflict_reasons"))
+            entry_sequences = list(candidate.get("entry_sequences", [])) if isinstance(candidate.get("entry_sequences"), list) else []
+            plans.append(
+                {
+                    "plan_id": f"auto-stitch-materialization-plan-{len(plans) + 1}",
+                    "decision_id": decision.get("decision_id"),
+                    "dry_run_id": decision.get("dry_run_id"),
+                    "candidate_id": decision.get("candidate_id"),
+                    "group_id": decision.get("group_id"),
+                    "status": "plan_ready_for_review",
+                    "materialization_mode": "plan_only",
+                    "target_artifact": "workspace/stitched-flow.json",
+                    "virtual_target_artifact": "virtual://workspace/stitched-flow.json",
+                    "entry_sequences": entry_sequences,
+                    "entry_count": len(entry_sequences),
+                    "path": list(candidate.get("path", [])) if isinstance(candidate.get("path"), list) else [],
+                    "path_length": int(candidate.get("path_length") or dry_run.get("path_length") or 0),
+                    "confidence_score": decision.get("confidence_score"),
+                    "confidence": dry_run.get("confidence"),
+                    "evidence": dict(candidate.get("evidence", {})) if isinstance(candidate.get("evidence"), dict) else {},
+                    "conflict_resolution": {
+                        "strategy": "policy_allowed_conflicts_review_required" if conflict_reasons else "none_required",
+                        "unresolved_conflicts": conflict_reasons,
+                        "review_required": bool(conflict_reasons),
+                    },
+                    "review_requirements": [
+                        "approve_auto_stitch_materialization_plan",
+                        "confirm_entry_order_matches_observed_runtime_flow",
+                        "confirm_conflict_resolution_is_acceptable",
+                        "confirm_replay_validation_matches_original_request_semantics",
+                    ],
+                    "rollback_plan": {
+                        "strategy": "do_not_write_until_reviewed",
+                        "revert_artifact": "workspace/stitched-flow.json",
+                        "audit_artifact": "workspace/flow-timeline.json",
+                    },
+                    "policy_blocking_conditions": cls._unique_strings(
+                        [*cls._string_values(decision.get("policy_blocking_conditions")), "missing_materialization_reviewer_approval"]
+                    ),
+                    "review_required": True,
+                    "would_materialize": False,
+                    "writes_artifact": False,
+                    "automatic_stitching": False,
+                    "stitching": False,
+                    "scope": "auto-stitch-materialization-plan-only",
+                    "next_action": "review_materialization_plan_before_enabling_stitched_flow_write",
+                }
+            )
+        return plans
+
+    @classmethod
+    def _auto_stitch_materialization_summary(
+        cls,
+        plans: list[dict[str, Any]],
+        decisions: list[dict[str, Any]],
+        policy: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        policy = policy or {}
+        eligible_decision_count = sum(1 for decision in decisions if decision.get("eligible_for_review_gate"))
+        return {
+            "plan_count": len(plans),
+            "eligible_decision_count": eligible_decision_count,
+            "blocked_decision_count": max(0, len(decisions) - eligible_decision_count),
+            "plan_generation_enabled": cls._bool_policy_value(policy, "enable_materialization_plan", "enableMaterializationPlan", default=True),
+            "materialization_enabled": False,
+            "writes_artifact": False,
+            "would_materialize": False,
+            "automatic_stitching": False,
+            "review_required": True,
+            "scope": "auto-stitch-materialization-summary-only",
+            "next_action": "review_materialization_plans" if plans else "collect_policy_eligible_stitch_decisions",
+        }
 
     @staticmethod
     def _stitch_proposals(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:

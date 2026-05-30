@@ -167,6 +167,9 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_policy_summary["decision_count"], 3)
         self.assertEqual(result.auto_stitch_policy_summary["eligible_for_review_gate_count"], 0)
         self.assertFalse(result.auto_stitch_policy_summary["automatic_materialization_enabled"])
+        self.assertEqual(result.auto_stitch_materialization_plans, [])
+        self.assertEqual(result.auto_stitch_materialization_summary["plan_count"], 0)
+        self.assertFalse(result.auto_stitch_materialization_summary["writes_artifact"])
         self.assertEqual(len(result.stitch_proposals), 1)
         proposal = result.stitch_proposals[0]
         self.assertEqual(proposal["proposal_id"], "stitch-proposal-1")
@@ -193,6 +196,8 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result_dict["auto_stitch_policy_decision_count"], 3)
         self.assertEqual(result_dict["auto_stitch_policy_decisions"][0]["scope"], "auto-stitch-policy-decision-only")
         self.assertFalse(result_dict["auto_stitch_policy_summary"]["would_materialize"])
+        self.assertEqual(result_dict["auto_stitch_materialization_plan_count"], 0)
+        self.assertFalse(result_dict["auto_stitch_materialization_summary"]["would_materialize"])
         self.assertEqual(result_dict["stitch_proposal_count"], 1)
         self.assertEqual(result_dict["stitch_proposals"][0]["review_decision"]["status"], "pending_review")
 
@@ -219,6 +224,22 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertFalse(ready_decisions[0]["automatic_stitching"])
         self.assertIn("automatic_materialization_not_implemented", ready_decisions[0]["policy_blocking_conditions"])
         self.assertEqual(ready_decisions[0]["next_action"], "review_policy_eligible_candidate_before_materialization")
+        self.assertEqual(len(result.auto_stitch_materialization_plans), 1)
+        plan = result.auto_stitch_materialization_plans[0]
+        self.assertEqual(plan["status"], "plan_ready_for_review")
+        self.assertEqual(plan["materialization_mode"], "plan_only")
+        self.assertEqual(plan["target_artifact"], "workspace/stitched-flow.json")
+        self.assertEqual(plan["entry_sequences"], [1, 2, 3])
+        self.assertTrue(plan["review_required"])
+        self.assertFalse(plan["would_materialize"])
+        self.assertFalse(plan["writes_artifact"])
+        self.assertFalse(plan["automatic_stitching"])
+        self.assertIn("missing_materialization_reviewer_approval", plan["policy_blocking_conditions"])
+        self.assertEqual(plan["rollback_plan"]["strategy"], "do_not_write_until_reviewed")
+        self.assertEqual(result.auto_stitch_materialization_summary["plan_count"], 1)
+        self.assertEqual(result.auto_stitch_materialization_summary["eligible_decision_count"], 1)
+        self.assertFalse(result.auto_stitch_materialization_summary["materialization_enabled"])
+        self.assertFalse(result.auto_stitch_materialization_summary["writes_artifact"])
         self.assertEqual(result.stitched_flows, [])
 
     def test_approved_stitch_review_decision_materializes_stitched_flow(self) -> None:
@@ -303,10 +324,13 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.auto_stitch_dry_runs, [])
         self.assertEqual(result.auto_stitch_policy_decisions, [])
         self.assertEqual(result.auto_stitch_policy_summary["decision_count"], 0)
+        self.assertEqual(result.auto_stitch_materialization_plans, [])
+        self.assertEqual(result.auto_stitch_materialization_summary["plan_count"], 0)
         self.assertEqual(result.stitch_proposals, [])
         self.assertEqual(result.to_dict()["stitch_candidate_count"], 0)
         self.assertEqual(result.to_dict()["auto_stitch_dry_run_count"], 0)
         self.assertEqual(result.to_dict()["auto_stitch_policy_decision_count"], 0)
+        self.assertEqual(result.to_dict()["auto_stitch_materialization_plan_count"], 0)
         self.assertEqual(result.to_dict()["stitch_proposal_count"], 0)
 
 
