@@ -75,6 +75,7 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/stitched-flow.json"].virtual_folder, "/workspace/timeline/")
         self.assertEqual(routes["workspace/review-gate-after-rollback.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-gate-after-physical-rollback.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/review-gate-replacement-results.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-gate.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/rebuild-plan.json"].virtual_folder, "/workspace/rebuild/")
         self.assertEqual(routes["workspace/browser-provider-smoke.json"].virtual_folder, "/workspace/browser/")

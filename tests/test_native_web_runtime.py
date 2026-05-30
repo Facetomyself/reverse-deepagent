@@ -1101,6 +1101,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_dry_run_diff_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_result_count=0", result.verification)
         self.assertIn("flow_timeline_auto_stitch_post_physical_rollback_review_gate_rerun_count=0", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_standard_review_gate_replacement_result_count=0", result.verification)
 
         flow_metadata = result.artifacts[0].metadata
         self.assertEqual(flow_metadata["auto_stitch_rollback_execution_result_count"], 1)
@@ -1113,6 +1114,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(flow_metadata["auto_stitch_physical_rollback_result_count"], 0)
         self.assertFalse(flow_metadata["auto_stitch_physical_rollback_result_summary"]["target_artifact_mutated"])
         self.assertEqual(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_count"], 0)
+        self.assertEqual(flow_metadata["auto_stitch_standard_review_gate_replacement_result_count"], 0)
 
         artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
         gate_artifact = artifacts_by_path["virtual://workspace/review-gate-after-rollback.json"]
@@ -1198,9 +1200,11 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.status.value, "success")
         self.assertIn("apply_review_approved_physical_rollback", result.applied_actions)
         self.assertIn("rerun_review_gate_after_physical_rollback", result.applied_actions)
+        self.assertNotIn("replace_standard_review_gate_after_physical_rollback", result.applied_actions)
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_review_decision_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_physical_rollback_result_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_post_physical_rollback_review_gate_rerun_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_standard_review_gate_replacement_result_count=0", result.verification)
         self.assertIn("flow_timeline_stitched_flow_count=0", result.verification)
 
         flow_metadata = result.artifacts[0].metadata
@@ -1215,6 +1219,8 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["target_artifact_mutated"])
         self.assertTrue(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["does_not_replace_review_gate"])
         self.assertFalse(flow_metadata["auto_stitch_post_physical_rollback_review_gate_rerun_summary"]["would_replace_review_gate"])
+        self.assertEqual(flow_metadata["auto_stitch_standard_review_gate_replacement_result_count"], 0)
+        self.assertFalse(flow_metadata["auto_stitch_standard_review_gate_replacement_summary"]["standard_review_gate_replaced"])
         self.assertEqual(flow_metadata["stitched_flow_count"], 0)
 
         artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
@@ -1231,6 +1237,88 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(gate_artifact.metadata["delivery_allowed"])
         self.assertFalse(gate_artifact.metadata["automatic_rollback"])
         self.assertTrue(gate_artifact.metadata["target_artifact_mutated"])
+
+    def test_native_web_runtime_records_review_approved_standard_review_gate_replacement(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "flow-timeline",
+            {
+                "flow_id": "sign-flow",
+                "run_id": "run-gate-replacement",
+                "request_id": "req-gate-replacement",
+                "network_requests": {"items": [{"url": "https://example.test/api/sign", "method": "POST", "requestId": "req-gate-replacement"}]},
+                "request_initiators": {
+                    "items": [
+                        {
+                            "requestId": "req-gate-replacement",
+                            "url": "https://example.test/api/sign",
+                            "method": "POST",
+                            "initiator": {"stack": {"callFrames": [{"functionName": "buildSign"}]}},
+                        }
+                    ]
+                },
+                "hook_timeline": {
+                    "snapshot": {
+                        "events": [
+                            {
+                                "type": "fetch",
+                                "payload": {"url": "/api/sign", "method": "POST", "path": "window.buildSign", "functionName": "buildSign"},
+                            }
+                        ]
+                    }
+                },
+                "replay_validation": {"validations": [{"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": True}]},
+                "auto_stitch_policy": {
+                    "policy_id": "runtime-policy",
+                    "min_confidence_score": 0.85,
+                    "allow_conflicts": True,
+                    "enable_automatic_materialization": True,
+                },
+                "auto_stitch_materialization_review_decisions": [
+                    {"plan_id": "auto-stitch-materialization-plan-1", "status": "approved", "approved": True}
+                ],
+                "auto_stitch_rollback_execution_review_decisions": [
+                    {"rollback_execution_plan_id": "stitched-flow-rollback-execution-plan-1", "status": "approved", "approved": True}
+                ],
+                "auto_stitch_physical_rollback_review_decisions": [
+                    {"dry_run_id": "stitched-flow-physical-rollback-diff-1", "status": "approved", "approved": True}
+                ],
+                "auto_stitch_standard_review_gate_replacement_review_decisions": [
+                    {
+                        "rerun_id": "stitched-flow-post-physical-rollback-review-gate-rerun-1",
+                        "status": "approved",
+                        "approved": True,
+                        "reviewer": "gate-reviewer",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertIn("replace_standard_review_gate_after_physical_rollback", result.applied_actions)
+        self.assertIn("flow_timeline_auto_stitch_standard_review_gate_replacement_review_decision_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_standard_review_gate_replacement_result_count=1", result.verification)
+
+        flow_metadata = result.artifacts[0].metadata
+        self.assertEqual(flow_metadata["auto_stitch_standard_review_gate_replacement_result_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_standard_review_gate_replacement_summary"]["replacement_result_count"], 1)
+        self.assertTrue(flow_metadata["auto_stitch_standard_review_gate_replacement_summary"]["standard_review_gate_replaced"])
+        self.assertTrue(flow_metadata["auto_stitch_standard_review_gate_replacement_summary"]["delivery_guard_rerun_required"])
+        self.assertFalse(flow_metadata["auto_stitch_standard_review_gate_replacement_summary"]["delivery_allowed"])
+        self.assertFalse(flow_metadata["auto_stitch_standard_review_gate_replacement_summary"]["automatic_delivery"])
+
+        artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
+        gate_artifact = artifacts_by_path["virtual://workspace/review-gate-after-physical-rollback.json"]
+        self.assertFalse(gate_artifact.metadata["does_not_replace_review_gate"])
+        self.assertFalse(gate_artifact.metadata["summary"]["does_not_replace_review_gate"])
+        replacement_artifact = artifacts_by_path["virtual://workspace/review-gate-replacement-results.json"]
+        self.assertEqual(replacement_artifact.metadata["count"], 1)
+        self.assertTrue(replacement_artifact.metadata["standard_review_gate_replaced"])
+        self.assertTrue(replacement_artifact.metadata["target_artifact_mutated"])
+        self.assertFalse(replacement_artifact.metadata["delivery_allowed"])
+        self.assertFalse(replacement_artifact.metadata["automatic_delivery"])
+        self.assertFalse(replacement_artifact.metadata["automatic_rollback"])
 
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()

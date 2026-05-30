@@ -287,6 +287,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_evidence_promotion", "workspace/evidence-promotion.json", "/workspace/evidence/", "evidence-promotion.json", "evidence", ("review",)),
         ("workspace_review_gate_after_rollback", "workspace/review-gate-after-rollback.json", "/workspace/review/", "review-gate-after-rollback.json", "triage", ("review", "timeline")),
         ("workspace_review_gate_after_physical_rollback", "workspace/review-gate-after-physical-rollback.json", "/workspace/review/", "review-gate-after-physical-rollback.json", "triage", ("review", "timeline")),
+        ("workspace_review_gate_replacement_results", "workspace/review-gate-replacement-results.json", "/workspace/review/", "review-gate-replacement-results.json", "triage", ("review", "delivery")),
         ("workspace_review_gate", "workspace/review-gate.json", "/workspace/review/", "review-gate.json", "triage", ("review", "delivery")),
         ("workspace_rebuild_plan", "workspace/rebuild-plan.json", "/workspace/rebuild/", "rebuild-plan.json", "rebuild", ("rebuild", "delivery")),
         ("workspace_final", "workspace/final-result.json", "/workspace/delivery/", "final-result.json", "workspace", ("delivery", "coordinator")),

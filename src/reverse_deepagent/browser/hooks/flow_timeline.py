@@ -28,6 +28,7 @@ class FlowTimelineSpec:
     auto_stitch_materialization_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_rollback_execution_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_physical_rollback_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_standard_review_gate_replacement_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     max_payload_preview_length: int = 480
 
     @classmethod
@@ -90,6 +91,16 @@ class FlowTimelineSpec:
             "stitchedFlowPhysicalRollbackReviewDecisions",
         )
         physical_rollback_review_decisions = cls._coerce_events(raw_physical_rollback_review_decisions)
+        raw_standard_gate_replacement_review_decisions = cls._first_present(
+            context,
+            "auto_stitch_standard_review_gate_replacement_review_decisions",
+            "autoStitchStandardReviewGateReplacementReviewDecisions",
+            "standard_review_gate_replacement_review_decisions",
+            "standardReviewGateReplacementReviewDecisions",
+            "review_gate_replacement_review_decisions",
+            "reviewGateReplacementReviewDecisions",
+        )
+        standard_gate_replacement_review_decisions = cls._coerce_events(raw_standard_gate_replacement_review_decisions)
         if (
             not previous
             and not flow_events
@@ -99,6 +110,7 @@ class FlowTimelineSpec:
             and not materialization_review_decisions
             and not rollback_execution_review_decisions
             and not physical_rollback_review_decisions
+            and not standard_gate_replacement_review_decisions
         ):
             return None
         flow_id = str(context.get("flow_id", context.get("flowId", previous.get("flow_id", "default-flow"))) or "default-flow")
@@ -114,6 +126,7 @@ class FlowTimelineSpec:
             auto_stitch_materialization_review_decisions=materialization_review_decisions,
             auto_stitch_rollback_execution_review_decisions=rollback_execution_review_decisions,
             auto_stitch_physical_rollback_review_decisions=physical_rollback_review_decisions,
+            auto_stitch_standard_review_gate_replacement_review_decisions=standard_gate_replacement_review_decisions,
             max_payload_preview_length=int(context.get("max_payload_preview_length", context.get("maxPayloadPreviewLength", 480)) or 480),
         )
 
@@ -228,6 +241,9 @@ class FlowTimelineResult:
     auto_stitch_physical_rollback_result_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_post_physical_rollback_review_gate_reruns: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_post_physical_rollback_review_gate_rerun_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_standard_review_gate_replacement_review_decisions: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_standard_review_gate_replacement_results: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_standard_review_gate_replacement_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -300,6 +316,11 @@ class FlowTimelineResult:
             "auto_stitch_post_physical_rollback_review_gate_rerun_count": len(self.auto_stitch_post_physical_rollback_review_gate_reruns),
             "auto_stitch_post_physical_rollback_review_gate_reruns": self.auto_stitch_post_physical_rollback_review_gate_reruns,
             "auto_stitch_post_physical_rollback_review_gate_rerun_summary": self.auto_stitch_post_physical_rollback_review_gate_rerun_summary,
+            "auto_stitch_standard_review_gate_replacement_review_decision_count": len(self.auto_stitch_standard_review_gate_replacement_review_decisions),
+            "auto_stitch_standard_review_gate_replacement_review_decisions": self.auto_stitch_standard_review_gate_replacement_review_decisions,
+            "auto_stitch_standard_review_gate_replacement_result_count": len(self.auto_stitch_standard_review_gate_replacement_results),
+            "auto_stitch_standard_review_gate_replacement_results": self.auto_stitch_standard_review_gate_replacement_results,
+            "auto_stitch_standard_review_gate_replacement_summary": self.auto_stitch_standard_review_gate_replacement_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -453,11 +474,24 @@ class FlowTimelineManager:
             auto_stitch_physical_rollback_results,
             stitched_flows,
         )
+        auto_stitch_post_physical_rollback_review_gate_reruns = (
+            self._apply_standard_review_gate_replacement_review_decisions(
+                auto_stitch_post_physical_rollback_review_gate_reruns,
+                spec.auto_stitch_standard_review_gate_replacement_review_decisions,
+            )
+        )
         auto_stitch_post_physical_rollback_review_gate_rerun_summary = (
             self._auto_stitch_post_physical_rollback_review_gate_rerun_summary(
                 auto_stitch_post_physical_rollback_review_gate_reruns,
                 auto_stitch_physical_rollback_results,
             )
+        )
+        auto_stitch_standard_review_gate_replacement_results = self._auto_stitch_standard_review_gate_replacement_results(
+            auto_stitch_post_physical_rollback_review_gate_reruns,
+        )
+        auto_stitch_standard_review_gate_replacement_summary = self._auto_stitch_standard_review_gate_replacement_summary(
+            auto_stitch_standard_review_gate_replacement_results,
+            spec.auto_stitch_standard_review_gate_replacement_review_decisions,
         )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
@@ -497,6 +531,9 @@ class FlowTimelineManager:
             auto_stitch_physical_rollback_result_summary=auto_stitch_physical_rollback_result_summary,
             auto_stitch_post_physical_rollback_review_gate_reruns=auto_stitch_post_physical_rollback_review_gate_reruns,
             auto_stitch_post_physical_rollback_review_gate_rerun_summary=auto_stitch_post_physical_rollback_review_gate_rerun_summary,
+            auto_stitch_standard_review_gate_replacement_review_decisions=list(spec.auto_stitch_standard_review_gate_replacement_review_decisions),
+            auto_stitch_standard_review_gate_replacement_results=auto_stitch_standard_review_gate_replacement_results,
+            auto_stitch_standard_review_gate_replacement_summary=auto_stitch_standard_review_gate_replacement_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -2702,19 +2739,21 @@ class FlowTimelineManager:
         reruns: list[dict[str, Any]],
         physical_rollback_results: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        approved_count = sum(1 for item in reruns if item.get("status") == "approved_for_standard_review_gate_replacement")
         blocked_count = sum(1 for item in reruns if item.get("blocked"))
         return {
             "rerun_count": len(reruns),
             "source_physical_rollback_result_count": len(physical_rollback_results),
             "physical_rollback_applied_count": sum(1 for result in physical_rollback_results if result.get("physical_rollback_applied")),
+            "approved_for_standard_review_gate_replacement_count": approved_count,
             "blocked_count": blocked_count,
             "delivery_allowed_count": sum(1 for item in reruns if item.get("delivery_allowed")),
-            "review_required": bool(reruns),
+            "review_required": any(bool(item.get("review_required")) for item in reruns),
             "physical_artifact_mutated": any(bool(item.get("physical_artifact_mutated")) for item in reruns),
             "target_artifact_mutated": any(bool(item.get("target_artifact_mutated")) for item in reruns),
             "standard_review_gate_rerun_required": bool(reruns),
-            "does_not_replace_review_gate": bool(reruns),
-            "would_replace_review_gate": False,
+            "does_not_replace_review_gate": any(bool(item.get("does_not_replace_review_gate")) for item in reruns),
+            "would_replace_review_gate": bool(approved_count),
             "automatic_rollback": False,
             "automatic_stitching": False,
             "review_gate_artifact": "workspace/review-gate-after-physical-rollback.json",
@@ -2722,9 +2761,196 @@ class FlowTimelineManager:
             "standard_review_gate_artifact": "workspace/review-gate.json",
             "scope": "post-physical-rollback-standard-review-gate-rerun-baseline",
             "next_action": (
+                "record_standard_review_gate_replacement_result"
+                if approved_count
+                else
                 "replace_standard_review_gate_after_physical_rollback_rerun"
                 if reruns
                 else "apply_review_approved_physical_rollback_before_review_gate_rerun"
+            ),
+        }
+
+    def _apply_standard_review_gate_replacement_review_decisions(
+        self,
+        reruns: list[dict[str, Any]],
+        decisions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not decisions:
+            return reruns
+        output: list[dict[str, Any]] = []
+        for rerun in reruns:
+            next_rerun = dict(rerun)
+            decision = self._matching_standard_review_gate_replacement_review_decision(next_rerun, decisions)
+            if decision is not None:
+                next_rerun = self._standard_review_gate_rerun_with_replacement_review_decision(next_rerun, decision)
+            output.append(next_rerun)
+        return output
+
+    @staticmethod
+    def _matching_standard_review_gate_replacement_review_decision(
+        rerun: dict[str, Any],
+        decisions: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            if decision.get("rerun_id") and decision.get("rerun_id") == rerun.get("rerun_id"):
+                return decision
+            if decision.get("rerunId") and decision.get("rerunId") == rerun.get("rerun_id"):
+                return decision
+            if decision.get("physical_rollback_result_id") and decision.get("physical_rollback_result_id") == rerun.get("physical_rollback_result_id"):
+                return decision
+            if decision.get("physicalRollbackResultId") and decision.get("physicalRollbackResultId") == rerun.get("physical_rollback_result_id"):
+                return decision
+            if decision.get("transaction_id") and decision.get("transaction_id") == rerun.get("transaction_id"):
+                return decision
+            if decision.get("transactionId") and decision.get("transactionId") == rerun.get("transaction_id"):
+                return decision
+        return None
+
+    @classmethod
+    def _standard_review_gate_rerun_with_replacement_review_decision(
+        cls,
+        rerun: dict[str, Any],
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        next_rerun = dict(rerun)
+        status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+        approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed"}
+        rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+        review_decision = {
+            "status": "approved" if approved else "rejected" if rejected else status or "pending_review",
+            "approved": approved and not rejected,
+            "review_required": not approved,
+            "review_gate": "auto_stitch_standard_review_gate_replacement_review_decision",
+        }
+        for key in ("reviewer", "reviewed_by", "reviewedBy", "reviewed_at", "reviewedAt", "reason", "notes"):
+            if decision.get(key) is not None:
+                review_decision[key] = decision.get(key)
+        next_rerun["review_decision"] = review_decision
+        next_rerun["review_decision_input"] = dict(decision)
+        if approved and not rejected:
+            next_rerun["status"] = "approved_for_standard_review_gate_replacement"
+            next_rerun["review_required"] = False
+            next_rerun["blocked"] = False
+            next_rerun["delivery_allowed"] = False
+            next_rerun["does_not_replace_review_gate"] = False
+            next_rerun["would_replace_review_gate"] = True
+            next_rerun["blocking_conditions"] = [
+                condition
+                for condition in cls._string_values(next_rerun.get("blocking_conditions"))
+                if condition != "replace_standard_review_gate_after_rerun"
+            ]
+            next_rerun["next_action"] = "record_standard_review_gate_replacement_result"
+        elif rejected:
+            next_rerun["status"] = "rejected"
+            next_rerun["blocking_conditions"] = cls._unique_strings(
+                [*cls._string_values(next_rerun.get("blocking_conditions")), "standard_review_gate_replacement_reviewer_rejected"]
+            )
+            next_rerun["next_action"] = "revise_standard_review_gate_rerun_or_collect_more_evidence"
+        return next_rerun
+
+    @classmethod
+    def _auto_stitch_standard_review_gate_replacement_results(
+        cls,
+        reruns: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for rerun in reruns:
+            review_decision = rerun.get("review_decision") if isinstance(rerun.get("review_decision"), dict) else {}
+            if rerun.get("status") != "approved_for_standard_review_gate_replacement" or not review_decision.get("approved"):
+                continue
+            results.append(
+                {
+                    "replacement_result_id": f"standard-review-gate-replacement-result-{len(results) + 1}",
+                    "rerun_id": rerun.get("rerun_id"),
+                    "physical_rollback_result_id": rerun.get("physical_rollback_result_id"),
+                    "dry_run_id": rerun.get("dry_run_id"),
+                    "rollback_execution_result_id": rerun.get("rollback_execution_result_id"),
+                    "transaction_id": rerun.get("transaction_id"),
+                    "rollback_id": rerun.get("rollback_id"),
+                    "materialization_result_id": rerun.get("materialization_result_id"),
+                    "candidate_id": rerun.get("candidate_id"),
+                    "group_id": rerun.get("group_id"),
+                    "status": "standard_review_gate_replaced",
+                    "replacement_mode": "review_approved_standard_review_gate_replacement",
+                    "source_review_gate_artifact": rerun.get("review_gate_artifact", "workspace/review-gate-after-physical-rollback.json"),
+                    "virtual_source_review_gate_artifact": rerun.get("virtual_review_gate_artifact", "virtual://workspace/review-gate-after-physical-rollback.json"),
+                    "target_review_gate_artifact": rerun.get("standard_review_gate_artifact", "workspace/review-gate.json"),
+                    "virtual_target_review_gate_artifact": rerun.get("virtual_standard_review_gate_artifact", "virtual://workspace/review-gate.json"),
+                    "replacement_artifact": "workspace/review-gate-replacement-results.json",
+                    "virtual_replacement_artifact": "virtual://workspace/review-gate-replacement-results.json",
+                    "removed_stitched_flow_ids": cls._string_values(rerun.get("removed_stitched_flow_ids")),
+                    "remaining_stitched_flow_ids": cls._string_values(rerun.get("remaining_stitched_flow_ids")),
+                    "remaining_stitched_flow_count": int(rerun.get("remaining_stitched_flow_count") or 0),
+                    "review_decision": review_decision,
+                    "review_decision_input": dict(rerun.get("review_decision_input", {})) if isinstance(rerun.get("review_decision_input"), dict) else {},
+                    "standard_review_gate_replaced": True,
+                    "review_gate_artifact_mutated": True,
+                    "target_artifact_mutated": True,
+                    "writes_artifact": True,
+                    "delivery_guard_rerun_required": True,
+                    "delivery_allowed": False,
+                    "automatic_delivery": False,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "review_required": False,
+                    "limitations": [
+                        "review_approved_not_automatic_delivery",
+                        "delivery_guard_rerun_not_performed_by_replacement_baseline",
+                        "artifact_model_replacement_only",
+                    ],
+                    "next_action": "rerun_delivery_guard_after_standard_review_gate_replacement",
+                }
+            )
+        return results
+
+    @classmethod
+    def _auto_stitch_standard_review_gate_replacement_summary(
+        cls,
+        results: list[dict[str, Any]],
+        review_decisions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        approved_count = 0
+        rejected_count = 0
+        pending_count = 0
+        for decision in review_decisions:
+            if not isinstance(decision, dict):
+                continue
+            status = str(decision.get("status") or decision.get("decision") or "").strip().lower()
+            approved = bool(decision.get("approved")) or status in {"approved", "pass", "passed"}
+            rejected = bool(decision.get("rejected")) or status in {"rejected", "denied", "blocked"}
+            if approved and not rejected:
+                approved_count += 1
+            elif rejected:
+                rejected_count += 1
+            else:
+                pending_count += 1
+        replaced_count = sum(1 for result in results if result.get("standard_review_gate_replaced"))
+        return {
+            "replacement_result_count": len(results),
+            "standard_review_gate_replaced_count": replaced_count,
+            "review_decision_count": len(review_decisions),
+            "approved_review_decision_count": approved_count,
+            "rejected_review_decision_count": rejected_count,
+            "pending_review_decision_count": pending_count,
+            "writes_artifact": bool(results),
+            "standard_review_gate_replaced": bool(replaced_count),
+            "review_gate_artifact_mutated": bool(replaced_count),
+            "target_artifact_mutated": bool(replaced_count),
+            "delivery_guard_rerun_required": bool(replaced_count),
+            "delivery_allowed": False,
+            "automatic_delivery": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "replacement_artifact": "workspace/review-gate-replacement-results.json",
+            "virtual_replacement_artifact": "virtual://workspace/review-gate-replacement-results.json",
+            "target_review_gate_artifact": "workspace/review-gate.json",
+            "scope": "review-approved-standard-review-gate-replacement-baseline",
+            "next_action": (
+                "rerun_delivery_guard_after_standard_review_gate_replacement"
+                if replaced_count
+                else "approve_standard_review_gate_replacement_after_physical_rollback_rerun"
             ),
         }
 

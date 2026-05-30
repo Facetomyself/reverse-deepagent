@@ -932,6 +932,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_stitched_flow_physical_rollback_results": "trace",
     "workspace_review_gate_after_rollback": "triage",
     "workspace_review_gate_after_physical_rollback": "triage",
+    "workspace_review_gate_replacement_results": "triage",
     "workspace_review_gate": "triage",
 }
 
