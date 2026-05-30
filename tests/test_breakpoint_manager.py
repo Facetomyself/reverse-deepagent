@@ -359,6 +359,18 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(follow_up.status, "success")
         self.assertEqual(follow_up.debugger_session["lifecycle"], "resumed")
         self.assertEqual(follow_up.debugger_session["continued_from_registry"], True)
+        self.assertEqual(follow_up.continuation_preflight["status"], "live_available")
+        self.assertEqual(follow_up.continuation_preflight["source"], "registry")
+        self.assertTrue(follow_up.continuation_preflight["same_process_registry"])
+        self.assertTrue(follow_up.continuation_preflight["target_attached"])
+        self.assertTrue(follow_up.continuation_preflight["preflight_before_action"])
+        self.assertTrue(follow_up.continuation_preflight["live_continuation_available"])
+        self.assertEqual(follow_up.continuation_preflight["requested_action"], "resume")
+        self.assertEqual(follow_up.continuation_preflight["post_action_lifecycle"], "resumed")
+        self.assertFalse(follow_up.continuation_preflight["post_action_live_continuation_available"])
+        self.assertEqual(follow_up.to_dict()["continuation_preflight"]["source"], "registry")
+        self.assertEqual(follow_up.debugger_session["continuation_preflight"]["source"], "registry")
+        self.assertEqual(follow_up.debugger_timeline["continuation_preflight"]["source"], "registry")
         self.assertIn("debugger.session_action", [entry["type"] for entry in follow_up.debugger_timeline["entries"]])
         self.assertNotIn("session-follow-up", BreakpointManager._paused_sessions)
         self.assertIn(("Debugger.resume", {}), session.calls)
@@ -391,6 +403,10 @@ class BreakpointManagerTests(unittest.TestCase):
             self.assertEqual(payload["session_id"], "durable-session")
             self.assertFalse(payload["resume_supported"])
             self.assertFalse(payload["live_continuation_available"])
+            self.assertEqual(payload["continuation_preflight"]["status"], "inspect_only")
+            self.assertEqual(payload["continuation_preflight"]["source"], "durable_snapshot")
+            self.assertFalse(payload["continuation_preflight"]["live_continuation_available"])
+            self.assertTrue(payload["continuation_preflight"]["inspect_supported"])
             self.assertEqual(payload["callframes"][0]["functionName"], "buildSign")
 
             BreakpointManager.clear_paused_sessions()
@@ -411,6 +427,15 @@ class BreakpointManagerTests(unittest.TestCase):
             self.assertFalse(follow_up.debugger_session["live_continuation_available"])
             self.assertFalse(follow_up.debugger_session["resume_supported"])
             self.assertTrue(follow_up.debugger_timeline["continued_from_store"])
+            self.assertEqual(follow_up.continuation_preflight["status"], "inspect_only")
+            self.assertEqual(follow_up.continuation_preflight["source"], "durable_snapshot")
+            self.assertFalse(follow_up.continuation_preflight["same_process_registry"])
+            self.assertFalse(follow_up.continuation_preflight["live_continuation_available"])
+            self.assertTrue(follow_up.continuation_preflight["inspect_supported"])
+            self.assertFalse(follow_up.continuation_preflight["resume_supported"])
+            self.assertEqual(follow_up.continuation_preflight["reason"], "durable_snapshot_is_inspect_only")
+            self.assertEqual(follow_up.debugger_session["continuation_preflight"]["status"], "inspect_only")
+            self.assertEqual(follow_up.debugger_timeline["continuation_preflight"]["status"], "inspect_only")
             self.assertEqual(follow_up.callframes[0]["functionName"], "buildSign")
 
     def test_durable_paused_session_snapshot_rejects_live_resume(self) -> None:
@@ -450,7 +475,30 @@ class BreakpointManagerTests(unittest.TestCase):
             self.assertTrue(follow_up.debugger_session["continued_from_store"])
             self.assertFalse(follow_up.debugger_session["live_continuation_available"])
             self.assertFalse(follow_up.debugger_session["resume_supported"])
+            self.assertEqual(follow_up.continuation_preflight["status"], "action_blocked")
+            self.assertEqual(follow_up.continuation_preflight["source"], "durable_snapshot")
+            self.assertTrue(follow_up.continuation_preflight["blocked_action"])
+            self.assertEqual(follow_up.continuation_preflight["blocked_reason"], "live_paused_session_required")
+            self.assertFalse(follow_up.continuation_preflight["live_continuation_available"])
+            self.assertEqual(follow_up.debugger_session["continuation_preflight"]["status"], "action_blocked")
             self.assertNotIn(("Debugger.resume", {}), session.calls)
+
+    def test_missing_paused_session_reports_unavailable_preflight(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        follow_up = BreakpointManager().run_paused_session_action(
+            FakeBreakpointPage(None),
+            PausedSessionActionSpec.from_context({"pause_session_id": "missing-session", "paused_session_action": "inspect"}),
+        )
+
+        self.assertEqual(follow_up.status, "unsupported")
+        self.assertEqual(follow_up.reason, "pause_session_not_found")
+        self.assertEqual(follow_up.continuation_preflight["status"], "unavailable")
+        self.assertEqual(follow_up.continuation_preflight["source"], "missing")
+        self.assertEqual(follow_up.continuation_preflight["pause_session_id"], "missing-session")
+        self.assertFalse(follow_up.continuation_preflight["same_process_registry"])
+        self.assertFalse(follow_up.continuation_preflight["durable_snapshot_found"])
+        self.assertFalse(follow_up.continuation_preflight["live_continuation_available"])
+        self.assertEqual(follow_up.continuation_preflight["reason"], "pause_session_not_found")
 
     def test_set_breakpoint_failure_is_structured(self) -> None:
         result = BreakpointManager().set_breakpoint(

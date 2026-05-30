@@ -579,7 +579,7 @@ task_card:
 
 第 10 项 `完整 Scrapy 集成` 已升级为可运行 `scrapy_project/`、可选 `scrapy` extra、manifest 和 middleware 注入测试；第 11 项 `更真实 Web 样例库` 已新增 `webpack-minified`、`token-chain`、`hybrid-context` 三个 profile，分别覆盖打包/压缩形态、bootstrap token 链路和多上下文绑定交付；第 12 项 `MCP self-hosted smoke 持续自动化` 已将 self-hosted workflow 升级为支持 weekly schedule、`profile_set` 批量 smoke、runner preflight、step summary 与 artifact upload 的持续 canary。至此，用户追加的 12 项增强均已完成并提交。
 
-BrowserProvider / native-web 迁移续作中，`flow-timeline.json` 已从单纯片段归一化升级为带保守 `correlation` hints 的 timeline entry，并会派生 `correlation_groups`：当前会从 request id、URL path、method、CDP initiator function、hook path、candidate id 与 validation function 提取机器可读线索，再按共享 request id、URL path + method、function name、candidate id 或 hook path 生成候选分组，并用 `weak` / `reviewable` / `ready_for_manual_stitch_review` 标注人工复核准备度，供 review gate 和后续子智能体使用；这些 hints / groups / readiness 不是自动全链路 stitching，也不改变 Android / iOS / 小程序完整运行链路暂缓的边界。
+BrowserProvider / native-web 迁移续作中，`flow-timeline.json` 已从单纯片段归一化升级为带保守 `correlation` hints 的 timeline entry，并会派生 `correlation_groups`：当前会从 request id、URL path、method、CDP initiator function、hook path、candidate id 与 validation function 提取机器可读线索，再按共享 request id、URL path + method、function name、candidate id 或 hook path 生成候选分组，并用 `weak` / `reviewable` / `ready_for_manual_stitch_review` 标注人工复核准备度，供 review gate 和后续子智能体使用；这些 hints / groups / readiness 不是自动全链路 stitching，也不改变 Android / iOS / 小程序完整运行链路暂缓的边界。paused-session 续作已补 `continuation_preflight`：同进程 registry 会声明 live inspect / evaluate / step / resume 可用性和 action 后 lifecycle，durable snapshot 会声明 inspect-only，并在跨进程 resume / step / evaluate 时结构化返回 `action_blocked` / `live_paused_session_required`。
 
 新增验证入口：
 

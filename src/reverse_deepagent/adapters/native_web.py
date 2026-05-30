@@ -403,11 +403,21 @@ class NativeWebRuntime(WebReverseRuntime):
                     continued_from_registry and debugger_lifecycle != "resumed",
                 )
             ) if isinstance(result.debugger_session, dict) else False
+            preflight = result.continuation_preflight if isinstance(result.continuation_preflight, dict) else {}
+            preflight_status = str(preflight.get("status") or "unknown")
+            preflight_source = str(preflight.get("source") or "unknown")
+            preflight_live_available = bool(preflight.get("live_continuation_available", live_continuation_available))
+            preflight_reason = preflight.get("blocked_reason") or preflight.get("reason")
             paused_session_metadata = {
                 "continued_from_store": continued_from_store,
                 "continued_from_registry": continued_from_registry,
                 "live_continuation_available": live_continuation_available,
+                "preflight_status": preflight_status,
+                "preflight_source": preflight_source,
+                "preflight_live_continuation_available": preflight_live_available,
             }
+            if preflight_reason:
+                paused_session_metadata["preflight_reason"] = preflight_reason
             verification = [
                 f"paused_session_status={result.status}",
                 f"paused_session_paused_status={paused_status or 'unknown'}",
@@ -421,8 +431,15 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"paused_session_continued_from_store={continued_from_store}",
                 f"paused_session_continued_from_registry={continued_from_registry}",
                 f"paused_session_live_continuation_available={live_continuation_available}",
+                f"paused_session_preflight_status={preflight_status}",
+                f"paused_session_preflight_source={preflight_source}",
+                f"paused_session_preflight_live_continuation_available={preflight_live_available}",
                 f"context_keys={sorted(context.keys())}",
             ]
+            if preflight_reason:
+                verification.append(f"paused_session_preflight_reason={preflight_reason}")
+            if preflight.get("requested_action"):
+                verification.append(f"paused_session_preflight_requested_action={preflight['requested_action']}")
             if result.error:
                 verification.append(f"paused_session_error={result.error}")
             if result.reason:

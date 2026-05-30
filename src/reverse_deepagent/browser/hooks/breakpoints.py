@@ -175,6 +175,7 @@ class BreakpointResult:
     debugger_session: dict[str, Any] = field(default_factory=dict)
     debugger_timeline: dict[str, Any] = field(default_factory=dict)
     trigger: dict[str, Any] = field(default_factory=dict)
+    continuation_preflight: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     reason: str | None = None
 
@@ -196,6 +197,7 @@ class BreakpointResult:
             "debugger_session": self.debugger_session,
             "debugger_timeline": self.debugger_timeline,
             "trigger": self.trigger,
+            "continuation_preflight": self.continuation_preflight,
             "error": self.error,
             "reason": self.reason,
         }
@@ -364,13 +366,16 @@ class BreakpointManager:
 
     def run_paused_session_action(self, page: BrowserPage, spec: PausedSessionActionSpec | None) -> BreakpointResult:
         if spec is None:
-            return BreakpointResult(status="unsupported", supported=False, reason="missing_pause_session_id")
+            preflight = self._missing_paused_session_preflight(reason="missing_pause_session_id")
+            return BreakpointResult(status="unsupported", supported=False, reason="missing_pause_session_id", continuation_preflight=preflight)
         entry = self._paused_sessions.get(spec.pause_session_id)
         if not entry:
             durable = self._load_durable_paused_session(spec)
             if durable is not None:
                 return self._durable_paused_session_result(durable, spec)
-            return BreakpointResult(status="unsupported", supported=False, reason="pause_session_not_found")
+            preflight = self._missing_paused_session_preflight(reason="pause_session_not_found", spec=spec)
+            return BreakpointResult(status="unsupported", supported=False, reason="pause_session_not_found", continuation_preflight=preflight)
+        preflight = self._registry_paused_session_preflight(spec, entry)
         session = entry["session"]
         paused_events = entry["paused_events"]
         base_spec = entry["spec"]
@@ -400,10 +405,20 @@ class BreakpointManager:
         base_debugger_session["registry_active"] = lifecycle != "resumed"
         base_debugger_session["live_continuation_available"] = lifecycle != "resumed"
         base_debugger_session["resume_supported"] = lifecycle != "resumed"
+        preflight["action_supported"] = error is None
+        preflight["post_action_lifecycle"] = lifecycle
+        preflight["post_action_live_continuation_available"] = lifecycle != "resumed"
+        if error:
+            preflight["status"] = "action_blocked"
+            preflight["blocked_action"] = True
+            preflight["blocked_reason"] = error
+            preflight["reason"] = error
+        base_debugger_session["continuation_preflight"] = preflight
         timeline = self._debugger_timeline(paused_events, action_breakpoint_spec, {"attempted": False}, breakpoints, base_debugger_session, error=error)
         timeline["continued_from_registry"] = True
         timeline["registry_active"] = lifecycle != "resumed"
         timeline["live_continuation_available"] = lifecycle != "resumed"
+        timeline["continuation_preflight"] = preflight
         action_entries = self._debugger_action_timeline_entries(actions, start_index=len(timeline["entries"]))
         timeline["entries"].extend(action_entries)
         timeline["entry_count"] = len(timeline["entries"])
@@ -427,6 +442,7 @@ class BreakpointManager:
             debugger_session=base_debugger_session,
             debugger_timeline=timeline,
             trigger={"attempted": False},
+            continuation_preflight=preflight,
             error=error,
             reason=None if not error else error,
         )
@@ -484,6 +500,7 @@ class BreakpointManager:
             "live_continuation_available": False,
             "resume_supported": False,
             "reason": "durable snapshot is inspect-only; live CDP continuation requires same-process registry",
+            "continuation_preflight": self._durable_paused_session_preflight(session_id=session_id),
             "breakpoints": breakpoints,
             "paused": self._paused_summary(paused_events, pause_subscription),
             "callframes": self._callframes_from_paused(paused_events),
@@ -507,6 +524,18 @@ class BreakpointManager:
 
     def _durable_paused_session_result(self, payload: dict[str, Any], spec: PausedSessionActionSpec) -> BreakpointResult:
         inspect_only = spec.action in {"inspect", "snapshot", "view"} and not spec.callframe_evaluations and not spec.debugger_actions
+        stored_preflight = payload.get("continuation_preflight") if isinstance(payload.get("continuation_preflight"), dict) else None
+        preflight = dict(stored_preflight) if stored_preflight else self._durable_paused_session_preflight(session_id=str(payload.get("session_id") or spec.pause_session_id))
+        preflight.update({"requested_action": spec.action, "pause_session_id": spec.pause_session_id})
+        if not inspect_only:
+            preflight.update(
+                {
+                    "status": "action_blocked",
+                    "blocked_action": True,
+                    "blocked_reason": "live_paused_session_required",
+                    "reason": "live_paused_session_required",
+                }
+            )
         debugger_session = dict(payload.get("debugger_session") if isinstance(payload.get("debugger_session"), dict) else {})
         debugger_session.update(
             {
@@ -515,10 +544,18 @@ class BreakpointManager:
                 "resume_supported": False,
                 "durable_snapshot": True,
                 "store_reason": payload.get("reason", "durable snapshot is inspect-only"),
+                "continuation_preflight": preflight,
             }
         )
         timeline = dict(payload.get("debugger_timeline") if isinstance(payload.get("debugger_timeline"), dict) else {})
-        timeline.update({"continued_from_store": True, "live_continuation_available": False, "durable_snapshot": True})
+        timeline.update(
+            {
+                "continued_from_store": True,
+                "live_continuation_available": False,
+                "durable_snapshot": True,
+                "continuation_preflight": preflight,
+            }
+        )
         base = {
             "supported": True,
             "breakpoints": self._list_of_dicts(payload.get("breakpoints")),
@@ -527,6 +564,7 @@ class BreakpointManager:
             "debugger_session": debugger_session,
             "debugger_timeline": timeline,
             "trigger": {"attempted": False},
+            "continuation_preflight": preflight,
         }
         if inspect_only:
             return BreakpointResult(
@@ -540,6 +578,69 @@ class BreakpointManager:
             reason="durable_snapshot_is_inspect_only",
             **base,
         )
+
+    @staticmethod
+    def _missing_paused_session_preflight(reason: str, spec: PausedSessionActionSpec | None = None) -> dict[str, Any]:
+        return {
+            "status": "unavailable",
+            "source": "missing",
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "requested_action": spec.action if spec else None,
+            "same_process_registry": False,
+            "durable_snapshot_found": False,
+            "target_attached": False,
+            "live_continuation_available": False,
+            "inspect_supported": False,
+            "evaluate_supported": False,
+            "step_supported": False,
+            "resume_supported": False,
+            "reason": reason,
+        }
+
+    @staticmethod
+    def _registry_paused_session_preflight(spec: PausedSessionActionSpec, entry: dict[str, Any]) -> dict[str, Any]:
+        debugger_session = entry.get("debugger_session") if isinstance(entry.get("debugger_session"), dict) else {}
+        lifecycle = str(debugger_session.get("lifecycle") or "retained_paused")
+        live_available = lifecycle != "resumed"
+        return {
+            "status": "live_available" if live_available else "unavailable",
+            "source": "registry",
+            "pause_session_id": spec.pause_session_id,
+            "requested_action": spec.action,
+            "same_process_registry": True,
+            "durable_snapshot_found": False,
+            "target_attached": True,
+            "preflight_before_action": True,
+            "pre_action_lifecycle": lifecycle,
+            "live_continuation_available": live_available,
+            "inspect_supported": live_available,
+            "evaluate_supported": live_available,
+            "step_supported": live_available,
+            "resume_supported": live_available,
+            "reason": None if live_available else "paused_session_already_resumed",
+        }
+
+    @staticmethod
+    def _durable_paused_session_preflight(*, session_id: str) -> dict[str, Any]:
+        return {
+            "status": "inspect_only",
+            "source": "durable_snapshot",
+            "pause_session_id": session_id,
+            "same_process_registry": False,
+            "durable_snapshot_found": True,
+            "target_attached": False,
+            "live_continuation_available": False,
+            "inspect_supported": True,
+            "evaluate_supported": False,
+            "step_supported": False,
+            "resume_supported": False,
+            "reason": "durable_snapshot_is_inspect_only",
+            "required_for_live": [
+                "same_process_registry",
+                "active_cdp_session",
+                "retained_paused_lifecycle",
+            ],
+        }
 
     @staticmethod
     def _continued_pause_lifecycle(debugger_session: dict[str, Any], actions: list[dict[str, Any]]) -> str:

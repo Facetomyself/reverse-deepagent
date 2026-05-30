@@ -1037,8 +1037,14 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(follow_up.applied_actions, ["run_paused_session_action:native-paused-session"])
         self.assertEqual(follow_up.next_action, "continue_recon")
         self.assertIn("paused_session_lifecycle=resumed", follow_up.verification)
+        self.assertIn("paused_session_preflight_status=live_available", follow_up.verification)
+        self.assertIn("paused_session_preflight_source=registry", follow_up.verification)
+        self.assertIn("paused_session_preflight_live_continuation_available=True", follow_up.verification)
+        self.assertIn("paused_session_preflight_requested_action=resume", follow_up.verification)
         self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/debugger-session.json")
         self.assertEqual(follow_up.artifacts[0].metadata["lifecycle"], "resumed")
+        self.assertEqual(follow_up.artifacts[0].metadata["preflight_status"], "live_available")
+        self.assertEqual(follow_up.artifacts[0].metadata["preflight_source"], "registry")
         self.assertNotIn("native-paused-session", BreakpointManager._paused_sessions)
 
     def test_native_web_runtime_can_inspect_durable_paused_session_snapshot(self) -> None:
@@ -1077,11 +1083,19 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertIn("paused_session_continued_from_store=True", follow_up.verification)
             self.assertIn("paused_session_continued_from_registry=False", follow_up.verification)
             self.assertIn("paused_session_live_continuation_available=False", follow_up.verification)
+            self.assertIn("paused_session_preflight_status=inspect_only", follow_up.verification)
+            self.assertIn("paused_session_preflight_source=durable_snapshot", follow_up.verification)
+            self.assertIn("paused_session_preflight_live_continuation_available=False", follow_up.verification)
+            self.assertIn("paused_session_preflight_reason=durable_snapshot_is_inspect_only", follow_up.verification)
+            self.assertIn("paused_session_preflight_requested_action=inspect", follow_up.verification)
             self.assertIn("paused_session_reason=durable_paused_session_snapshot_loaded", follow_up.verification)
             self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/debugger-session.json")
             self.assertTrue(follow_up.artifacts[0].metadata["continued_from_store"])
             self.assertFalse(follow_up.artifacts[0].metadata["continued_from_registry"])
             self.assertFalse(follow_up.artifacts[0].metadata["live_continuation_available"])
+            self.assertEqual(follow_up.artifacts[0].metadata["preflight_status"], "inspect_only")
+            self.assertEqual(follow_up.artifacts[0].metadata["preflight_source"], "durable_snapshot")
+            self.assertFalse(follow_up.artifacts[0].metadata["preflight_live_continuation_available"])
             self.assertEqual(follow_up.artifacts[1].path, "virtual://workspace/debugger-timeline.json")
             self.assertTrue(follow_up.artifacts[1].metadata["continued_from_store"])
             self.assertFalse(follow_up.artifacts[1].metadata["live_continuation_available"])
@@ -1121,8 +1135,36 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertIn("paused_session_reason=durable_snapshot_is_inspect_only", follow_up.verification)
             self.assertIn("paused_session_continued_from_store=True", follow_up.verification)
             self.assertIn("paused_session_live_continuation_available=False", follow_up.verification)
+            self.assertIn("paused_session_preflight_status=action_blocked", follow_up.verification)
+            self.assertIn("paused_session_preflight_source=durable_snapshot", follow_up.verification)
+            self.assertIn("paused_session_preflight_reason=live_paused_session_required", follow_up.verification)
+            self.assertIn("paused_session_preflight_requested_action=resume", follow_up.verification)
             self.assertTrue(follow_up.artifacts[0].metadata["continued_from_store"])
             self.assertFalse(follow_up.artifacts[0].metadata["live_continuation_available"])
+            self.assertEqual(follow_up.artifacts[0].metadata["preflight_status"], "action_blocked")
+            self.assertEqual(follow_up.artifacts[0].metadata["preflight_reason"], "live_paused_session_required")
+
+    def test_native_web_runtime_reports_missing_paused_session_preflight(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+
+        follow_up = runtime.apply_minimal_protection(
+            "paused-session",
+            {
+                "pause_session_id": "missing-native-session",
+                "paused_session_action": "inspect",
+            },
+        )
+
+        self.assertEqual(follow_up.status.value, "failed")
+        self.assertEqual(follow_up.applied_actions, [])
+        self.assertIn("paused_session_status=unsupported", follow_up.verification)
+        self.assertIn("paused_session_preflight_status=unavailable", follow_up.verification)
+        self.assertIn("paused_session_preflight_source=missing", follow_up.verification)
+        self.assertIn("paused_session_preflight_live_continuation_available=False", follow_up.verification)
+        self.assertIn("paused_session_preflight_reason=pause_session_not_found", follow_up.verification)
+        self.assertEqual(follow_up.artifacts, [])
 
 
 if __name__ == "__main__":
