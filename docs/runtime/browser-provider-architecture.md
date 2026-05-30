@@ -338,6 +338,7 @@ Cross-process live CDP paused execution continuation, arbitrary custom loader tr
 
 Current baseline emits:
 
+- `workspace/workspace-contract.json` with the indexed-only DeepAgents virtual folder, subagent role, middleware chain, and artifact route contract. Existing flat `workspace/*.json` artifact paths remain canonical; foldered paths are future migration targets only.
 - `workspace/function-candidates.json`
 - `workspace/function-validations.json`
 - `workspace/function-validation-summary.json`
@@ -367,6 +368,7 @@ Current implementation status:
 | BrowserProvider / BrowserSession / BrowserPage Protocols | Implemented | `src/reverse_deepagent/browser/base.py` |
 | BrowserProvider registry | Implemented | `src/reverse_deepagent/browser/registry.py` |
 | Native collectors | Baseline implemented | `src/reverse_deepagent/browser/collectors/` |
+| DeepAgents workspace contract | Indexed-only baseline implemented | `src/reverse_deepagent/workspace_contract.py`, `tests/test_workspace_contract.py`; emits `workspace/workspace-contract.json` without migrating existing flat workspace paths |
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
 | Remote CDP provider | Implemented | `src/reverse_deepagent/browser/providers/remote_cdp.py`, `tests/test_remote_cdp_provider.py` |

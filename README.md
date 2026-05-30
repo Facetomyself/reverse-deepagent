@@ -177,6 +177,17 @@ agent = build_reverse_agent(
 
 不要把未验证的一次性抓包、候选源码、临时 todo 写入 `/memories/`；这些仍应留在 `/workspace/` 或 `/artifacts/`。
 
+## DeepAgents workspace contract
+
+每次 deterministic pipeline 现在都会额外输出 `workspace/workspace-contract.json`，用于把 DeepAgents 子智能体、middleware checkpoint 和 workspace artifact 路由固化成机器可读契约。这个文件当前是 **indexed-only** baseline：
+
+- 现有 `workspace/*.json` 扁平 artifact 路径仍是 canonical path，不会被自动迁移。
+- `artifact_routes[].virtual_folder` 和 `artifact_routes[].future_path` 只表示后续虚拟文件夹组织目标。
+- 新增或调整 subagent、middleware、runtime artifact、hook artifact 时，必须同步 `workspace-contract.json` 的生成逻辑和测试。
+- 不得在没有 compatibility alias、manifest 覆盖和回归测试的情况下直接移动现有 artifact 路径。
+
+当前 contract 覆盖的虚拟协作区包括 `/workspace/recon/`、`/workspace/browser/`、`/workspace/debugger/`、`/workspace/hooks/`、`/workspace/timeline/`、`/workspace/rebuild/`、`/workspace/review/`、`/workspace/delivery/`、`/workspace/runtime/` 和 `/workspace/evidence/`。它把已实现角色 `coordinator`、`router`、`web_recon`、`protector`、`delivery` 与规划角色 `browser_runtime`、`debugger`、`hook`、`timeline`、`rebuild`、`review` 放在同一张表里，方便后续拆分更细的子智能体。
+
 纯 Python 冒烟测试：
 
 ```bash

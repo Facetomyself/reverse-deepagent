@@ -51,6 +51,7 @@ from reverse_deepagent.schemas import (
     TaskCard,
 )
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
+from reverse_deepagent.workspace_contract import workspace_contract_payload
 
 class ReversePipelineOutput(SchemaBaseModel):
     """Complete result returned by the deterministic coordinator pipeline."""
@@ -786,6 +787,7 @@ def write_outputs(
     route_path = workspace_dir / "route-decision.json"
     recon_path = workspace_dir / "recon-result.json"
     final_workspace_path = workspace_dir / "final-result.json"
+    workspace_contract_path = workspace_dir / "workspace-contract.json"
     report_json_path = reports_dir / "demo-final-result.json"
     report_md_path = reports_dir / "demo-final-report.md"
     manifest_path = workspace_dir / "backend-artifact-manifest.json"
@@ -798,6 +800,7 @@ def write_outputs(
     _write_json(route_path, route_result.model_dump(mode="json"))
     _write_json(recon_path, recon_result.model_dump(mode="json"))
     _write_json(final_workspace_path, final_result.model_dump(mode="json"))
+    _write_json(workspace_contract_path, workspace_contract_payload())
     evidence_promotion = promote_evidence(final_result.evidence, final_result.artifacts)
     evidence_artifact_paths = _write_evidence_promotion_artifacts(workspace_dir, evidence_promotion)
     review_gate = evaluate_review_gate(rebuild_result, evidence_promotion)
@@ -810,6 +813,7 @@ def write_outputs(
         "workspace_route": str(route_path),
         "workspace_recon": str(recon_path),
         "workspace_final": str(final_workspace_path),
+        "workspace_workspace_contract": str(workspace_contract_path),
         "json": str(report_json_path),
         "markdown": str(report_md_path),
         "index": str(index_path),
@@ -833,6 +837,7 @@ def write_outputs(
             "route_decision": str(route_path),
             "recon_result": str(recon_path),
             "final_result": str(final_workspace_path),
+            "workspace_contract": str(workspace_contract_path),
         },
         "reports": {
             "json": str(report_json_path),
@@ -892,8 +897,13 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_stitched_flow": "trace",
     "workspace_function_hooks": "hook-timeline",
     "workspace_function_hook_timeline": "hook-timeline",
+    "workspace_module_hooks": "hook-timeline",
+    "workspace_module_hook_timeline": "hook-timeline",
     "workspace_source_logpoints": "trace",
     "workspace_source_logpoint_timeline": "trace",
+    "workspace_mutation_audit": "trace",
+    "workspace_page_mutation_audit": "trace",
+    "workspace_mutation_observer_timeline": "trace",
     "workspace_breakpoints": "trace",
     "workspace_debugger_paused": "trace",
     "workspace_callframes": "trace",
@@ -909,6 +919,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_runtime_context_diff": "runtime-context",
     "workspace_runtime_capabilities": "runtime-context",
     "workspace_runtime_export_bundle": "export",
+    "workspace_workspace_contract": "workspace",
     "workspace_platform_tool_probe": "runtime-context",
     "workspace_function_candidates": "source",
     "workspace_function_validations": "trace",
@@ -1127,6 +1138,7 @@ def write_platform_outputs(
     capabilities_path = workspace_dir / "runtime-capabilities.json"
     export_bundle_path = workspace_dir / "runtime-export-bundle.json"
     final_workspace_path = workspace_dir / "final-result.json"
+    workspace_contract_path = workspace_dir / "workspace-contract.json"
     manifest_path = workspace_dir / "backend-artifact-manifest.json"
     report_json_path = reports_dir / "platform-pipeline-result.json"
     report_md_path = reports_dir / "platform-pipeline-report.md"
@@ -1138,6 +1150,7 @@ def write_platform_outputs(
     _write_json(capabilities_path, runtime_capabilities.model_dump(mode="json"))
     _write_json(export_bundle_path, export_payload)
     _write_json(final_workspace_path, final_result.model_dump(mode="json"))
+    _write_json(workspace_contract_path, workspace_contract_payload())
     evidence_promotion = promote_evidence(final_result.evidence, final_result.artifacts)
     evidence_artifact_paths = _write_evidence_promotion_artifacts(workspace_dir, evidence_promotion)
     _write_json(report_json_path, final_result.model_dump(mode="json"))
@@ -1149,6 +1162,7 @@ def write_platform_outputs(
         "workspace_runtime_capabilities": str(capabilities_path),
         "workspace_runtime_export_bundle": str(export_bundle_path),
         "workspace_final": str(final_workspace_path),
+        "workspace_workspace_contract": str(workspace_contract_path),
         "json": str(report_json_path),
         "markdown": str(report_md_path),
         "index": str(index_path),
@@ -1172,6 +1186,7 @@ def write_platform_outputs(
             "runtime_capabilities": str(capabilities_path),
             "runtime_export_bundle": str(export_bundle_path),
             "final_result": str(final_workspace_path),
+            "workspace_contract": str(workspace_contract_path),
             "platform_tool_probe": str(platform_probe_path) if platform_probe_path is not None else None,
         },
         "reports": {
