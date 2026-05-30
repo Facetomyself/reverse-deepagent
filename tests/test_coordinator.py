@@ -101,6 +101,20 @@ class CoordinatorTests(unittest.TestCase):
                     details={"session_id": "unit-paused-session", "entry_count": 4, "entries": [{"type": "debugger.paused"}]},
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
+                EvidenceItem(
+                    summary="Native function hook timeline",
+                    kind=EvidenceKind.HOOK,
+                    source="function_hook_timeline",
+                    details={"event_count": 2, "events": [{"type": "function_call"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native function hook install result",
+                    kind=EvidenceKind.HOOK,
+                    source="function_hooks",
+                    details={"installed_count": 1, "installed": [{"path": "window.buildSign"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
             ],
             artifacts=[],
             next_action="wait_for_breakpoint",
@@ -112,7 +126,11 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["debugger-actions.json"]["actions"][0]["method"], "Debugger.stepOver")
         self.assertEqual(payloads["debugger-session.json"]["session_id"], "unit-paused-session")
         self.assertEqual(payloads["debugger-timeline.json"]["entry_count"], 4)
+        self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
+        self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_function_hooks"), "hook-timeline")
+        self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")

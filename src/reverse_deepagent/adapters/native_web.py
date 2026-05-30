@@ -7,7 +7,7 @@ from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
 from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
-from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, BrowserHookManager
+from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, BrowserHookManager, FunctionHookManager, FunctionHookSpec
 from reverse_deepagent.browser.providers import (
     CloakBrowserConfig,
     CloakBrowserProvider,
@@ -225,6 +225,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
             )
+        if self._is_function_hook_request(protection_name, context):
+            spec = FunctionHookSpec.from_context(context)
+            result = FunctionHookManager().install(page, spec)
+            installed_count = len(result.installed)
+            missing_count = len(result.missing)
+            event_count = len(result.events)
+            verification = [
+                f"function_hook_status={result.status}",
+                f"function_hook_installed_count={installed_count}",
+                f"function_hook_missing_count={missing_count}",
+                f"function_hook_event_count={event_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.error:
+                verification.append(f"function_hook_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/function-hooks.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime target function hook install result.",
+                    metadata={
+                        "status": result.status,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "function_name": spec.function_name if spec else "<missing>",
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/function-hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime target function hook timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "function_name": spec.function_name if spec else "<missing>",
+                    },
+                ),
+            ]
+            next_action = "inspect_function_hook_events" if event_count else "invoke_target_function_or_adjust_hook_path"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"install_function_hook:{spec.function_name}"] if spec and result.installed else []
+                ),
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if installed_count else ExecutionStatus.PARTIAL if missing_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
         if self._is_breakpoint_request(protection_name, context):
             spec = BreakpointSpec.from_context(context)
             result = BreakpointManager().set_breakpoint(page, spec)
@@ -437,6 +491,27 @@ class NativeWebRuntime(WebReverseRuntime):
         if normalized in {"breakpoint", "set-breakpoint", "debugger-breakpoint"}:
             return True
         return any(key in context for key in ("url_pattern", "script_url", "line_number", "lineNumber"))
+
+    @staticmethod
+    def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"hook-function", "function-hook", "target-function-hook", "source-logpoint", "logpoint"}:
+            return True
+        return any(
+            key in context
+            for key in (
+                "function_name",
+                "functionName",
+                "function_path",
+                "functionPath",
+                "function_paths",
+                "functionPaths",
+                "hook_paths",
+                "hookPaths",
+                "candidate_id",
+                "candidateId",
+            )
+        )
 
     @staticmethod
     def _build_evidence(

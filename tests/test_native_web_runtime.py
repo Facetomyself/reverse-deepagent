@@ -72,6 +72,8 @@ class FakeRawPage:
         self._cdp_session = FakeCDPSession()
         self.hook_installed = False
         self.hook_events = []
+        self.function_hook_installed = False
+        self.function_hook_events = []
 
     def on(self, event, handler):
         self.handlers.setdefault(event, []).append(handler)
@@ -130,6 +132,25 @@ class FakeRawPage:
                 },
                 "runtime_url": self.url,
             }
+        if "__reverseDeepAgentHooks" in expression and "functionPaths" in expression and "function_hooks" in expression:
+            self.function_hook_installed = True
+            return {
+                "ok": True,
+                "installed": [{"path": "window.buildSign", "functionName": "buildSign", "candidateId": "script-1:buildSign"}],
+                "missing": [],
+                "eventCount": len(self.function_hook_events),
+            }
+        if "__reverseDeepAgentHooks" in expression and "function_" in expression and "eventCount" in expression:
+            return {"ok": self.function_hook_installed, "events": list(self.function_hook_events), "eventCount": len(self.function_hook_events), "installed": {"window.buildSign": self.function_hook_installed}}
+        if "window.buildSign" in expression:
+            if self.function_hook_installed:
+                self.function_hook_events.extend(
+                    [
+                        {"type": "function_call", "payload": {"path": "window.buildSign", "functionName": "buildSign", "argCount": 2}},
+                        {"type": "function_return", "payload": {"path": "window.buildSign", "functionName": "buildSign", "result": {"type": "string", "preview": "sig_native_1700000000000"}}},
+                    ]
+                )
+            return "sig_native_1700000000000"
         if "__reverseDeepAgentHooks" in expression and "namespace:" in expression:
             self.hook_installed = True
             self.hook_events.append({"type": "fetch", "payload": {"url": self.url.rstrip("/") + "/api/search", "method": "GET"}})
@@ -371,6 +392,29 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("install_hook:fetch_xhr", result.applied_actions)
         self.assertEqual(result.next_action, "resume_recon")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/hook-timeline.json")
+
+    def test_native_web_runtime_apply_minimal_protection_installs_function_hook(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "hook-function",
+            {
+                "function_name": "buildSign",
+                "function_paths": ["window.buildSign"],
+                "candidate_id": "script-1:buildSign",
+                "trigger_expression": "window.buildSign('sign', 1700000000000)",
+            },
+        )
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["install_function_hook:buildSign"])
+        self.assertIn("function_hook_status=success", result.verification)
+        self.assertIn("function_hook_installed_count=1", result.verification)
+        self.assertIn("function_hook_event_count=2", result.verification)
+        self.assertEqual(result.next_action, "inspect_function_hook_events")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/function-hooks.json")
+        self.assertEqual(result.artifacts[0].metadata["function_name"], "buildSign")
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/function-hook-timeline.json")
+        self.assertEqual(result.artifacts[1].metadata["event_count"], 2)
 
     def test_native_web_runtime_apply_minimal_protection_sets_breakpoint(self) -> None:
         provider = FakeProvider()
