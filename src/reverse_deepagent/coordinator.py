@@ -934,6 +934,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_review_gate_after_physical_rollback": "triage",
     "workspace_review_gate_replacement_results": "triage",
     "workspace_delivery_guard_after_review_gate_replacement": "triage",
+    "workspace_final_delivery_package_after_review_gate_replacement": "export",
     "workspace_review_gate": "triage",
 }
 

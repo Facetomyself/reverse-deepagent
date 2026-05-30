@@ -46,11 +46,28 @@
 | 23. Explicit-review-only physical rollback mutation baseline | 已完成（artifact model mutation only） | `tests.test_flow_timeline`、`tests.test_native_web_runtime`、`tests.test_workspace_contract`；显式 `auto_stitch_physical_rollback_review_decisions` 审批后生成 `auto_stitch_physical_rollback_results`，暴露 `virtual://workspace/stitched-flow-physical-rollback-results.json`，并从本轮 `stitched_flows` artifact model 中移除匹配 materialization；仍固定 `automatic_rollback=false`，不替换标准 `review-gate.json` |
 | 24. Post-physical-rollback review gate rerun baseline | 已完成（blocking baseline，不替换标准 gate） | `tests.test_flow_timeline`、`tests.test_native_web_runtime`、`tests.test_workspace_contract`；physical rollback result 会派生 `auto_stitch_post_physical_rollback_review_gate_reruns`，暴露 `virtual://workspace/review-gate-after-physical-rollback.json`，默认 `blocked=true` / `delivery_allowed=false` / `does_not_replace_review_gate=true` |
 | 25. Standard review gate replacement baseline | 已完成（explicit-review-only，Step 26 已补 guard rerun） | `tests.test_flow_timeline`、`tests.test_native_web_runtime`、`tests.test_workspace_contract`；显式 `auto_stitch_standard_review_gate_replacement_review_decisions` 审批后记录 `auto_stitch_standard_review_gate_replacement_results`，暴露 `virtual://workspace/review-gate-replacement-results.json`，标记标准 `workspace/review-gate.json` artifact model 已替换，但仍固定 `delivery_allowed=false` / `automatic_delivery=false` 并要求后续 delivery guard rerun |
-| 26. Delivery guard rerun after standard review gate replacement baseline | 已完成（artifact-model guard rerun only，不自动交付） | `tests.test_flow_timeline`、`tests.test_native_web_runtime`、`tests.test_workspace_contract`；standard review gate replacement result 会派生 `auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns`，暴露 `virtual://workspace/delivery-guard-after-review-gate-replacement.json`，记录 delivery guard rerun passed / delivery_allowed=true，但仍固定 `automatic_delivery=false`，需要后续 final delivery packaging executor 或人工交付 |
+| 26. Delivery guard rerun after standard review gate replacement baseline | 已完成（artifact-model guard rerun only，Step 27 已补 package baseline） | `tests.test_flow_timeline`、`tests.test_native_web_runtime`、`tests.test_workspace_contract`；standard review gate replacement result 会派生 `auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns`，暴露 `virtual://workspace/delivery-guard-after-review-gate-replacement.json`，记录 delivery guard rerun passed / delivery_allowed=true，但仍固定 `automatic_delivery=false` |
+| 27. Final delivery package after delivery guard rerun baseline | 已完成（artifact-model package only，不提交跨运行 transaction） | `tests.test_flow_timeline`、`tests.test_native_web_runtime`、`tests.test_workspace_contract`；delivery guard passed 后派生 `auto_stitch_post_standard_review_gate_replacement_final_delivery_packages`，暴露 `virtual://workspace/final-delivery-package-after-review-gate-replacement.json`，记录 package ready / final delivery packaged / delivery_allowed=true，但仍固定 `automatic_delivery=false`、`external_delivery_performed=false`、`cross_run_transaction_committed=false` |
 
 ## 阶段执行记录与剩余顺序
 
-当前下一步：Phase 0-26 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline、callframe evaluation policy baseline、mutation audit baseline、page-level mutation audit baseline、MutationObserver timeline baseline、debugger step-control baseline、paused-session continuation preflight、durable paused-session snapshot inspect-only baseline、single-run debugger timeline baseline、target-function wrapper baseline、source-level logpoint baseline、source map / bundle offset remap baseline、source-map bias / sourceRoot / indexed section remap baseline、module export hook baseline、module discovery baseline、runtime module cache / registry introspection baseline、custom runtime / module federation function-path candidate baseline、closure-scope function discovery baseline、native-web recon flow timeline baseline、flow timeline correlation hints、conservative correlation groups、group verification readiness、manual stitch candidates、review-gated stitch proposals、pending stitch proposal evidence promotion / review gate blocking、reviewer-approved stitched-flow materialization baseline、explicit flow timeline continuation baseline、auto-stitch dry-run scoring baseline、auto-stitch policy decision gate baseline、auto-stitch materialization plan baseline、review-approved auto-stitch materializer skeleton、materialization audit / rollback writer baseline、auto-stitch conflict resolver baseline、materialization transaction log baseline、rollback execution dry-run / explicit-review-only baseline、post-rollback review gate recompute baseline、physical rollback dry-run diff baseline、explicit-review-only physical rollback mutation baseline、post-physical-rollback review gate rerun baseline、standard review gate replacement baseline、post-standard-review-gate-replacement delivery guard rerun baseline，以及 retained paused-session registry baseline 均已验证，MCP alias deprecation warning 已接入，最终 code review 已完成并修复 module-hook 路由、module hook path quoting 和 page-mutation global snapshot 副作用风险；MCP 物理拆包前置步骤已完成：RuntimeBackendRegistry 支持 `reverse_deepagent.runtime_backends` entry-point discovery，加载外部 backend registration 时不调用 backend factory；`legacy-mcp` registration / factory / alias warning 已从 coordinator 内联逻辑挪到 `reverse_deepagent.runtime.legacy_mcp`，并支持 `build_default_runtime_registry(include_legacy_mcp=False)` 构建不带 MCP backend 的 clean registry；`packages/reverse-deepagent-legacy-mcp/` optional plugin package 已拥有 legacy MCP registration / factory、config 和 stdio bridge 实现，core 侧 `reverse_deepagent.runtime.legacy_mcp` 只保留兼容 shim、默认命令常量、alias warning、doctor 代理和 install guidance，不再内置 legacy MCP factory fallback 或 stdio MCP transport；默认 registry 会先加载外部 entry points，若未安装 optional package，`legacy-mcp` / `mcp` 会返回结构化安装建议且不会先启动受管 Chrome。DeepAgents workspace contract indexed-only baseline 已落地，当前输出 `workspace/workspace-contract.json`，覆盖虚拟文件夹、子智能体角色、middleware chain 和现有扁平 artifact route。BrowserProvider smoke matrix / lifecycle baseline 已落地，doctor 可输出 metadata-only provider matrix，真实启动仍需显式 `--launch-browser-smoke`。后续仍需跨进程 live CDP paused execution continuation、任意 custom loader / async chunk graph / 深层 module federation 执行式分析、任意闭包内部函数 automatic wrapper hook、JS heap 级细粒度 mutation audit / object graph diff、richer Source Map name / URL / complex indexed section semantics、DeepAgents 虚拟文件夹真实迁移，以及更完整的自动全链路跨请求 timeline conflict resolver / final delivery packaging executor / 更完整 transaction state machine / 无需审批 automatic materializer。Android / iOS / 小程序完整运行链路继续搁置，只保留 minimal probe / artifact export baseline。Step 5.1 到 Step 26 保留为已执行阶段记录，便于 review 和回溯。
+当前下一步：Phase 0-27 已完成，`remote-cdp` smoke 路径已接入，Playwright system Chrome smoke、CloakBrowser fixture smoke、Playwright breakpoint paused/callframe smoke、显式 evaluateOnCallFrame baseline、callframe evaluation policy baseline、mutation audit baseline、page-level mutation audit baseline、MutationObserver timeline baseline、debugger step-control baseline、paused-session continuation preflight、durable paused-session snapshot inspect-only baseline、single-run debugger timeline baseline、target-function wrapper baseline、source-level logpoint baseline、source map / bundle offset remap baseline、source-map bias / sourceRoot / indexed section remap baseline、module export hook baseline、module discovery baseline、runtime module cache / registry introspection baseline、custom runtime / module federation function-path candidate baseline、closure-scope function discovery baseline、native-web recon flow timeline baseline、flow timeline correlation hints、conservative correlation groups、group verification readiness、manual stitch candidates、review-gated stitch proposals、pending stitch proposal evidence promotion / review gate blocking、reviewer-approved stitched-flow materialization baseline、explicit flow timeline continuation baseline、auto-stitch dry-run scoring baseline、auto-stitch policy decision gate baseline、auto-stitch materialization plan baseline、review-approved auto-stitch materializer skeleton、materialization audit / rollback writer baseline、auto-stitch conflict resolver baseline、materialization transaction log baseline、rollback execution dry-run / explicit-review-only baseline、post-rollback review gate recompute baseline、physical rollback dry-run diff baseline、explicit-review-only physical rollback mutation baseline、post-physical-rollback review gate rerun baseline、standard review gate replacement baseline、post-standard-review-gate-replacement delivery guard rerun baseline、final delivery package after delivery guard rerun baseline，以及 retained paused-session registry baseline 均已验证，MCP alias deprecation warning 已接入，最终 code review 已完成并修复 module-hook 路由、module hook path quoting 和 page-mutation global snapshot 副作用风险；MCP 物理拆包前置步骤已完成：RuntimeBackendRegistry 支持 `reverse_deepagent.runtime_backends` entry-point discovery，加载外部 backend registration 时不调用 backend factory；`legacy-mcp` registration / factory / alias warning 已从 coordinator 内联逻辑挪到 `reverse_deepagent.runtime.legacy_mcp`，并支持 `build_default_runtime_registry(include_legacy_mcp=False)` 构建不带 MCP backend 的 clean registry；`packages/reverse-deepagent-legacy-mcp/` optional plugin package 已拥有 legacy MCP registration / factory、config 和 stdio bridge 实现，core 侧 `reverse_deepagent.runtime.legacy_mcp` 只保留兼容 shim、默认命令常量、alias warning、doctor 代理和 install guidance，不再内置 legacy MCP factory fallback 或 stdio MCP transport；默认 registry 会先加载外部 entry points，若未安装 optional package，`legacy-mcp` / `mcp` 会返回结构化安装建议且不会先启动受管 Chrome。DeepAgents workspace contract indexed-only baseline 已落地，当前输出 `workspace/workspace-contract.json`，覆盖虚拟文件夹、子智能体角色、middleware chain 和现有扁平 artifact route。BrowserProvider smoke matrix / lifecycle baseline 已落地，doctor 可输出 metadata-only provider matrix，真实启动仍需显式 `--launch-browser-smoke`。后续仍需跨进程 live CDP paused execution continuation、任意 custom loader / async chunk graph / 深层 module federation 执行式分析、任意闭包内部函数 automatic wrapper hook、JS heap 级细粒度 mutation audit / object graph diff、richer Source Map name / URL / complex indexed section semantics、DeepAgents 虚拟文件夹真实迁移，以及更完整的自动全链路跨请求 timeline conflict resolver / cross-run transaction commit executor / external delivery executor / 更完整 transaction state machine / 无需审批 automatic materializer。Android / iOS / 小程序完整运行链路继续搁置，只保留 minimal probe / artifact export baseline。Step 5.1 到 Step 27 保留为已执行阶段记录，便于 review 和回溯。
+
+### Step 27：Final delivery package after delivery guard rerun baseline
+
+交付物：
+
+- `flow-timeline.json`：新增 `auto_stitch_post_standard_review_gate_replacement_final_delivery_packages`、`auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count` 和 `auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary`。
+- `FlowTimelineManager`：基于 `delivery_guard_rerun_passed` result 生成 final delivery package baseline，记录 package artifact、included artifacts、final result / manifest links，以及 `package_ready=true` / `final_delivery_packaged=true`。
+- `NativeWebRuntime`：explicit flow-timeline protection 与 recon artifact metadata 暴露 final delivery package count / summary；新增 `virtual://workspace/final-delivery-package-after-review-gate-replacement.json` artifact ref；applied action 增加 `package_final_delivery_after_standard_review_gate_replacement`。
+- `workspace-contract.json`：新增 `workspace/final-delivery-package-after-review-gate-replacement.json` indexed-only route，归入 `/workspace/delivery/`。
+- `tests/test_flow_timeline.py`、`tests/test_native_web_runtime.py`、`tests/test_workspace_contract.py`：覆盖 guard passed 后派生 final delivery package、ArtifactRef、metadata、workspace route，以及 `automatic_delivery=false` / `external_delivery_performed=false` / `cross_run_transaction_committed=false` 边界。
+
+边界：
+
+- 该 baseline 只说明最终交付包在 artifact model 中已经准备好；不执行外部交付，不提交跨运行 transaction，不写 manifest revision commit。
+- `delivery_allowed=true` 与 `final_delivery_packaged=true` 是 package 状态，不等于 `automatic_delivery=true`。
+- 后续仍需 cross-run transaction commit executor、manifest revision commit、失败恢复和 external delivery executor。
 
 ### Step 26：Delivery guard rerun after standard review gate replacement baseline
 
@@ -64,9 +81,9 @@
 
 边界：
 
-- 该 baseline 只表示标准 review gate replacement 后的 delivery guard 已在本轮 artifact model 中重跑并通过；不打包 final delivery，不触发自动交付。
-- `delivery_allowed=true` 是 guard 状态，不等价于 `automatic_delivery=true`；后续仍需 final delivery packaging executor 或人工交付动作。
-- 跨运行 physical rollback transaction state machine、manifest revision commit、失败恢复和无需审批 automatic materializer 仍未实现。
+- 该 baseline 只表示标准 review gate replacement 后的 delivery guard 已在本轮 artifact model 中重跑并通过；Step 27 已补 final delivery package baseline，但仍不触发自动交付。
+- `delivery_allowed=true` 是 guard 状态，不等价于 `automatic_delivery=true`；Step 27 已补 artifact-model final delivery package，后续仍需 cross-run transaction commit 或 external delivery 动作。
+- 跨运行 physical rollback transaction state machine、manifest revision commit、失败恢复、external delivery executor 和无需审批 automatic materializer 仍未实现。
 
 ### Step 25：Standard review gate replacement baseline
 
@@ -83,7 +100,7 @@
 
 - 该 baseline 只在显式 review approval 后记录标准 `workspace/review-gate.json` artifact model replacement result；delivery guard rerun baseline 已由 Step 26 补齐，但仍不自动交付。
 - replacement result 表示本轮 artifact model 进入“标准 gate 已替换，需继续 delivery guard rerun”的状态，不代表跨运行文件系统 patch 或完整 transaction commit。
-- Step 26 已实现 delivery guard rerun after standard review gate replacement baseline；下一步应考虑 final delivery packaging executor、跨运行 physical rollback transaction state machine、失败恢复和 manifest revision。
+- Step 26 已实现 delivery guard rerun after standard review gate replacement baseline；Step 27 已补 final delivery package baseline；下一步应考虑 cross-run transaction commit executor、跨运行 physical rollback transaction state machine、失败恢复和 manifest revision。
 
 ### Step 24：Post-physical-rollback review gate rerun baseline
 
@@ -98,7 +115,7 @@
 边界：
 
 - 该 baseline 只记录标准 review gate 需要 rerun，并输出 `review-gate-after-physical-rollback.json`；不覆盖标准 `workspace/review-gate.json`。
-- 默认阻断交付；Step 25 已补 replacement baseline，Step 26 已补 delivery guard rerun baseline，最终 delivery packaging executor 仍需后续实现。
+- 默认阻断交付；Step 25 已补 replacement baseline，Step 26 已补 delivery guard rerun baseline，final delivery package baseline 已由 Step 27 补齐，cross-run transaction commit / external delivery executor 仍需后续实现。
 - 仍不启用 automatic rollback，不实现跨运行 transaction state machine。
 
 ### Step 23：Explicit-review-only physical rollback mutation baseline
@@ -116,7 +133,7 @@
 
 - 该 baseline 是 explicit-review-only，不会因为存在 dry-run diff 自动回滚。
 - 当前 mutation 发生在本轮 `FlowTimelineResult.stitched_flows` artifact model；真实文件系统双写、manifest revision 状态机、失败恢复和跨运行 artifact patch 仍需后续 transaction state machine。
-- Step 24 已补出 post-physical-rollback review gate rerun baseline，Step 25 已补出 explicit-review-only 标准 review gate replacement baseline；final delivery packaging executor 与跨运行 transaction state machine 仍未实现。
+- Step 24 已补出 post-physical-rollback review gate rerun baseline，Step 25 已补出 explicit-review-only 标准 review gate replacement baseline；cross-run transaction commit / external delivery executor 与跨运行 transaction state machine 仍未实现。
 
 ### Step 22：Physical rollback dry-run diff baseline
 
@@ -132,7 +149,7 @@
 
 - 该 baseline 只输出 would-remove / would-update-manifest / would-rerun-gate 差异计划，不删除、覆盖或改写 `workspace/stitched-flow.json`。
 - `would_mutate_if_approved=true` 只表示未来显式审批后的潜在物理动作；当前固定 `writes_artifact=false` / `physical_artifact_mutated=false` / `automatic_rollback=false`。
-- 标准 `workspace/review-gate.json` replacement baseline 已由 Step 25 补齐；Step 23 已在 dry-run diff 基础上补出 explicit-review-only artifact model mutation，后续应接 final delivery packaging executor、transaction state machine 与跨运行 artifact patch。
+- 标准 `workspace/review-gate.json` replacement baseline 已由 Step 25 补齐；Step 23 已在 dry-run diff 基础上补出 explicit-review-only artifact model mutation，后续应接 cross-run transaction commit、transaction state machine 与跨运行 artifact patch。
 
 ### Step 21：Post-rollback review gate recompute baseline
 
@@ -149,7 +166,7 @@
 - 该 baseline 只是 post-rollback gate recomputation 记录，不覆盖 `workspace/review-gate.json`，也不假装标准 delivery gate 已重新执行。
 - recomputation 默认阻断交付，要求 reviewer 确认 logical rollback result、`stitched-flow.json` 当前状态，并重新运行标准 review gate。
 - 仍不执行物理 rollback，不改写 `stitched-flow.json`，固定 `automatic_rollback=false` / `target_artifact_mutated=false`。
-- Step 22 已补出 physical rollback dry-run diff，Step 23 已补出 explicit-review-only artifact model mutation，Step 25 已补出标准 review gate replacement baseline；final delivery packaging executor、跨运行 physical rollback transaction state machine，以及更完整 transaction state machine 仍未实现。
+- Step 22 已补出 physical rollback dry-run diff，Step 23 已补出 explicit-review-only artifact model mutation，Step 25 已补出标准 review gate replacement baseline；cross-run transaction commit / external delivery executor、跨运行 physical rollback transaction state machine，以及更完整 transaction state machine 仍未实现。
 
 ### Step 20：Rollback execution dry-run / explicit-review-only baseline
 
@@ -167,7 +184,7 @@
 - rollback execution plan 默认 `dry_run=true` / `would_revert=false` / `writes_artifact=false`，只提示 reviewer 审批，不执行物理回滚。
 - 显式审批后只记录 logical revert result，固定 `physical_artifact_mutated=false` / `target_artifact_mutated=false`；不会删除、覆盖或改写 `workspace/stitched-flow.json`。
 - `automatic_rollback=false` / `automatic_stitching=false` 继续保持，不能宣称支持真实自动回滚或自动全链路 stitching。
-- Step 21 已在 rollback execution result 基础上输出 post-rollback review gate recompute baseline，Step 22 已输出 physical rollback dry-run diff，Step 25 已输出标准 review gate replacement baseline；真实跨运行 mutation executor 与 final delivery packaging executor 仍未实现。
+- Step 21 已在 rollback execution result 基础上输出 post-rollback review gate recompute baseline，Step 22 已输出 physical rollback dry-run diff，Step 25 已输出标准 review gate replacement baseline；真实跨运行 mutation executor、transaction commit 与 external delivery executor 仍未实现。
 
 ### Step 19：Materialization transaction log baseline
 
@@ -183,8 +200,8 @@
 
 - transaction log 是聚合视图，不执行 rollback，不删除或改写 `stitched-flow.json`。
 - transaction ready 只表示 result / audit / rollback plan 三段引用完整，不代表可以自动交付。
-- rollback 后 post-rollback review gate recompute baseline 已由 Step 21 补齐，标准 `review-gate.json` replacement baseline 已由 Step 25 补齐；final delivery packaging executor 仍未实现。
-- Step 20 已在这个 transaction log 基础上补出 rollback executor dry-run / explicit-review-only baseline，Step 21 已补出 post-rollback review gate recompute baseline，Step 22 已补出 physical rollback dry-run diff，Step 25 已补出标准 review gate replacement baseline；真实跨运行物理 mutation 与 final delivery packaging executor 仍未实现。
+- rollback 后 post-rollback review gate recompute baseline 已由 Step 21 补齐，标准 `review-gate.json` replacement baseline 已由 Step 25 补齐；cross-run transaction commit / external delivery executor 仍未实现。
+- Step 20 已在这个 transaction log 基础上补出 rollback executor dry-run / explicit-review-only baseline，Step 21 已补出 post-rollback review gate recompute baseline，Step 22 已补出 physical rollback dry-run diff，Step 25 已补出标准 review gate replacement baseline；真实跨运行物理 mutation、transaction commit 与 external delivery executor 仍未实现。
 
 ### Step 18：Auto-stitch conflict resolver baseline
 

@@ -246,6 +246,8 @@ class FlowTimelineResult:
     auto_stitch_standard_review_gate_replacement_summary: dict[str, Any] = field(default_factory=dict)
     auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_post_standard_review_gate_replacement_final_delivery_packages: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -331,6 +333,15 @@ class FlowTimelineResult:
             ),
             "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary": (
                 self.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary
+            ),
+            "auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count": len(
+                self.auto_stitch_post_standard_review_gate_replacement_final_delivery_packages
+            ),
+            "auto_stitch_post_standard_review_gate_replacement_final_delivery_packages": (
+                self.auto_stitch_post_standard_review_gate_replacement_final_delivery_packages
+            ),
+            "auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary": (
+                self.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary
             ),
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
@@ -515,6 +526,17 @@ class FlowTimelineManager:
                 auto_stitch_standard_review_gate_replacement_results,
             )
         )
+        auto_stitch_post_standard_review_gate_replacement_final_delivery_packages = (
+            self._auto_stitch_post_standard_review_gate_replacement_final_delivery_packages(
+                auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns,
+            )
+        )
+        auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary = (
+            self._auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary(
+                auto_stitch_post_standard_review_gate_replacement_final_delivery_packages,
+                auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns,
+            )
+        )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -561,6 +583,12 @@ class FlowTimelineManager:
             ),
             auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary=(
                 auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary
+            ),
+            auto_stitch_post_standard_review_gate_replacement_final_delivery_packages=(
+                auto_stitch_post_standard_review_gate_replacement_final_delivery_packages
+            ),
+            auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary=(
+                auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary
             ),
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
@@ -3080,6 +3108,127 @@ class FlowTimelineManager:
                 "manual_delivery_or_package_final_artifacts_after_guard_review"
                 if passed_count
                 else "replace_standard_review_gate_before_delivery_guard_rerun"
+            ),
+        }
+
+    @classmethod
+    def _auto_stitch_post_standard_review_gate_replacement_final_delivery_packages(
+        cls,
+        delivery_guard_reruns: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        packages: list[dict[str, Any]] = []
+        for rerun in delivery_guard_reruns:
+            if rerun.get("status") != "delivery_guard_rerun_passed" or not rerun.get("delivery_guard_passed"):
+                continue
+            package_artifact = "workspace/final-delivery-package-after-review-gate-replacement.json"
+            virtual_package_artifact = "virtual://workspace/final-delivery-package-after-review-gate-replacement.json"
+            included_artifacts = cls._unique_strings(
+                [
+                    rerun.get("target_review_gate_artifact"),
+                    rerun.get("replacement_artifact"),
+                    rerun.get("delivery_guard_artifact"),
+                ]
+            )
+            virtual_included_artifacts = cls._unique_strings(
+                [
+                    rerun.get("virtual_target_review_gate_artifact"),
+                    rerun.get("virtual_replacement_artifact"),
+                    rerun.get("virtual_delivery_guard_artifact"),
+                ]
+            )
+            packages.append(
+                {
+                    "final_delivery_package_id": f"standard-review-gate-replacement-final-delivery-package-{len(packages) + 1}",
+                    "status": "final_delivery_package_ready",
+                    "package_name": "final_delivery_after_standard_review_gate_replacement",
+                    "source": "post_standard_review_gate_replacement_delivery_guard_rerun",
+                    "delivery_guard_rerun_id": rerun.get("delivery_guard_rerun_id"),
+                    "replacement_result_id": rerun.get("replacement_result_id"),
+                    "rerun_id": rerun.get("rerun_id"),
+                    "physical_rollback_result_id": rerun.get("physical_rollback_result_id"),
+                    "dry_run_id": rerun.get("dry_run_id"),
+                    "rollback_execution_result_id": rerun.get("rollback_execution_result_id"),
+                    "transaction_id": rerun.get("transaction_id"),
+                    "rollback_id": rerun.get("rollback_id"),
+                    "materialization_result_id": rerun.get("materialization_result_id"),
+                    "candidate_id": rerun.get("candidate_id"),
+                    "group_id": rerun.get("group_id"),
+                    "package_artifact": package_artifact,
+                    "virtual_package_artifact": virtual_package_artifact,
+                    "included_artifacts": included_artifacts,
+                    "virtual_included_artifacts": virtual_included_artifacts,
+                    "final_result_artifact": "workspace/final-result.json",
+                    "virtual_final_result_artifact": "virtual://workspace/final-result.json",
+                    "backend_artifact_manifest": "workspace/backend-artifact-manifest.json",
+                    "virtual_backend_artifact_manifest": "virtual://workspace/backend-artifact-manifest.json",
+                    "delivery_guard_artifact": rerun.get("delivery_guard_artifact", "workspace/delivery-guard-after-review-gate-replacement.json"),
+                    "virtual_delivery_guard_artifact": rerun.get(
+                        "virtual_delivery_guard_artifact",
+                        "virtual://workspace/delivery-guard-after-review-gate-replacement.json",
+                    ),
+                    "delivery_guard_passed": True,
+                    "delivery_allowed": True,
+                    "package_ready": True,
+                    "final_delivery_packaged": True,
+                    "writes_artifact": True,
+                    "automatic_delivery": False,
+                    "manual_delivery_required": True,
+                    "external_delivery_performed": False,
+                    "cross_run_transaction_committed": False,
+                    "manifest_revision_committed": False,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "blocked": False,
+                    "review_required": False,
+                    "checks": [
+                        "delivery_guard_passed",
+                        "standard_review_gate_replacement_artifacts_included",
+                        "final_delivery_package_artifact_recorded",
+                        "automatic_delivery_disabled",
+                    ],
+                    "limitations": [
+                        "artifact_model_final_delivery_package_only",
+                        "does_not_commit_cross_run_transaction",
+                        "does_not_perform_external_delivery",
+                        "manifest_revision_not_committed",
+                    ],
+                    "next_action": "review_final_delivery_package_and_commit_transaction_or_deliver_manually",
+                }
+            )
+        return packages
+
+    @staticmethod
+    def _auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary(
+        packages: list[dict[str, Any]],
+        delivery_guard_reruns: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        packaged_count = sum(1 for package in packages if package.get("final_delivery_packaged"))
+        return {
+            "package_count": len(packages),
+            "source_delivery_guard_rerun_count": len(delivery_guard_reruns),
+            "delivery_guard_passed_count": sum(1 for rerun in delivery_guard_reruns if rerun.get("delivery_guard_passed")),
+            "final_delivery_packaged_count": packaged_count,
+            "delivery_allowed_count": sum(1 for package in packages if package.get("delivery_allowed")),
+            "blocked_count": sum(1 for package in packages if package.get("blocked")),
+            "review_required": any(bool(package.get("review_required")) for package in packages),
+            "package_ready": bool(packaged_count),
+            "final_delivery_packaged": bool(packaged_count),
+            "writes_artifact": bool(packages),
+            "delivery_allowed": bool(packaged_count),
+            "automatic_delivery": False,
+            "manual_delivery_required": bool(packaged_count),
+            "external_delivery_performed": False,
+            "cross_run_transaction_committed": False,
+            "manifest_revision_committed": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "package_artifact": "workspace/final-delivery-package-after-review-gate-replacement.json",
+            "virtual_package_artifact": "virtual://workspace/final-delivery-package-after-review-gate-replacement.json",
+            "scope": "post-standard-review-gate-replacement-final-delivery-package-baseline",
+            "next_action": (
+                "review_final_delivery_package_and_commit_transaction_or_deliver_manually"
+                if packaged_count
+                else "rerun_delivery_guard_after_standard_review_gate_replacement_before_packaging"
             ),
         }
 
