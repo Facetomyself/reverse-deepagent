@@ -206,6 +206,8 @@ class FlowTimelineResult:
     auto_stitch_rollback_execution_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_rollback_execution_results: list[dict[str, Any]] = field(default_factory=list)
     auto_stitch_rollback_execution_result_summary: dict[str, Any] = field(default_factory=dict)
+    auto_stitch_rollback_review_gate_recomputations: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_rollback_review_gate_recomputation_summary: dict[str, Any] = field(default_factory=dict)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -264,6 +266,9 @@ class FlowTimelineResult:
             "auto_stitch_rollback_execution_result_count": len(self.auto_stitch_rollback_execution_results),
             "auto_stitch_rollback_execution_results": self.auto_stitch_rollback_execution_results,
             "auto_stitch_rollback_execution_result_summary": self.auto_stitch_rollback_execution_result_summary,
+            "auto_stitch_rollback_review_gate_recomputation_count": len(self.auto_stitch_rollback_review_gate_recomputations),
+            "auto_stitch_rollback_review_gate_recomputations": self.auto_stitch_rollback_review_gate_recomputations,
+            "auto_stitch_rollback_review_gate_recomputation_summary": self.auto_stitch_rollback_review_gate_recomputation_summary,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -382,6 +387,13 @@ class FlowTimelineManager:
             auto_stitch_rollback_execution_results,
             spec.auto_stitch_rollback_execution_review_decisions,
         )
+        auto_stitch_rollback_review_gate_recomputations = self._auto_stitch_rollback_review_gate_recomputations(
+            auto_stitch_rollback_execution_results,
+        )
+        auto_stitch_rollback_review_gate_recomputation_summary = self._auto_stitch_rollback_review_gate_recomputation_summary(
+            auto_stitch_rollback_review_gate_recomputations,
+            auto_stitch_rollback_execution_results,
+        )
         status = "success" if new_entries or stitched_flows else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -411,6 +423,8 @@ class FlowTimelineManager:
             auto_stitch_rollback_execution_review_decisions=list(spec.auto_stitch_rollback_execution_review_decisions),
             auto_stitch_rollback_execution_results=auto_stitch_rollback_execution_results,
             auto_stitch_rollback_execution_result_summary=auto_stitch_rollback_execution_result_summary,
+            auto_stitch_rollback_review_gate_recomputations=auto_stitch_rollback_review_gate_recomputations,
+            auto_stitch_rollback_review_gate_recomputation_summary=auto_stitch_rollback_review_gate_recomputation_summary,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -2041,7 +2055,7 @@ class FlowTimelineManager:
                         "review_approved_not_automatic",
                         "logical_revert_record_only",
                         "target_artifact_not_physically_deleted",
-                        "review_gate_recompute_not_implemented",
+                        "review_gate_recompute_baseline_does_not_replace_standard_gate",
                     ],
                     "next_action": "recompute_review_gate_after_rollback_before_delivery",
                 }
@@ -2085,6 +2099,82 @@ class FlowTimelineManager:
             "review_required": not bool(results),
             "scope": "review-approved-rollback-execution-result-summary",
             "next_action": "recompute_review_gate_after_rollback_before_delivery" if results else "review_rollback_execution_plans",
+        }
+
+    @classmethod
+    def _auto_stitch_rollback_review_gate_recomputations(
+        cls,
+        rollback_execution_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        recomputations: list[dict[str, Any]] = []
+        for result in rollback_execution_results:
+            if result.get("status") != "logical_revert_recorded" or not result.get("logical_rollback_recorded"):
+                continue
+            recomputations.append(
+                {
+                    "recomputation_id": f"stitched-flow-rollback-review-gate-recompute-{len(recomputations) + 1}",
+                    "status": "post_rollback_review_required",
+                    "gate_name": "rollback_after_materialization_review_gate",
+                    "source": "review_approved_logical_rollback_result",
+                    "rollback_execution_result_id": result.get("rollback_execution_result_id"),
+                    "rollback_execution_plan_id": result.get("rollback_execution_plan_id"),
+                    "transaction_id": result.get("transaction_id"),
+                    "rollback_id": result.get("rollback_id"),
+                    "result_id": result.get("result_id"),
+                    "target_artifact": result.get("target_artifact", "workspace/stitched-flow.json"),
+                    "review_gate_artifact": "workspace/review-gate-after-rollback.json",
+                    "virtual_review_gate_artifact": "virtual://workspace/review-gate-after-rollback.json",
+                    "logical_rollback_recorded": True,
+                    "physical_artifact_mutated": False,
+                    "target_artifact_mutated": False,
+                    "does_not_replace_review_gate": True,
+                    "delivery_allowed": False,
+                    "blocked": True,
+                    "review_required": True,
+                    "automatic_rollback": False,
+                    "automatic_stitching": False,
+                    "recompute_baseline": True,
+                    "reasons": [
+                        "logical_rollback_recorded",
+                        "physical_artifact_not_mutated",
+                        "post_rollback_delivery_gate_requires_review",
+                    ],
+                    "blocking_conditions": [
+                        "review_logical_rollback_result",
+                        "confirm_stitched_flow_artifact_state_after_rollback",
+                        "rerun_standard_review_gate_before_delivery",
+                    ],
+                    "next_action": "review_logical_rollback_and_rerun_delivery_gate_before_delivery",
+                }
+            )
+        return recomputations
+
+    @classmethod
+    def _auto_stitch_rollback_review_gate_recomputation_summary(
+        cls,
+        recomputations: list[dict[str, Any]],
+        rollback_execution_results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        blocked_count = sum(1 for item in recomputations if item.get("blocked"))
+        return {
+            "recomputation_count": len(recomputations),
+            "source_rollback_execution_result_count": len(rollback_execution_results),
+            "blocked_count": blocked_count,
+            "delivery_allowed_count": sum(1 for item in recomputations if item.get("delivery_allowed")),
+            "review_required": bool(recomputations),
+            "physical_artifact_mutated": False,
+            "target_artifact_mutated": False,
+            "automatic_rollback": False,
+            "automatic_stitching": False,
+            "does_not_replace_review_gate": bool(recomputations),
+            "review_gate_artifact": "workspace/review-gate-after-rollback.json",
+            "virtual_review_gate_artifact": "virtual://workspace/review-gate-after-rollback.json",
+            "scope": "post-rollback-review-gate-recompute-baseline",
+            "next_action": (
+                "review_logical_rollback_and_rerun_delivery_gate_before_delivery"
+                if recomputations
+                else "record_review_approved_rollback_execution_before_recomputing_gate"
+            ),
         }
 
     @staticmethod

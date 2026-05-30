@@ -273,6 +273,7 @@ class NativeWebRuntime(WebReverseRuntime):
             auto_stitch_rollback_execution_plan_count = len(result.auto_stitch_rollback_execution_plans)
             auto_stitch_rollback_execution_review_decision_count = len(result.auto_stitch_rollback_execution_review_decisions)
             auto_stitch_rollback_execution_result_count = len(result.auto_stitch_rollback_execution_results)
+            auto_stitch_rollback_review_gate_recomputation_count = len(result.auto_stitch_rollback_review_gate_recomputations)
             stitch_proposal_count = len(result.stitch_proposals)
             stitch_review_decision_count = len(result.stitch_review_decisions)
             stitched_flow_count = len(result.stitched_flows)
@@ -296,6 +297,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_auto_stitch_rollback_execution_plan_count={auto_stitch_rollback_execution_plan_count}",
                 f"flow_timeline_auto_stitch_rollback_execution_review_decision_count={auto_stitch_rollback_execution_review_decision_count}",
                 f"flow_timeline_auto_stitch_rollback_execution_result_count={auto_stitch_rollback_execution_result_count}",
+                f"flow_timeline_auto_stitch_rollback_review_gate_recomputation_count={auto_stitch_rollback_review_gate_recomputation_count}",
                 f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
                 f"flow_timeline_stitch_review_decision_count={stitch_review_decision_count}",
                 f"flow_timeline_stitched_flow_count={stitched_flow_count}",
@@ -343,6 +345,8 @@ class NativeWebRuntime(WebReverseRuntime):
                         "auto_stitch_rollback_execution_review_decision_count": auto_stitch_rollback_execution_review_decision_count,
                         "auto_stitch_rollback_execution_result_count": auto_stitch_rollback_execution_result_count,
                         "auto_stitch_rollback_execution_result_summary": dict(result.auto_stitch_rollback_execution_result_summary),
+                        "auto_stitch_rollback_review_gate_recomputation_count": auto_stitch_rollback_review_gate_recomputation_count,
+                        "auto_stitch_rollback_review_gate_recomputation_summary": dict(result.auto_stitch_rollback_review_gate_recomputation_summary),
                         "stitch_proposal_count": stitch_proposal_count,
                         "stitch_review_decision_count": stitch_review_decision_count,
                         "stitched_flow_count": stitched_flow_count,
@@ -450,6 +454,25 @@ class NativeWebRuntime(WebReverseRuntime):
                         },
                     )
                 )
+            if auto_stitch_rollback_review_gate_recomputation_count:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/review-gate-after-rollback.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web post-rollback review gate recomputation baseline.",
+                        metadata={
+                            "flow_id": result.flow_id,
+                            "count": auto_stitch_rollback_review_gate_recomputation_count,
+                            "summary": dict(result.auto_stitch_rollback_review_gate_recomputation_summary),
+                            "does_not_replace_review_gate": True,
+                            "delivery_allowed": False,
+                            "automatic_stitching": False,
+                            "automatic_rollback": False,
+                            "target_artifact_mutated": False,
+                            "source": "post_rollback_review_gate_recompute_baseline",
+                        },
+                    )
+                )
             if stitched_flow_count:
                 artifact_paths.append(
                     ArtifactRef(
@@ -477,6 +500,8 @@ class NativeWebRuntime(WebReverseRuntime):
                 applied_actions.append("plan_stitched_flow_rollback_execution")
             if auto_stitch_rollback_execution_result_count:
                 applied_actions.append("record_review_approved_rollback_execution")
+            if auto_stitch_rollback_review_gate_recomputation_count:
+                applied_actions.append("recompute_review_gate_after_rollback")
             if stitched_flow_count:
                 applied_actions.append("materialize_review_approved_stitched_flow")
             return ProtectionResult(
@@ -1626,6 +1651,8 @@ class NativeWebRuntime(WebReverseRuntime):
                     "auto_stitch_rollback_execution_review_decision_count": flow_timeline.get("auto_stitch_rollback_execution_review_decision_count", 0),
                     "auto_stitch_rollback_execution_result_count": flow_timeline.get("auto_stitch_rollback_execution_result_count", 0),
                     "auto_stitch_rollback_execution_result_summary": flow_timeline.get("auto_stitch_rollback_execution_result_summary", {}),
+                    "auto_stitch_rollback_review_gate_recomputation_count": flow_timeline.get("auto_stitch_rollback_review_gate_recomputation_count", 0),
+                    "auto_stitch_rollback_review_gate_recomputation_summary": flow_timeline.get("auto_stitch_rollback_review_gate_recomputation_summary", {}),
                     "stitch_proposal_count": flow_timeline.get("stitch_proposal_count", 0),
                     "stitch_review_decision_count": flow_timeline.get("stitch_review_decision_count", 0),
                     "stitched_flow_count": flow_timeline.get("stitched_flow_count", 0),
@@ -1764,6 +1791,30 @@ class NativeWebRuntime(WebReverseRuntime):
                         "automatic_rollback": False,
                         "target_artifact_mutated": False,
                         "source": "review_approved_rollback_execution_baseline",
+                    },
+                )
+            )
+        rollback_review_gate_recomputations = (
+            flow_timeline.get("auto_stitch_rollback_review_gate_recomputations")
+            if isinstance(flow_timeline.get("auto_stitch_rollback_review_gate_recomputations"), list)
+            else []
+        )
+        if rollback_review_gate_recomputations:
+            artifacts.append(
+                ArtifactRef(
+                    path="virtual://workspace/review-gate-after-rollback.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web post-rollback review gate recomputation baseline.",
+                    metadata={
+                        "flow_id": flow_timeline.get("flow_id"),
+                        "count": len(rollback_review_gate_recomputations),
+                        "summary": flow_timeline.get("auto_stitch_rollback_review_gate_recomputation_summary", {}),
+                        "does_not_replace_review_gate": True,
+                        "delivery_allowed": False,
+                        "automatic_stitching": False,
+                        "automatic_rollback": False,
+                        "target_artifact_mutated": False,
+                        "source": "post_rollback_review_gate_recompute_baseline",
                     },
                 )
             )

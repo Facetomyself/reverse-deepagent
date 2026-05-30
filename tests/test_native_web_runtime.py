@@ -1035,6 +1035,83 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(artifacts_by_path["virtual://workspace/stitched-flow.json"].metadata["count"], 1)
         self.assertFalse(artifacts_by_path["virtual://workspace/stitched-flow.json"].metadata["automatic_stitching"])
 
+    def test_native_web_runtime_recomputes_review_gate_after_approved_rollback_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "flow-timeline",
+            {
+                "flow_id": "sign-flow",
+                "run_id": "run-rollback",
+                "request_id": "req-rollback",
+                "network_requests": {"items": [{"url": "https://example.test/api/sign", "method": "POST", "requestId": "req-rollback"}]},
+                "request_initiators": {
+                    "items": [
+                        {
+                            "requestId": "req-rollback",
+                            "url": "https://example.test/api/sign",
+                            "method": "POST",
+                            "initiator": {"stack": {"callFrames": [{"functionName": "buildSign"}]}},
+                        }
+                    ]
+                },
+                "hook_timeline": {
+                    "snapshot": {
+                        "events": [
+                            {
+                                "type": "fetch",
+                                "payload": {"url": "/api/sign", "method": "POST", "path": "window.buildSign", "functionName": "buildSign"},
+                            }
+                        ]
+                    }
+                },
+                "replay_validation": {"validations": [{"candidate_id": "script-1:buildSign", "function_name": "buildSign", "replay_ok": True}]},
+                "auto_stitch_policy": {
+                    "policy_id": "runtime-policy",
+                    "min_confidence_score": 0.85,
+                    "allow_conflicts": True,
+                    "enable_automatic_materialization": True,
+                },
+                "auto_stitch_materialization_review_decisions": [
+                    {
+                        "plan_id": "auto-stitch-materialization-plan-1",
+                        "status": "approved",
+                        "approved": True,
+                        "reviewer": "runtime-reviewer",
+                    }
+                ],
+                "auto_stitch_rollback_execution_review_decisions": [
+                    {
+                        "rollback_execution_plan_id": "stitched-flow-rollback-execution-plan-1",
+                        "status": "approved",
+                        "approved": True,
+                        "reviewer": "rollback-reviewer",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertIn("record_review_approved_rollback_execution", result.applied_actions)
+        self.assertIn("recompute_review_gate_after_rollback", result.applied_actions)
+        self.assertIn("flow_timeline_auto_stitch_rollback_execution_result_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_rollback_review_gate_recomputation_count=1", result.verification)
+
+        flow_metadata = result.artifacts[0].metadata
+        self.assertEqual(flow_metadata["auto_stitch_rollback_execution_result_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_rollback_review_gate_recomputation_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_rollback_review_gate_recomputation_summary"]["blocked_count"], 1)
+        self.assertFalse(flow_metadata["auto_stitch_rollback_review_gate_recomputation_summary"]["physical_artifact_mutated"])
+
+        artifacts_by_path = {artifact.path: artifact for artifact in result.artifacts}
+        gate_artifact = artifacts_by_path["virtual://workspace/review-gate-after-rollback.json"]
+        self.assertEqual(gate_artifact.metadata["count"], 1)
+        self.assertEqual(gate_artifact.metadata["summary"]["recomputation_count"], 1)
+        self.assertTrue(gate_artifact.metadata["summary"]["does_not_replace_review_gate"])
+        self.assertFalse(gate_artifact.metadata["delivery_allowed"])
+        self.assertFalse(gate_artifact.metadata["target_artifact_mutated"])
+        self.assertFalse(gate_artifact.metadata["automatic_rollback"])
+
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
