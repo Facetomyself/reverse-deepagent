@@ -942,7 +942,7 @@ JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `comm
 - `managed_chrome` / `mcp_backed`：运行时约束提示
 - `evidence_kinds` / `artifact_kinds`：该后端常见输出类型
 
-`native-web` / `remote-cdp` 现在会在 BrowserProvider 支持 runtime eval 时执行最小候选函数验证，并沿用既有 artifact 名称输出 `workspace/function-candidates.json`、`workspace/function-validations.json` 和 `workspace/function-validation-summary.json`。这条 baseline 用于逐步替代 legacy MCP 的候选验证路径，但 debugger paused callframe、step/resume 等深调试能力仍是后续 capability-gated 工作。
+`native-web` / `remote-cdp` 现在会在 BrowserProvider 支持 runtime eval 时执行最小候选函数验证，并沿用既有 artifact 名称输出 `workspace/function-candidates.json`、`workspace/function-validations.json` 和 `workspace/function-validation-summary.json`。当传入显式 breakpoint 触发表达式时，它们还会输出 `workspace/debugger-paused.json` 和 `workspace/callframes.json`，用于最小 paused/callframe smoke。更深的 step/resume / 持久 paused 管理仍然是后续 capability-gated 工作。
 
 当前 Android / iOS / 小程序后端已具备 registry / factory / 能力元数据 / 轻副作用工具探测 / artifact 导出基础层，并可通过平台中立 `reverse-agent-platform` pipeline 落盘 capabilities、probe、export bundle、manifest 与报告；但还不包含真实 hook、静态分析或 replay 验证。完整约定见 [`docs/runtime/adapter-pluginization-contract.md`](docs/runtime/adapter-pluginization-contract.md)。
 

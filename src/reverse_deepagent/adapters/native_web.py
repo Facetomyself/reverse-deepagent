@@ -234,34 +234,72 @@ class NativeWebRuntime(WebReverseRuntime):
             elif result.status in {"failed", "unsupported"}:
                 status = ExecutionStatus.FAILED
             pattern = spec.url_pattern if spec else "<missing>"
+            paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
+            callframe_count = len(result.callframes)
             verification = [
                 f"breakpoint_status={result.status}",
                 f"breakpoint_supported={result.supported}",
+                f"paused_status={paused_status or 'unknown'}",
+                f"callframe_count={callframe_count}",
                 f"context_keys={sorted(context.keys())}",
             ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
             if result.reason:
                 verification.append(f"breakpoint_reason={result.reason}")
             if result.error:
                 verification.append(f"breakpoint_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/breakpoints.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime breakpoint manager result.",
+                    metadata={
+                        "status": result.status,
+                        "supported": result.supported,
+                        "count": len(result.breakpoints),
+                        "protection_name": protection_name,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/debugger-paused.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime paused debugger snapshot.",
+                    metadata={
+                        "status": paused_status or "unknown",
+                        "count": result.paused.get("count", 0) if isinstance(result.paused, dict) else 0,
+                        "callframe_count": callframe_count,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/callframes.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime debugger callframe snapshot.",
+                    metadata={
+                        "count": callframe_count,
+                        "paused_status": paused_status or "unknown",
+                    },
+                ),
+            ]
+            if paused_status == "success":
+                next_action = "inspect_callframes_or_resume"
+            elif result.status in {"success", "partial"}:
+                next_action = "wait_for_breakpoint"
+            else:
+                next_action = "ensure_cdp_breakpoint_capability"
             return ProtectionResult(
                 protection_name=protection_name,
-                applied_actions=[f"set_breakpoint_by_url:{pattern}"] if result.supported else [],
+                applied_actions=(
+                    [f"set_breakpoint_by_url:{pattern}"] + (["capture_debugger_paused"] if paused_status == "success" else [])
+                )
+                if result.supported
+                else [],
                 verification=verification,
                 status=status,
-                artifacts=[
-                    ArtifactRef(
-                        path="virtual://workspace/breakpoints.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime breakpoint manager result.",
-                        metadata={
-                            "status": result.status,
-                            "supported": result.supported,
-                            "count": len(result.breakpoints),
-                            "protection_name": protection_name,
-                        },
-                    )
-                ],
-                next_action="wait_for_breakpoint" if result.status in {"success", "partial"} else "ensure_cdp_breakpoint_capability",
+                artifacts=artifact_paths,
+                next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"success", "partial"} else ConfidenceLevel.LOW,
             )
         hooks = BrowserHookManager()

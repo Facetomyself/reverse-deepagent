@@ -29,6 +29,29 @@ class FakeCDPSession:
             return {"scriptSource": "function buildSign(){ return 'x-sign'; }"}
         if method == "Debugger.setBreakpointByUrl":
             return {"breakpointId": "bp-native-1", "locations": [{"scriptId": "script-1", "lineNumber": params.get("lineNumber", 0)}]}
+        if method == "Runtime.evaluate":
+            expression = (params or {}).get("expression", "")
+            if "debugger" in expression:
+                self.emit(
+                    "Debugger.paused",
+                    {
+                        "reason": "debugCommand",
+                        "hitBreakpoints": ["bp-native-1"],
+                        "callFrames": [
+                            {
+                                "callFrameId": "native-cf-1",
+                                "functionName": "buildSign",
+                                "location": {"scriptId": "script-1", "lineNumber": 4, "columnNumber": 0},
+                                "url": "https://example.test/assets/app.js",
+                                "scopeChain": [{"type": "local"}],
+                                "this": {"type": "object"},
+                            }
+                        ],
+                    },
+                )
+            return {"result": {"type": "string", "value": "scheduled"}}
+        if method == "Debugger.resume":
+            return {}
         return {}
 
 
@@ -351,6 +374,32 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/breakpoints.json")
         self.assertIn(("Debugger.enable", {}), page._cdp_session.calls)
         self.assertIn(("Debugger.setBreakpointByUrl", {"urlRegex": ".*app\\.js$", "lineNumber": 4}), page._cdp_session.calls)
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/debugger-paused.json")
+        self.assertEqual(result.artifacts[1].metadata["status"], "not_observed")
+
+    def test_native_web_runtime_apply_minimal_protection_captures_paused_callframes(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "set-breakpoint",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 4,
+                "trigger_expression": "setTimeout(() => { debugger; }, 0); 'scheduled'",
+            },
+        )
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.next_action, "inspect_callframes_or_resume")
+        self.assertIn("capture_debugger_paused", result.applied_actions)
+        self.assertIn("paused_status=success", result.verification)
+        self.assertIn("callframe_count=1", result.verification)
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/debugger-paused.json")
+        self.assertEqual(result.artifacts[1].metadata["status"], "success")
+        self.assertEqual(result.artifacts[2].path, "virtual://workspace/callframes.json")
+        self.assertEqual(result.artifacts[2].metadata["count"], 1)
+        self.assertIn(("Runtime.evaluate", {"expression": "setTimeout(() => { debugger; }, 0); 'scheduled'", "awaitPromise": False, "returnByValue": True, "userGesture": True}), page._cdp_session.calls)
+        self.assertIn(("Debugger.resume", {}), page._cdp_session.calls)
 
 
 if __name__ == "__main__":

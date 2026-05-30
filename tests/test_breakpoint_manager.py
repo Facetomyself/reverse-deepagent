@@ -4,10 +4,15 @@ from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec
 
 
 class RecordingCDPSession:
-    def __init__(self, payload=None, error: Exception | None = None) -> None:
+    def __init__(self, payload=None, error: Exception | None = None, emit_pause_on_evaluate: bool = False) -> None:
         self.calls = []
         self.payload = payload or {"breakpointId": "bp-1", "locations": [{"scriptId": "script-1", "lineNumber": 3, "columnNumber": 0}]}
         self.error = error
+        self.emit_pause_on_evaluate = emit_pause_on_evaluate
+        self.handlers = {}
+
+    def on(self, event_name, handler):
+        self.handlers.setdefault(event_name, []).append(handler)
 
     def send(self, method, params=None):
         self.calls.append((method, params or {}))
@@ -15,6 +20,29 @@ class RecordingCDPSession:
             raise self.error
         if method == "Debugger.setBreakpointByUrl":
             return self.payload
+        if method == "Runtime.evaluate":
+            if self.emit_pause_on_evaluate:
+                for handler in self.handlers.get("Debugger.paused", []):
+                    handler(
+                        {
+                            "reason": "debugCommand",
+                            "hitBreakpoints": ["bp-1"],
+                            "callFrames": [
+                                {
+                                    "callFrameId": "cf-1",
+                                    "functionName": "buildSign",
+                                    "location": {"scriptId": "script-1", "lineNumber": 3, "columnNumber": 2},
+                                    "functionLocation": {"scriptId": "script-1", "lineNumber": 1, "columnNumber": 0},
+                                    "url": "https://example.test/app.js",
+                                    "scopeChain": [{"type": "local"}],
+                                    "this": {"type": "object"},
+                                }
+                            ],
+                        }
+                    )
+            return {"result": {"type": "string", "value": "scheduled"}}
+        if method == "Debugger.resume":
+            return {}
         return {}
 
 
@@ -101,6 +129,24 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(session.calls[1], ("Debugger.setBreakpointByUrl", {"urlRegex": ".*app\\.js$", "lineNumber": 3}))
         self.assertEqual(result.breakpoints[0]["breakpointId"], "bp-1")
         self.assertEqual(result.breakpoints[0]["locations"][0]["scriptId"], "script-1")
+        self.assertEqual(result.paused["status"], "not_observed")
+
+    def test_set_breakpoint_can_capture_paused_callframes_with_trigger(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_evaluate=True)
+        spec = BreakpointSpec(
+            url_pattern=".*app\\.js$",
+            line_number=3,
+            trigger_expression="setTimeout(() => { debugger; }, 0); 'scheduled'",
+        )
+        result = BreakpointManager().set_breakpoint(FakeBreakpointPage(session), spec)
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.paused["status"], "success")
+        self.assertEqual(result.paused["reason"], "debugCommand")
+        self.assertEqual(result.callframes[0]["functionName"], "buildSign")
+        self.assertEqual(result.callframes[0]["location"]["lineNumber"], 3)
+        self.assertTrue(result.trigger["attempted"])
+        self.assertIn(("Debugger.resume", {}), session.calls)
+        self.assertEqual(result.to_dict()["callframe_count"], 1)
 
     def test_set_breakpoint_failure_is_structured(self) -> None:
         result = BreakpointManager().set_breakpoint(

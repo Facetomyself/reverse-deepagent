@@ -297,7 +297,7 @@ Acceptance:
 
 ### Phase 9: Hook and breakpoint migration
 
-Status: hook baseline, WebSocket send/message capture, provider-neutral BreakpointManager baseline, and native-web runtime-eval candidate validation are implemented and tested locally; real browser breakpoint smoke remains pending.
+Status: hook baseline, WebSocket send/message capture, provider-neutral BreakpointManager baseline, native-web runtime-eval candidate validation, and basic paused/callframe breakpoint smoke are implemented and tested locally. Deeper step/resume and persistent paused-session management remain future debugger-scope work.
 
 Deliverables:
 
@@ -307,6 +307,7 @@ Deliverables:
 - `hooks/breakpoints.py`
 - WebSocket send/message hook capture through the shared hook timeline.
 - `virtual://workspace/breakpoints.json` protection artifact ref / evidence mapping
+- `virtual://workspace/debugger-paused.json` and `virtual://workspace/callframes.json` breakpoint smoke artifact refs
 - runtime-observe playbook integration.
 
 Acceptance:

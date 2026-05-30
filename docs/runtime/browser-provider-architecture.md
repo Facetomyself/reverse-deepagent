@@ -285,6 +285,8 @@ The native runtime should preserve current artifact semantics:
 - `workspace/function-candidates.json`
 - `workspace/function-validations.json`
 - `workspace/function-validation-summary.json`
+- `workspace/debugger-paused.json`
+- `workspace/callframes.json`
 - `workspace/backend-artifact-manifest.json`
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
@@ -312,20 +314,23 @@ Current hook baseline support:
 - XHR `open` / `send` wrapper records sanitized URL, method, and body type.
 - cookie setter wrapper records cookie names and value sizes, not raw cookie values.
 - minimal anti-debug patch disables `console.clear` and emits blocked clear events.
+- explicit breakpoint requests can set `Debugger.setBreakpointByUrl`, optionally trigger a runtime expression, capture `Debugger.paused`, normalize callframes, and auto-resume when requested.
 
-Breakpoint and callframe operations remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
+Debugger stepping, persistent pause management, and callframe evaluation remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
 
 ## 11.3 Native candidate validation status
 
-`NativeWebRuntime` now builds candidate function cards from project-owned script inventory and validates them with provider-neutral page runtime evaluation when the selected BrowserProvider exposes `supports_runtime_eval=true`.
+`NativeWebRuntime` now builds candidate function cards from project-owned script inventory and validates them with provider-neutral page runtime evaluation when the selected BrowserProvider exposes `supports_runtime_eval=true`. When an explicit breakpoint trigger expression is supplied, the breakpoint manager can also capture a paused snapshot and normalized callframes, then auto-resume the page if requested.
 
 Current baseline emits:
 
 - `workspace/function-candidates.json`
 - `workspace/function-validations.json`
 - `workspace/function-validation-summary.json`
+- `workspace/debugger-paused.json`
+- `workspace/callframes.json`
 
-This is enough for fixture-level runtime/replay validation parity with the existing artifact contract. It is still intentionally narrower than the legacy MCP path: advanced paused callframe inspection, debugger stepping, and target-specific function hooks remain separate capability-gated follow-up work.
+This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe smoke path with the existing artifact contract. It is still intentionally narrower than the legacy MCP path: debugger stepping, persistent pause management, callframe evaluation, and target-specific function hooks remain separate capability-gated follow-up work.
 
 ## 12. Implementation status
 
@@ -340,7 +345,7 @@ Current implementation status:
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
 | Remote CDP provider | Implemented | `src/reverse_deepagent/browser/providers/remote_cdp.py`, `tests/test_remote_cdp_provider.py` |
-| NativeWebRuntime | Native collectors, hook baseline, and runtime-eval candidate validation implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
+| NativeWebRuntime | Native collectors, hook baseline, runtime-eval candidate validation, and paused/callframe breakpoint snapshot implemented | `src/reverse_deepagent/adapters/native_web.py`, `src/reverse_deepagent/browser/hooks/` |
 | MCP legacy alias | Implemented | `legacy-mcp` canonical id with `mcp` / `jsreverser-mcp` aliases |
 
 The contract layer is intentionally side-effect free. Listing provider metadata must not launch browsers, download binaries, start MCP, or connect to external services. CloakBrowser-specific operational notes live in `docs/runtime/cloakbrowser-provider.md`.
