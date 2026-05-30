@@ -64,6 +64,9 @@ class DeliveryExecutorConfig:
     approve_backend_manifest_in_place_mutation: bool = False
     backend_manifest_in_place_mutation_name: str = "backend-artifact-manifest-in-place-mutation.json"
     backend_manifest_rollback_name: str = "backend-artifact-manifest.rollback.json"
+    preflight_backend_manifest_recovery: bool = False
+    backend_manifest_recovery_preflight_name: str = "backend-artifact-manifest-recovery-preflight.json"
+    expected_recovery_transaction_id: str | None = None
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -265,6 +268,66 @@ class BackendManifestInPlaceMutation:
 
 
 @dataclass(frozen=True)
+class BackendManifestRecoveryPreflight:
+    transaction_id: str
+    status: str
+    preflight_id: str
+    preflight_path: str | None
+    delivery_root: str
+    source_manifest_path: str | None
+    transaction_journal_path: str | None
+    in_place_mutation_path: str | None
+    patched_manifest_path: str | None
+    rollback_path: str | None
+    dry_run: bool
+    recovery_preflight_requested: bool
+    recovery_available: bool
+    backend_manifest_mutated: bool
+    backend_manifest_rollback_written: bool
+    external_delivery_performed: bool
+    cross_run_transaction_committed: bool
+    source_manifest_digest_sha256: str | None
+    rollback_manifest_digest_sha256: str | None
+    journal_transaction_id: str | None
+    expected_recovery_transaction_id: str | None
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    recommended_actions: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "preflight_id": self.preflight_id,
+            "preflight_path": self.preflight_path,
+            "delivery_root": self.delivery_root,
+            "source_manifest_path": self.source_manifest_path,
+            "transaction_journal_path": self.transaction_journal_path,
+            "in_place_mutation_path": self.in_place_mutation_path,
+            "patched_manifest_path": self.patched_manifest_path,
+            "rollback_path": self.rollback_path,
+            "dry_run": self.dry_run,
+            "recovery_preflight_requested": self.recovery_preflight_requested,
+            "recovery_available": self.recovery_available,
+            "backend_manifest_mutated": self.backend_manifest_mutated,
+            "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
+            "external_delivery_performed": self.external_delivery_performed,
+            "cross_run_transaction_committed": self.cross_run_transaction_committed,
+            "source_manifest_digest_sha256": self.source_manifest_digest_sha256,
+            "rollback_manifest_digest_sha256": self.rollback_manifest_digest_sha256,
+            "journal_transaction_id": self.journal_transaction_id,
+            "expected_recovery_transaction_id": self.expected_recovery_transaction_id,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class DeliveryTransactionJournal:
     transaction_id: str
     status: str
@@ -279,8 +342,10 @@ class DeliveryTransactionJournal:
     backend_manifest_preflight_path: str | None
     backend_manifest_in_place_mutation_path: str | None
     backend_manifest_rollback_path: str | None
+    backend_manifest_recovery_preflight_path: str | None
     backend_manifest_patch_written: bool
     backend_manifest_in_place_preflight_passed: bool
+    backend_manifest_recovery_preflight_passed: bool
     backend_manifest_rollback_written: bool
     backend_manifest_mutated: bool
     entries: list[dict[str, Any]]
@@ -302,8 +367,10 @@ class DeliveryTransactionJournal:
             "backend_manifest_preflight_path": self.backend_manifest_preflight_path,
             "backend_manifest_in_place_mutation_path": self.backend_manifest_in_place_mutation_path,
             "backend_manifest_rollback_path": self.backend_manifest_rollback_path,
+            "backend_manifest_recovery_preflight_path": self.backend_manifest_recovery_preflight_path,
             "backend_manifest_patch_written": self.backend_manifest_patch_written,
             "backend_manifest_in_place_preflight_passed": self.backend_manifest_in_place_preflight_passed,
+            "backend_manifest_recovery_preflight_passed": self.backend_manifest_recovery_preflight_passed,
             "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
             "backend_manifest_mutated": self.backend_manifest_mutated,
             "entries": self.entries,
@@ -324,6 +391,7 @@ class DeliveryExecutionResult:
     manifest_revision_committed: bool
     backend_manifest_patch_written: bool
     backend_manifest_in_place_preflight_passed: bool
+    backend_manifest_recovery_preflight_passed: bool
     backend_manifest_rollback_written: bool
     backend_manifest_mutated: bool
     receipt: DeliveryReceipt
@@ -332,6 +400,7 @@ class DeliveryExecutionResult:
     backend_manifest_mutation: BackendManifestMutation | None
     backend_manifest_in_place_preflight: BackendManifestInPlacePreflight | None
     backend_manifest_in_place_mutation: BackendManifestInPlaceMutation | None
+    backend_manifest_recovery_preflight: BackendManifestRecoveryPreflight | None
     planned_artifacts: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
     next_action: str = "review_delivery_receipt_before_external_handoff"
@@ -348,6 +417,7 @@ class DeliveryExecutionResult:
             "manifest_revision_committed": self.manifest_revision_committed,
             "backend_manifest_patch_written": self.backend_manifest_patch_written,
             "backend_manifest_in_place_preflight_passed": self.backend_manifest_in_place_preflight_passed,
+            "backend_manifest_recovery_preflight_passed": self.backend_manifest_recovery_preflight_passed,
             "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
             "backend_manifest_mutated": self.backend_manifest_mutated,
             "receipt": self.receipt.to_dict(),
@@ -356,6 +426,7 @@ class DeliveryExecutionResult:
             "backend_manifest_mutation": self.backend_manifest_mutation.to_dict() if self.backend_manifest_mutation else None,
             "backend_manifest_in_place_preflight": self.backend_manifest_in_place_preflight.to_dict() if self.backend_manifest_in_place_preflight else None,
             "backend_manifest_in_place_mutation": self.backend_manifest_in_place_mutation.to_dict() if self.backend_manifest_in_place_mutation else None,
+            "backend_manifest_recovery_preflight": self.backend_manifest_recovery_preflight.to_dict() if self.backend_manifest_recovery_preflight else None,
             "planned_artifacts": self.planned_artifacts,
             "errors": self.errors,
             "next_action": self.next_action,
@@ -379,6 +450,7 @@ class LocalDeliveryExecutor:
         planned, errors = self._plan_artifacts(artifacts, delivery_root)
         mode = self.config.mode
         dry_run = mode == DeliveryExecutionMode.DRY_RUN
+        recovery_only = self._is_recovery_preflight_only(artifacts)
         delivered: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
 
@@ -389,6 +461,9 @@ class LocalDeliveryExecutor:
             status = "planned"
             next_action = "approve_local_delivery_apply"
             skipped = [dict(item, reason="dry_run") for item in planned]
+        elif recovery_only:
+            status = "preflighted"
+            next_action = "review_backend_manifest_recovery_preflight"
         else:
             delivery_root.mkdir(parents=True, exist_ok=True)
             for item in planned:
@@ -403,8 +478,8 @@ class LocalDeliveryExecutor:
             status = "delivered" if delivered and not errors else "failed" if errors else "partial"
             next_action = "review_delivery_receipt_before_external_handoff" if delivered else "fix_delivery_artifact_inputs"
 
-        receipt_path = str(delivery_root / "delivery-receipt.json") if self.config.write_receipt and not dry_run and not errors else None
-        journal_path = str(delivery_root / "delivery-transaction-journal.json") if self.config.write_receipt and not dry_run and not errors else None
+        receipt_path = str(delivery_root / "delivery-receipt.json") if self.config.write_receipt and not dry_run and not errors and not recovery_only else None
+        journal_path = str(delivery_root / "delivery-transaction-journal.json") if self.config.write_receipt and not dry_run and not errors and not recovery_only else None
         manifest_revision_path = (
             str(delivery_root / self.config.manifest_revision_name)
             if self.config.write_receipt and self.config.commit_manifest_revision and not dry_run and not errors
@@ -433,6 +508,11 @@ class LocalDeliveryExecutor:
         backend_manifest_rollback_path = (
             str(delivery_root / self.config.backend_manifest_rollback_name)
             if self.config.write_receipt and self.config.approve_backend_manifest_in_place_mutation and not dry_run and not errors
+            else None
+        )
+        backend_manifest_recovery_preflight_path = (
+            str(delivery_root / self.config.backend_manifest_recovery_preflight_name)
+            if self.config.write_receipt and self.config.preflight_backend_manifest_recovery and not dry_run and not errors
             else None
         )
         receipt = DeliveryReceipt(
@@ -503,6 +583,11 @@ class LocalDeliveryExecutor:
                     "in_place_mutation_id": backend_manifest_in_place_mutation.mutation_id if backend_manifest_in_place_mutation else None,
                 },
             )
+        backend_manifest_recovery_preflight = self._build_backend_manifest_recovery_preflight(
+            preflight_path=backend_manifest_recovery_preflight_path,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
         journal_limitations = [
             "does_not_publish_external_delivery",
             "rollback_is_local_checkpoint_baseline",
@@ -531,9 +616,13 @@ class LocalDeliveryExecutor:
             backend_manifest_preflight_path=backend_manifest_preflight_path,
             backend_manifest_in_place_mutation_path=backend_manifest_in_place_mutation_path,
             backend_manifest_rollback_path=backend_manifest_rollback_path,
+            backend_manifest_recovery_preflight_path=backend_manifest_recovery_preflight_path,
             backend_manifest_patch_written=bool(backend_manifest_mutation and backend_manifest_mutation.backend_manifest_patch_written),
             backend_manifest_in_place_preflight_passed=bool(
                 backend_manifest_in_place_preflight and backend_manifest_in_place_preflight.in_place_mutation_allowed
+            ),
+            backend_manifest_recovery_preflight_passed=bool(
+                backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.status in {"ready_for_review", "no_recovery_required"}
             ),
             backend_manifest_rollback_written=backend_manifest_rollback_written,
             backend_manifest_mutated=backend_manifest_mutated,
@@ -566,12 +655,18 @@ class LocalDeliveryExecutor:
             _write_json(Path(backend_manifest_preflight_path), backend_manifest_in_place_preflight.to_dict())
         if backend_manifest_in_place_mutation_path and backend_manifest_in_place_mutation:
             _write_json(Path(backend_manifest_in_place_mutation_path), backend_manifest_in_place_mutation.to_dict())
+        if backend_manifest_recovery_preflight_path and backend_manifest_recovery_preflight:
+            _write_json(Path(backend_manifest_recovery_preflight_path), backend_manifest_recovery_preflight.to_dict())
         if journal_path:
             _write_json(Path(journal_path), journal.to_dict())
         if backend_manifest_mutated:
             next_action = "review_backend_manifest_in_place_mutation_before_cross_run_commit"
         elif backend_manifest_in_place_mutation and backend_manifest_in_place_mutation.blocking_reasons:
             next_action = "fix_backend_manifest_in_place_mutation_blockers"
+        elif backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.status == "ready_for_review":
+            next_action = "review_backend_manifest_recovery_preflight_before_cross_run_commit"
+        elif backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.blocking_reasons:
+            next_action = "fix_backend_manifest_recovery_preflight_blockers"
         return DeliveryExecutionResult(
             status=status,
             mode=mode.value,
@@ -585,6 +680,9 @@ class LocalDeliveryExecutor:
             backend_manifest_in_place_preflight_passed=bool(
                 backend_manifest_in_place_preflight and backend_manifest_in_place_preflight.in_place_mutation_allowed
             ),
+            backend_manifest_recovery_preflight_passed=bool(
+                backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.status in {"ready_for_review", "no_recovery_required"}
+            ),
             backend_manifest_rollback_written=backend_manifest_rollback_written,
             backend_manifest_mutated=backend_manifest_mutated,
             receipt=receipt,
@@ -593,6 +691,7 @@ class LocalDeliveryExecutor:
             backend_manifest_mutation=backend_manifest_mutation,
             backend_manifest_in_place_preflight=backend_manifest_in_place_preflight,
             backend_manifest_in_place_mutation=backend_manifest_in_place_mutation,
+            backend_manifest_recovery_preflight=backend_manifest_recovery_preflight,
             planned_artifacts=planned,
             errors=errors,
             next_action=next_action,
@@ -1016,6 +1115,179 @@ class LocalDeliveryExecutor:
             },
         )
 
+    def _build_backend_manifest_recovery_preflight(
+        self,
+        *,
+        preflight_path: str | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> BackendManifestRecoveryPreflight | None:
+        if not self.config.preflight_backend_manifest_recovery:
+            return None
+        delivery_root = self.config.resolved_delivery_root()
+        source_manifest_path = self.config.resolved_backend_manifest_path()
+        source_manifest_exists = bool(source_manifest_path and source_manifest_path.exists())
+        source_digest = _file_sha256(source_manifest_path) if source_manifest_path and source_manifest_exists else None
+        journal_path = delivery_root / "delivery-transaction-journal.json"
+        journal_exists = journal_path.exists()
+        journal = _read_json_object(journal_path) if journal_exists else {}
+        journal_transaction_id = str(journal["transaction_id"]) if journal.get("transaction_id") is not None else None
+        backend_manifest_mutated = bool(journal.get("backend_manifest_mutated"))
+        backend_manifest_rollback_written = bool(journal.get("backend_manifest_rollback_written"))
+        external_delivery_performed = bool(journal.get("external_delivery_performed"))
+        cross_run_transaction_committed = bool(journal.get("cross_run_transaction_committed", False))
+        in_place_mutation_path = _resolve_record_path(journal.get("backend_manifest_in_place_mutation_path"), delivery_root)
+        patched_manifest_path = _resolve_record_path(journal.get("backend_manifest_patched_path"), delivery_root)
+        rollback_path = _resolve_record_path(journal.get("backend_manifest_rollback_path"), delivery_root)
+        if backend_manifest_mutated and rollback_path is None:
+            rollback_path = (delivery_root / self.config.backend_manifest_rollback_name).resolve()
+        if backend_manifest_mutated and in_place_mutation_path is None:
+            in_place_mutation_path = (delivery_root / self.config.backend_manifest_in_place_mutation_name).resolve()
+        mutation_record_exists = bool(in_place_mutation_path and in_place_mutation_path.exists())
+        mutation_record = _read_json_object(in_place_mutation_path) if mutation_record_exists else {}
+        rollback_exists = bool(rollback_path and rollback_path.exists())
+        rollback_digest = _file_sha256(rollback_path) if rollback_path and rollback_exists else None
+        patched_exists = bool(patched_manifest_path and patched_manifest_path.exists())
+        expected_transaction_id = self.config.expected_recovery_transaction_id
+        pre_mutation_digest = mutation_record.get("source_manifest_digest_sha256") if isinstance(mutation_record.get("source_manifest_digest_sha256"), str) else None
+        post_mutation_digest = (
+            mutation_record.get("post_mutation_manifest_digest_sha256")
+            if isinstance(mutation_record.get("post_mutation_manifest_digest_sha256"), str)
+            else None
+        )
+        patch_written = bool(journal.get("backend_manifest_patch_written"))
+        checks = [
+            {
+                "name": "source_manifest_exists",
+                "passed": source_manifest_exists,
+                "details": {"source_manifest_path": str(source_manifest_path) if source_manifest_path else None},
+            },
+            {
+                "name": "transaction_journal_exists",
+                "passed": journal_exists,
+                "details": {"transaction_journal_path": str(journal_path)},
+            },
+            {
+                "name": "expected_recovery_transaction_matches",
+                "passed": expected_transaction_id is None or expected_transaction_id == journal_transaction_id,
+                "details": {"expected": expected_transaction_id, "actual": journal_transaction_id},
+            },
+            {
+                "name": "journal_reports_no_external_delivery",
+                "passed": not external_delivery_performed,
+                "details": {"external_delivery_performed": external_delivery_performed},
+            },
+            {
+                "name": "journal_reports_no_cross_run_commit",
+                "passed": not cross_run_transaction_committed,
+                "details": {"cross_run_transaction_committed": cross_run_transaction_committed},
+            },
+            {
+                "name": "patched_manifest_exists_if_patch_written",
+                "passed": not patch_written or patched_exists,
+                "details": {"patch_written": patch_written, "patched_manifest_path": str(patched_manifest_path) if patched_manifest_path else None},
+            },
+            {
+                "name": "in_place_mutation_record_exists_if_mutated",
+                "passed": not backend_manifest_mutated or mutation_record_exists,
+                "details": {
+                    "backend_manifest_mutated": backend_manifest_mutated,
+                    "in_place_mutation_path": str(in_place_mutation_path) if in_place_mutation_path else None,
+                },
+            },
+            {
+                "name": "rollback_checkpoint_exists_if_mutated",
+                "passed": not backend_manifest_mutated or (backend_manifest_rollback_written and rollback_exists),
+                "details": {
+                    "backend_manifest_rollback_written": backend_manifest_rollback_written,
+                    "rollback_path": str(rollback_path) if rollback_path else None,
+                },
+            },
+            {
+                "name": "rollback_matches_pre_mutation_digest_if_mutated",
+                "passed": not backend_manifest_mutated or bool(pre_mutation_digest and rollback_digest == pre_mutation_digest),
+                "details": {"expected": pre_mutation_digest, "actual": rollback_digest},
+            },
+            {
+                "name": "source_matches_post_mutation_digest_if_mutated",
+                "passed": not backend_manifest_mutated or bool(post_mutation_digest and source_digest == post_mutation_digest),
+                "details": {"expected": post_mutation_digest, "actual": source_digest},
+            },
+            {
+                "name": "recovery_preflight_does_not_mutate_source_manifest",
+                "passed": True,
+                "details": {"backend_manifest_mutated_by_recovery_preflight": False},
+            },
+        ]
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        if dry_run:
+            status = "planned"
+            recovery_available = False
+            recommended_actions = ["run_apply_recovery_preflight_to_write_review_record"]
+        elif blocking_reasons:
+            status = "blocked"
+            recovery_available = False
+            recommended_actions = ["inspect_delivery_transaction_journal", "repair_or_restore_manifest_inputs_before_commit"]
+        elif backend_manifest_mutated:
+            status = "ready_for_review"
+            recovery_available = True
+            recommended_actions = ["review_rollback_checkpoint_before_physical_recovery", "continue_to_cross_run_transaction_commit_preflight"]
+        else:
+            status = "no_recovery_required"
+            recovery_available = False
+            recommended_actions = ["continue_to_cross_run_transaction_commit_preflight"]
+        return BackendManifestRecoveryPreflight(
+            transaction_id=self.config.transaction_id,
+            status=status,
+            preflight_id=f"backend-manifest-recovery-preflight-{self.config.transaction_id}",
+            preflight_path=preflight_path,
+            delivery_root=str(delivery_root),
+            source_manifest_path=str(source_manifest_path) if source_manifest_path else None,
+            transaction_journal_path=str(journal_path),
+            in_place_mutation_path=str(in_place_mutation_path) if in_place_mutation_path else None,
+            patched_manifest_path=str(patched_manifest_path) if patched_manifest_path else None,
+            rollback_path=str(rollback_path) if rollback_path else None,
+            dry_run=dry_run,
+            recovery_preflight_requested=True,
+            recovery_available=recovery_available,
+            backend_manifest_mutated=backend_manifest_mutated,
+            backend_manifest_rollback_written=backend_manifest_rollback_written,
+            external_delivery_performed=external_delivery_performed,
+            cross_run_transaction_committed=cross_run_transaction_committed,
+            source_manifest_digest_sha256=source_digest,
+            rollback_manifest_digest_sha256=rollback_digest,
+            journal_transaction_id=journal_transaction_id,
+            expected_recovery_transaction_id=expected_transaction_id,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=recommended_actions,
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "backend-manifest-cross-run-recovery-preflight-baseline",
+                "external_delivery_performed": False,
+                "cross_run_transaction_committed": False,
+                "limitations": [
+                    "preflight_only",
+                    "does_not_restore_manifest",
+                    "does_not_publish_external_delivery",
+                    "does_not_commit_cross_run_transaction",
+                    "cross_run_manifest_recovery_state_machine_not_implemented",
+                ],
+            },
+        )
+
+    def _is_recovery_preflight_only(self, artifacts: list[DeliveryArtifact]) -> bool:
+        return (
+            self.config.preflight_backend_manifest_recovery
+            and not artifacts
+            and not self.config.commit_manifest_revision
+            and not self.config.commit_backend_manifest_mutation
+            and not self.config.preflight_backend_manifest_in_place_mutation
+            and not self.config.approve_backend_manifest_in_place_mutation
+        )
+
     def _plan_artifacts(self, artifacts: list[DeliveryArtifact], delivery_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
         planned: list[dict[str, Any]] = []
         errors: list[str] = []
@@ -1082,6 +1354,18 @@ def _read_json_object(path: Path | None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Backend artifact manifest must be a JSON object: {path}")
     return payload
+
+
+def _resolve_record_path(value: Any, base_dir: Path) -> Path | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return path.resolve()
 
 
 def _backend_manifest_entry(

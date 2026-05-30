@@ -489,6 +489,143 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["backend_manifest_mutated"])
             self.assertFalse(journal["external_delivery_performed"])
 
+    def test_backend_manifest_recovery_preflight_is_ready_after_approved_in_place_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recoverable",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            previous_journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recoverable",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            preflight_path = delivery_root / "backend-artifact-manifest-recovery-preflight.json"
+            self.assertEqual(result.status, "preflighted")
+            self.assertTrue(result.backend_manifest_recovery_preflight_passed)
+            self.assertIsNotNone(result.backend_manifest_recovery_preflight)
+            self.assertEqual(result.backend_manifest_recovery_preflight.status, "ready_for_review")
+            self.assertTrue(result.backend_manifest_recovery_preflight.recovery_available)
+            self.assertTrue(preflight_path.exists())
+            preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+            self.assertEqual(preflight["status"], "ready_for_review")
+            self.assertTrue(preflight["recovery_available"])
+            self.assertTrue(preflight["backend_manifest_mutated"])
+            self.assertTrue(preflight["backend_manifest_rollback_written"])
+            self.assertFalse(preflight["external_delivery_performed"])
+            self.assertFalse(preflight["cross_run_transaction_committed"])
+            self.assertFalse(preflight["blocking_reasons"])
+            self.assertIn("review_rollback_checkpoint_before_physical_recovery", preflight["recommended_actions"])
+            self.assertEqual(json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8")), previous_journal)
+
+    def test_backend_manifest_recovery_preflight_blocks_source_manifest_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-drift-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            mutated = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            mutated["entries"].append({"artifact_key": "manual_drift", "path": "workspace/manual.json", "kind": "json"})
+            backend_manifest.write_text(json.dumps(mutated, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-drift",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-drift-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            self.assertFalse(result.backend_manifest_recovery_preflight_passed)
+            self.assertIsNotNone(result.backend_manifest_recovery_preflight)
+            self.assertEqual(result.backend_manifest_recovery_preflight.status, "blocked")
+            self.assertIn("source_matches_post_mutation_digest_if_mutated", result.backend_manifest_recovery_preflight.blocking_reasons)
+            preflight = json.loads((delivery_root / "backend-artifact-manifest-recovery-preflight.json").read_text(encoding="utf-8"))
+            self.assertIn("source_matches_post_mutation_digest_if_mutated", preflight["blocking_reasons"])
+
+    def test_backend_manifest_recovery_preflight_reports_no_recovery_required_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-no-recovery-needed",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-none",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-no-recovery-needed",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            self.assertTrue(result.backend_manifest_recovery_preflight_passed)
+            self.assertIsNotNone(result.backend_manifest_recovery_preflight)
+            self.assertEqual(result.backend_manifest_recovery_preflight.status, "no_recovery_required")
+            self.assertFalse(result.backend_manifest_recovery_preflight.recovery_available)
+            self.assertEqual(result.next_action, "review_backend_manifest_recovery_preflight")
+
     def test_missing_required_source_blocks_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

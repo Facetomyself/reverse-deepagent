@@ -27,6 +27,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         preflight_backend_manifest_in_place_mutation: bool = False,
         expected_backend_manifest_digest_sha256: str | None = None,
         approve_backend_manifest_in_place_mutation: bool = False,
+        preflight_backend_manifest_recovery: bool = False,
+        expected_recovery_transaction_id: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or apply local filesystem delivery for reviewed artifact paths."""
@@ -50,6 +52,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
             preflight_backend_manifest_in_place_mutation=preflight_backend_manifest_in_place_mutation,
             expected_backend_manifest_digest_sha256=expected_backend_manifest_digest_sha256,
             approve_backend_manifest_in_place_mutation=approve_backend_manifest_in_place_mutation,
+            preflight_backend_manifest_recovery=preflight_backend_manifest_recovery,
+            expected_recovery_transaction_id=expected_recovery_transaction_id,
             metadata=metadata,
         )
         return LocalDeliveryExecutor(config).execute(artifacts).to_dict()
@@ -61,7 +65,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "commit_manifest_revision can additionally write a local delivery-manifest-revision.json. "
         "commit_backend_manifest_mutation writes a local mutation record plus patched backend manifest copy without mutating the source manifest in place. "
         "preflight_backend_manifest_in_place_mutation writes a preflight record that checks whether a future in-place manifest mutation would be safe, without mutating the source manifest. "
-        "approve_backend_manifest_in_place_mutation explicitly applies that in-place mutation only after the patch and preflight pass and an expected source digest is provided."
+        "approve_backend_manifest_in_place_mutation explicitly applies that in-place mutation only after the patch and preflight pass and an expected source digest is provided. "
+        "preflight_backend_manifest_recovery inspects a previous local delivery journal, rollback checkpoint, mutation record, and current source manifest without restoring or committing anything."
     )
     return execute_local_delivery
 
