@@ -226,6 +226,9 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.callframe_evaluations[0]["policy"], "read_only")
         self.assertTrue(result.callframe_evaluations[0]["throw_on_side_effect"])
         self.assertEqual(result.callframe_evaluations[1]["value"], True)
+        self.assertEqual(result.debugger_timeline["status"], "success")
+        self.assertEqual(result.debugger_timeline["evaluation_count"], 2)
+        self.assertIn("callframe.evaluate", [entry["type"] for entry in result.debugger_timeline["entries"]])
         evaluate_index = next(index for index, call in enumerate(session.calls) if call[0] == "Debugger.evaluateOnCallFrame")
         resume_index = next(index for index, call in enumerate(session.calls) if call[0] == "Debugger.resume")
         self.assertLess(evaluate_index, resume_index)
@@ -246,6 +249,8 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertTrue(result.callframe_evaluations[1]["blocked"])
         self.assertEqual(result.callframe_evaluations[1]["error"], "blocked_by_callframe_evaluation_policy")
         self.assertEqual(result.callframe_evaluations[1]["side_effect_risk"], "high")
+        blocked_entries = [entry for entry in result.debugger_timeline["entries"] if entry["type"] == "callframe.evaluate" and entry.get("blocked")]
+        self.assertEqual(blocked_entries[0]["error"], "blocked_by_callframe_evaluation_policy")
         self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)
 
     def test_callframe_evaluation_policy_can_explicitly_allow_side_effects(self) -> None:
@@ -283,6 +288,8 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.to_dict()["debugger_action_count"], 1)
         self.assertEqual(result.to_dict()["debugger_session"]["lifecycle"], "action_controlled")
         self.assertEqual(result.to_dict()["debugger_session"]["selected_callframe_id"], "cf-1")
+        self.assertEqual(result.to_dict()["debugger_timeline"]["lifecycle"], "action_controlled")
+        self.assertEqual(result.to_dict()["debugger_timeline"]["debugger_action_count"], 1)
         self.assertEqual(result.debugger_actions[0]["action"], "step_over")
         self.assertEqual(result.debugger_actions[0]["method"], "Debugger.stepOver")
         self.assertTrue(result.debugger_actions[0]["ok"])
@@ -312,6 +319,8 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.debugger_session["lifecycle"], "retained_paused")
         self.assertEqual(result.debugger_session["selected_callframe_id"], "cf-1")
         self.assertEqual(result.debugger_session["events"][0]["top_function"], "buildSign")
+        self.assertEqual(result.debugger_timeline["lifecycle"], "retained_paused")
+        self.assertIn("debugger.resume", [entry["type"] for entry in result.debugger_timeline["entries"]])
         self.assertEqual(result.trigger["mode"], "scheduled")
         self.assertNotIn(("Debugger.resume", {}), session.calls)
 

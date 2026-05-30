@@ -157,6 +157,7 @@ class BreakpointResult:
     callframe_evaluations: list[dict[str, Any]] = field(default_factory=list)
     debugger_actions: list[dict[str, Any]] = field(default_factory=list)
     debugger_session: dict[str, Any] = field(default_factory=dict)
+    debugger_timeline: dict[str, Any] = field(default_factory=dict)
     trigger: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     reason: str | None = None
@@ -175,6 +176,7 @@ class BreakpointResult:
             "debugger_actions": self.debugger_actions,
             "debugger_action_count": len(self.debugger_actions),
             "debugger_session": self.debugger_session,
+            "debugger_timeline": self.debugger_timeline,
             "trigger": self.trigger,
             "error": self.error,
             "reason": self.reason,
@@ -198,14 +200,18 @@ class BreakpointManager:
             payload = session.send("Debugger.setBreakpointByUrl", spec.to_cdp_params())
             trigger = self._run_trigger_expression(page, session, spec)
         except Exception as exc:
+            breakpoints: list[dict[str, Any]] = []
+            debugger_session = self._debugger_session_snapshot(paused_events, spec)
             return BreakpointResult(
                 status="failed",
                 supported=True,
+                breakpoints=breakpoints,
                 paused=self._paused_summary(paused_events, pause_subscription),
                 callframes=self._callframes_from_paused(paused_events),
                 callframe_evaluations=self._evaluations_from_paused(paused_events),
                 debugger_actions=self._debugger_actions_from_paused(paused_events),
-                debugger_session=self._debugger_session_snapshot(paused_events, spec),
+                debugger_session=debugger_session,
+                debugger_timeline=self._debugger_timeline(paused_events, spec, trigger, breakpoints, debugger_session, error=str(exc)),
                 trigger=trigger,
                 error=str(exc),
             )
@@ -216,24 +222,26 @@ class BreakpointManager:
         evaluations = self._evaluations_from_paused(paused_events)
         debugger_actions = self._debugger_actions_from_paused(paused_events)
         debugger_session = self._debugger_session_snapshot(paused_events, spec)
+        breakpoints = [
+            {
+                "breakpointId": breakpoint_id,
+                "urlPattern": spec.url_pattern,
+                "lineNumber": spec.line_number,
+                "columnNumber": spec.column_number,
+                "condition": spec.condition,
+                "locations": locations if isinstance(locations, list) else [],
+            }
+        ]
         return BreakpointResult(
             status="success" if breakpoint_id else "partial",
             supported=True,
-            breakpoints=[
-                {
-                    "breakpointId": breakpoint_id,
-                    "urlPattern": spec.url_pattern,
-                    "lineNumber": spec.line_number,
-                    "columnNumber": spec.column_number,
-                    "condition": spec.condition,
-                    "locations": locations if isinstance(locations, list) else [],
-                }
-            ],
+            breakpoints=breakpoints,
             paused=paused,
             callframes=callframes,
             callframe_evaluations=evaluations,
             debugger_actions=debugger_actions,
             debugger_session=debugger_session,
+            debugger_timeline=self._debugger_timeline(paused_events, spec, trigger, breakpoints, debugger_session),
             trigger=trigger,
         )
 
@@ -252,10 +260,13 @@ class BreakpointManager:
                 paused["evaluations"] = self._evaluate_callframe_expressions(session, paused.get("callFrames", []), spec)
                 paused["debugger_actions"] = self._run_debugger_actions(session, spec)
             if not self._should_auto_resume(spec, paused["debugger_actions"]):
+                paused["autoResume"] = {"attempted": False, "reason": "disabled_or_action_controlled"}
                 return
             try:
                 session.send("Debugger.resume", {})
+                paused["autoResume"] = {"attempted": True, "ok": True, "method": "Debugger.resume"}
             except Exception as exc:
+                paused["autoResume"] = {"attempted": True, "ok": False, "method": "Debugger.resume", "error": str(exc)}
                 paused_events[-1]["autoResumeError"] = str(exc)
 
         try:
@@ -366,6 +377,100 @@ class BreakpointManager:
             "selected_callframe": selected_callframe,
             "events": events,
             "debugger_action_count": len(debugger_actions),
+        }
+
+    def _debugger_timeline(
+        self,
+        paused_events: list[dict[str, Any]],
+        spec: BreakpointSpec,
+        trigger: dict[str, Any],
+        breakpoints: list[dict[str, Any]],
+        debugger_session: dict[str, Any],
+        *,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        entries: list[dict[str, Any]] = []
+        for breakpoint in breakpoints:
+            entries.append(
+                {
+                    "type": "breakpoint.set",
+                    "ok": bool(breakpoint.get("breakpointId")),
+                    "breakpointId": breakpoint.get("breakpointId"),
+                    "urlPattern": breakpoint.get("urlPattern"),
+                    "lineNumber": breakpoint.get("lineNumber"),
+                    "location_count": len(breakpoint.get("locations", [])) if isinstance(breakpoint.get("locations"), list) else 0,
+                }
+            )
+        if trigger:
+            entries.append(
+                {
+                    "type": "trigger.evaluate",
+                    "attempted": bool(trigger.get("attempted")),
+                    "ok": trigger.get("ok"),
+                    "mode": trigger.get("mode"),
+                    "wait_after_trigger_ms": trigger.get("wait_after_trigger_ms"),
+                    **({"error": trigger["error"]} if trigger.get("error") else {}),
+                }
+            )
+        for pause_index, event in enumerate(paused_events):
+            summary = self._pause_event_summary(pause_index, event)
+            entries.append({"type": "debugger.paused", "pause_index": pause_index, **summary})
+            evaluations = event.get("evaluations", []) if isinstance(event.get("evaluations"), list) else []
+            for evaluation in evaluations:
+                if not isinstance(evaluation, dict):
+                    continue
+                entries.append(
+                    {
+                        "type": "callframe.evaluate",
+                        "pause_index": pause_index,
+                        "expression": evaluation.get("expression"),
+                        "ok": evaluation.get("ok"),
+                        "blocked": evaluation.get("blocked", False),
+                        "policy": evaluation.get("policy"),
+                        "side_effect_risk": evaluation.get("side_effect_risk"),
+                        "throw_on_side_effect": evaluation.get("throw_on_side_effect"),
+                        **({"error": evaluation["error"]} if evaluation.get("error") else {}),
+                    }
+                )
+            actions = event.get("debugger_actions", []) if isinstance(event.get("debugger_actions"), list) else []
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                entries.append(
+                    {
+                        "type": "debugger.action",
+                        "pause_index": pause_index,
+                        "action": action.get("action"),
+                        "method": action.get("method"),
+                        "ok": action.get("ok"),
+                        **({"error": action["error"]} if action.get("error") else {}),
+                    }
+                )
+            auto_resume = event.get("autoResume") if isinstance(event.get("autoResume"), dict) else {}
+            entries.append(
+                {
+                    "type": "debugger.resume",
+                    "pause_index": pause_index,
+                    "mode": "auto",
+                    "attempted": bool(auto_resume.get("attempted")),
+                    "ok": auto_resume.get("ok"),
+                    "method": auto_resume.get("method"),
+                    "reason": auto_resume.get("reason"),
+                    **({"error": auto_resume["error"]} if auto_resume.get("error") else {}),
+                }
+            )
+        for index, entry in enumerate(entries):
+            entry["index"] = index
+        return {
+            "status": "failed" if error else debugger_session.get("status", "not_observed"),
+            "session_id": debugger_session.get("session_id") or self._default_pause_session_id(spec),
+            "lifecycle": debugger_session.get("lifecycle", "not_observed"),
+            "entry_count": len(entries),
+            "paused_event_count": len(paused_events),
+            "evaluation_count": sum(len(event.get("evaluations", [])) for event in paused_events if isinstance(event.get("evaluations"), list)),
+            "debugger_action_count": sum(len(event.get("debugger_actions", [])) for event in paused_events if isinstance(event.get("debugger_actions"), list)),
+            "error": error,
+            "entries": entries,
         }
 
     @staticmethod

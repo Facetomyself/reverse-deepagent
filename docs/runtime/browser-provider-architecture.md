@@ -290,6 +290,7 @@ The native runtime should preserve current artifact semantics:
 - `workspace/callframe-evaluations.json`
 - `workspace/debugger-actions.json`
 - `workspace/debugger-session.json`
+- `workspace/debugger-timeline.json`
 - `workspace/backend-artifact-manifest.json`
 - `reports/demo-final-result.json`
 - `reports/demo-final-report.md`
@@ -319,7 +320,7 @@ Current hook baseline support:
 - minimal anti-debug patch disables `console.clear` and emits blocked clear events.
 - explicit breakpoint requests can set `Debugger.setBreakpointByUrl`, optionally trigger a runtime expression, capture `Debugger.paused`, normalize callframes, run explicit `Debugger.evaluateOnCallFrame` expressions, run opt-in `Debugger.stepOver` / `Debugger.stepInto` / `Debugger.stepOut` / `Debugger.resume` control actions, emit a paused-session snapshot with selected callFrame metadata, and auto-resume when no explicit debugger action already resumed execution.
 
-Cross-request paused session lifecycle, finer-grained side-effectful mutation audit, and richer multi-step timelines remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
+Cross-request paused session lifecycle and finer-grained side-effectful mutation audit remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
 
 ## 11.3 Native candidate validation status
 
@@ -335,8 +336,9 @@ Current baseline emits:
 - `workspace/callframe-evaluations.json` when explicit `callframe_evaluations` / `evaluate_on_callframe` expressions are provided.
 - `workspace/debugger-actions.json` when explicit `debugger_actions` / `pause_actions` are provided.
 - `workspace/debugger-session.json` with session id, selected callFrame, pause lifecycle, and event summaries.
+- `workspace/debugger-timeline.json` with ordered breakpoint set / trigger / pause / evaluation / action / resume entries for single-run debugger audit.
 
-This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe/evaluateOnCallFrame/step/session smoke path with the existing artifact contract. The current callframe evaluation baseline defaults to `read_only`, passes `throwOnSideEffect` to CDP, records side-effect risk metadata, and blocks obvious high-risk mutation expressions unless `allow_callframe_side_effects` is explicitly enabled. It is still intentionally narrower than the legacy MCP path: cross-request paused session lifecycle, fine-grained mutation auditing, richer multi-step timelines, and target-specific function hooks remain separate capability-gated follow-up work.
+This is enough for fixture-level runtime/replay validation and a basic breakpoint paused/callframe/evaluateOnCallFrame/step/session smoke path with the existing artifact contract. The current callframe evaluation baseline defaults to `read_only`, passes `throwOnSideEffect` to CDP, records side-effect risk metadata, and blocks obvious high-risk mutation expressions unless `allow_callframe_side_effects` is explicitly enabled. It is still intentionally narrower than the legacy MCP path: cross-request paused session lifecycle, fine-grained mutation auditing, cross-request timeline continuation, and target-specific function hooks remain separate capability-gated follow-up work.
 
 ## 12. Implementation status
 

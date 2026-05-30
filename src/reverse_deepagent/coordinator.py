@@ -928,6 +928,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_callframe_evaluations": "trace",
     "workspace_debugger_actions": "trace",
     "workspace_debugger_session": "trace",
+    "workspace_debugger_timeline": "trace",
     "workspace_request_initiators": "trace",
     "workspace_navigation_events": "trace",
     "workspace_runtime_context": "runtime-context",
@@ -1482,6 +1483,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["debugger-actions.json"] = evidence.details
         elif evidence.source == "debugger_session":
             payloads["debugger-session.json"] = evidence.details
+        elif evidence.source == "debugger_timeline":
+            payloads["debugger-timeline.json"] = evidence.details
         elif evidence.source == "runtime_context":
             payloads["runtime-context.json"] = evidence.details
         elif evidence.source == "dom_snapshot":

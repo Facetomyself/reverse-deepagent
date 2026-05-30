@@ -241,6 +241,7 @@ class NativeWebRuntime(WebReverseRuntime):
             callframe_evaluation_policy = spec.callframe_evaluation_policy if spec else "unknown"
             debugger_action_count = len(result.debugger_actions)
             debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
+            debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
             verification = [
                 f"breakpoint_status={result.status}",
                 f"breakpoint_supported={result.supported}",
@@ -251,6 +252,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"callframe_evaluation_policy={callframe_evaluation_policy}",
                 f"debugger_action_count={debugger_action_count}",
                 f"debugger_session_count={debugger_session_count}",
+                f"debugger_timeline_count={debugger_timeline_count}",
                 f"context_keys={sorted(context.keys())}",
             ]
             if result.trigger:
@@ -328,6 +330,20 @@ class NativeWebRuntime(WebReverseRuntime):
                             "status": result.debugger_session.get("status", "unknown"),
                             "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
                             "paused_event_count": result.debugger_session.get("paused_event_count", 0),
+                        },
+                    )
+                )
+            if result.debugger_timeline:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger event timeline.",
+                        metadata={
+                            "status": result.debugger_timeline.get("status", "unknown"),
+                            "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
+                            "entry_count": result.debugger_timeline.get("entry_count", 0),
+                            "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
                         },
                     )
                 )

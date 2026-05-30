@@ -410,6 +410,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("callframe_evaluation_policy=read_only", result.verification)
         self.assertIn("debugger_action_count=1", result.verification)
         self.assertIn("debugger_session_count=1", result.verification)
+        self.assertIn("debugger_timeline_count=7", result.verification)
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/debugger-paused.json")
         self.assertEqual(result.artifacts[1].metadata["status"], "success")
         self.assertEqual(result.artifacts[2].path, "virtual://workspace/callframes.json")
@@ -422,6 +423,8 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[5].path, "virtual://workspace/debugger-session.json")
         self.assertEqual(result.artifacts[5].metadata["lifecycle"], "action_controlled")
         self.assertEqual(result.artifacts[5].metadata["paused_event_count"], 1)
+        self.assertEqual(result.artifacts[6].path, "virtual://workspace/debugger-timeline.json")
+        self.assertEqual(result.artifacts[6].metadata["entry_count"], 7)
         self.assertIn(("Runtime.evaluate", {"expression": "setTimeout(() => { debugger; }, 0); 'scheduled'", "awaitPromise": False, "returnByValue": True, "userGesture": True}), page._cdp_session.calls)
         self.assertIn(
             ("Debugger.evaluateOnCallFrame", {"callFrameId": "native-cf-1", "expression": "typeof buildSign", "returnByValue": True, "silent": True, "throwOnSideEffect": True}),

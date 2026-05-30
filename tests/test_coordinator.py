@@ -93,7 +93,14 @@ class CoordinatorTests(unittest.TestCase):
                     source="debugger_session",
                     details={"session_id": "unit-paused-session", "lifecycle": "action_controlled"},
                     confidence=ConfidenceLevel.MEDIUM,
-                )
+                ),
+                EvidenceItem(
+                    summary="Native debugger timeline",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="debugger_timeline",
+                    details={"session_id": "unit-paused-session", "entry_count": 4, "entries": [{"type": "debugger.paused"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
             ],
             artifacts=[],
             next_action="wait_for_breakpoint",
@@ -104,10 +111,12 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["callframe-evaluations.json"]["evaluations"][0]["value"], "function")
         self.assertEqual(payloads["debugger-actions.json"]["actions"][0]["method"], "Debugger.stepOver")
         self.assertEqual(payloads["debugger-session.json"]["session_id"], "unit-paused-session")
+        self.assertEqual(payloads["debugger-timeline.json"]["entry_count"], 4)
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_debugger_timeline"), "trace")
 
     def test_build_runtime_threads_legacy_mcp_config_summary_and_alias(self) -> None:
         runtime = build_runtime(
