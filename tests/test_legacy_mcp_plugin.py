@@ -1,12 +1,18 @@
 import unittest
+import sys
+from pathlib import Path
 
 from reverse_deepagent.runtime.legacy_mcp import (
     LEGACY_MCP_ALIASES,
     LEGACY_MCP_BACKEND_ID,
     is_legacy_mcp_runtime_kind,
+    legacy_mcp_install_guidance,
     legacy_mcp_alias_warning,
     legacy_mcp_backend_registration,
 )
+
+
+PACKAGE_SRC = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-legacy-mcp" / "src"
 
 
 class LegacyMcpPluginTests(unittest.TestCase):
@@ -19,6 +25,26 @@ class LegacyMcpPluginTests(unittest.TestCase):
         self.assertTrue(registration.capabilities.mcp_backed)
         self.assertIn("mcp", registration.capabilities.config["aliases"])
         self.assertTrue(callable(registration.factory))
+
+    def test_legacy_mcp_install_guidance_points_to_optional_package(self) -> None:
+        guidance = legacy_mcp_install_guidance()
+        self.assertEqual(guidance["backend_id"], "legacy-mcp")
+        self.assertEqual(guidance["package"], "reverse-deepagent-legacy-mcp")
+        self.assertEqual(guidance["preferred_web_runtime"], "native-web")
+        self.assertIn("reverse_deepagent.runtime_backends", guidance["entry_point_group"])
+        self.assertIn("uv pip install", guidance["install_hint"])
+
+    def test_core_shim_prefers_optional_plugin_when_available(self) -> None:
+        sys.path.insert(0, str(PACKAGE_SRC))
+        try:
+            sys.modules.pop("reverse_deepagent_legacy_mcp", None)
+            registration = legacy_mcp_backend_registration()
+        finally:
+            sys.modules.pop("reverse_deepagent_legacy_mcp", None)
+            sys.path.remove(str(PACKAGE_SRC))
+        self.assertEqual(registration.backend_id, "legacy-mcp")
+        self.assertEqual(registration.capabilities.config["package"], "reverse-deepagent-legacy-mcp")
+        self.assertNotIn("compat_fallback", registration.capabilities.config)
 
     def test_legacy_mcp_alias_helpers_are_self_contained(self) -> None:
         self.assertTrue(is_legacy_mcp_runtime_kind("legacy-mcp"))

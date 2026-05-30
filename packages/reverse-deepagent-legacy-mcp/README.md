@@ -7,7 +7,8 @@ This package exposes the `legacy-mcp` runtime backend through the
 package-level split seam for keeping MCP compatibility installable without
 making it the long-term Web runtime architecture center.
 
-Current migration note: the implementation delegates to
-`reverse_deepagent.runtime.legacy_mcp` while the compatibility backend is still
-shipped in the core distribution. A later release can move the implementation
-fully into this package and leave the core package with install guidance only.
+Current migration note: this package now owns the legacy MCP runtime
+registration and factory implementation. The core package still ships a
+compatibility shim and built-in fallback for the transition window; a later
+release can remove that fallback and leave the core package with install
+guidance only.

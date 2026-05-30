@@ -1,7 +1,39 @@
 from __future__ import annotations
 
-from reverse_deepagent.runtime.legacy_mcp import legacy_mcp_backend_registration
+from typing import Any
+
+from reverse_deepagent.adapters.jsreverser import (
+    DEFAULT_JSREVERSER_MCP_COMMAND,
+    JSReverserMcpConfig,
+    create_jsreverser_mcp_runtime,
+)
+from reverse_deepagent.runtime.base import RuntimeBackendCapabilities, WebReverseRuntime
 from reverse_deepagent.runtime.registry import RuntimeBackendRegistration
+
+LEGACY_MCP_BACKEND_ID = "legacy-mcp"
+LEGACY_MCP_ALIASES = ("mcp", "jsreverser-mcp")
+LEGACY_MCP_ALIAS_DEPRECATION_WARNING = (
+    "警告：`mcp` / `jsreverser-mcp` 只是 legacy 兼容别名，后续新脚本请改用 `legacy-mcp`；"
+    "Web 默认路径请优先使用 `native-web`。"
+)
+
+
+def create_legacy_mcp_runtime(
+    *,
+    browser_url: str | None = None,
+    mcp_command: str | None = None,
+    **_: Any,
+) -> WebReverseRuntime:
+    """Create the optional legacy JSReverser MCP runtime backend."""
+
+    config = JSReverserMcpConfig(
+        command=mcp_command or DEFAULT_JSREVERSER_MCP_COMMAND,
+        browser_url=browser_url or "http://127.0.0.1:9222",
+        backend_id=LEGACY_MCP_BACKEND_ID,
+        display_name="Legacy JSReverser MCP",
+        transport="mcp-stdio",
+    )
+    return create_jsreverser_mcp_runtime(config=config)
 
 
 def runtime_backend_registration() -> RuntimeBackendRegistration:
@@ -11,7 +43,58 @@ def runtime_backend_registration() -> RuntimeBackendRegistration:
     factory without starting JSReverser MCP, Chrome, or any network session.
     """
 
-    return legacy_mcp_backend_registration()
+    return RuntimeBackendRegistration(
+        backend_id=LEGACY_MCP_BACKEND_ID,
+        aliases=LEGACY_MCP_ALIASES,
+        factory=create_legacy_mcp_runtime,
+        capabilities=RuntimeBackendCapabilities(
+            backend_id=LEGACY_MCP_BACKEND_ID,
+            display_name="Legacy JSReverser MCP",
+            transport="mcp-stdio",
+            target_platforms=["web"],
+            supports_browser_session=True,
+            supports_web_recon=True,
+            supports_protection_patch=True,
+            supports_artifact_export=True,
+            supports_runtime_context=True,
+            supports_replay_validation=True,
+            managed_chrome=True,
+            mcp_backed=True,
+            evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
+            artifact_kinds=["json", "export", "rebuild", "markdown"],
+            notes=[
+                "legacy compatibility backend backed by jsreverser-mcp",
+                "requires jsreverser-mcp and a reachable Chrome DevTools endpoint",
+                "mcp and jsreverser-mcp remain deprecated temporary compatibility aliases",
+            ],
+            config={"default_command": DEFAULT_JSREVERSER_MCP_COMMAND, "aliases": list(LEGACY_MCP_ALIASES), "package": "reverse-deepagent-legacy-mcp"},
+        ),
+    )
 
 
-__all__ = ["runtime_backend_registration"]
+def legacy_mcp_alias_warning(runtime_kind: str) -> str | None:
+    """Return the deprecation warning for legacy MCP aliases, if applicable."""
+
+    if runtime_kind in LEGACY_MCP_ALIASES:
+        return LEGACY_MCP_ALIAS_DEPRECATION_WARNING
+    return None
+
+
+def is_legacy_mcp_runtime_kind(runtime_kind: str) -> bool:
+    """Return whether a runtime id or alias refers to legacy MCP."""
+
+    return runtime_kind in {LEGACY_MCP_BACKEND_ID, *LEGACY_MCP_ALIASES}
+
+
+legacy_mcp_backend_registration = runtime_backend_registration
+
+__all__ = [
+    "LEGACY_MCP_ALIASES",
+    "LEGACY_MCP_ALIAS_DEPRECATION_WARNING",
+    "LEGACY_MCP_BACKEND_ID",
+    "create_legacy_mcp_runtime",
+    "is_legacy_mcp_runtime_kind",
+    "legacy_mcp_alias_warning",
+    "legacy_mcp_backend_registration",
+    "runtime_backend_registration",
+]
