@@ -8,10 +8,9 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
 from reverse_deepagent.coordinator import legacy_mcp_alias_warning, run_platform_pipeline, run_reverse_pipeline
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT, DEFAULT_USER_DATA_DIR
-from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError, legacy_mcp_install_guidance
+from reverse_deepagent.runtime.legacy_mcp import DEFAULT_JSREVERSER_MCP_COMMAND, LegacyMcpPluginUnavailableError, legacy_mcp_install_guidance
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts"

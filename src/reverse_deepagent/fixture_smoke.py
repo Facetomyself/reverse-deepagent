@@ -6,11 +6,10 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
 from reverse_deepagent.coordinator import legacy_mcp_alias_warning, run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import FIXTURE_PROFILE_VALUES, start_fixture_server
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT
-from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError, legacy_mcp_install_guidance
+from reverse_deepagent.runtime.legacy_mcp import DEFAULT_JSREVERSER_MCP_COMMAND, LegacyMcpPluginUnavailableError, legacy_mcp_install_guidance
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts/fixture-smoke"

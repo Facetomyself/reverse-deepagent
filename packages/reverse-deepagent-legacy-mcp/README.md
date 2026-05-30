@@ -8,6 +8,7 @@ package-level split seam for keeping MCP compatibility installable without
 making it the long-term Web runtime architecture center.
 
 Current migration note: this package owns the legacy MCP runtime
-registration and factory implementation. The core package keeps only a
-compatibility shim, alias warning, plugin delegation, and install guidance; it
-no longer ships a built-in legacy MCP factory fallback.
+registration, factory, configuration object, and stdio bridge implementation.
+The core package keeps only a compatibility shim, default command constants,
+alias warning, doctor proxy, plugin delegation, and install guidance; it no
+longer ships a built-in legacy MCP factory fallback or stdio MCP transport.

@@ -921,7 +921,7 @@ capabilities = runtime.describe_capabilities()
 print(capabilities.model_dump(mode="json"))
 ```
 
-`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。Registry 还会加载 `reverse_deepagent.runtime_backends` Python entry-point group 里的外部 backend registration，加载 metadata 时不会调用 backend factory；`legacy-mcp` 的 registration / factory / alias warning 已从 coordinator 内联代码挪到 `reverse_deepagent.runtime.legacy_mcp`，并且 `build_default_runtime_registry(include_legacy_mcp=False)` 可以构建不带 MCP backend 的 clean registry。仓库现在还包含 `packages/reverse-deepagent-legacy-mcp/` optional plugin package，声明同一个 entry-point group，并已拥有 legacy MCP registration / factory 实现；core 侧 `reverse_deepagent.runtime.legacy_mcp` 现在只保留兼容 shim、alias warning 和 install guidance，不再内置 legacy MCP factory fallback；默认 registry 会先加载外部 entry points，若未安装 `reverse-deepagent-legacy-mcp`，`--runtime legacy-mcp` / `mcp` 会返回结构化安装建议，并推荐继续使用 `native-web`。当前默认内置注册：
+`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。Registry 还会加载 `reverse_deepagent.runtime_backends` Python entry-point group 里的外部 backend registration，加载 metadata 时不会调用 backend factory；`legacy-mcp` 的 registration / factory / alias warning 已从 coordinator 内联代码挪到 `reverse_deepagent.runtime.legacy_mcp`，并且 `build_default_runtime_registry(include_legacy_mcp=False)` 可以构建不带 MCP backend 的 clean registry。仓库现在还包含 `packages/reverse-deepagent-legacy-mcp/` optional plugin package，声明同一个 entry-point group，并已拥有 legacy MCP registration / factory、`JSReverserMcpConfig` 和 stdio bridge 实现；core 侧 `reverse_deepagent.runtime.legacy_mcp` 现在只保留兼容 shim、默认命令常量、alias warning、doctor 代理和 install guidance，不再内置 legacy MCP factory fallback 或 stdio MCP transport；默认 registry 会先加载外部 entry points，若未安装 `reverse-deepagent-legacy-mcp`，`--runtime legacy-mcp` / `mcp` 会返回结构化安装建议，并推荐继续使用 `native-web`。当前默认内置注册：
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
 - `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium`、`cloakbrowser` 和 `remote-cdp` provider；真实二进制 smoke 需要显式触发
@@ -943,7 +943,7 @@ print(capabilities.model_dump(mode="json"))
 
 当前 Web 路径的浏览器会话、Chrome 调试端口、JSReverser MCP、Web 存储、URL replay 推导等假设统一收口在 [`docs/runtime/web-runtime-assumptions.md`](docs/runtime/web-runtime-assumptions.md)，后续平台适配器不应默认继承这些语义。BrowserProvider 新架构见 [`docs/runtime/browser-provider-architecture.md`](docs/runtime/browser-provider-architecture.md)。
 
-JSReverser MCP 后端配置由 `JSReverserMcpConfig` 收束，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、后端元数据和运行时采样参数。CLI 里的 `--jsreverser-mcp-command`、Chrome 调试端口等参数最终都会汇入这个配置，再创建 `legacy-mcp` 运行时。
+`JSReverserMcpConfig` 现在由 optional `reverse-deepagent-legacy-mcp` package 持有，字段包括 `command`、`browser_url`、`request_timeout`、`startup_timeout`、后端元数据和运行时采样参数。CLI 里的 `--jsreverser-mcp-command`、Chrome 调试端口等参数会通过 core shim 传给 optional package；未安装 optional package 时只返回结构化安装建议，不会在 core 中启动 MCP stdio transport。
 
 兼容期内 `--runtime mcp` 和 `--runtime jsreverser-mcp` 仍可解析到 `legacy-mcp`，但会向 stderr 打印 deprecation warning；`reverse-agent-doctor --check-mcp` 也只作为 `--legacy-mcp` 的旧别名保留。后续新增文档、脚本和 workflow 不应继续使用旧 alias。
 

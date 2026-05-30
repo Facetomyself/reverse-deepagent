@@ -83,6 +83,7 @@ git fetch origin
 - `legacy-mcp` 是兼容后端。
 - `mcp` / `jsreverser-mcp` 只作为 legacy alias 保留。
 - 浏览器实现应通过 `BrowserProvider` 可插拔，不要把 MCP 当成新的抽象边界。
+- MCP stdio transport、`JSReverserMcpConfig` 和真实 legacy MCP factory 归属 `packages/reverse-deepagent-legacy-mcp/` optional package；core 只保留 `reverse_deepagent.runtime.legacy_mcp` shim、默认命令常量、alias warning、doctor proxy、plugin delegation 和 install guidance。
 - coordinator 不应直接依赖 Playwright、CDP、CloakBrowser 或 MCP tool name。
 - 新增 runtime / provider / collector / hook / artifact schema 时，必须同步测试和文档。
 

@@ -1,8 +1,24 @@
+import sys
 import unittest
+from pathlib import Path
 
-from reverse_deepagent.adapters.jsreverser import JSReverserMcpConfig, JSReverserRuntime, create_jsreverser_mcp_runtime
+from reverse_deepagent.adapters.jsreverser import JSReverserRuntime
 from reverse_deepagent.runtime.base import BrowserSessionInfo
 from reverse_deepagent.schemas import ReverseMode, ReverseStage, RouterResult, TaskCard
+
+
+PACKAGE_SRC = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-legacy-mcp" / "src"
+
+
+def load_legacy_mcp_plugin():
+    sys.path.insert(0, str(PACKAGE_SRC))
+    try:
+        sys.modules.pop("reverse_deepagent_legacy_mcp", None)
+        import reverse_deepagent_legacy_mcp as plugin
+        return plugin
+    finally:
+        if str(PACKAGE_SRC) in sys.path:
+            sys.path.remove(str(PACKAGE_SRC))
 
 
 class FakeBridge:
@@ -71,8 +87,9 @@ class RuntimeAdapterTests(unittest.TestCase):
         self.assertTrue(payload["mcp_backed"])
         self.assertIn("web", payload["target_platforms"])
 
-    def test_mcp_config_is_serializable_and_builds_bridge_command(self) -> None:
-        config = JSReverserMcpConfig(
+    def test_legacy_mcp_plugin_config_is_serializable_and_builds_bridge_command(self) -> None:
+        plugin = load_legacy_mcp_plugin()
+        config = plugin.JSReverserMcpConfig(
             command="/tmp/jsreverser-mcp",
             browser_url="http://127.0.0.1:9444",
             request_timeout=12.5,
@@ -81,7 +98,7 @@ class RuntimeAdapterTests(unittest.TestCase):
         payload = config.model_dump(mode="json")
         self.assertEqual(payload["command"], "/tmp/jsreverser-mcp")
         self.assertEqual(config.bridge_command(), ["/tmp/jsreverser-mcp", "--browserUrl", "http://127.0.0.1:9444"])
-        runtime = create_jsreverser_mcp_runtime(config=config)
+        runtime = plugin.create_jsreverser_mcp_runtime(config=config)
         try:
             capabilities = runtime.describe_capabilities().model_dump(mode="json")
             self.assertEqual(capabilities["config"]["command"], "/tmp/jsreverser-mcp")

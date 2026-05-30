@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import json
 import subprocess
 import sys
@@ -9,6 +10,9 @@ from unittest.mock import patch
 from pathlib import Path
 
 from reverse_deepagent.doctor import run_doctor
+
+
+PACKAGE_SRC = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-legacy-mcp" / "src"
 
 
 class DoctorTests(unittest.TestCase):
@@ -91,6 +95,17 @@ class DoctorTests(unittest.TestCase):
         wrapper.chmod(0o755)
         return wrapper
 
+    @contextlib.contextmanager
+    def with_legacy_plugin_path(self):
+        sys.path.insert(0, str(PACKAGE_SRC))
+        try:
+            sys.modules.pop("reverse_deepagent_legacy_mcp", None)
+            yield
+        finally:
+            sys.modules.pop("reverse_deepagent_legacy_mcp", None)
+            if str(PACKAGE_SRC) in sys.path:
+                sys.path.remove(str(PACKAGE_SRC))
+
     def test_doctor_reports_static_browser_and_mcp_paths(self) -> None:
         class FakeCapabilities:
             def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -143,7 +158,8 @@ class DoctorTests(unittest.TestCase):
             # Use a wrapper to keep command semantics identical to jsreverser-mcp.
             wrapper = self.write_fake_mcp_wrapper(tmpdir)
             args.jsreverser_mcp_command = str(wrapper)
-            payload = run_doctor(args)
+            with self.with_legacy_plugin_path():
+                payload = run_doctor(args)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["mcp_check"]["ok"])
         self.assertTrue(payload["legacy_mcp_check"]["ok"])
@@ -155,10 +171,21 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmpdir = Path(tmp)
             wrapper = self.write_fake_mcp_wrapper(tmpdir)
-            payload = run_doctor(self.make_args(tmpdir, jsreverser_mcp_command=str(wrapper), legacy_mcp=True))
+            with self.with_legacy_plugin_path():
+                payload = run_doctor(self.make_args(tmpdir, jsreverser_mcp_command=str(wrapper), legacy_mcp=True))
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["legacy_mcp_check"]["ok"])
         self.assertTrue(payload["mcp_check"]["ok"])
+
+    def test_doctor_legacy_mcp_without_optional_plugin_reports_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            wrapper = self.write_fake_mcp_wrapper(tmpdir)
+            payload = run_doctor(self.make_args(tmpdir, jsreverser_mcp_command=str(wrapper), legacy_mcp=True))
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["legacy_mcp_check"]["ok"])
+        self.assertEqual(payload["legacy_mcp_check"]["error"], "legacy_mcp_optional_backend_not_installed")
+        self.assertEqual(payload["legacy_mcp_check"]["install_guidance"]["package"], "reverse-deepagent-legacy-mcp")
 
     def test_doctor_can_check_playwright_provider_without_launching(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -361,7 +361,7 @@ Acceptance:
 
 ### Phase 10.1: Runtime backend entry-point discovery
 
-Status: implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. `packages/reverse-deepagent-legacy-mcp/` owns the optional legacy MCP registration / factory implementation, while `reverse_deepagent.runtime.legacy_mcp` is a compatibility shim with alias warnings, plugin delegation, and structured install guidance. Core no longer ships a built-in legacy MCP factory fallback; if the optional package is missing, `legacy-mcp` / `mcp` runtime construction returns install guidance and does not start managed Chrome or MCP.
+Status: implemented. `RuntimeBackendRegistry.load_entry_points()` loads backend registrations from the `reverse_deepagent.runtime_backends` Python entry-point group, validates registration / capability id consistency, and keeps backend factories uncalled during metadata listing. `packages/reverse-deepagent-legacy-mcp/` owns the optional legacy MCP registration / factory, config object, and stdio bridge implementation, while `reverse_deepagent.runtime.legacy_mcp` is a compatibility shim with alias warnings, doctor proxy, plugin delegation, and structured install guidance. Core no longer ships a built-in legacy MCP factory fallback or stdio MCP transport; if the optional package is missing, `legacy-mcp` / `mcp` runtime construction returns install guidance and does not start managed Chrome or MCP.
 
 Deliverables:
 
@@ -374,7 +374,7 @@ Acceptance:
 
 - External runtime backend packages have a stable discovery seam.
 - Metadata listing remains free of browser, MCP, device-tool, and network session side effects.
-- Legacy MCP implementation is now optional-package owned; coordinator no longer owns MCP registration details inline, and core missing-plugin paths are guidance-only.
+- Legacy MCP implementation is now optional-package owned; coordinator no longer owns MCP registration details inline, core no longer ships stdio MCP transport, and missing-plugin paths are guidance-only.
 
 ## Test strategy
 

@@ -1,6 +1,22 @@
+import sys
 import unittest
+from pathlib import Path
 
-from reverse_deepagent.adapters.jsreverser import JSReverserRuntime, create_jsreverser_mcp_runtime
+from reverse_deepagent.adapters.jsreverser import JSReverserRuntime
+
+
+PACKAGE_SRC = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-legacy-mcp" / "src"
+
+
+def load_legacy_mcp_plugin():
+    sys.path.insert(0, str(PACKAGE_SRC))
+    try:
+        sys.modules.pop("reverse_deepagent_legacy_mcp", None)
+        import reverse_deepagent_legacy_mcp as plugin
+        return plugin
+    finally:
+        if str(PACKAGE_SRC) in sys.path:
+            sys.path.remove(str(PACKAGE_SRC))
 
 
 class FakeBridge:
@@ -52,7 +68,7 @@ class RealReturnShapeTests(unittest.TestCase):
         self.assertEqual(browser.active_url, "about:blank")
 
     def test_real_runtime_factory_uses_stdio_bridge(self) -> None:
-        runtime = create_jsreverser_mcp_runtime(request_timeout=1, startup_timeout=1)
+        runtime = load_legacy_mcp_plugin().create_jsreverser_mcp_runtime(request_timeout=1, startup_timeout=1)
         self.assertIsInstance(runtime, JSReverserRuntime)
 
     def test_markdown_network_requests_are_parsed(self) -> None:

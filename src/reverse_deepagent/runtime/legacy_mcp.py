@@ -10,6 +10,8 @@ LEGACY_MCP_BACKEND_ID = "legacy-mcp"
 LEGACY_MCP_ALIASES = ("mcp", "jsreverser-mcp")
 LEGACY_MCP_PACKAGE = "reverse-deepagent-legacy-mcp"
 LEGACY_MCP_IMPORT_NAME = "reverse_deepagent_legacy_mcp"
+DEFAULT_JSREVERSER_MCP_COMMAND = "/opt/homebrew/bin/jsreverser-mcp"
+DEFAULT_REMOTE_DEBUGGING_URL = "http://127.0.0.1:9222"
 LEGACY_MCP_ALIAS_DEPRECATION_WARNING = (
     "警告：`mcp` / `jsreverser-mcp` 只是 legacy 兼容别名，后续新脚本请改用 `legacy-mcp`；"
     "Web 默认路径请优先使用 `native-web`。"
@@ -81,6 +83,31 @@ def legacy_mcp_backend_registration() -> RuntimeBackendRegistration:
     if plugin is not None and hasattr(plugin, "runtime_backend_registration"):
         return plugin.runtime_backend_registration()
     _raise_missing_plugin()
+
+
+def check_legacy_mcp_tools(
+    *,
+    command: str = DEFAULT_JSREVERSER_MCP_COMMAND,
+    browser_url: str = DEFAULT_REMOTE_DEBUGGING_URL,
+    request_timeout: float = 10.0,
+    startup_timeout: float = 10.0,
+) -> dict[str, Any]:
+    """Run legacy MCP doctor probes through the optional plugin."""
+
+    plugin = _plugin_module()
+    if plugin is not None and hasattr(plugin, "check_legacy_mcp_tools"):
+        return plugin.check_legacy_mcp_tools(
+            command=command,
+            browser_url=browser_url,
+            request_timeout=request_timeout,
+            startup_timeout=startup_timeout,
+        )
+    guidance = legacy_mcp_install_guidance()
+    return {
+        "ok": False,
+        "error": "legacy_mcp_optional_backend_not_installed",
+        "install_guidance": guidance,
+    }
 
 
 def legacy_mcp_alias_warning(runtime_kind: str) -> str | None:

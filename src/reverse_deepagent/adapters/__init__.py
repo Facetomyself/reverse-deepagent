@@ -1,4 +1,4 @@
-from .jsreverser import JSReverserBridge, JSReverserMcpConfig, JSReverserRuntime, create_jsreverser_mcp_runtime
+from .jsreverser import JSReverserBridge, JSReverserRuntime
 from .lightweight_web import (
     LightweightCommandResult,
     LightweightWebBridge,
@@ -21,12 +21,10 @@ __all__ = [
     "LightweightCommandResult",
     "LightweightWebBridge",
     "LightweightWebRuntimeConfig",
-    "JSReverserMcpConfig",
     "JSReverserRuntime",
     "MiniProgramDevtoolsRuntime",
     "PlatformCommandResult",
     "PlatformRuntimeConfig",
-    "create_jsreverser_mcp_runtime",
     "create_lightweight_web_runtime",
     "NativeWebRuntime",
     "create_native_web_runtime",

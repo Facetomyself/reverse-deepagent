@@ -5,7 +5,15 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from reverse_deepagent.runtime.mcp_stdio import StdioMcpBridge
+import sys
+
+PACKAGE_SRC = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-legacy-mcp" / "src"
+sys.path.insert(0, str(PACKAGE_SRC))
+try:
+    from reverse_deepagent_legacy_mcp.mcp_stdio import StdioMcpBridge
+finally:
+    if str(PACKAGE_SRC) in sys.path:
+        sys.path.remove(str(PACKAGE_SRC))
 
 
 class McpStdioBridgeTests(unittest.TestCase):

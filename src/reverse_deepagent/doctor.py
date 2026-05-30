@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import urlparse
 
-from reverse_deepagent.adapters.jsreverser import DEFAULT_JSREVERSER_MCP_COMMAND
 from reverse_deepagent.adapters.native_web import create_native_web_runtime
 from reverse_deepagent.runtime.chrome import (
     ChromeDebugConfig,
@@ -22,7 +21,7 @@ from reverse_deepagent.runtime.chrome import (
     ensure_chrome_debug,
     stop_chrome_debug,
 )
-from reverse_deepagent.runtime.mcp_stdio import McpBridgeError, StdioMcpBridge
+from reverse_deepagent.runtime.legacy_mcp import DEFAULT_JSREVERSER_MCP_COMMAND, check_legacy_mcp_tools
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BROWSER_URL = "http://127.0.0.1:9222"
@@ -195,30 +194,14 @@ def _check_mcp(args: argparse.Namespace) -> dict[str, Any]:
     command_status = _command_check(args.jsreverser_mcp_command)
     if not command_status["exists"]:
         return {"ok": False, "command": command_status, "error": "jsreverser-mcp command not found"}
-    bridge = StdioMcpBridge(
-        command=[args.jsreverser_mcp_command, "--browserUrl", args.browser_url],
+    payload = check_legacy_mcp_tools(
+        command=args.jsreverser_mcp_command,
+        browser_url=args.browser_url,
         request_timeout=args.request_timeout,
         startup_timeout=args.startup_timeout,
     )
-    try:
-        with bridge:
-            tools = bridge.list_tools()
-            health = bridge.invoke("check_browser_health", {})
-        tool_names = [item.get("name") for item in tools.get("tools", []) if isinstance(item, dict)]
-        return {
-            "ok": True,
-            "command": command_status,
-            "tool_count": len(tool_names),
-            "tool_sample": tool_names[:20],
-            "health": health,
-        }
-    except (McpBridgeError, OSError, RuntimeError) as exc:
-        return {
-            "ok": False,
-            "command": command_status,
-            "error": str(exc),
-            "stderr": bridge.get_stderr()[-2000:],
-        }
+    payload["command"] = command_status
+    return payload
 
 
 def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
