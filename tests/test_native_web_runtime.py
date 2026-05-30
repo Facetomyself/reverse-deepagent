@@ -946,12 +946,16 @@ class NativeWebRuntimeTests(unittest.TestCase):
             [
                 "build_flow_timeline",
                 "materialize_review_approved_auto_stitch_plan",
+                "write_stitched_flow_materialization_audit",
+                "write_stitched_flow_rollback_plan",
                 "materialize_review_approved_stitched_flow",
             ],
         )
         self.assertIn("flow_timeline_auto_stitch_materialization_plan_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_materialization_review_decision_count=1", result.verification)
         self.assertIn("flow_timeline_auto_stitch_materialization_result_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_materialization_audit_count=1", result.verification)
+        self.assertIn("flow_timeline_auto_stitch_materialization_rollback_plan_count=1", result.verification)
         self.assertIn("flow_timeline_stitch_review_decision_count=0", result.verification)
         self.assertIn("flow_timeline_stitched_flow_count=1", result.verification)
         self.assertIn("flow_timeline_automatic_stitching=False", result.verification)
@@ -964,6 +968,12 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(flow_metadata["auto_stitch_materialization_result_summary"]["materialized_count"], 1)
         self.assertTrue(flow_metadata["auto_stitch_materialization_result_summary"]["writes_artifact"])
         self.assertFalse(flow_metadata["auto_stitch_materialization_result_summary"]["automatic_stitching"])
+        self.assertEqual(flow_metadata["auto_stitch_materialization_audit_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_audit_summary"]["audit_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_audit_summary"]["missing_audit_count"], 0)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_rollback_plan_count"], 1)
+        self.assertEqual(flow_metadata["auto_stitch_materialization_rollback_summary"]["rollback_plan_count"], 1)
+        self.assertFalse(flow_metadata["auto_stitch_materialization_rollback_summary"]["automatic_rollback"])
         self.assertEqual(flow_metadata["stitch_review_decision_count"], 0)
         self.assertEqual(flow_metadata["stitched_flow_count"], 1)
         self.assertFalse(flow_metadata["automatic_stitching"])
@@ -972,9 +982,18 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].metadata["count"], 1)
         self.assertEqual(result.artifacts[1].metadata["summary"]["materialized_count"], 1)
         self.assertFalse(result.artifacts[1].metadata["automatic_stitching"])
-        self.assertEqual(result.artifacts[2].path, "virtual://workspace/stitched-flow.json")
+        self.assertEqual(result.artifacts[2].path, "virtual://workspace/stitched-flow-materialization-audit.json")
         self.assertEqual(result.artifacts[2].metadata["count"], 1)
         self.assertFalse(result.artifacts[2].metadata["automatic_stitching"])
+        self.assertEqual(result.artifacts[2].metadata["summary"]["audit_count"], 1)
+        self.assertEqual(result.artifacts[3].path, "virtual://workspace/stitched-flow-rollback-plan.json")
+        self.assertEqual(result.artifacts[3].metadata["count"], 1)
+        self.assertFalse(result.artifacts[3].metadata["automatic_stitching"])
+        self.assertFalse(result.artifacts[3].metadata["automatic_rollback"])
+        self.assertEqual(result.artifacts[3].metadata["summary"]["rollback_plan_count"], 1)
+        self.assertEqual(result.artifacts[4].path, "virtual://workspace/stitched-flow.json")
+        self.assertEqual(result.artifacts[4].metadata["count"], 1)
+        self.assertFalse(result.artifacts[4].metadata["automatic_stitching"])
 
     def test_native_web_runtime_apply_minimal_protection_discovers_closure_scope_functions(self) -> None:
         provider = FakeProvider()
