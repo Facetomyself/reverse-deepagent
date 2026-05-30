@@ -61,6 +61,9 @@ class DeliveryExecutorConfig:
     preflight_backend_manifest_in_place_mutation: bool = False
     backend_manifest_preflight_name: str = "backend-artifact-manifest-preflight.json"
     expected_backend_manifest_digest_sha256: str | None = None
+    approve_backend_manifest_in_place_mutation: bool = False
+    backend_manifest_in_place_mutation_name: str = "backend-artifact-manifest-in-place-mutation.json"
+    backend_manifest_rollback_name: str = "backend-artifact-manifest.rollback.json"
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -214,6 +217,54 @@ class BackendManifestInPlacePreflight:
 
 
 @dataclass(frozen=True)
+class BackendManifestInPlaceMutation:
+    transaction_id: str
+    status: str
+    mutation_id: str
+    mutation_path: str | None
+    rollback_path: str | None
+    source_manifest_path: str | None
+    patched_manifest_path: str | None
+    dry_run: bool
+    in_place_mutation_requested: bool
+    approved: bool
+    backend_manifest_mutated: bool
+    rollback_checkpoint_written: bool
+    source_manifest_digest_sha256: str | None
+    expected_source_manifest_digest_sha256: str | None
+    patched_manifest_digest_sha256: str | None
+    post_mutation_manifest_digest_sha256: str | None
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "mutation_id": self.mutation_id,
+            "mutation_path": self.mutation_path,
+            "rollback_path": self.rollback_path,
+            "source_manifest_path": self.source_manifest_path,
+            "patched_manifest_path": self.patched_manifest_path,
+            "dry_run": self.dry_run,
+            "in_place_mutation_requested": self.in_place_mutation_requested,
+            "approved": self.approved,
+            "backend_manifest_mutated": self.backend_manifest_mutated,
+            "rollback_checkpoint_written": self.rollback_checkpoint_written,
+            "source_manifest_digest_sha256": self.source_manifest_digest_sha256,
+            "expected_source_manifest_digest_sha256": self.expected_source_manifest_digest_sha256,
+            "patched_manifest_digest_sha256": self.patched_manifest_digest_sha256,
+            "post_mutation_manifest_digest_sha256": self.post_mutation_manifest_digest_sha256,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class DeliveryTransactionJournal:
     transaction_id: str
     status: str
@@ -226,8 +277,11 @@ class DeliveryTransactionJournal:
     backend_manifest_mutation_path: str | None
     backend_manifest_patched_path: str | None
     backend_manifest_preflight_path: str | None
+    backend_manifest_in_place_mutation_path: str | None
+    backend_manifest_rollback_path: str | None
     backend_manifest_patch_written: bool
     backend_manifest_in_place_preflight_passed: bool
+    backend_manifest_rollback_written: bool
     backend_manifest_mutated: bool
     entries: list[dict[str, Any]]
     created_at: str
@@ -246,8 +300,11 @@ class DeliveryTransactionJournal:
             "backend_manifest_mutation_path": self.backend_manifest_mutation_path,
             "backend_manifest_patched_path": self.backend_manifest_patched_path,
             "backend_manifest_preflight_path": self.backend_manifest_preflight_path,
+            "backend_manifest_in_place_mutation_path": self.backend_manifest_in_place_mutation_path,
+            "backend_manifest_rollback_path": self.backend_manifest_rollback_path,
             "backend_manifest_patch_written": self.backend_manifest_patch_written,
             "backend_manifest_in_place_preflight_passed": self.backend_manifest_in_place_preflight_passed,
+            "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
             "backend_manifest_mutated": self.backend_manifest_mutated,
             "entries": self.entries,
             "created_at": self.created_at,
@@ -267,12 +324,14 @@ class DeliveryExecutionResult:
     manifest_revision_committed: bool
     backend_manifest_patch_written: bool
     backend_manifest_in_place_preflight_passed: bool
+    backend_manifest_rollback_written: bool
     backend_manifest_mutated: bool
     receipt: DeliveryReceipt
     transaction_journal: DeliveryTransactionJournal
     manifest_revision: DeliveryManifestRevision | None
     backend_manifest_mutation: BackendManifestMutation | None
     backend_manifest_in_place_preflight: BackendManifestInPlacePreflight | None
+    backend_manifest_in_place_mutation: BackendManifestInPlaceMutation | None
     planned_artifacts: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
     next_action: str = "review_delivery_receipt_before_external_handoff"
@@ -289,12 +348,14 @@ class DeliveryExecutionResult:
             "manifest_revision_committed": self.manifest_revision_committed,
             "backend_manifest_patch_written": self.backend_manifest_patch_written,
             "backend_manifest_in_place_preflight_passed": self.backend_manifest_in_place_preflight_passed,
+            "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
             "backend_manifest_mutated": self.backend_manifest_mutated,
             "receipt": self.receipt.to_dict(),
             "transaction_journal": self.transaction_journal.to_dict(),
             "manifest_revision": self.manifest_revision.to_dict() if self.manifest_revision else None,
             "backend_manifest_mutation": self.backend_manifest_mutation.to_dict() if self.backend_manifest_mutation else None,
             "backend_manifest_in_place_preflight": self.backend_manifest_in_place_preflight.to_dict() if self.backend_manifest_in_place_preflight else None,
+            "backend_manifest_in_place_mutation": self.backend_manifest_in_place_mutation.to_dict() if self.backend_manifest_in_place_mutation else None,
             "planned_artifacts": self.planned_artifacts,
             "errors": self.errors,
             "next_action": self.next_action,
@@ -364,6 +425,16 @@ class LocalDeliveryExecutor:
             if self.config.write_receipt and self.config.preflight_backend_manifest_in_place_mutation and not dry_run and not errors
             else None
         )
+        backend_manifest_in_place_mutation_path = (
+            str(delivery_root / self.config.backend_manifest_in_place_mutation_name)
+            if self.config.write_receipt and self.config.approve_backend_manifest_in_place_mutation and not dry_run and not errors
+            else None
+        )
+        backend_manifest_rollback_path = (
+            str(delivery_root / self.config.backend_manifest_rollback_name)
+            if self.config.write_receipt and self.config.approve_backend_manifest_in_place_mutation and not dry_run and not errors
+            else None
+        )
         receipt = DeliveryReceipt(
             transaction_id=self.config.transaction_id,
             status=status,
@@ -396,6 +467,9 @@ class LocalDeliveryExecutor:
             receipt_path=receipt_path,
             journal_path=journal_path,
             manifest_revision_path=manifest_revision_path,
+            preflight_path=backend_manifest_preflight_path,
+            in_place_mutation_path=backend_manifest_in_place_mutation_path,
+            rollback_path=backend_manifest_rollback_path,
         )
         patched_backend_manifest = self._build_patched_backend_manifest(backend_manifest_mutation) if backend_manifest_mutation else None
         if backend_manifest_patched_path and backend_manifest_mutation and patched_backend_manifest:
@@ -408,6 +482,41 @@ class LocalDeliveryExecutor:
             dry_run=dry_run,
             created_at=created_at,
         )
+        backend_manifest_in_place_mutation = self._apply_backend_manifest_in_place_mutation(
+            mutation=backend_manifest_mutation,
+            preflight=backend_manifest_in_place_preflight,
+            patched_manifest=patched_backend_manifest,
+            mutation_path=backend_manifest_in_place_mutation_path,
+            rollback_path=backend_manifest_rollback_path,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        backend_manifest_mutated = bool(backend_manifest_in_place_mutation and backend_manifest_in_place_mutation.backend_manifest_mutated)
+        backend_manifest_rollback_written = bool(backend_manifest_in_place_mutation and backend_manifest_in_place_mutation.rollback_checkpoint_written)
+        if backend_manifest_mutated and backend_manifest_mutation:
+            backend_manifest_mutation = replace(
+                backend_manifest_mutation,
+                status="in_place_mutated",
+                backend_manifest_mutated=True,
+                metadata={
+                    **backend_manifest_mutation.metadata,
+                    "in_place_mutation_id": backend_manifest_in_place_mutation.mutation_id if backend_manifest_in_place_mutation else None,
+                },
+            )
+        journal_limitations = [
+            "does_not_publish_external_delivery",
+            "rollback_is_local_checkpoint_baseline",
+            "does_not_commit_cross_run_transaction",
+            "cross_run_manifest_recovery_not_implemented",
+        ]
+        if not backend_manifest_mutated:
+            journal_limitations.extend(
+                [
+                    "does_not_mutate_backend_artifact_manifest_in_place",
+                    "backend_manifest_patch_is_local_copy_only",
+                    "backend_manifest_in_place_preflight_only",
+                ]
+            )
         journal = DeliveryTransactionJournal(
             transaction_id=self.config.transaction_id,
             status=status,
@@ -420,11 +529,14 @@ class LocalDeliveryExecutor:
             backend_manifest_mutation_path=backend_manifest_mutation_path,
             backend_manifest_patched_path=backend_manifest_patched_path,
             backend_manifest_preflight_path=backend_manifest_preflight_path,
+            backend_manifest_in_place_mutation_path=backend_manifest_in_place_mutation_path,
+            backend_manifest_rollback_path=backend_manifest_rollback_path,
             backend_manifest_patch_written=bool(backend_manifest_mutation and backend_manifest_mutation.backend_manifest_patch_written),
             backend_manifest_in_place_preflight_passed=bool(
                 backend_manifest_in_place_preflight and backend_manifest_in_place_preflight.in_place_mutation_allowed
             ),
-            backend_manifest_mutated=False,
+            backend_manifest_rollback_written=backend_manifest_rollback_written,
+            backend_manifest_mutated=backend_manifest_mutated,
             entries=[
                 {
                     "action": "copy_artifact",
@@ -439,13 +551,7 @@ class LocalDeliveryExecutor:
                 **self.config.metadata,
                 "executor": "local-filesystem",
                 "scope": "local-delivery-transaction-baseline",
-                "limitations": [
-                    "does_not_publish_external_delivery",
-                    "does_not_mutate_backend_artifact_manifest_in_place",
-                    "rollback_is_journal_only_baseline",
-                    "backend_manifest_patch_is_local_copy_only",
-                    "backend_manifest_in_place_preflight_only",
-                ],
+                "limitations": journal_limitations,
             },
         )
         if receipt_path:
@@ -458,8 +564,14 @@ class LocalDeliveryExecutor:
             _write_json(Path(backend_manifest_mutation_path), backend_manifest_mutation.to_dict())
         if backend_manifest_preflight_path and backend_manifest_in_place_preflight:
             _write_json(Path(backend_manifest_preflight_path), backend_manifest_in_place_preflight.to_dict())
+        if backend_manifest_in_place_mutation_path and backend_manifest_in_place_mutation:
+            _write_json(Path(backend_manifest_in_place_mutation_path), backend_manifest_in_place_mutation.to_dict())
         if journal_path:
             _write_json(Path(journal_path), journal.to_dict())
+        if backend_manifest_mutated:
+            next_action = "review_backend_manifest_in_place_mutation_before_cross_run_commit"
+        elif backend_manifest_in_place_mutation and backend_manifest_in_place_mutation.blocking_reasons:
+            next_action = "fix_backend_manifest_in_place_mutation_blockers"
         return DeliveryExecutionResult(
             status=status,
             mode=mode.value,
@@ -473,12 +585,14 @@ class LocalDeliveryExecutor:
             backend_manifest_in_place_preflight_passed=bool(
                 backend_manifest_in_place_preflight and backend_manifest_in_place_preflight.in_place_mutation_allowed
             ),
-            backend_manifest_mutated=False,
+            backend_manifest_rollback_written=backend_manifest_rollback_written,
+            backend_manifest_mutated=backend_manifest_mutated,
             receipt=receipt,
             transaction_journal=journal,
             manifest_revision=manifest_revision,
             backend_manifest_mutation=backend_manifest_mutation,
             backend_manifest_in_place_preflight=backend_manifest_in_place_preflight,
+            backend_manifest_in_place_mutation=backend_manifest_in_place_mutation,
             planned_artifacts=planned,
             errors=errors,
             next_action=next_action,
@@ -537,6 +651,9 @@ class LocalDeliveryExecutor:
         receipt_path: str | None,
         journal_path: str | None,
         manifest_revision_path: str | None,
+        preflight_path: str | None,
+        in_place_mutation_path: str | None,
+        rollback_path: str | None,
     ) -> BackendManifestMutation | None:
         if not (self.config.commit_backend_manifest_mutation or self.config.preflight_backend_manifest_in_place_mutation):
             return None
@@ -553,6 +670,9 @@ class LocalDeliveryExecutor:
             manifest_revision_path=manifest_revision_path,
             mutation_path=mutation_path,
             patched_manifest_path=patched_manifest_path,
+            preflight_path=preflight_path,
+            in_place_mutation_path=in_place_mutation_path,
+            rollback_path=rollback_path,
         )
         patch_written = (
             self.config.commit_backend_manifest_mutation
@@ -606,6 +726,9 @@ class LocalDeliveryExecutor:
         manifest_revision_path: str | None,
         mutation_path: str | None,
         patched_manifest_path: str | None,
+        preflight_path: str | None,
+        in_place_mutation_path: str | None,
+        rollback_path: str | None,
     ) -> list[dict[str, Any]]:
         source_items = delivered if delivered else planned if dry_run else []
         entries = [
@@ -630,6 +753,26 @@ class LocalDeliveryExecutor:
             synthetic_paths.insert(
                 2,
                 ("workspace_delivery_manifest_revision", manifest_revision_path or str(delivery_root / self.config.manifest_revision_name)),
+            )
+        if self.config.preflight_backend_manifest_in_place_mutation:
+            synthetic_paths.append(
+                (
+                    "workspace_backend_artifact_manifest_preflight",
+                    preflight_path or str(delivery_root / self.config.backend_manifest_preflight_name),
+                )
+            )
+        if self.config.approve_backend_manifest_in_place_mutation:
+            synthetic_paths.extend(
+                [
+                    (
+                        "workspace_backend_artifact_manifest_in_place_mutation",
+                        in_place_mutation_path or str(delivery_root / self.config.backend_manifest_in_place_mutation_name),
+                    ),
+                    (
+                        "workspace_backend_artifact_manifest_rollback",
+                        rollback_path or str(delivery_root / self.config.backend_manifest_rollback_name),
+                    ),
+                ]
             )
         for artifact_key, path in synthetic_paths:
             entries.append(
@@ -753,6 +896,126 @@ class LocalDeliveryExecutor:
             },
         )
 
+    def _apply_backend_manifest_in_place_mutation(
+        self,
+        *,
+        mutation: BackendManifestMutation | None,
+        preflight: BackendManifestInPlacePreflight | None,
+        patched_manifest: dict[str, Any] | None,
+        mutation_path: str | None,
+        rollback_path: str | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> BackendManifestInPlaceMutation | None:
+        if not self.config.approve_backend_manifest_in_place_mutation:
+            return None
+        source_manifest_path = self.config.resolved_backend_manifest_path()
+        source_manifest_exists = bool(source_manifest_path and source_manifest_path.exists())
+        source_digest = _file_sha256(source_manifest_path) if source_manifest_path and source_manifest_exists else None
+        expected_digest = self.config.expected_backend_manifest_digest_sha256
+        patched_digest = _json_payload_sha256(patched_manifest) if patched_manifest is not None else None
+        checks = [
+            {
+                "name": "approval_present",
+                "passed": self.config.approve_backend_manifest_in_place_mutation,
+                "details": {"approved": self.config.approve_backend_manifest_in_place_mutation},
+            },
+            {
+                "name": "apply_mode_selected",
+                "passed": not dry_run and self.config.mode == DeliveryExecutionMode.APPLY,
+                "details": {"mode": self.config.mode.value, "dry_run": dry_run},
+            },
+            {
+                "name": "source_manifest_exists",
+                "passed": source_manifest_exists,
+                "details": {"source_manifest_path": str(source_manifest_path) if source_manifest_path else None},
+            },
+            {
+                "name": "expected_source_manifest_digest_provided",
+                "passed": bool(expected_digest),
+                "details": {"expected": expected_digest},
+            },
+            {
+                "name": "expected_source_manifest_digest_matches_current",
+                "passed": bool(expected_digest) and expected_digest == source_digest,
+                "details": {"expected": expected_digest, "actual": source_digest},
+            },
+            {
+                "name": "backend_manifest_patch_available",
+                "passed": bool(mutation and mutation.backend_manifest_patch_written and patched_manifest is not None),
+                "details": {
+                    "mutation_id": mutation.mutation_id if mutation else None,
+                    "patched_manifest_path": mutation.patched_manifest_path if mutation else None,
+                },
+            },
+            {
+                "name": "preflight_passed",
+                "passed": bool(preflight and preflight.in_place_mutation_allowed),
+                "details": {"preflight_id": preflight.preflight_id if preflight else None, "status": preflight.status if preflight else None},
+            },
+        ]
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        backend_manifest_mutated = False
+        rollback_checkpoint_written = False
+        post_mutation_digest: str | None = None
+        if dry_run:
+            status = "planned"
+        elif blocking_reasons:
+            status = "blocked"
+        else:
+            if source_manifest_path is None or rollback_path is None or patched_manifest is None:
+                raise ValueError("backend manifest in-place mutation requires source manifest, rollback path, and patched manifest")
+            rollback_target = Path(rollback_path)
+            rollback_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_manifest_path, rollback_target)
+            rollback_checkpoint_written = True
+            source_payload = _mark_backend_manifest_in_place_mutated(
+                patched_manifest,
+                transaction_id=self.config.transaction_id,
+                mutation_id=mutation.mutation_id if mutation else f"backend-manifest-mutation-{self.config.transaction_id}",
+                in_place_mutation_id=f"backend-manifest-in-place-mutation-{self.config.transaction_id}",
+                rollback_path=str(rollback_target),
+            )
+            _write_json(source_manifest_path, source_payload)
+            post_mutation_digest = _file_sha256(source_manifest_path)
+            backend_manifest_mutated = True
+            status = "applied"
+        return BackendManifestInPlaceMutation(
+            transaction_id=self.config.transaction_id,
+            status=status,
+            mutation_id=f"backend-manifest-in-place-mutation-{self.config.transaction_id}",
+            mutation_path=mutation_path,
+            rollback_path=rollback_path,
+            source_manifest_path=str(source_manifest_path) if source_manifest_path else None,
+            patched_manifest_path=mutation.patched_manifest_path if mutation else None,
+            dry_run=dry_run,
+            in_place_mutation_requested=True,
+            approved=self.config.approve_backend_manifest_in_place_mutation,
+            backend_manifest_mutated=backend_manifest_mutated,
+            rollback_checkpoint_written=rollback_checkpoint_written,
+            source_manifest_digest_sha256=source_digest,
+            expected_source_manifest_digest_sha256=expected_digest,
+            patched_manifest_digest_sha256=patched_digest,
+            post_mutation_manifest_digest_sha256=post_mutation_digest,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "backend-manifest-in-place-mutation-explicit-review-baseline",
+                "external_delivery_performed": False,
+                "cross_run_transaction_committed": False,
+                "limitations": [
+                    "explicit_review_only",
+                    "does_not_publish_external_delivery",
+                    "does_not_commit_cross_run_transaction",
+                    "rollback_checkpoint_is_local_baseline",
+                    "cross_run_manifest_recovery_not_implemented",
+                ],
+            },
+        )
+
     def _plan_artifacts(self, artifacts: list[DeliveryArtifact], delivery_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
         planned: list[dict[str, Any]] = []
         errors: list[str] = []
@@ -864,6 +1127,34 @@ def _replace_backend_manifest_mutation_digest(
     patched_manifest_digest_sha256: str,
 ) -> BackendManifestMutation:
     return replace(mutation, patched_manifest_digest_sha256=patched_manifest_digest_sha256)
+
+
+def _mark_backend_manifest_in_place_mutated(
+    manifest: dict[str, Any],
+    *,
+    transaction_id: str,
+    mutation_id: str,
+    in_place_mutation_id: str,
+    rollback_path: str,
+) -> dict[str, Any]:
+    payload = dict(manifest)
+    policy = dict(payload.get("mutation_policy") if isinstance(payload.get("mutation_policy"), dict) else {})
+    policy.update(
+        {
+            "transaction_id": transaction_id,
+            "mutation_id": mutation_id,
+            "in_place_mutation_id": in_place_mutation_id,
+            "backend_manifest_mutated": True,
+            "backend_manifest_in_place_mutation_approved": True,
+            "backend_manifest_patch_written": True,
+            "rollback_path": rollback_path,
+            "scope": "explicit-review-in-place-mutation-baseline",
+            "external_delivery_performed": False,
+            "cross_run_transaction_committed": False,
+        }
+    )
+    payload["mutation_policy"] = policy
+    return payload
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

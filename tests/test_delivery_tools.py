@@ -136,6 +136,37 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(result["backend_manifest_in_place_preflight"]["status"], "passed")
             self.assertTrue((root / "delivery" / "backend-artifact-manifest-preflight.json").exists())
 
+    def test_local_delivery_tool_can_approve_backend_manifest_in_place_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            expected_digest = _sha256_file(backend_manifest)
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-in-place-approved",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=expected_digest,
+                backend_manifest_path=str(backend_manifest),
+            )
+
+            self.assertTrue(result["backend_manifest_patch_written"])
+            self.assertTrue(result["backend_manifest_in_place_preflight_passed"])
+            self.assertTrue(result["backend_manifest_mutated"])
+            self.assertTrue(result["backend_manifest_rollback_written"])
+            self.assertEqual(result["backend_manifest_in_place_mutation"]["status"], "applied")
+            self.assertTrue((root / "delivery" / "backend-artifact-manifest-in-place-mutation.json").exists())
+            self.assertTrue((root / "delivery" / "backend-artifact-manifest.rollback.json").exists())
+
 
 class DeliverySubagentToolTests(TestCase):
     def test_delivery_subagent_exposes_rebuild_and_local_delivery_tools(self) -> None:

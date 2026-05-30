@@ -354,6 +354,141 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertFalse(preflight["in_place_mutation_allowed"])
             self.assertIn("expected_source_manifest_digest_matches", preflight["blocking_reasons"])
 
+    def test_backend_manifest_in_place_mutation_requires_explicit_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": [{"artifact_key": "existing", "path": "workspace/existing.json", "kind": "json"}]}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False) + "\n", encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-no-in-place-approval",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+
+            self.assertTrue(result.backend_manifest_in_place_preflight_passed)
+            self.assertFalse(result.backend_manifest_mutated)
+            self.assertFalse(result.backend_manifest_rollback_written)
+            self.assertIsNone(result.backend_manifest_in_place_mutation)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertFalse((delivery_root / "backend-artifact-manifest-in-place-mutation.json").exists())
+            self.assertFalse((delivery_root / "backend-artifact-manifest.rollback.json").exists())
+
+    def test_backend_manifest_in_place_mutation_blocks_digest_mismatch_even_with_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": []}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False) + "\n", encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-in-place-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256="0" * 64,
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+
+            self.assertFalse(result.backend_manifest_in_place_preflight_passed)
+            self.assertFalse(result.backend_manifest_mutated)
+            self.assertFalse(result.backend_manifest_rollback_written)
+            self.assertIsNotNone(result.backend_manifest_in_place_mutation)
+            self.assertEqual(result.backend_manifest_in_place_mutation.status, "blocked")
+            self.assertIn("expected_source_manifest_digest_matches_current", result.backend_manifest_in_place_mutation.blocking_reasons)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertTrue((delivery_root / "backend-artifact-manifest-in-place-mutation.json").exists())
+            self.assertFalse((delivery_root / "backend-artifact-manifest.rollback.json").exists())
+
+    def test_backend_manifest_in_place_mutation_applies_after_preflight_and_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {
+                "schema_version": "reverse-deepagent.backend-artifact-manifest.v1",
+                "entries": [{"artifact_key": "existing", "path": "workspace/existing.json", "kind": "json"}],
+            }
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            expected_digest = _sha256_file(backend_manifest)
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-in-place-approved",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_manifest_revision=True,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=expected_digest,
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+
+            in_place_path = delivery_root / "backend-artifact-manifest-in-place-mutation.json"
+            rollback_path = delivery_root / "backend-artifact-manifest.rollback.json"
+            journal_path = delivery_root / "delivery-transaction-journal.json"
+            self.assertEqual(result.status, "delivered")
+            self.assertTrue(result.backend_manifest_patch_written)
+            self.assertTrue(result.backend_manifest_in_place_preflight_passed)
+            self.assertTrue(result.backend_manifest_mutated)
+            self.assertTrue(result.backend_manifest_rollback_written)
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.backend_manifest_in_place_mutation)
+            self.assertEqual(result.backend_manifest_in_place_mutation.status, "applied")
+            self.assertTrue(result.backend_manifest_in_place_mutation.backend_manifest_mutated)
+            self.assertTrue(in_place_path.exists())
+            self.assertTrue(rollback_path.exists())
+
+            rollback = json.loads(rollback_path.read_text(encoding="utf-8"))
+            mutated = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            mutation_record = json.loads(in_place_path.read_text(encoding="utf-8"))
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            mutated_keys = {entry["artifact_key"] for entry in mutated["entries"]}
+            self.assertEqual(rollback, original_manifest)
+            self.assertIn("existing", mutated_keys)
+            self.assertIn("workspace_final", mutated_keys)
+            self.assertIn("workspace_backend_artifact_manifest_in_place_mutation", mutated_keys)
+            self.assertIn("workspace_backend_artifact_manifest_rollback", mutated_keys)
+            self.assertTrue(mutated["mutation_policy"]["backend_manifest_mutated"])
+            self.assertTrue(mutated["mutation_policy"]["backend_manifest_in_place_mutation_approved"])
+            self.assertFalse(mutated["mutation_policy"]["external_delivery_performed"])
+            self.assertFalse(mutated["mutation_policy"]["cross_run_transaction_committed"])
+            self.assertEqual(mutation_record["status"], "applied")
+            self.assertTrue(mutation_record["rollback_checkpoint_written"])
+            self.assertTrue(mutation_record["backend_manifest_mutated"])
+            self.assertEqual(journal["backend_manifest_in_place_mutation_path"], str(in_place_path.resolve()))
+            self.assertEqual(journal["backend_manifest_rollback_path"], str(rollback_path.resolve()))
+            self.assertTrue(journal["backend_manifest_rollback_written"])
+            self.assertTrue(journal["backend_manifest_mutated"])
+            self.assertFalse(journal["external_delivery_performed"])
+
     def test_missing_required_source_blocks_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
