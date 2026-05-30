@@ -168,6 +168,14 @@ class NativeWebRuntime(WebReverseRuntime):
         function_candidates = self._build_function_candidates(task_card, network_snapshot, source_hits, script_inventory)
         function_validations = self._validate_function_candidates(task_card, function_candidates, page)
         function_validation_summary = self._summarize_function_validations(function_validations)
+        flow_timeline = self._build_recon_flow_timeline(
+            task_card,
+            network_snapshot,
+            cdp_snapshot,
+            hook_timeline,
+            function_validations,
+            navigation_events,
+        )
 
         evidence = self._build_evidence(
             dom,
@@ -182,6 +190,7 @@ class NativeWebRuntime(WebReverseRuntime):
             function_candidates,
             function_validations,
             function_validation_summary,
+            flow_timeline,
         )
         artifacts = self._build_artifacts(
             network_snapshot,
@@ -194,6 +203,7 @@ class NativeWebRuntime(WebReverseRuntime):
             function_candidates,
             function_validations,
             function_validation_summary,
+            flow_timeline,
         )
         facts = [
             "Native Web runtime session is available",
@@ -1242,6 +1252,33 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _build_recon_flow_timeline(
+        task_card: TaskCard,
+        network_snapshot: dict[str, Any],
+        cdp_snapshot: dict[str, Any],
+        hook_timeline: dict[str, Any],
+        function_validations: list[dict[str, Any]],
+        navigation_events: list[str],
+    ) -> dict[str, Any]:
+        flow_id = f"{task_card.target_url_or_file}::{task_card.target_param_or_api or task_card.goal}"
+        flow_events = [
+            {"type": "navigation", "payload": {"event": event}}
+            for event in navigation_events
+        ]
+        spec = FlowTimelineSpec(
+            flow_id=flow_id,
+            run_id="native-web-recon",
+            flow_events=flow_events,
+            source_payloads={
+                "network_requests": {"items": network_snapshot.get("requests", []) if isinstance(network_snapshot, dict) else []},
+                "request_initiators": cdp_snapshot.get("request_initiators", {}) if isinstance(cdp_snapshot, dict) else {},
+                "hook_timeline": hook_timeline,
+                "replay_validation": {"validations": function_validations},
+            },
+        )
+        return FlowTimelineManager().build(spec).to_dict()
+
+    @staticmethod
     def _build_evidence(
         dom: dict[str, Any],
         storage: dict[str, Any],
@@ -1255,6 +1292,7 @@ class NativeWebRuntime(WebReverseRuntime):
         function_candidates: list[dict[str, Any]],
         function_validations: list[dict[str, Any]],
         function_validation_summary: dict[str, Any],
+        flow_timeline: dict[str, Any],
     ) -> list[EvidenceItem]:
         evidence = [
             EvidenceItem(summary="Native Web DOM snapshot collected", kind=EvidenceKind.DYNAMIC, source="dom_snapshot", details=dom, confidence=ConfidenceLevel.MEDIUM),
@@ -1269,6 +1307,7 @@ class NativeWebRuntime(WebReverseRuntime):
             EvidenceItem(summary="Native Web CDP script source metadata collected", kind=EvidenceKind.STATIC, source="get_script_source", details=cdp_snapshot.get("script_sources", {}), confidence=ConfidenceLevel.MEDIUM),
             EvidenceItem(summary="Native Web CDP WebSocket metadata collected", kind=EvidenceKind.WEBSOCKET, source="websocket_frame_metadata", details=cdp_snapshot.get("websocket_frames", {}), confidence=ConfidenceLevel.MEDIUM),
             EvidenceItem(summary="Native Web runtime hook timeline collected", kind=EvidenceKind.HOOK, source="runtime_hook_timeline", details=hook_timeline, confidence=ConfidenceLevel.MEDIUM),
+            EvidenceItem(summary="Native Web recon flow timeline assembled", kind=EvidenceKind.NOTE, source="flow_timeline", details=flow_timeline, confidence=ConfidenceLevel.MEDIUM),
         ]
         if function_candidates:
             evidence.append(
@@ -1314,6 +1353,7 @@ class NativeWebRuntime(WebReverseRuntime):
         function_candidates: list[dict[str, Any]],
         function_validations: list[dict[str, Any]],
         function_validation_summary: dict[str, Any],
+        flow_timeline: dict[str, Any],
     ) -> list[ArtifactRef]:
         artifacts = [
             ArtifactRef(path="virtual://workspace/network-requests.json", kind=ArtifactKind.JSON, description="Native Web network request samples.", metadata={"count": network_snapshot.get("count", 0)}),
@@ -1326,6 +1366,18 @@ class NativeWebRuntime(WebReverseRuntime):
             ArtifactRef(path="virtual://workspace/source-contexts.json", kind=ArtifactKind.JSON, description="Native Web CDP script source metadata.", metadata={"count": cdp_snapshot.get("script_sources", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
             ArtifactRef(path="virtual://workspace/websocket-frames.json", kind=ArtifactKind.JSON, description="Native Web CDP WebSocket frame metadata.", metadata={"count": cdp_snapshot.get("websocket_frames", {}).get("count", 0), "supported": cdp_snapshot.get("supported", False)}),
             ArtifactRef(path="virtual://workspace/hook-timeline.json", kind=ArtifactKind.JSON, description="Native Web runtime hook timeline.", metadata={"count": hook_timeline.get("snapshot", {}).get("eventCount", 0), "installed": hook_timeline.get("install", {}).get("installed", {})}),
+            ArtifactRef(
+                path="virtual://workspace/flow-timeline.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web recon flow timeline assembled from baseline collectors.",
+                metadata={
+                    "status": flow_timeline.get("status", "unknown"),
+                    "flow_id": flow_timeline.get("flow_id"),
+                    "entry_count": flow_timeline.get("entry_count", 0),
+                    "new_entry_count": flow_timeline.get("new_entry_count", 0),
+                    "continued_from_previous": bool(flow_timeline.get("continued_from_previous")),
+                },
+            ),
         ]
         if function_candidates:
             artifacts.append(

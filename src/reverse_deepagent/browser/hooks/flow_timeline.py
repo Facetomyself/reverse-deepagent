@@ -237,7 +237,7 @@ class FlowTimelineManager:
             "sequence": sequence,
             "flow_id": str(event.get("flow_id", event.get("flowId", spec.flow_id)) or spec.flow_id),
             "run_id": event.get("run_id", event.get("runId", spec.run_id)),
-            "request_id": event.get("request_id", event.get("requestId", spec.request_id)),
+            "request_id": event.get("request_id", event.get("requestId", event.get("requestID", spec.request_id))),
             "source": source,
             "type": event_type or str(event.get("type", "event")),
             "timestamp": event.get("timestamp", event.get("ts")),
@@ -247,7 +247,7 @@ class FlowTimelineManager:
     @staticmethod
     def _safe_payload(event: dict[str, Any], max_length: int) -> dict[str, Any]:
         safe = dict(event)
-        for key in ("flow_id", "flowId", "run_id", "runId", "request_id", "requestId"):
+        for key in ("flow_id", "flowId", "run_id", "runId", "request_id", "requestId", "requestID"):
             safe.pop(key, None)
         try:
             encoded = json.dumps(safe, ensure_ascii=False, sort_keys=True)

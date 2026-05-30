@@ -535,6 +535,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertIn("workspace_script_inventory", artifacts)
             self.assertIn("workspace_console_messages", artifacts)
             self.assertIn("workspace_navigation_events", artifacts)
+            self.assertIn("workspace_flow_timeline", artifacts)
             self.assertIn("workspace_function_candidates", artifacts)
             self.assertIn("workspace_function_validations", artifacts)
             self.assertIn("workspace_function_validation_summary", artifacts)
@@ -550,6 +551,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
             source_contexts = json.loads(Path(artifacts["workspace_source_contexts"]).read_text(encoding="utf-8"))
             websocket_frames = json.loads(Path(artifacts["workspace_websocket_frames"]).read_text(encoding="utf-8"))
             hook_timeline = json.loads(Path(artifacts["workspace_hook_timeline"]).read_text(encoding="utf-8"))
+            flow_timeline = json.loads(Path(artifacts["workspace_flow_timeline"]).read_text(encoding="utf-8"))
             function_candidates = json.loads(Path(artifacts["workspace_function_candidates"]).read_text(encoding="utf-8"))
             function_validations = json.loads(Path(artifacts["workspace_function_validations"]).read_text(encoding="utf-8"))
             function_validation_summary = json.loads(Path(artifacts["workspace_function_validation_summary"]).read_text(encoding="utf-8"))
@@ -577,6 +579,13 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(hook_timeline["install"]["ok"])
         self.assertEqual(hook_timeline["snapshot"]["eventCount"], 1)
         self.assertEqual(hook_timeline["snapshot"]["events"][0]["type"], "fetch")
+        self.assertEqual(flow_timeline["status"], "success")
+        self.assertEqual(flow_timeline["run_id"], "native-web-recon")
+        self.assertEqual(flow_timeline["new_entry_count"], 5)
+        self.assertEqual(flow_timeline["entry_count"], 5)
+        self.assertIn("network.request", {entry["type"] for entry in flow_timeline["entries"]})
+        self.assertIn("hook.fetch", {entry["type"] for entry in flow_timeline["entries"]})
+        self.assertIn("replay.validation", {entry["type"] for entry in flow_timeline["entries"]})
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")
@@ -584,6 +593,8 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(manifest_by_key["workspace_response_bodies"]["category"], "network")
         self.assertEqual(manifest_by_key["workspace_websocket_frames"]["category"], "network")
         self.assertEqual(manifest_by_key["workspace_hook_timeline"]["category"], "hook-timeline")
+        self.assertEqual(manifest_by_key["workspace_flow_timeline"]["category"], "trace")
+        self.assertEqual(manifest_by_key["workspace_flow_timeline"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_function_validations"]["category"], "trace")
 
     def test_native_web_runtime_apply_minimal_protection_installs_hooks(self) -> None:
