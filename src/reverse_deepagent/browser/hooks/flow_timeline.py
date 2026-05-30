@@ -142,6 +142,7 @@ class FlowTimelineResult:
     entries: list[dict[str, Any]] = field(default_factory=list)
     correlation_groups: list[dict[str, Any]] = field(default_factory=list)
     stitch_candidates: list[dict[str, Any]] = field(default_factory=list)
+    auto_stitch_dry_runs: list[dict[str, Any]] = field(default_factory=list)
     stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     stitch_review_decisions: list[dict[str, Any]] = field(default_factory=list)
     stitched_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -167,6 +168,8 @@ class FlowTimelineResult:
             "correlation_groups": self.correlation_groups,
             "stitch_candidate_count": len(self.stitch_candidates),
             "stitch_candidates": self.stitch_candidates,
+            "auto_stitch_dry_run_count": len(self.auto_stitch_dry_runs),
+            "auto_stitch_dry_runs": self.auto_stitch_dry_runs,
             "stitch_proposal_count": len(self.stitch_proposals),
             "stitch_proposals": self.stitch_proposals,
             "stitch_review_decision_count": len(self.stitch_review_decisions),
@@ -200,6 +203,7 @@ class FlowTimelineManager:
         entries.extend(new_entries)
         correlation_groups = self._correlation_groups(entries)
         stitch_candidates = self._stitch_candidates(correlation_groups, entries)
+        auto_stitch_dry_runs = self._auto_stitch_dry_runs(stitch_candidates)
         stitch_proposals = self._stitch_proposals(stitch_candidates)
         stitch_proposals = self._apply_review_decisions(stitch_proposals, spec.stitch_review_decisions)
         stitched_flows = self._stitched_flows(stitch_proposals, stitch_candidates, entries)
@@ -211,6 +215,7 @@ class FlowTimelineManager:
             entries=entries,
             correlation_groups=correlation_groups,
             stitch_candidates=stitch_candidates,
+            auto_stitch_dry_runs=auto_stitch_dry_runs,
             stitch_proposals=stitch_proposals,
             stitch_review_decisions=list(spec.stitch_review_decisions),
             stitched_flows=stitched_flows,
@@ -555,6 +560,111 @@ class FlowTimelineManager:
                 }
             )
         return candidates
+
+    @classmethod
+    def _auto_stitch_dry_runs(cls, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Score stitch candidates without materializing or applying them.
+
+        This is intentionally a dry-run layer.  It gives later review agents or
+        humans a deterministic score and conflict summary, but it never flips
+        ``automatic_stitching`` to true and never creates stitched flows.
+        """
+
+        dry_runs: list[dict[str, Any]] = []
+        for index, candidate in enumerate(candidates, 1):
+            evidence = candidate.get("evidence") if isinstance(candidate.get("evidence"), dict) else {}
+            missing_for_ready = list(candidate.get("missing_for_ready", [])) if isinstance(candidate.get("missing_for_ready"), list) else []
+            conflict_reasons = cls._auto_stitch_conflict_reasons(candidate, candidates)
+            confidence_score, score_reasons = cls._auto_stitch_confidence_score(candidate, evidence, missing_for_ready)
+            confidence = "high" if confidence_score >= 0.85 else "medium" if confidence_score >= 0.6 else "low"
+            blockers = ["dry_run_only", "review_required", "automatic_application_disabled"]
+            blockers.extend(f"missing_{name}" for name in missing_for_ready)
+            blockers.extend(conflict_reasons)
+            dry_runs.append(
+                {
+                    "dry_run_id": f"auto-stitch-dry-run-{index}",
+                    "candidate_id": candidate.get("candidate_id"),
+                    "group_id": candidate.get("group_id"),
+                    "strategy": candidate.get("strategy"),
+                    "key": candidate.get("key", {}) if isinstance(candidate.get("key"), dict) else {},
+                    "readiness": candidate.get("readiness"),
+                    "confidence": confidence,
+                    "confidence_score": confidence_score,
+                    "score_reasons": score_reasons,
+                    "entry_sequences": list(candidate.get("entry_sequences", [])) if isinstance(candidate.get("entry_sequences"), list) else [],
+                    "entry_types": list(candidate.get("entry_types", [])) if isinstance(candidate.get("entry_types"), list) else [],
+                    "sources": list(candidate.get("sources", [])) if isinstance(candidate.get("sources"), list) else [],
+                    "path_length": candidate.get("path_length", 0),
+                    "supporting_evidence": evidence,
+                    "missing_for_ready": missing_for_ready,
+                    "conflict_reasons": conflict_reasons,
+                    "blocking_conditions": cls._unique_strings(blockers),
+                    "review_required": True,
+                    "would_materialize": False,
+                    "dry_run": True,
+                    "automatic_stitching": False,
+                    "stitching": False,
+                    "scope": "auto-stitch-dry-run-only",
+                    "next_action": "review_auto_stitch_dry_run_before_materialization",
+                }
+            )
+        return dry_runs
+
+    @classmethod
+    def _auto_stitch_confidence_score(
+        cls,
+        candidate: dict[str, Any],
+        evidence: dict[str, Any],
+        missing_for_ready: list[str],
+    ) -> tuple[float, list[str]]:
+        score = 0.15
+        reasons = ["base_candidate_score"]
+        readiness = str(candidate.get("readiness") or "")
+        if readiness == "ready_for_manual_stitch_review":
+            score += 0.2
+            reasons.append("readiness=ready_for_manual_stitch_review")
+        elif readiness == "reviewable":
+            score += 0.1
+            reasons.append("readiness=reviewable")
+        weights = {
+            "request_initiator": 0.2,
+            "runtime_hook": 0.2,
+            "replay_validation": 0.2,
+            "network_request": 0.05,
+            "debugger": 0.05,
+            "source_logpoint": 0.05,
+            "mutation": 0.03,
+        }
+        for key, weight in weights.items():
+            if evidence.get(key):
+                score += weight
+                reasons.append(f"evidence={key}")
+        path_length = candidate.get("path_length")
+        if isinstance(path_length, int) and path_length >= 3:
+            score += 0.05
+            reasons.append("path_length>=3")
+        if missing_for_ready:
+            score -= min(0.3, 0.1 * len(missing_for_ready))
+            reasons.append(f"missing_for_ready={','.join(missing_for_ready)}")
+        score = max(0.0, min(1.0, score))
+        return round(score, 2), reasons
+
+    @classmethod
+    def _auto_stitch_conflict_reasons(cls, candidate: dict[str, Any], candidates: list[dict[str, Any]]) -> list[str]:
+        conflicts: list[str] = []
+        candidate_id = candidate.get("candidate_id")
+        strategy = candidate.get("strategy")
+        sequences = {item for item in candidate.get("entry_sequences", []) if item is not None} if isinstance(candidate.get("entry_sequences"), list) else set()
+        for other in candidates:
+            if other.get("candidate_id") == candidate_id:
+                continue
+            other_sequences = {item for item in other.get("entry_sequences", []) if item is not None} if isinstance(other.get("entry_sequences"), list) else set()
+            overlap = sorted(sequences.intersection(other_sequences))
+            if overlap:
+                conflicts.append(f"overlaps_with_{other.get('candidate_id')}:{','.join(str(item) for item in overlap)}")
+            if other.get("strategy") == strategy and other.get("key") != candidate.get("key"):
+                conflicts.append(f"same_strategy_alternative={other.get('candidate_id')}")
+        return cls._unique_strings(conflicts)
 
     @staticmethod
     def _stitch_proposals(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:

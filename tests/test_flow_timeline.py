@@ -137,6 +137,26 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(reviewable_candidate["confidence"], "low")
         self.assertIn("replay_validation", reviewable_candidate["missing_for_ready"])
         self.assertEqual(reviewable_candidate["next_action"], "collect_missing_evidence_or_review_manually")
+        self.assertEqual(len(result.auto_stitch_dry_runs), 3)
+        dry_runs_by_candidate = {dry_run["candidate_id"]: dry_run for dry_run in result.auto_stitch_dry_runs}
+        ready_dry_run = dry_runs_by_candidate[ready_candidate["candidate_id"]]
+        self.assertEqual(ready_dry_run["scope"], "auto-stitch-dry-run-only")
+        self.assertTrue(ready_dry_run["dry_run"])
+        self.assertTrue(ready_dry_run["review_required"])
+        self.assertFalse(ready_dry_run["would_materialize"])
+        self.assertFalse(ready_dry_run["automatic_stitching"])
+        self.assertFalse(ready_dry_run["stitching"])
+        self.assertGreaterEqual(ready_dry_run["confidence_score"], 0.85)
+        self.assertEqual(ready_dry_run["confidence"], "high")
+        self.assertIn("dry_run_only", ready_dry_run["blocking_conditions"])
+        self.assertIn("automatic_application_disabled", ready_dry_run["blocking_conditions"])
+        self.assertIn("overlaps_with_", " ".join(ready_dry_run["conflict_reasons"]))
+        self.assertEqual(ready_dry_run["next_action"], "review_auto_stitch_dry_run_before_materialization")
+        reviewable_dry_run = dry_runs_by_candidate[reviewable_candidate["candidate_id"]]
+        self.assertTrue(reviewable_dry_run["review_required"])
+        self.assertFalse(reviewable_dry_run["would_materialize"])
+        self.assertIn("missing_replay_validation", reviewable_dry_run["blocking_conditions"])
+        self.assertIn("missing_for_ready=replay_validation", reviewable_dry_run["score_reasons"])
         self.assertEqual(len(result.stitch_proposals), 1)
         proposal = result.stitch_proposals[0]
         self.assertEqual(proposal["proposal_id"], "stitch-proposal-1")
@@ -157,6 +177,9 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result_dict["correlation_groups"][0]["stitching"], False)
         self.assertEqual(result_dict["stitch_candidate_count"], 3)
         self.assertEqual(result_dict["stitch_candidates"][0]["automatic_stitching"], False)
+        self.assertEqual(result_dict["auto_stitch_dry_run_count"], 3)
+        self.assertEqual(result_dict["auto_stitch_dry_runs"][0]["scope"], "auto-stitch-dry-run-only")
+        self.assertFalse(result_dict["auto_stitch_dry_runs"][0]["automatic_stitching"])
         self.assertEqual(result_dict["stitch_proposal_count"], 1)
         self.assertEqual(result_dict["stitch_proposals"][0]["review_decision"]["status"], "pending_review")
 
@@ -239,8 +262,10 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertIn("request_initiator", groups_by_strategy["candidate_id"]["verification"]["missing_for_ready"])
         self.assertFalse(groups_by_strategy["candidate_id"]["verification"]["automatic_stitching"])
         self.assertEqual(result.stitch_candidates, [])
+        self.assertEqual(result.auto_stitch_dry_runs, [])
         self.assertEqual(result.stitch_proposals, [])
         self.assertEqual(result.to_dict()["stitch_candidate_count"], 0)
+        self.assertEqual(result.to_dict()["auto_stitch_dry_run_count"], 0)
         self.assertEqual(result.to_dict()["stitch_proposal_count"], 0)
 
 
