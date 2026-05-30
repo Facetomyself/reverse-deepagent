@@ -117,11 +117,28 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(reviewable_candidate["confidence"], "low")
         self.assertIn("replay_validation", reviewable_candidate["missing_for_ready"])
         self.assertEqual(reviewable_candidate["next_action"], "collect_missing_evidence_or_review_manually")
+        self.assertEqual(len(result.stitch_proposals), 1)
+        proposal = result.stitch_proposals[0]
+        self.assertEqual(proposal["proposal_id"], "stitch-proposal-1")
+        self.assertEqual(proposal["candidate_id"], ready_candidate["candidate_id"])
+        self.assertEqual(proposal["group_id"], groups_by_strategy["function_name"]["group_id"])
+        self.assertEqual(proposal["strategy"], "function_name")
+        self.assertEqual(proposal["scope"], "review-gated-stitch-proposal-only")
+        self.assertEqual(proposal["review_decision"]["status"], "pending_review")
+        self.assertFalse(proposal["review_decision"]["approved"])
+        self.assertTrue(proposal["review_decision"]["review_required"])
+        self.assertIn("missing_reviewer_approval", proposal["blocking_conditions"])
+        self.assertIn("automatic_application_disabled", proposal["blocking_conditions"])
+        self.assertIn("confirm_replay_validation_matches_original_request_semantics", proposal["approval_requirements"])
+        self.assertFalse(proposal["automatic_stitching"])
+        self.assertFalse(proposal["stitching"])
         result_dict = result.to_dict()
         self.assertEqual(result_dict["correlation_group_count"], 3)
         self.assertEqual(result_dict["correlation_groups"][0]["stitching"], False)
         self.assertEqual(result_dict["stitch_candidate_count"], 3)
         self.assertEqual(result_dict["stitch_candidates"][0]["automatic_stitching"], False)
+        self.assertEqual(result_dict["stitch_proposal_count"], 1)
+        self.assertEqual(result_dict["stitch_proposals"][0]["review_decision"]["status"], "pending_review")
 
     def test_missing_inputs_is_not_a_flow_timeline_request(self) -> None:
         self.assertIsNone(FlowTimelineSpec.from_context({"flow_id": "empty"}))
@@ -147,7 +164,9 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertIn("request_initiator", groups_by_strategy["candidate_id"]["verification"]["missing_for_ready"])
         self.assertFalse(groups_by_strategy["candidate_id"]["verification"]["automatic_stitching"])
         self.assertEqual(result.stitch_candidates, [])
+        self.assertEqual(result.stitch_proposals, [])
         self.assertEqual(result.to_dict()["stitch_candidate_count"], 0)
+        self.assertEqual(result.to_dict()["stitch_proposal_count"], 0)
 
 
 if __name__ == "__main__":

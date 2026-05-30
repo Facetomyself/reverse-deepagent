@@ -124,6 +124,7 @@ class FlowTimelineResult:
     entries: list[dict[str, Any]] = field(default_factory=list)
     correlation_groups: list[dict[str, Any]] = field(default_factory=list)
     stitch_candidates: list[dict[str, Any]] = field(default_factory=list)
+    stitch_proposals: list[dict[str, Any]] = field(default_factory=list)
     previous_entry_count: int = 0
     new_entry_count: int = 0
     source_counts: dict[str, int] = field(default_factory=dict)
@@ -146,6 +147,8 @@ class FlowTimelineResult:
             "correlation_groups": self.correlation_groups,
             "stitch_candidate_count": len(self.stitch_candidates),
             "stitch_candidates": self.stitch_candidates,
+            "stitch_proposal_count": len(self.stitch_proposals),
+            "stitch_proposals": self.stitch_proposals,
             "error": self.error,
             "reason": self.reason,
         }
@@ -173,6 +176,7 @@ class FlowTimelineManager:
         entries.extend(new_entries)
         correlation_groups = self._correlation_groups(entries)
         stitch_candidates = self._stitch_candidates(correlation_groups, entries)
+        stitch_proposals = self._stitch_proposals(stitch_candidates)
         status = "success" if new_entries else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
@@ -181,6 +185,7 @@ class FlowTimelineManager:
             entries=entries,
             correlation_groups=correlation_groups,
             stitch_candidates=stitch_candidates,
+            stitch_proposals=stitch_proposals,
             previous_entry_count=len(previous_entries),
             new_entry_count=len(new_entries),
             source_counts=source_counts,
@@ -522,6 +527,59 @@ class FlowTimelineManager:
                 }
             )
         return candidates
+
+    @staticmethod
+    def _stitch_proposals(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Create review-gated stitch proposals from ready manual candidates.
+
+        A proposal is still not a stitched flow.  It is the next machine-readable
+        step after a candidate has enough initiator + hook + replay evidence to
+        be reviewed.  Nothing in this layer approves or applies stitching; a
+        later review gate must explicitly make that decision.
+        """
+
+        proposals: list[dict[str, Any]] = []
+        approval_requirements = [
+            "confirm_entry_order_matches_observed_runtime_flow",
+            "confirm_request_identity_or_function_path_matches_target",
+            "confirm_replay_validation_matches_original_request_semantics",
+            "confirm_no_conflicting_correlation_group_has_stronger_evidence",
+        ]
+        for candidate in candidates:
+            if candidate.get("readiness") != "ready_for_manual_stitch_review":
+                continue
+            missing_for_ready = candidate.get("missing_for_ready") if isinstance(candidate.get("missing_for_ready"), list) else []
+            if missing_for_ready:
+                continue
+            proposals.append(
+                {
+                    "proposal_id": f"stitch-proposal-{len(proposals) + 1}",
+                    "candidate_id": candidate.get("candidate_id"),
+                    "group_id": candidate.get("group_id"),
+                    "strategy": candidate.get("strategy"),
+                    "key": candidate.get("key", {}),
+                    "confidence": candidate.get("confidence", "medium"),
+                    "entry_sequences": list(candidate.get("entry_sequences", [])) if isinstance(candidate.get("entry_sequences"), list) else [],
+                    "path_length": candidate.get("path_length", 0),
+                    "evidence": candidate.get("evidence", {}) if isinstance(candidate.get("evidence"), dict) else {},
+                    "approval_requirements": list(approval_requirements),
+                    "blocking_conditions": [
+                        "missing_reviewer_approval",
+                        "automatic_application_disabled",
+                    ],
+                    "review_decision": {
+                        "status": "pending_review",
+                        "approved": False,
+                        "review_required": True,
+                        "review_gate": "manual_or_future_review_gate",
+                    },
+                    "next_action": "review_stitch_proposal_before_applying",
+                    "automatic_stitching": False,
+                    "stitching": False,
+                    "scope": "review-gated-stitch-proposal-only",
+                }
+            )
+        return proposals
 
     @staticmethod
     def _group_verification(group: dict[str, Any]) -> dict[str, Any]:

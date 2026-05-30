@@ -261,6 +261,7 @@ class NativeWebRuntime(WebReverseRuntime):
             result = FlowTimelineManager().build(spec)
             entry_count = len(result.entries)
             stitch_candidate_count = len(result.stitch_candidates)
+            stitch_proposal_count = len(result.stitch_proposals)
             verification = [
                 f"flow_timeline_status={result.status}",
                 f"flow_timeline_flow_id={result.flow_id}",
@@ -269,6 +270,7 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"flow_timeline_new_entry_count={result.new_entry_count}",
                 f"flow_timeline_correlation_group_count={len(result.correlation_groups)}",
                 f"flow_timeline_stitch_candidate_count={stitch_candidate_count}",
+                f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
                 f"flow_timeline_automatic_stitching=False",
                 f"flow_timeline_continued_from_previous={result.continued_from_previous}",
                 f"flow_timeline_sources={sorted(result.source_counts.keys())}",
@@ -297,6 +299,7 @@ class NativeWebRuntime(WebReverseRuntime):
                             "new_entry_count": result.new_entry_count,
                             "correlation_group_count": len(result.correlation_groups),
                             "stitch_candidate_count": stitch_candidate_count,
+                            "stitch_proposal_count": stitch_proposal_count,
                             "automatic_stitching": False,
                             "continued_from_previous": result.continued_from_previous,
                             "source_counts": result.source_counts,
@@ -1401,6 +1404,7 @@ class NativeWebRuntime(WebReverseRuntime):
                     "new_entry_count": flow_timeline.get("new_entry_count", 0),
                     "correlation_group_count": flow_timeline.get("correlation_group_count", 0),
                     "stitch_candidate_count": flow_timeline.get("stitch_candidate_count", 0),
+                    "stitch_proposal_count": flow_timeline.get("stitch_proposal_count", 0),
                     "automatic_stitching": False,
                     "continued_from_previous": bool(flow_timeline.get("continued_from_previous")),
                 },
