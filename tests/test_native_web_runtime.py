@@ -594,6 +594,13 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(any(candidate_id in correlation.get("candidate_ids", []) for correlation in correlations))
         self.assertTrue(any(correlation.get("method") == "GET" for correlation in correlations))
         self.assertTrue(all(correlation.get("confidence") in {"none", "low", "medium"} for correlation in correlations))
+        self.assertGreaterEqual(flow_timeline["correlation_group_count"], 3)
+        groups_by_strategy = {group["strategy"]: group for group in flow_timeline["correlation_groups"]}
+        self.assertEqual(groups_by_strategy["request_id"]["key"], {"request_id": "req-1"})
+        self.assertEqual(groups_by_strategy["url_path_method"]["key"], {"url_path": "/app/api/search", "method": "GET"})
+        self.assertEqual(groups_by_strategy["function_name"]["key"], {"function_name": "buildSign"})
+        self.assertFalse(groups_by_strategy["url_path_method"]["stitching"])
+        self.assertEqual(groups_by_strategy["function_name"]["scope"], "correlation-hints-only")
         manifest_by_key = {entry["artifact_key"]: entry for entry in manifest["entries"]}
         self.assertEqual(manifest_by_key["workspace_dom_snapshot"]["metadata"]["browser_provider"], "fake-native")
         self.assertEqual(manifest_by_key["workspace_script_inventory"]["category"], "source")
@@ -784,7 +791,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
                     ]
                 },
                 "network_requests": {"items": [{"url": "https://example.test/api/sign", "method": "POST"}]},
-                "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign"}}]}},
+                "hook_timeline": {"snapshot": {"events": [{"type": "fetch", "payload": {"url": "/api/sign", "method": "POST"}}]}},
                 "debugger_timeline": {"entries": [{"type": "breakpoint.hit", "callFrameId": "cf-1"}]},
             },
         )
@@ -795,6 +802,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("flow_timeline_entry_count=4", result.verification)
         self.assertIn("flow_timeline_previous_entry_count=1", result.verification)
         self.assertIn("flow_timeline_new_entry_count=3", result.verification)
+        self.assertIn("flow_timeline_correlation_group_count=1", result.verification)
         self.assertIn("flow_timeline_continued_from_previous=True", result.verification)
         self.assertEqual(result.next_action, "inspect_flow_timeline_or_continue_next_request")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/flow-timeline.json")
@@ -802,6 +810,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["entry_count"], 4)
         self.assertEqual(result.artifacts[0].metadata["previous_entry_count"], 1)
         self.assertEqual(result.artifacts[0].metadata["new_entry_count"], 3)
+        self.assertEqual(result.artifacts[0].metadata["correlation_group_count"], 1)
         self.assertTrue(result.artifacts[0].metadata["continued_from_previous"])
         self.assertEqual(result.artifacts[0].metadata["source_counts"]["network_requests"], 1)
 

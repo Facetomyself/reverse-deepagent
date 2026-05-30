@@ -79,6 +79,20 @@ class FlowTimelineManagerTests(unittest.TestCase):
         self.assertEqual(result.source_counts["hook_timeline"], 1)
         self.assertEqual(result.source_counts["debugger_timeline"], 1)
         self.assertEqual(result.source_counts["replay_validation"], 1)
+        groups_by_strategy = {group["strategy"]: group for group in result.correlation_groups}
+        self.assertEqual(len(result.correlation_groups), 3)
+        self.assertEqual(groups_by_strategy["request_id"]["key"], {"request_id": "req-2"})
+        self.assertEqual(groups_by_strategy["request_id"]["entry_sequences"], [1, 2])
+        self.assertEqual(groups_by_strategy["request_id"]["confidence"], "medium")
+        self.assertFalse(groups_by_strategy["request_id"]["stitching"])
+        self.assertEqual(groups_by_strategy["url_path_method"]["key"], {"url_path": "/api/sign", "method": "POST"})
+        self.assertEqual(groups_by_strategy["url_path_method"]["entry_sequences"], [1, 2, 3])
+        self.assertEqual(groups_by_strategy["function_name"]["key"], {"function_name": "buildSign"})
+        self.assertEqual(groups_by_strategy["function_name"]["entry_sequences"], [2, 5])
+        self.assertEqual(groups_by_strategy["function_name"]["scope"], "correlation-hints-only")
+        result_dict = result.to_dict()
+        self.assertEqual(result_dict["correlation_group_count"], 3)
+        self.assertEqual(result_dict["correlation_groups"][0]["stitching"], False)
 
     def test_missing_inputs_is_not_a_flow_timeline_request(self) -> None:
         self.assertIsNone(FlowTimelineSpec.from_context({"flow_id": "empty"}))

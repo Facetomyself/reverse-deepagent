@@ -122,6 +122,7 @@ class FlowTimelineResult:
     flow_id: str
     run_id: str | None = None
     entries: list[dict[str, Any]] = field(default_factory=list)
+    correlation_groups: list[dict[str, Any]] = field(default_factory=list)
     previous_entry_count: int = 0
     new_entry_count: int = 0
     source_counts: dict[str, int] = field(default_factory=dict)
@@ -140,6 +141,8 @@ class FlowTimelineResult:
             "continued_from_previous": self.continued_from_previous,
             "source_counts": self.source_counts,
             "entries": self.entries,
+            "correlation_group_count": len(self.correlation_groups),
+            "correlation_groups": self.correlation_groups,
             "error": self.error,
             "reason": self.reason,
         }
@@ -165,12 +168,14 @@ class FlowTimelineManager:
             new_entries.extend(source_entries)
 
         entries.extend(new_entries)
+        correlation_groups = self._correlation_groups(entries)
         status = "success" if new_entries else "partial" if previous_entries else "unsupported"
         return FlowTimelineResult(
             status=status,
             flow_id=spec.flow_id,
             run_id=spec.run_id,
             entries=entries,
+            correlation_groups=correlation_groups,
             previous_entry_count=len(previous_entries),
             new_entry_count=len(new_entries),
             source_counts=source_counts,
@@ -382,6 +387,90 @@ class FlowTimelineManager:
         correlation["confidence"] = confidence
         correlation["hints"] = hints
         return correlation
+
+    def _correlation_groups(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build conservative candidate groups from per-entry correlation hints.
+
+        A group means "these entries share the same hint", not "these entries
+        are proven to belong to the same full reverse flow".  Callers that need
+        true stitching must add a separate matching / verification stage.
+        """
+
+        buckets: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for entry in entries:
+            correlation = entry.get("correlation")
+            if not isinstance(correlation, dict):
+                continue
+            for strategy, key_data, confidence in self._group_candidates(correlation):
+                group_key = (strategy, tuple(sorted(key_data.items())))
+                bucket = buckets.setdefault(
+                    group_key,
+                    {
+                        "strategy": strategy,
+                        "key": dict(key_data),
+                        "confidence": confidence,
+                        "entry_sequences": [],
+                        "entry_types": [],
+                        "sources": [],
+                        "hints": [],
+                    },
+                )
+                sequence = entry.get("sequence")
+                if sequence not in bucket["entry_sequences"]:
+                    bucket["entry_sequences"].append(sequence)
+                entry_type = entry.get("type")
+                if entry_type and entry_type not in bucket["entry_types"]:
+                    bucket["entry_types"].append(entry_type)
+                source = entry.get("source")
+                if source and source not in bucket["sources"]:
+                    bucket["sources"].append(source)
+                for hint in correlation.get("hints", []):
+                    if isinstance(hint, str) and hint not in bucket["hints"]:
+                        bucket["hints"].append(hint)
+
+        priority = {"medium": 0, "low": 1, "none": 2}
+        groups = [
+            group
+            for group in buckets.values()
+            if len([sequence for sequence in group["entry_sequences"] if sequence is not None]) >= 2
+        ]
+        groups.sort(
+            key=lambda group: (
+                priority.get(str(group.get("confidence")), 9),
+                str(group.get("strategy")),
+                json.dumps(group.get("key", {}), ensure_ascii=False, sort_keys=True),
+            )
+        )
+        for index, group in enumerate(groups, 1):
+            group["group_id"] = f"cg-{index}"
+            group["entry_count"] = len(group["entry_sequences"])
+            group["stitching"] = False
+            group["scope"] = "correlation-hints-only"
+        return groups
+
+    @staticmethod
+    def _group_candidates(correlation: dict[str, Any]) -> list[tuple[str, dict[str, str], str]]:
+        candidates: list[tuple[str, dict[str, str], str]] = []
+        request_id = correlation.get("request_id")
+        if request_id:
+            candidates.append(("request_id", {"request_id": str(request_id)}, "medium"))
+        url_path = correlation.get("url_path")
+        method = correlation.get("method")
+        if url_path and method:
+            candidates.append(("url_path_method", {"url_path": str(url_path), "method": str(method).upper()}, "medium"))
+        function_names = correlation.get("function_names")
+        for function_name in function_names if isinstance(function_names, list) else []:
+            if function_name:
+                candidates.append(("function_name", {"function_name": str(function_name)}, "low"))
+        candidate_ids = correlation.get("candidate_ids")
+        for candidate_id in candidate_ids if isinstance(candidate_ids, list) else []:
+            if candidate_id:
+                candidates.append(("candidate_id", {"candidate_id": str(candidate_id)}, "low"))
+        hook_paths = correlation.get("hook_paths")
+        for hook_path in hook_paths if isinstance(hook_paths, list) else []:
+            if hook_path:
+                candidates.append(("hook_path", {"hook_path": str(hook_path)}, "low"))
+        return candidates
 
     @classmethod
     def _first_string(cls, data: dict[str, Any], paths: Iterable[tuple[str, ...]]) -> str | None:
