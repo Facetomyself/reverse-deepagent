@@ -1,0 +1,129 @@
+import json
+import unittest
+from pathlib import Path
+
+from reverse_deepagent.agent import build_reverse_agent
+from reverse_deepagent.subagents.debugger import (
+    DEBUGGER_SUBAGENT_DESCRIPTION,
+    DEBUGGER_SUBAGENT_NAME,
+    build_debugger_subagent,
+    load_debugger_prompt,
+)
+from reverse_deepagent.tools.debugger_tools import make_review_debugger_artifacts_tool
+
+
+class ToolFriendlyFakeModel:
+    def bind_tools(self, tools, *, tool_choice=None, **kwargs):  # noqa: D401, ANN001
+        return self
+
+
+class DebuggerSubagentTests(unittest.TestCase):
+    def test_review_debugger_artifacts_blocks_durable_snapshot_live_resume(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "debugger_session": {
+                "session_id": "durable-1",
+                "status": "unsupported",
+                "reason": "durable_snapshot_is_inspect_only",
+                "continuation_preflight": {
+                    "status": "action_blocked",
+                    "source": "durable_snapshot",
+                    "reason": "live_paused_session_required",
+                    "requested_action": "resume",
+                    "live_continuation_available": False,
+                },
+            },
+            "callframes": [
+                {
+                    "functionName": "buildSign",
+                    "location": {"url": "https://example.test/app.js", "lineNumber": 12, "columnNumber": 4},
+                }
+            ],
+            "debugger_timeline": {"entry_count": 2, "entries": [{"event": "paused"}, {"event": "snapshot_loaded"}]},
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertTrue(result["blocked"])
+        self.assertIn("paused_session_action_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "use_live_same_process_paused_session_before_resume_step_or_evaluate")
+        self.assertEqual(result["summary"]["session_id"], "durable-1")
+        self.assertEqual(result["summary"]["callframe_count"], 1)
+        self.assertEqual(result["summary"]["top_callframes"][0]["function_name"], "buildSign")
+        self.assertEqual(result["review_required_items"][0]["code"], "paused_session_action_blocked")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["browser_resumed"])
+        self.assertFalse(result["side_effect_policy"]["callframe_evaluated"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_passes_live_available_paused_session(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "debugger_session": {
+                "session_id": "live-1",
+                "status": "success",
+                "continuation_preflight": {
+                    "status": "live_available",
+                    "source": "registry",
+                    "requested_action": "inspect",
+                    "live_continuation_available": True,
+                },
+            },
+            "debugger_paused": {"status": "paused"},
+            "callframes": [{"functionName": "sign", "location": {"lineNumber": 1}}],
+            "debugger_timeline": {"entries": [{"event": "paused"}, {"event": "callframes_captured"}]},
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["next_action"], "debugger_review_passed")
+        self.assertEqual(result["summary"]["preflight_source"], "registry")
+        self.assertTrue(result["summary"]["live_continuation_available"])
+        self.assertEqual(result["summary"]["timeline_event_counts"]["paused"], 1)
+
+    def test_review_debugger_artifacts_warns_when_no_artifacts_are_present(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        result = tool("{}")
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("no_debugger_artifacts_provided", result["warnings"])
+        self.assertEqual(result["next_action"], "collect_debugger_pause_artifacts_before_review")
+
+    def test_build_debugger_subagent_exposes_read_only_review_tool(self) -> None:
+        subagent = build_debugger_subagent()
+
+        self.assertEqual(subagent["name"], DEBUGGER_SUBAGENT_NAME)
+        self.assertEqual(subagent["description"], DEBUGGER_SUBAGENT_DESCRIPTION)
+        self.assertIn("Debugger Subagent", subagent["system_prompt"])
+        tool_names = {tool.__name__ for tool in subagent["tools"]}
+        self.assertEqual(tool_names, {"review_debugger_artifacts"})
+
+    def test_prompt_loader_supports_custom_path(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/debugger.txt"
+        self.assertIn("read-only debugger artifact review", load_debugger_prompt(path))
+
+    def test_default_agent_includes_debugger_before_timeline(self) -> None:
+        captured = {}
+
+        def fake_create_deep_agent(**kwargs):
+            captured.update(kwargs)
+            return {"captured": kwargs}
+
+        import reverse_deepagent.agent as agent_module
+
+        original = agent_module.create_deep_agent
+        try:
+            agent_module.create_deep_agent = fake_create_deep_agent
+            build_reverse_agent(model=ToolFriendlyFakeModel())
+        finally:
+            agent_module.create_deep_agent = original
+
+        names = [item["name"] for item in captured["subagents"]]
+        self.assertIn("debugger", names)
+        self.assertLess(names.index("debugger"), names.index("timeline"))
+
+
+if __name__ == "__main__":
+    unittest.main()

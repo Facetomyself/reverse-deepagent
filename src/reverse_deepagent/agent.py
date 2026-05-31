@@ -9,6 +9,7 @@ from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 
 from reverse_deepagent.subagents.browser_runtime import build_browser_runtime_subagent
+from reverse_deepagent.subagents.debugger import build_debugger_subagent
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.subagents.protector import build_protector_subagent
 from reverse_deepagent.subagents.review import build_review_subagent
@@ -113,6 +114,7 @@ def build_reverse_agent(
     ]
     subagents = [
         build_router_subagent(skill_root=effective_skill_root),
+        build_debugger_subagent(),
         build_timeline_subagent(),
         build_review_subagent(),
         build_delivery_subagent(artifact_root=effective_artifact_root),
