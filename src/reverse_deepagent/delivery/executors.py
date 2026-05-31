@@ -118,6 +118,8 @@ class DeliveryExecutorConfig:
     transaction_lock_owner: str | None = None
     transaction_lock_lease_seconds: int = 900
     expected_resume_token: str | None = None
+    expected_transaction_lock_fencing_token: str | None = None
+    transaction_lock_fencing_record_name: str = "delivery-distributed-transaction-lock.json"
     release_transaction_lock: bool = False
     approve_transaction_lock_release: bool = False
     transaction_lock_release_name: str = "delivery-transaction-lock-release.json"
@@ -1843,6 +1845,10 @@ class DeliveryTransactionLock:
     owner: str
     resume_token: str | None
     expected_resume_token: str | None
+    fencing_token: str | None
+    expected_fencing_token: str | None
+    fencing_record_path: str | None
+    fencing_record: dict[str, Any] | None
     lease_expires_at: str | None
     dry_run: bool
     lock_required: bool
@@ -1866,6 +1872,10 @@ class DeliveryTransactionLock:
             "owner": self.owner,
             "resume_token": self.resume_token,
             "expected_resume_token": self.expected_resume_token,
+            "fencing_token": self.fencing_token,
+            "expected_fencing_token": self.expected_fencing_token,
+            "fencing_record_path": self.fencing_record_path,
+            "fencing_record": self.fencing_record,
             "lease_expires_at": self.lease_expires_at,
             "dry_run": self.dry_run,
             "lock_required": self.lock_required,
@@ -2981,6 +2991,21 @@ class LocalDeliveryExecutor:
         resume_matches = bool(expected_resume_token and existing_resume_token and expected_resume_token == existing_resume_token)
         existing_lock_blocks = bool(existing_lock) and not stale_lock_detected and not same_owner and not resume_matches
         resume_required_but_missing = bool(expected_resume_token and not resume_matches and existing_lock)
+        expected_fencing_token = str(self.config.expected_transaction_lock_fencing_token or "").strip() or None
+        fencing_record_path = delivery_root / self.config.transaction_lock_fencing_record_name
+        fencing_record: dict[str, Any] | None = None
+        fencing_record_load_error: str | None = None
+        if expected_fencing_token and fencing_record_path.exists():
+            try:
+                fencing_record = _read_json_object(fencing_record_path)
+            except Exception as exc:  # noqa: BLE001 - malformed fencing evidence must block side effects.
+                fencing_record_load_error = str(exc)
+                fencing_record = {}
+        fencing_token = str(fencing_record.get("fencing_token") or "") if fencing_record else ""
+        fencing_lease_expires_at = str(fencing_record.get("lease_expires_at") or "") if fencing_record else ""
+        fencing_record_stale = bool(fencing_record) and _iso_datetime_is_past(fencing_lease_expires_at, created_at)
+        fencing_record_required_but_missing = bool(expected_fencing_token and not fencing_record_path.exists())
+        fencing_token_matches = not expected_fencing_token or bool(fencing_record and fencing_token == expected_fencing_token)
         checks = [
             {
                 "name": "transaction_lock_required_for_apply",
@@ -3020,6 +3045,42 @@ class LocalDeliveryExecutor:
                     "existing_lease_expires_at": existing_lease_expires_at or None,
                 },
             },
+            {
+                "name": "expected_transaction_lock_fencing_record_exists",
+                "passed": not fencing_record_required_but_missing,
+                "details": {
+                    "expected_fencing_token_configured": bool(expected_fencing_token),
+                    "fencing_record_path": str(fencing_record_path),
+                    "fencing_record_exists": fencing_record_path.exists(),
+                },
+            },
+            {
+                "name": "transaction_lock_fencing_record_is_valid",
+                "passed": fencing_record_load_error is None,
+                "details": {
+                    "expected_fencing_token_configured": bool(expected_fencing_token),
+                    "load_error": fencing_record_load_error,
+                    "fencing_record_path": str(fencing_record_path),
+                },
+            },
+            {
+                "name": "expected_transaction_lock_fencing_token_matches",
+                "passed": fencing_token_matches,
+                "details": {
+                    "expected_fencing_token_configured": bool(expected_fencing_token),
+                    "fencing_token_present": bool(fencing_token),
+                    "fencing_record_path": str(fencing_record_path),
+                },
+            },
+            {
+                "name": "transaction_lock_fencing_record_not_stale",
+                "passed": not fencing_record_stale,
+                "details": {
+                    "expected_fencing_token_configured": bool(expected_fencing_token),
+                    "stale_fencing_record_detected": fencing_record_stale,
+                    "fencing_lease_expires_at": fencing_lease_expires_at or None,
+                },
+            },
         ]
         blocking_reasons = [check["name"] for check in checks if not check["passed"]]
         lease_expires_at = None
@@ -3048,6 +3109,10 @@ class LocalDeliveryExecutor:
             owner=owner,
             resume_token=resume_token if not blocking_reasons else existing_resume_token or resume_token,
             expected_resume_token=expected_resume_token,
+            fencing_token=fencing_token or None,
+            expected_fencing_token=expected_fencing_token,
+            fencing_record_path=str(fencing_record_path) if expected_fencing_token else None,
+            fencing_record=fencing_record if fencing_record else None,
             lease_expires_at=lease_expires_at if not blocking_reasons else existing_lease_expires_at or None,
             dry_run=dry_run,
             lock_required=True,
@@ -3069,6 +3134,8 @@ class LocalDeliveryExecutor:
                 "scope": "delivery-transaction-lock-preflight-baseline",
                 "local_file_lock": True,
                 "distributed_lock": False,
+                "downstream_fencing_enforced": bool(expected_fencing_token),
+                "fencing_record_name": self.config.transaction_lock_fencing_record_name,
                 "automatic_stale_lock_takeover": False,
                 "limitations": [
                     "local_delivery_root_lock_only",

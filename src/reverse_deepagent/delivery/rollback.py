@@ -42,6 +42,7 @@ class DeliveryRollbackExecutorConfig:
     transaction_lock_owner: str | None = None
     transaction_lock_lease_seconds: int = 900
     expected_resume_token: str | None = None
+    expected_transaction_lock_fencing_token: str | None = None
     write_execution_record: bool = True
     execution_record_name: str = "delivery-rollback-execution.json"
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -354,6 +355,7 @@ class DeliveryRollbackExecutor:
                     transaction_lock_owner=self.config.transaction_lock_owner,
                     transaction_lock_lease_seconds=self.config.transaction_lock_lease_seconds,
                     expected_resume_token=self.config.expected_resume_token,
+                    expected_transaction_lock_fencing_token=self.config.expected_transaction_lock_fencing_token,
                     write_execution_record=False,
                     metadata={
                         **self.config.metadata,
@@ -378,6 +380,7 @@ class DeliveryRollbackExecutor:
                     transaction_lock_owner=self.config.transaction_lock_owner,
                     transaction_lock_lease_seconds=self.config.transaction_lock_lease_seconds,
                     expected_resume_token=self.config.expected_resume_token,
+                    expected_transaction_lock_fencing_token=self.config.expected_transaction_lock_fencing_token,
                     write_execution_record=False,
                     metadata={
                         **self.config.metadata,

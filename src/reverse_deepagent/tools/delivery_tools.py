@@ -63,6 +63,7 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
+        expected_transaction_lock_fencing_token: str | None = None,
         release_transaction_lock: bool = False,
         approve_transaction_lock_release: bool = False,
         expected_transaction_lock_owner: str | None = None,
@@ -109,6 +110,7 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
+            expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
             release_transaction_lock=release_transaction_lock,
             approve_transaction_lock_release=approve_transaction_lock_release,
             expected_transaction_lock_owner=expected_transaction_lock_owner,
@@ -135,6 +137,7 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "external_delivery_provider_config_json passes provider-specific JSON options such as {\"archive_root\": \"...\"}, {\"webhook_url\": \"...\", \"headers\": {...}}, or {\"presigned_url\": \"...\", \"object_name\": \"release.json\", \"headers\": {...}}; raw config values are not exported in package metadata. "
         "external_delivery_idempotency_key defaults to the transaction id; duplicate external delivery is blocked by default unless allow_duplicate_external_delivery is explicitly true. "
         "require_transaction_lock enables a local delivery-transaction-lock.json gate for apply-mode side effects; transaction_lock_owner, transaction_lock_lease_seconds, and expected_resume_token control the local lease / resume preflight baseline. "
+        "expected_transaction_lock_fencing_token additionally requires delivery-distributed-transaction-lock.json to contain the matching fencing token before downstream side effects proceed. "
         "release_transaction_lock creates a delivery-transaction-lock-release.json review record; apply mode removes the local lock only when approve_transaction_lock_release=true and optional expected owner / transaction id / resume token checks pass."
     )
     return execute_local_delivery
@@ -205,6 +208,7 @@ def make_delivery_resume_runner_tool(default_delivery_root: str | Path) -> Deliv
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
+        expected_transaction_lock_fencing_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or execute one review-approved durable delivery resume transition."""
@@ -230,6 +234,7 @@ def make_delivery_resume_runner_tool(default_delivery_root: str | Path) -> Deliv
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
+            expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
             metadata=metadata,
         )
         return DeliveryResumeRunner(config).execute().to_dict()
@@ -319,6 +324,7 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
+        expected_transaction_lock_fencing_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or execute a review-gated multi-step delivery resume workflow."""
@@ -347,6 +353,7 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
+            expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
             metadata=metadata,
         )
         return DeliveryResumeWorkflowScheduler(config).execute().to_dict()
@@ -379,6 +386,7 @@ def make_delivery_transition_executor_tool(default_delivery_root: str | Path) ->
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
+        expected_transaction_lock_fencing_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or explicitly execute one supported delivery transaction transition."""
@@ -398,6 +406,7 @@ def make_delivery_transition_executor_tool(default_delivery_root: str | Path) ->
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
+            expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
             metadata=metadata,
         )
         return DeliveryTransactionTransitionExecutor(config).execute().to_dict()
@@ -430,6 +439,7 @@ def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> D
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
+        expected_transaction_lock_fencing_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or explicitly execute a reviewed delivery recovery workflow."""
@@ -450,6 +460,7 @@ def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> D
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
+            expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
             metadata=metadata,
         )
         return DeliveryTransactionRecoveryExecutor(config).execute().to_dict()
@@ -522,6 +533,7 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
+        expected_transaction_lock_fencing_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan, preflight, or explicitly apply a reviewed delivery rollback workflow."""
@@ -543,6 +555,7 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
+            expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
             metadata=metadata,
         )
         return DeliveryRollbackExecutor(config).execute().to_dict()

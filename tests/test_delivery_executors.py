@@ -611,6 +611,90 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(result.transaction_lock.resume_token, "resume-a")
             self.assertTrue((delivery_root / "final-result.json").exists())
 
+    def test_apply_can_continue_when_expected_fencing_token_matches_provider_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            (delivery_root / "delivery-distributed-transaction-lock.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-provider-lock",
+                        "owner": "agent-a",
+                        "fencing_token": "7",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-fencing-allowed",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="7",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "delivered")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertEqual(result.transaction_lock.expected_fencing_token, "7")
+            self.assertEqual(result.transaction_lock.fencing_token, "7")
+            self.assertTrue(result.transaction_lock.metadata["downstream_fencing_enforced"])
+            self.assertTrue((delivery_root / "final-result.json").exists())
+
+    def test_apply_blocks_when_expected_fencing_token_mismatches_provider_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            (delivery_root / "delivery-distributed-transaction-lock.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-provider-lock",
+                        "owner": "agent-a",
+                        "fencing_token": "6",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-fencing-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="7",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "review_or_release_delivery_transaction_lock")
+            self.assertFalse(result.filesystem_artifact_mutated)
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertIn("expected_transaction_lock_fencing_token_matches", result.transaction_lock.blocking_reasons)
+            self.assertEqual(result.transaction_lock.expected_fencing_token, "7")
+            self.assertEqual(result.transaction_lock.fencing_token, "6")
+            self.assertFalse((delivery_root / "final-result.json").exists())
+            self.assertFalse((delivery_root / "delivery-receipt.json").exists())
+            self.assertFalse((delivery_root / "delivery-transaction-journal.json").exists())
+
     def test_transaction_lock_release_requires_explicit_approval(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
