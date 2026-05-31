@@ -182,8 +182,8 @@ def default_subagent_roles() -> tuple[SubagentRoleContract, ...]:
         ),
         SubagentRoleContract(
             role="timeline",
-            responsibility="Owns flow timeline normalization, correlation hints, manual stitch candidates, and future review-gated stitching policy.",
-            current_status="planned-contract",
+            responsibility="Owns read-only flow timeline review, correlation group summaries, stitch proposal blockers, and auto-stitch gate boundaries.",
+            current_status="implemented",
             workspace_folders=("/workspace/timeline/",),
         ),
         SubagentRoleContract(
