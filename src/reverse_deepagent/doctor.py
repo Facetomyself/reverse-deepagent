@@ -23,6 +23,7 @@ from reverse_deepagent.delivery.registry import (
     EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP,
     build_default_external_delivery_provider_registry,
 )
+from reverse_deepagent.delivery.inspector import inspect_delivery_transaction_root
 from reverse_deepagent.coordinator import build_default_runtime_registry
 from reverse_deepagent.runtime.chrome import (
     ChromeDebugConfig,
@@ -80,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--runtime-backends",
         action="store_true",
         help="Emit a side-effect-free RuntimeBackend metadata matrix without invoking backend factories.",
+    )
+    parser.add_argument(
+        "--delivery-transaction-root",
+        default=None,
+        help="Inspect a delivery root for transaction journal/state artifacts without mutating files or publishing externally.",
     )
     parser.add_argument("--request-timeout", type=float, default=10.0, help="MCP request timeout in seconds.")
     parser.add_argument("--startup-timeout", type=float, default=10.0, help="MCP startup timeout in seconds.")
@@ -375,6 +381,7 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     check_provider_matrix = bool(getattr(args, "browser_provider_matrix", False))
     check_external_delivery_providers = bool(getattr(args, "external_delivery_providers", False))
     check_runtime_backends = bool(getattr(args, "runtime_backends", False))
+    check_delivery_transaction = bool(getattr(args, "delivery_transaction_root", None))
     check_browser_provider = bool(
         args.browser
         or (
@@ -383,10 +390,11 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             and not check_provider_matrix
             and not check_external_delivery_providers
             and not check_runtime_backends
+            and not check_delivery_transaction
         )
     )
     metadata_only_check = bool(
-        (check_provider_matrix or check_external_delivery_providers or check_runtime_backends)
+        (check_provider_matrix or check_external_delivery_providers or check_runtime_backends or check_delivery_transaction)
         and not check_browser_provider
         and not args.ensure_chrome
         and not check_legacy_mcp
@@ -428,6 +436,9 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     if check_runtime_backends:
         payload["runtime_backend_matrix"] = _runtime_backend_matrix()
 
+    if check_delivery_transaction:
+        payload["delivery_transaction"] = inspect_delivery_transaction_root(args.delivery_transaction_root).to_dict()
+
     if check_browser_provider:
         payload["browser_provider"] = _check_browser_provider(args)
 
@@ -451,6 +462,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             required_ok.append(bool(payload.get("external_delivery_provider_matrix", {}).get("ok")))
         if check_runtime_backends:
             required_ok.append(bool(payload.get("runtime_backend_matrix", {}).get("ok")))
+        if check_delivery_transaction:
+            required_ok.append(bool(payload.get("delivery_transaction", {}).get("ok")))
     else:
         required_ok = [
             payload["chrome"]["path"]["exists"],
@@ -468,6 +481,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             required_ok.append(bool(payload.get("external_delivery_provider_matrix", {}).get("ok")))
         if check_runtime_backends:
             required_ok.append(bool(payload.get("runtime_backend_matrix", {}).get("ok")))
+        if check_delivery_transaction:
+            required_ok.append(bool(payload.get("delivery_transaction", {}).get("ok")))
         if check_legacy_mcp:
             required_ok.append(bool(payload.get("legacy_mcp_check", {}).get("ok")))
     payload["ok"] = all(required_ok)
