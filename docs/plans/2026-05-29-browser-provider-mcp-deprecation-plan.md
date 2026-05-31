@@ -852,3 +852,15 @@ The legacy JSReverser runtime now delegates `workspace/runtime-context-diff.json
 Boundary: this baseline does not collect browser context, start BrowserProvider sessions, call MCP, write workspace artifacts by itself, execute replay, prove pure rebuild readiness, or touch Android / iOS / mini-program full runtime chains. Existing runtime collectors remain responsible for gathering samples; rebuild / review gates remain responsible for deciding whether volatile or session-bound inputs are acceptable.
 
 Tests cover stable / volatile classification, session-bound secret redaction, volatile secret redaction in legacy change values, missing-field detection, type drift, object drift, payload-helper compatibility, and legacy runtime adapter compatibility.
+
+### Step 98 execution record: Runtime-context-driven rebuild review hints baseline
+
+Status: implemented as rebuild review metadata, not a rebuild readiness override, runtime collector, or delivery gate bypass.
+
+`build_rebuild_bundle(...)` now builds a `runtime_context_diff` review surface from an explicit `runtime_context_diff` evidence item when present, or from the captured `runtime_context` payload through `diff_runtime_context_payload(...)` when no explicit diff evidence exists. The generated rebuild plan embeds this diff under `runtime_context_diff` so rebuild reviewers and subagents can inspect the exact stability classifications used for hints.
+
+`review_hints` now consume runtime-context diff field classifications. The existing `volatile_runtime_context` hint is preserved and enriched with field-count evidence. New hints cover `session_bound_runtime_context`, `missing_runtime_context_field`, `runtime_context_type_drift`, and `runtime_context_object_drift`, giving generated rebuild artifacts explicit review guidance for session-bound constants, missing samples / requirements, type drift, and nested object / array shape drift.
+
+Boundary: these hints do not change the authoritative `ready` calculation, do not mutate generated code, do not collect browser context, do not execute replay, do not bypass manual review or delivery gates, and do not touch Android / iOS / mini-program full runtime chains. They are review metadata for humans, CI gates, and rebuild / review subagents.
+
+Tests cover session-bound hint generation from raw runtime-context samples, volatile hint generation from derived diff payloads, explicit diff evidence for missing / type-drift / object-drift hints, and existing rebuild artifact regressions.

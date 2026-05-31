@@ -71,6 +71,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Generalized runtime context stability diff for legacy runtime payloads and provider-neutral strategy / rebuild consumers.
 - Field-level runtime context classifications for stable, volatile, session-bound, missing, type-drift, and object-drift values.
 - Secret-like runtime context previews redacted to type, length, and digest metadata while preserving legacy `stable_keys` / `volatile_keys` / `changes` compatibility fields.
+- Generated rebuild review hints derived from runtime-context diff classifications for volatile, session-bound, missing, type-drift, and object-drift fields.
 
 ## Active non-mobile follow-ups
 
@@ -96,7 +97,6 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 - WASM / VM / obfuscation triage hooks.
 - Stronger strategy confidence and evidence scoring.
-- Generated code review hints for rebuild artifacts.
 - Strategy detector pluginization if the built-in strategy corpus grows too large.
 
 ### Workspace and artifact evolution

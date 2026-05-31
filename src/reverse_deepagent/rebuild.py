@@ -11,6 +11,7 @@ from reverse_deepagent.strategies import (
     ALGORITHM_STRATEGY_REGISTRY,
     AlgorithmStrategyRule,
     detect_algorithm_strategy,
+    diff_runtime_context_payload,
     list_algorithm_strategy_registry,
 )
 
@@ -29,6 +30,10 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
     validation_payload = _find_evidence_details(final_result, "function_validation_result")
     candidate_payload = _find_evidence_details(final_result, "function_candidate_card")
     runtime_context = _find_evidence_details(final_result, "runtime_context")
+    runtime_context_diff = _runtime_context_diff_for_review(
+        runtime_context,
+        _find_evidence_details(final_result, "runtime_context_diff"),
+    )
 
     validations = _as_list(validation_payload.get("validations"))
     candidates = _as_list(candidate_payload.get("candidates"))
@@ -46,6 +51,7 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
         strategy=strategy,
         extraction=extraction,
         runtime_context=runtime_context,
+        runtime_context_diff=runtime_context_diff,
         validation=best_validation,
         validation_ready=validation_ready,
         replay_url=replay_url,
@@ -60,6 +66,7 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
         "algorithm_strategy": strategy,
         "pure_extraction": extraction,
         "runtime_context": runtime_context,
+        "runtime_context_diff": runtime_context_diff,
         "source": {
             "file_url": best_candidate.get("file_url"),
             "script_id": best_candidate.get("script_id"),
@@ -887,6 +894,7 @@ def _build_review_hints(
     strategy: dict[str, Any],
     extraction: dict[str, Any],
     runtime_context: dict[str, Any],
+    runtime_context_diff: dict[str, Any],
     validation: dict[str, Any],
     validation_ready: bool,
     replay_url: str,
@@ -995,8 +1003,34 @@ def _build_review_hints(
                 evidence=["replay_url="],
             )
         )
-    volatile_keys = runtime_context.get("volatile_keys") if isinstance(runtime_context, dict) else None
-    if volatile_keys:
+    hints.extend(
+        _runtime_context_diff_review_hints(
+            runtime_context_diff,
+            extraction=extraction,
+        )
+    )
+    return hints
+
+
+def _runtime_context_diff_for_review(runtime_context: dict[str, Any], runtime_context_diff: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(runtime_context_diff, dict) and runtime_context_diff:
+        return runtime_context_diff
+    if isinstance(runtime_context, dict) and runtime_context:
+        return diff_runtime_context_payload(runtime_context)
+    return {}
+
+
+def _runtime_context_diff_review_hints(runtime_context_diff: dict[str, Any], *, extraction: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(runtime_context_diff, dict) or not runtime_context_diff:
+        return []
+    fields = [field for field in runtime_context_diff.get("fields", []) if isinstance(field, dict)]
+    summary = runtime_context_diff.get("summary") if isinstance(runtime_context_diff.get("summary"), dict) else {}
+    required = ",".join(str(item) for item in extraction.get("runtime_context_required", []))
+    captured = ",".join(str(item) for item in extraction.get("captured_runtime_context", []))
+    hints: list[dict[str, Any]] = []
+
+    volatile_paths = _runtime_context_field_paths(fields, "volatile") or [str(item) for item in runtime_context_diff.get("volatile_keys", [])]
+    if volatile_paths:
         hints.append(
             _review_hint(
                 severity="risk",
@@ -1004,13 +1038,83 @@ def _build_review_hints(
                 code="volatile_runtime_context",
                 message="Runtime context contains volatile keys; bind them dynamically instead of hard-coding generated constants.",
                 evidence=[
-                    f"volatile_keys={','.join(str(item) for item in volatile_keys)}",
-                    f"runtime_context_required={','.join(str(item) for item in extraction.get('runtime_context_required', []))}",
-                    f"captured_runtime_context={','.join(str(item) for item in extraction.get('captured_runtime_context', []))}",
+                    f"volatile_keys={','.join(volatile_paths)}",
+                    f"volatile_field_count={summary.get('volatile_field_count', len(volatile_paths))}",
+                    f"runtime_context_required={required}",
+                    f"captured_runtime_context={captured}",
+                ],
+            )
+        )
+
+    session_bound_paths = _runtime_context_field_paths(fields, "session_bound")
+    if session_bound_paths:
+        hints.append(
+            _review_hint(
+                severity="warning",
+                category="runtime_context",
+                code="session_bound_runtime_context",
+                message="Runtime context contains session-bound values; generated constants should be treated as fixture defaults, not reusable secrets.",
+                evidence=[
+                    f"session_bound_keys={','.join(session_bound_paths)}",
+                    f"session_bound_field_count={summary.get('session_bound_field_count', len(session_bound_paths))}",
+                    f"secret_like_field_count={summary.get('secret_like_field_count', 0)}",
+                ],
+            )
+        )
+
+    missing_paths = _runtime_context_field_paths(fields, "missing_in_some_samples")
+    missing_requirements = [str(item) for item in runtime_context_diff.get("missing_requirements", [])]
+    if missing_paths or missing_requirements:
+        hints.append(
+            _review_hint(
+                severity="risk",
+                category="runtime_context",
+                code="missing_runtime_context_field",
+                message="Runtime context diff shows missing fields or requirements; collect more samples before treating generated rebuild artifacts as stable.",
+                evidence=[
+                    f"missing_keys={','.join(missing_paths)}",
+                    f"missing_requirements={','.join(missing_requirements)}",
+                    f"missing_field_count={summary.get('missing_field_count', len(missing_paths))}",
+                    f"missing_requirement_count={summary.get('missing_requirement_count', len(missing_requirements))}",
+                ],
+            )
+        )
+
+    type_drift_paths = _runtime_context_field_paths(fields, "type_drift")
+    if type_drift_paths:
+        hints.append(
+            _review_hint(
+                severity="risk",
+                category="runtime_context",
+                code="runtime_context_type_drift",
+                message="Runtime context values changed type across samples; normalize inputs or keep this rebuild runtime-assisted.",
+                evidence=[
+                    f"type_drift_keys={','.join(type_drift_paths)}",
+                    f"type_drift_field_count={summary.get('type_drift_field_count', len(type_drift_paths))}",
+                ],
+            )
+        )
+
+    object_drift_paths = _runtime_context_field_paths(fields, "object_drift")
+    if object_drift_paths:
+        hints.append(
+            _review_hint(
+                severity="warning",
+                category="runtime_context",
+                code="runtime_context_object_drift",
+                message="Runtime context object or array shape changed across samples; review nested shape before reusing generated constants.",
+                evidence=[
+                    f"object_drift_keys={','.join(object_drift_paths)}",
+                    f"object_drift_field_count={summary.get('object_drift_field_count', len(object_drift_paths))}",
                 ],
             )
         )
     return hints
+
+
+def _runtime_context_field_paths(fields: list[dict[str, Any]], classification: str) -> list[str]:
+    paths = [str(field.get("path")) for field in fields if field.get("classification") == classification and field.get("path")]
+    return sorted(dict.fromkeys(paths))
 
 
 def _review_hint(*, severity: str, category: str, code: str, message: str, evidence: list[str]) -> dict[str, Any]:

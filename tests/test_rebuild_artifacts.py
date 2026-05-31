@@ -41,6 +41,7 @@ def _final_result_for_source(
     related_request_url: str | None = None,
     validation_overrides: dict | None = None,
     runtime_context: dict | None = None,
+    runtime_context_diff: dict | None = None,
 ) -> FinalResult:
     task_card = TaskCard(
         target_url_or_file=target_url,
@@ -112,6 +113,16 @@ def _final_result_for_source(
                 kind=EvidenceKind.STORAGE,
                 source="runtime_context",
                 details=runtime_context,
+                confidence=ConfidenceLevel.HIGH,
+            )
+        )
+    if runtime_context_diff:
+        evidence.append(
+            EvidenceItem(
+                summary="runtime context diff",
+                kind=EvidenceKind.NOTE,
+                source="runtime_context_diff",
+                details=runtime_context_diff,
                 confidence=ConfidenceLevel.HIGH,
             )
         )
@@ -600,6 +611,92 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             self.assertNotIn("sign_rebuild", rebuild.generated_files)
             readme = Path(rebuild.generated_files["README"]).read_text(encoding="utf-8")
             self.assertIn("Runtime-assisted triage required", readme)
+
+    def test_runtime_context_diff_adds_session_bound_review_hint(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const token = sessionStorage.getItem('token');
+  const raw = `${keyword}:${timestamp}:${token}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:fixture-token".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["sessionStorage"],
+            "captured_requirements": ["sessionStorage"],
+            "samples": [
+                {"sessionStorage": {"token": "fixture-token"}},
+                {"sessionStorage": {"token": "fixture-token"}},
+            ],
+            "sessionStorage": {"token": "fixture-token"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            plan = rebuild.rebuild_plan
+            self.assertIn("runtime_context_diff", plan)
+            hint_codes = {hint["code"] for hint in plan["review_hints"]}
+            self.assertIn("context_aware_rebuild", hint_codes)
+            self.assertIn("session_bound_runtime_context", hint_codes)
+            session_hint = next(hint for hint in plan["review_hints"] if hint["code"] == "session_bound_runtime_context")
+            self.assertEqual(session_hint["severity"], "warning")
+            self.assertIn("session_bound_keys=sessionStorage.token", session_hint["evidence"])
+
+    def test_runtime_context_diff_adds_volatile_review_hint_from_payload(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  const nonce = localStorage.getItem('nonce');
+  const raw = `${keyword}:${timestamp}:${nonce}`;
+  return btoa(raw);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000:n2".encode("utf-8")).decode("ascii")
+        runtime_context = {
+            "detected_requirements": ["localStorage"],
+            "captured_requirements": ["localStorage"],
+            "samples": [
+                {"localStorage": {"nonce": "n1"}},
+                {"localStorage": {"nonce": "n2"}},
+            ],
+            "localStorage": {"nonce": "n2"},
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            volatile_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "volatile_runtime_context")
+            self.assertEqual(volatile_hint["severity"], "risk")
+            self.assertIn("volatile_keys=localStorage.nonce", volatile_hint["evidence"])
+            self.assertIn("volatile_field_count=1", volatile_hint["evidence"])
+
+    def test_runtime_context_diff_evidence_adds_missing_type_and_object_hints(self) -> None:
+        source_context = """function buildSign(keyword, timestamp) {
+  return btoa(`${keyword}:${timestamp}`);
+}"""
+        sample_sign = base64.b64encode("sign:1700000000000".encode("utf-8")).decode("ascii")
+        runtime_context_diff = {
+            "status": "analyzed",
+            "sample_count": 2,
+            "stable_keys": [],
+            "volatile_keys": ["localStorage.feature_flag", "localStorage.counter", "navigator.plugins"],
+            "missing_requirements": ["navigator"],
+            "fields": [
+                {"path": "localStorage.feature_flag", "classification": "missing_in_some_samples"},
+                {"path": "localStorage.counter", "classification": "type_drift"},
+                {"path": "navigator.plugins", "classification": "object_drift"},
+            ],
+            "summary": {
+                "missing_field_count": 1,
+                "missing_requirement_count": 1,
+                "type_drift_field_count": 1,
+                "object_drift_field_count": 1,
+            },
+        }
+        final_result = _final_result_for_source(source_context, sample_sign, runtime_context_diff=runtime_context_diff)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            hint_codes = {hint["code"] for hint in rebuild.rebuild_plan["review_hints"]}
+            self.assertIn("missing_runtime_context_field", hint_codes)
+            self.assertIn("runtime_context_type_drift", hint_codes)
+            self.assertIn("runtime_context_object_drift", hint_codes)
+            missing_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "missing_runtime_context_field")
+            self.assertIn("missing_keys=localStorage.feature_flag", missing_hint["evidence"])
+            self.assertIn("missing_requirements=navigator", missing_hint["evidence"])
 
     def test_captured_runtime_context_enables_context_aware_rebuild(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {
