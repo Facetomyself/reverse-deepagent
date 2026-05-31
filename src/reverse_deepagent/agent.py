@@ -8,6 +8,7 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 
+from reverse_deepagent.subagents.browser_runtime import build_browser_runtime_subagent
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.subagents.protector import build_protector_subagent
 from reverse_deepagent.subagents.router import build_router_subagent
@@ -114,6 +115,7 @@ def build_reverse_agent(
     ]
     if runtime is not None:
         subagents.extend([
+            build_browser_runtime_subagent(runtime),
             build_web_recon_subagent(runtime),
             build_protector_subagent(runtime),
         ])

@@ -260,12 +260,15 @@ class DoctorTests(unittest.TestCase):
         self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
         self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.browser_providers")
         self.assertIn("provider_registration_metadata", matrix)
+        self.assertEqual(matrix["compatibility_rule_version"], "2026-05-31.metadata-compatibility-v1")
         self.assertEqual(matrix["summary"]["provider_count"], 3)
+        self.assertEqual(matrix["summary"]["compatibility"]["error_count"], 0)
         by_provider = {item["provider_id"]: item for item in matrix["providers"]}
         self.assertIn("playwright-chromium", by_provider)
         self.assertIn("cloakbrowser", by_provider)
         self.assertIn("remote-cdp", by_provider)
         self.assertEqual(by_provider["remote-cdp"]["supported_modes"], ["connect", "cdp", "runtime-eval", "debugger"])
+        self.assertEqual(by_provider["remote-cdp"]["compatibility"]["status"], "compatible")
         for row in matrix["providers"]:
             lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
             self.assertEqual(lifecycle["availability_checked"], "not_checked")
