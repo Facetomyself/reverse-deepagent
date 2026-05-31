@@ -18,6 +18,10 @@ from reverse_deepagent.browser.smoke import (
     browser_provider_smoke_row,
     legacy_browser_provider_payload_from_smoke_row,
 )
+from reverse_deepagent.delivery.registry import (
+    EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP,
+    build_default_external_delivery_provider_registry,
+)
 from reverse_deepagent.runtime.chrome import (
     ChromeDebugConfig,
     DEFAULT_CHROME_PATH,
@@ -64,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-timezone", default=None, help="Optional BrowserProvider timezone, such as Asia/Shanghai.")
     parser.add_argument("--launch-browser-smoke", action="store_true", help="Actually launch the selected BrowserProvider and open --browser-smoke-url. Disabled by default.")
     parser.add_argument("--browser-smoke-url", default="about:blank", help="URL used only when --launch-browser-smoke is set.")
+    parser.add_argument(
+        "--external-delivery-providers",
+        action="store_true",
+        help="Emit a side-effect-free ExternalDeliveryProvider metadata matrix without invoking provider factories.",
+    )
     parser.add_argument("--request-timeout", type=float, default=10.0, help="MCP request timeout in seconds.")
     parser.add_argument("--startup-timeout", type=float, default=10.0, help="MCP startup timeout in seconds.")
     parser.add_argument("--strict", action="store_true", help="Exit non-zero when required checks fail.")
@@ -205,6 +214,50 @@ def _browser_provider_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _external_delivery_provider_matrix() -> dict[str, Any]:
+    try:
+        registry = build_default_external_delivery_provider_registry()
+        providers = registry.list_registration_metadata()
+        provider_ids = registry.provider_ids()
+    except Exception as exc:
+        return {
+            "matrix_version": "unavailable",
+            "entry_point_group": EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP,
+            "ok": False,
+            "error": str(exc),
+            "providers": [],
+            "provider_ids": [],
+            "summary": {"provider_count": 0},
+            "side_effect_policy": {
+                "provider_factories_invoked": False,
+                "external_delivery_requested": False,
+                "external_delivery_performed": False,
+                "publishes_externally": False,
+            },
+        }
+    return {
+        "matrix_version": "2026-05-31.external-delivery-providers",
+        "entry_point_group": EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP,
+        "ok": True,
+        "providers": providers,
+        "provider_ids": provider_ids,
+        "summary": {
+            "provider_count": len(providers),
+            "registered_key_count": len(provider_ids),
+            "review_only_count": sum(1 for provider in providers if provider.get("review_only")),
+            "external_delivery_capable_count": sum(
+                1 for provider in providers if provider.get("supports_external_delivery")
+            ),
+        },
+        "side_effect_policy": {
+            "provider_factories_invoked": False,
+            "external_delivery_requested": False,
+            "external_delivery_performed": False,
+            "publishes_externally": False,
+        },
+    }
+
+
 def _check_mcp(args: argparse.Namespace) -> dict[str, Any]:
     command_status = _command_check(args.jsreverser_mcp_command)
     if not command_status["exists"]:
@@ -233,9 +286,23 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     )
     check_legacy_mcp = bool(getattr(args, "legacy_mcp", False) or args.check_mcp)
     check_provider_matrix = bool(getattr(args, "browser_provider_matrix", False))
-    check_browser_provider = bool(args.browser or (not args.ensure_chrome and not check_legacy_mcp and not check_provider_matrix))
-    matrix_only_check = bool(check_provider_matrix and not check_browser_provider and not args.ensure_chrome and not check_legacy_mcp)
-    port_probe_reason = "browser-provider-matrix metadata-only mode does not probe CDP endpoints"
+    check_external_delivery_providers = bool(getattr(args, "external_delivery_providers", False))
+    check_browser_provider = bool(
+        args.browser
+        or (
+            not args.ensure_chrome
+            and not check_legacy_mcp
+            and not check_provider_matrix
+            and not check_external_delivery_providers
+        )
+    )
+    metadata_only_check = bool(
+        (check_provider_matrix or check_external_delivery_providers)
+        and not check_browser_provider
+        and not args.ensure_chrome
+        and not check_legacy_mcp
+    )
+    port_probe_reason = "metadata-only doctor mode does not probe CDP endpoints"
     payload: dict[str, Any] = {
         "ok": True,
         "repo_root": str(DEFAULT_REPO_ROOT),
@@ -250,7 +317,7 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         "mcp": {
             "command": _command_check(args.jsreverser_mcp_command),
         },
-        "port_before": _skipped_port_status(args.browser_url, port_probe_reason) if matrix_only_check else _port_status(args.browser_url),
+        "port_before": _skipped_port_status(args.browser_url, port_probe_reason) if metadata_only_check else _port_status(args.browser_url),
     }
     if args.check_mcp:
         payload["deprecation_warnings"] = [CHECK_MCP_ALIAS_DEPRECATION_WARNING]
@@ -261,10 +328,13 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
         launch = ensure_chrome_debug(chrome_config)
         payload["chrome_launch"] = launch.model_dump(mode="json")
         should_stop = launch.ok and not args.keep_chrome
-    payload["port_after_launch"] = _skipped_port_status(args.browser_url, port_probe_reason) if matrix_only_check else _port_status(args.browser_url)
+    payload["port_after_launch"] = _skipped_port_status(args.browser_url, port_probe_reason) if metadata_only_check else _port_status(args.browser_url)
 
     if check_provider_matrix:
         payload["browser_provider_smoke_matrix"] = _browser_provider_matrix(args)
+
+    if check_external_delivery_providers:
+        payload["external_delivery_provider_matrix"] = _external_delivery_provider_matrix()
 
     if check_browser_provider:
         payload["browser_provider"] = _check_browser_provider(args)
@@ -281,8 +351,12 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     browser_only_check = bool(check_browser_provider and not args.ensure_chrome and not check_legacy_mcp)
     if browser_only_check:
         required_ok = [bool(payload.get("browser_provider", {}).get("ok"))]
-    elif matrix_only_check:
-        required_ok = [bool(payload.get("browser_provider_smoke_matrix", {}).get("ok"))]
+    elif metadata_only_check:
+        required_ok = []
+        if check_provider_matrix:
+            required_ok.append(bool(payload.get("browser_provider_smoke_matrix", {}).get("ok")))
+        if check_external_delivery_providers:
+            required_ok.append(bool(payload.get("external_delivery_provider_matrix", {}).get("ok")))
     else:
         required_ok = [
             payload["chrome"]["path"]["exists"],
@@ -296,6 +370,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             required_ok.append(bool(payload.get("browser_provider", {}).get("ok")))
         if check_provider_matrix:
             required_ok.append(bool(payload.get("browser_provider_smoke_matrix", {}).get("ok")))
+        if check_external_delivery_providers:
+            required_ok.append(bool(payload.get("external_delivery_provider_matrix", {}).get("ok")))
         if check_legacy_mcp:
             required_ok.append(bool(payload.get("legacy_mcp_check", {}).get("ok")))
     payload["ok"] = all(required_ok)

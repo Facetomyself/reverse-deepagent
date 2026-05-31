@@ -9,10 +9,31 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
+from reverse_deepagent.delivery import (
+    ExternalDeliveryProviderCapabilities,
+    ExternalDeliveryProviderRegistration,
+)
+from reverse_deepagent.delivery import registry as delivery_registry
 from reverse_deepagent.doctor import run_doctor
 
 
 PACKAGE_SRC = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-legacy-mcp" / "src"
+
+
+class FakeDeliveryEntryPoint:
+    def __init__(self, name: str, value) -> None:
+        self.name = name
+        self.value = value
+
+    def load(self):
+        return self.value
+
+
+class FakeDeliveryEntryPoints(list):
+    def select(self, *, group: str):
+        if group == "reverse_deepagent.external_delivery_providers":
+            return FakeDeliveryEntryPoints(self)
+        return FakeDeliveryEntryPoints()
 
 
 class DoctorTests(unittest.TestCase):
@@ -58,6 +79,7 @@ class DoctorTests(unittest.TestCase):
             "browser_timezone": None,
             "launch_browser_smoke": False,
             "browser_smoke_url": "about:blank",
+            "external_delivery_providers": False,
             "request_timeout": 1.0,
             "startup_timeout": 1.0,
             "strict": False,
@@ -147,6 +169,7 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("--browser", result.stdout)
         self.assertIn("--browser-provider-matrix", result.stdout)
         self.assertIn("--launch-browser-smoke", result.stdout)
+        self.assertIn("--external-delivery-providers", result.stdout)
 
     def test_doctor_can_check_fake_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -222,6 +245,61 @@ class DoctorTests(unittest.TestCase):
             lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
             self.assertEqual(lifecycle["availability_checked"], "not_checked")
             self.assertEqual(lifecycle["session_start_requested"], "skipped")
+
+    def test_doctor_can_emit_side_effect_free_external_delivery_provider_matrix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = run_doctor(
+                self.make_args(
+                    Path(tmp),
+                    external_delivery_providers=True,
+                    jsreverser_mcp_command=str(Path(tmp) / "missing-mcp"),
+                )
+            )
+        matrix = payload["external_delivery_provider_matrix"]
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["mcp"]["command"]["exists"])
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.external_delivery_providers")
+        self.assertEqual(matrix["summary"]["provider_count"], 1)
+        self.assertEqual(matrix["summary"]["review_only_count"], 1)
+        self.assertEqual(matrix["summary"]["external_delivery_capable_count"], 0)
+        self.assertIn("manual-handoff", matrix["provider_ids"])
+        provider = matrix["providers"][0]
+        self.assertEqual(provider["provider_id"], "review-only")
+        self.assertEqual(provider["aliases"], ["noop", "manual-handoff"])
+        self.assertFalse(provider["supports_external_delivery"])
+        self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
+        self.assertFalse(matrix["side_effect_policy"]["external_delivery_performed"])
+
+    def test_external_delivery_provider_matrix_loads_entry_points_without_invoking_factories(self) -> None:
+        factory_calls: list[str] = []
+        registration = ExternalDeliveryProviderRegistration(
+            provider_id="webhook-draft",
+            aliases=("webhook",),
+            capabilities=ExternalDeliveryProviderCapabilities(
+                provider_id="webhook-draft",
+                display_name="Webhook Draft Delivery",
+                transport="webhook",
+                supports_external_delivery=True,
+                review_only=False,
+            ),
+            factory=lambda **_: factory_calls.append("called"),
+        )
+        entry_points = FakeDeliveryEntryPoints([FakeDeliveryEntryPoint("webhook-draft", registration)])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(delivery_registry.importlib_metadata, "entry_points", return_value=entry_points):
+                payload = run_doctor(self.make_args(Path(tmp), external_delivery_providers=True))
+
+        matrix = payload["external_delivery_provider_matrix"]
+        self.assertTrue(payload["ok"])
+        self.assertEqual(factory_calls, [])
+        self.assertIn("webhook-draft", matrix["provider_ids"])
+        self.assertIn("webhook", matrix["provider_ids"])
+        by_provider = {item["provider_id"]: item for item in matrix["providers"]}
+        self.assertEqual(by_provider["webhook-draft"]["aliases"], ["webhook"])
+        self.assertTrue(by_provider["webhook-draft"]["supports_external_delivery"])
 
     def test_doctor_redacts_cloakbrowser_proxy_and_does_not_launch_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
