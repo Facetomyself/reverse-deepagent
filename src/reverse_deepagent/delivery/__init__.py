@@ -14,7 +14,11 @@ from .executors import (
     DeliveryManifestRevision,
     DeliveryReceipt,
     DeliveryTransactionJournal,
+    ExternalDeliveryPackage,
+    ExternalDeliveryProvider,
+    ExternalDeliveryResult,
     LocalDeliveryExecutor,
+    ReviewOnlyExternalDeliveryProvider,
 )
 
 __all__ = [
@@ -31,5 +35,9 @@ __all__ = [
     "DeliveryManifestRevision",
     "DeliveryReceipt",
     "DeliveryTransactionJournal",
+    "ExternalDeliveryPackage",
+    "ExternalDeliveryProvider",
+    "ExternalDeliveryResult",
     "LocalDeliveryExecutor",
+    "ReviewOnlyExternalDeliveryProvider",
 ]

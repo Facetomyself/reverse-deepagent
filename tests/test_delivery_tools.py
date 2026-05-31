@@ -290,6 +290,28 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
             self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery.json").exists())
 
+    def test_local_delivery_tool_can_request_external_delivery_review_only_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-external-review-only",
+                mode="apply",
+                request_external_delivery=True,
+            )
+
+            external_result_path = root / "delivery" / "external-delivery-result.json"
+            self.assertEqual(result["status"], "external_delivery_blocked")
+            self.assertFalse(result["external_delivery_performed"])
+            self.assertEqual(result["external_delivery_result"]["provider_id"], "review-only")
+            self.assertIn("external_delivery_provider_configured", result["external_delivery_result"]["blocking_reasons"])
+            self.assertTrue(external_result_path.exists())
+
 
 class DeliverySubagentToolTests(TestCase):
     def test_delivery_subagent_exposes_rebuild_and_local_delivery_tools(self) -> None:

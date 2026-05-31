@@ -32,6 +32,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         apply_backend_manifest_recovery: bool = False,
         commit_cross_run_transaction: bool = False,
         expected_commit_transaction_id: str | None = None,
+        request_external_delivery: bool = False,
+        external_delivery_provider_id: str = "review-only",
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or apply local filesystem delivery for reviewed artifact paths."""
@@ -60,6 +62,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
             apply_backend_manifest_recovery=apply_backend_manifest_recovery,
             commit_cross_run_transaction=commit_cross_run_transaction,
             expected_commit_transaction_id=expected_commit_transaction_id,
+            request_external_delivery=request_external_delivery,
+            external_delivery_provider_id=external_delivery_provider_id,
             metadata=metadata,
         )
         return LocalDeliveryExecutor(config).execute(artifacts).to_dict()
@@ -74,7 +78,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "approve_backend_manifest_in_place_mutation explicitly applies that in-place mutation only after the patch and preflight pass and an expected source digest is provided. "
         "preflight_backend_manifest_recovery inspects a previous local delivery journal, rollback checkpoint, mutation record, and current source manifest without restoring or committing anything. "
         "apply_backend_manifest_recovery restores the source backend manifest from the local rollback checkpoint only when recovery preflight and digest checks pass. "
-        "commit_cross_run_transaction writes a local backend-artifact-manifest-transaction-commit.json record and updates the prior journal only when recovery preflight and digest checks pass."
+        "commit_cross_run_transaction writes a local backend-artifact-manifest-transaction-commit.json record and updates the prior journal only when recovery preflight and digest checks pass. "
+        "request_external_delivery invokes the configured ExternalDeliveryProvider contract; the built-in review-only provider writes a blocked handoff record and never publishes externally."
     )
     return execute_local_delivery
 

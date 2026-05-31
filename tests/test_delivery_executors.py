@@ -6,7 +6,43 @@ import tempfile
 from pathlib import Path
 from unittest import TestCase
 
-from reverse_deepagent.delivery import DeliveryArtifact, DeliveryExecutionMode, DeliveryExecutorConfig, LocalDeliveryExecutor
+from reverse_deepagent.delivery import (
+    DeliveryArtifact,
+    DeliveryExecutionMode,
+    DeliveryExecutorConfig,
+    ExternalDeliveryPackage,
+    ExternalDeliveryResult,
+    LocalDeliveryExecutor,
+)
+
+
+class FakeExternalDeliveryProvider:
+    provider_id = "fake-provider"
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        return ExternalDeliveryResult(
+            transaction_id=package.transaction_id,
+            status="delivered",
+            provider_id=self.provider_id,
+            result_path=result_path,
+            delivery_root=package.delivery_root,
+            dry_run=dry_run,
+            external_delivery_requested=True,
+            external_delivery_performed=True,
+            package_digest_sha256="fake-package-digest",
+            checks=[{"name": "fake_provider_delivered", "passed": True, "details": {}}],
+            blocking_reasons=[],
+            recommended_actions=["review_fake_external_delivery_result"],
+            created_at=created_at,
+            metadata={"scope": "test-fake-external-delivery-provider"},
+        )
 
 
 class LocalDeliveryExecutorTests(TestCase):
@@ -902,6 +938,65 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(result.next_action, "fix_delivery_artifact_inputs")
             self.assertTrue(result.errors)
             self.assertIn("missing_source", result.errors[0])
+
+    def test_external_delivery_request_writes_review_only_blocker_without_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-review-only",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            external_result_path = delivery_root / "external-delivery-result.json"
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            external_result = json.loads(external_result_path.read_text(encoding="utf-8"))
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertFalse(result.delivery_allowed)
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.external_delivery_result)
+            self.assertEqual(result.external_delivery_result.status, "blocked")
+            self.assertIn("external_delivery_provider_configured", result.external_delivery_result.blocking_reasons)
+            self.assertTrue(external_result_path.exists())
+            self.assertEqual(external_result["provider_id"], "review-only")
+            self.assertFalse(journal["external_delivery_performed"])
+            self.assertEqual(Path(journal["external_delivery_result_path"]).resolve(), external_result_path.resolve())
+
+    def test_external_delivery_provider_contract_can_mark_external_delivery_performed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-fake",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider=FakeExternalDeliveryProvider(),
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            external_result = json.loads((delivery_root / "external-delivery-result.json").read_text(encoding="utf-8"))
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.delivery_allowed)
+            self.assertTrue(result.external_delivery_performed)
+            self.assertIsNotNone(result.external_delivery_result)
+            self.assertEqual(result.external_delivery_result.provider_id, "fake-provider")
+            self.assertTrue(journal["external_delivery_performed"])
+            self.assertTrue(external_result["external_delivery_performed"])
 
 
 def _sha256_file(path: Path) -> str:

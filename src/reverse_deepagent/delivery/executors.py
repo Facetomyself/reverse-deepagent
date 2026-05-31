@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
 class DeliveryExecutionMode(str, Enum):
@@ -72,6 +72,10 @@ class DeliveryExecutorConfig:
     commit_cross_run_transaction: bool = False
     backend_manifest_transaction_commit_name: str = "backend-artifact-manifest-transaction-commit.json"
     expected_commit_transaction_id: str | None = None
+    request_external_delivery: bool = False
+    external_delivery_result_name: str = "external-delivery-result.json"
+    external_delivery_provider_id: str = "review-only"
+    external_delivery_provider: ExternalDeliveryProvider | None = None
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -106,6 +110,157 @@ class DeliveryReceipt:
             "created_at": self.created_at,
             "metadata": self.metadata,
         }
+
+
+@dataclass(frozen=True)
+class ExternalDeliveryPackage:
+    """Provider-neutral package handed to an external delivery provider."""
+
+    transaction_id: str
+    status: str
+    mode: str
+    delivery_root: str
+    receipt_path: str | None
+    transaction_journal_path: str | None
+    external_delivery_result_path: str | None
+    delivered_artifacts: list[dict[str, Any]]
+    planned_artifacts: list[dict[str, Any]]
+    local_errors: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "mode": self.mode,
+            "delivery_root": self.delivery_root,
+            "receipt_path": self.receipt_path,
+            "transaction_journal_path": self.transaction_journal_path,
+            "external_delivery_result_path": self.external_delivery_result_path,
+            "delivered_artifacts": self.delivered_artifacts,
+            "planned_artifacts": self.planned_artifacts,
+            "local_errors": self.local_errors,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
+class ExternalDeliveryResult:
+    transaction_id: str
+    status: str
+    provider_id: str
+    result_path: str | None
+    delivery_root: str
+    dry_run: bool
+    external_delivery_requested: bool
+    external_delivery_performed: bool
+    package_digest_sha256: str
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    recommended_actions: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "provider_id": self.provider_id,
+            "result_path": self.result_path,
+            "delivery_root": self.delivery_root,
+            "dry_run": self.dry_run,
+            "external_delivery_requested": self.external_delivery_requested,
+            "external_delivery_performed": self.external_delivery_performed,
+            "package_digest_sha256": self.package_digest_sha256,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+class ExternalDeliveryProvider(Protocol):
+    """Pluggable external delivery provider contract.
+
+    Implementations must keep dry-run side-effect free.  The built-in review-only
+    provider never publishes externally; it only returns a structured blocker so
+    callers can verify the handoff contract before wiring a real provider.
+    """
+
+    provider_id: str
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        """Publish or plan an external delivery package."""
+
+
+@dataclass(frozen=True)
+class ReviewOnlyExternalDeliveryProvider:
+    provider_id: str = "review-only"
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        package_digest = _json_payload_sha256(package.to_dict())
+        local_ready = not package.local_errors
+        configured = False
+        checks = [
+            {
+                "name": "local_delivery_package_has_no_errors",
+                "passed": local_ready,
+                "details": {"local_errors": package.local_errors},
+            },
+            {
+                "name": "external_delivery_provider_configured",
+                "passed": configured,
+                "details": {"provider_id": self.provider_id, "review_only": True},
+            },
+        ]
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        status = "planned" if dry_run and local_ready else "blocked"
+        recommended_actions = (
+            ["configure_external_delivery_provider_or_use_manual_handoff"]
+            if blocking_reasons
+            else ["review_external_delivery_plan_before_apply"]
+        )
+        return ExternalDeliveryResult(
+            transaction_id=package.transaction_id,
+            status=status,
+            provider_id=self.provider_id,
+            result_path=result_path,
+            delivery_root=package.delivery_root,
+            dry_run=dry_run,
+            external_delivery_requested=True,
+            external_delivery_performed=False,
+            package_digest_sha256=package_digest,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=recommended_actions,
+            created_at=created_at,
+            metadata={
+                **package.metadata,
+                "scope": "external-delivery-provider-contract-baseline",
+                "automatic_delivery": False,
+                "limitations": [
+                    "review_only_provider_does_not_publish",
+                    "real_external_delivery_provider_not_configured",
+                ],
+            },
+        )
 
 
 @dataclass(frozen=True)
@@ -457,6 +612,7 @@ class DeliveryTransactionJournal:
     filesystem_artifact_mutated: bool
     external_delivery_performed: bool
     rollback_available: bool
+    external_delivery_result_path: str | None
     manifest_revision_path: str | None
     backend_manifest_mutation_path: str | None
     backend_manifest_patched_path: str | None
@@ -486,6 +642,7 @@ class DeliveryTransactionJournal:
             "filesystem_artifact_mutated": self.filesystem_artifact_mutated,
             "external_delivery_performed": self.external_delivery_performed,
             "rollback_available": self.rollback_available,
+            "external_delivery_result_path": self.external_delivery_result_path,
             "manifest_revision_path": self.manifest_revision_path,
             "backend_manifest_mutation_path": self.backend_manifest_mutation_path,
             "backend_manifest_patched_path": self.backend_manifest_patched_path,
@@ -534,6 +691,7 @@ class DeliveryExecutionResult:
     backend_manifest_recovery_preflight: BackendManifestRecoveryPreflight | None
     backend_manifest_recovery: BackendManifestRecovery | None
     backend_manifest_transaction_commit: BackendManifestTransactionCommit | None
+    external_delivery_result: ExternalDeliveryResult | None
     planned_artifacts: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
     next_action: str = "review_delivery_receipt_before_external_handoff"
@@ -564,6 +722,7 @@ class DeliveryExecutionResult:
             "backend_manifest_recovery_preflight": self.backend_manifest_recovery_preflight.to_dict() if self.backend_manifest_recovery_preflight else None,
             "backend_manifest_recovery": self.backend_manifest_recovery.to_dict() if self.backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": self.backend_manifest_transaction_commit.to_dict() if self.backend_manifest_transaction_commit else None,
+            "external_delivery_result": self.external_delivery_result.to_dict() if self.external_delivery_result else None,
             "planned_artifacts": self.planned_artifacts,
             "errors": self.errors,
             "next_action": self.next_action,
@@ -678,6 +837,11 @@ class LocalDeliveryExecutor:
             if self.config.write_receipt and self.config.commit_cross_run_transaction and not dry_run and not errors
             else None
         )
+        external_delivery_result_path = (
+            str(delivery_root / self.config.external_delivery_result_name)
+            if self.config.write_receipt and self.config.request_external_delivery and not dry_run
+            else None
+        )
         backend_manifest_transaction_commit = self._build_backend_manifest_transaction_commit(
             commit_path=backend_manifest_transaction_commit_path,
             dry_run=dry_run,
@@ -783,6 +947,29 @@ class LocalDeliveryExecutor:
             elif dry_run:
                 status = "planned"
                 next_action = "apply_backend_manifest_recovery_after_review"
+        external_delivery_result = self._run_external_delivery(
+            status=status,
+            mode=mode.value,
+            delivery_root=delivery_root,
+            receipt_path=receipt_path,
+            journal_path=journal_path,
+            result_path=external_delivery_result_path,
+            delivered=delivered,
+            planned=planned,
+            errors=errors,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        external_delivery_performed = bool(external_delivery_result and external_delivery_result.external_delivery_performed)
+        if external_delivery_result:
+            if external_delivery_performed:
+                status = "external_delivered"
+                next_action = "review_external_delivery_result"
+            elif external_delivery_result.blocking_reasons:
+                status = "external_delivery_blocked"
+                next_action = "fix_external_delivery_blockers"
+            elif dry_run:
+                next_action = "review_external_delivery_plan_before_apply"
         previous_journal: dict[str, Any] = {}
         if transaction_commit_only and backend_manifest_transaction_commit and backend_manifest_transaction_commit.transaction_journal_path:
             previous_journal_path = Path(backend_manifest_transaction_commit.transaction_journal_path)
@@ -801,10 +988,13 @@ class LocalDeliveryExecutor:
             or previous_journal.get("backend_manifest_recovered")
         )
         journal_limitations = [
-            "does_not_publish_external_delivery",
             "rollback_is_local_checkpoint_baseline",
             "full_cross_run_manifest_recovery_state_machine_not_implemented",
         ]
+        if external_delivery_performed:
+            journal_limitations.append("external_delivery_performed_by_configured_provider")
+        else:
+            journal_limitations.append("does_not_publish_external_delivery")
         if cross_run_transaction_committed:
             journal_limitations.append("external_delivery_still_requires_separate_executor")
         else:
@@ -829,8 +1019,9 @@ class LocalDeliveryExecutor:
                 bool(manifest_revision and manifest_revision.committed),
             ),
             filesystem_artifact_mutated=_journal_bool(previous_journal, "filesystem_artifact_mutated", bool(delivered)),
-            external_delivery_performed=False,
+            external_delivery_performed=_journal_bool(previous_journal, "external_delivery_performed", external_delivery_performed),
             rollback_available=_journal_bool(previous_journal, "rollback_available", bool(delivered)),
+            external_delivery_result_path=_journal_str(previous_journal, "external_delivery_result_path", external_delivery_result_path),
             manifest_revision_path=_journal_str(previous_journal, "manifest_revision_path", manifest_revision_path),
             backend_manifest_mutation_path=_journal_str(previous_journal, "backend_manifest_mutation_path", backend_manifest_mutation_path),
             backend_manifest_patched_path=_journal_str(previous_journal, "backend_manifest_patched_path", backend_manifest_patched_path),
@@ -917,6 +1108,8 @@ class LocalDeliveryExecutor:
             _write_json(Path(backend_manifest_recovery_path), backend_manifest_recovery.to_dict())
         if backend_manifest_transaction_commit_path and backend_manifest_transaction_commit:
             _write_json(Path(backend_manifest_transaction_commit_path), backend_manifest_transaction_commit.to_dict())
+        if external_delivery_result_path and external_delivery_result:
+            _write_json(Path(external_delivery_result_path), external_delivery_result.to_dict())
         should_write_journal = bool(journal_path) and (
             (not transaction_commit_only and not recovery_apply_only)
             or bool(backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed)
@@ -937,9 +1130,10 @@ class LocalDeliveryExecutor:
             mode=mode.value,
             transaction_id=self.config.transaction_id,
             dry_run=dry_run,
-            delivery_allowed=not bool(errors),
+            delivery_allowed=not bool(errors)
+            and not bool(external_delivery_result and external_delivery_result.blocking_reasons),
             filesystem_artifact_mutated=bool(delivered),
-            external_delivery_performed=False,
+            external_delivery_performed=external_delivery_performed,
             cross_run_transaction_committed=cross_run_transaction_committed,
             manifest_revision_committed=bool(manifest_revision and manifest_revision.committed),
             backend_manifest_patch_written=bool(backend_manifest_mutation and backend_manifest_mutation.backend_manifest_patch_written),
@@ -961,9 +1155,56 @@ class LocalDeliveryExecutor:
             backend_manifest_recovery_preflight=backend_manifest_recovery_preflight,
             backend_manifest_recovery=backend_manifest_recovery,
             backend_manifest_transaction_commit=backend_manifest_transaction_commit,
+            external_delivery_result=external_delivery_result,
             planned_artifacts=planned,
             errors=errors,
             next_action=next_action,
+        )
+
+    def _run_external_delivery(
+        self,
+        *,
+        status: str,
+        mode: str,
+        delivery_root: Path,
+        receipt_path: str | None,
+        journal_path: str | None,
+        result_path: str | None,
+        delivered: list[dict[str, Any]],
+        planned: list[dict[str, Any]],
+        errors: list[str],
+        dry_run: bool,
+        created_at: str,
+    ) -> ExternalDeliveryResult | None:
+        if not self.config.request_external_delivery:
+            return None
+        provider = self.config.external_delivery_provider or ReviewOnlyExternalDeliveryProvider(
+            provider_id=self.config.external_delivery_provider_id
+        )
+        package = ExternalDeliveryPackage(
+            transaction_id=self.config.transaction_id,
+            status=status,
+            mode=mode,
+            delivery_root=str(delivery_root),
+            receipt_path=receipt_path,
+            transaction_journal_path=journal_path,
+            external_delivery_result_path=result_path,
+            delivered_artifacts=delivered,
+            planned_artifacts=planned,
+            local_errors=errors,
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "provider_id": provider.provider_id,
+                "automatic_delivery": False,
+            },
+        )
+        return provider.deliver(
+            package,
+            dry_run=dry_run,
+            result_path=result_path,
+            created_at=created_at,
         )
 
     def _build_manifest_revision(
