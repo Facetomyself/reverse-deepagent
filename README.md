@@ -221,7 +221,7 @@ agent = build_reverse_agent(
 - 新增或调整 subagent、middleware、runtime artifact、hook artifact 时，必须同步 `workspace-contract.json` 的生成逻辑、manifest alias metadata 和测试。
 - 不得在没有 compatibility alias、manifest 覆盖和回归测试的情况下直接移动现有 artifact 路径。
 
-当前 contract 覆盖的虚拟协作区包括 `/workspace/recon/`、`/workspace/browser/`、`/workspace/debugger/`、`/workspace/hooks/`、`/workspace/timeline/`、`/workspace/rebuild/`、`/workspace/review/`、`/workspace/delivery/`、`/workspace/runtime/` 和 `/workspace/evidence/`。它把已实现角色 `coordinator`、`router`、`browser_runtime`、`web_recon`、`protector`、`delivery` 与规划角色 `debugger`、`hook`、`timeline`、`rebuild`、`review` 放在同一张表里。`browser_runtime` 负责 BrowserProvider metadata / capability matrix / session readiness 边界，默认 metadata-only 工具不会启动浏览器、探测 CDP、调用外部 provider factory 或依赖 MCP；实际 Web recon、源码搜索、网络采样和 protection 仍由 `web_recon` / `protector` 负责。
+当前 contract 覆盖的虚拟协作区包括 `/workspace/recon/`、`/workspace/browser/`、`/workspace/debugger/`、`/workspace/hooks/`、`/workspace/timeline/`、`/workspace/rebuild/`、`/workspace/review/`、`/workspace/delivery/`、`/workspace/runtime/` 和 `/workspace/evidence/`。它把已实现角色 `coordinator`、`router`、`browser_runtime`、`web_recon`、`protector`、`delivery`、`review` 与规划角色 `debugger`、`hook`、`timeline`、`rebuild` 放在同一张表里。`browser_runtime` 负责 BrowserProvider metadata / capability matrix / session readiness 边界，默认 metadata-only 工具不会启动浏览器、探测 CDP、调用外部 provider factory 或依赖 MCP；`review` 负责 read-only review gate 评估、risk / warning hints 与 evidence review requirements 汇总，不执行交付、不写 artifact、不记录人工审批；实际 Web recon、源码搜索、网络采样和 protection 仍由 `web_recon` / `protector` 负责。
 
 纯 Python 冒烟测试：
 

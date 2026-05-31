@@ -194,8 +194,8 @@ def default_subagent_roles() -> tuple[SubagentRoleContract, ...]:
         ),
         SubagentRoleContract(
             role="review",
-            responsibility="Owns evidence promotion review requirements, review gates, and manual approval decisions.",
-            current_status="planned-contract",
+            responsibility="Owns evidence promotion review requirements, read-only review gate evaluation, and manual approval boundaries.",
+            current_status="implemented",
             workspace_folders=("/workspace/review/", "/workspace/evidence/", "/workspace/timeline/"),
         ),
     )
