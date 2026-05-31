@@ -1,19 +1,35 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from reverse_deepagent.delivery import (
+    DeliveryArtifact,
+    DeliveryExecutorConfig,
     DeliveryExecutionMode,
     DeliveryResumePlanner,
     DeliveryResumePlannerConfig,
     DeliveryResumeRunner,
     DeliveryResumeRunnerConfig,
+    DeliveryResumeWorkflowScheduler,
+    DeliveryResumeWorkflowSchedulerConfig,
+    LocalDeliveryExecutor,
 )
 from reverse_deepagent.review_approval import ReviewApprovalConfig, ReviewApprovalLedgerWriter
-from reverse_deepagent.tools.delivery_tools import make_delivery_resume_planner_tool, make_delivery_resume_runner_tool
+from reverse_deepagent.tools.delivery_tools import (
+    make_delivery_resume_planner_tool,
+    make_delivery_resume_runner_tool,
+    make_delivery_resume_workflow_scheduler_tool,
+)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 class DeliveryResumePlannerTests(unittest.TestCase):
@@ -353,6 +369,237 @@ class DeliveryResumeRunnerTests(unittest.TestCase):
             self.assertEqual(payload["status"], "preflighted")
             self.assertTrue(payload["metadata"]["tool"])
             self.assertTrue((root / "delivery-resume-execution.json").exists())
+
+
+class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
+    def _write_mutated_manifest_transaction(self, root: Path, transaction_id: str) -> Path:
+        return DeliveryResumeRunnerTests()._write_mutated_manifest_transaction(root, transaction_id)
+
+    def _write_recoverable_manifest_transaction(self, root: Path, transaction_id: str) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        workspace = root.parent / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        source = workspace / "final-result.json"
+        source.write_text('{"ok": true}\n', encoding="utf-8")
+        backend_manifest = root / "backend-artifact-manifest.json"
+        backend_manifest.write_text(json.dumps({"version": 1, "entries": []}), encoding="utf-8")
+
+        LocalDeliveryExecutor(
+            DeliveryExecutorConfig(
+                delivery_root=root,
+                transaction_id=transaction_id,
+                mode=DeliveryExecutionMode.APPLY,
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=backend_manifest,
+            )
+        ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+        return backend_manifest
+
+    def _write_approval(self, workspace_root: Path, transaction_id: str, action: str) -> dict[str, object]:
+        return DeliveryResumeRunnerTests()._write_approval(workspace_root, transaction_id, action)
+
+    def test_resume_workflow_scheduler_dry_run_plans_explicit_steps_without_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            manifest = self._write_mutated_manifest_transaction(root, "tx-workflow-plan")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-plan",
+                    step_actions=("preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-plan",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertTrue(payload["dry_run"])
+            self.assertEqual([step["action"] for step in payload["planned_steps"]], ["preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"])
+            self.assertTrue(all(step["status"] == "planned" for step in payload["step_results"]))
+            self.assertFalse((root / "delivery-resume-workflow.json").exists())
+            self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
+            self.assertFalse(payload["side_effect_policy"]["writes_workflow_record"])
+            self.assertFalse(payload["side_effect_policy"]["writes_workflow_journal"])
+
+    def test_resume_workflow_scheduler_apply_blocks_without_all_step_approvals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_mutated_manifest_transaction(root, "tx-workflow-block")
+            self._write_approval(workspace, "tx-workflow-block", "resume_preflight_backend_manifest_recovery")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-block",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-block",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("execute_requires_review_approval_for_all_pending_steps", payload["blocking_reasons"])
+            self.assertEqual(payload["approval_summary"]["missing_step_actions"], ["apply_backend_manifest_recovery"])
+            self.assertFalse((root / "backend-artifact-manifest-recovery-preflight.json").exists())
+            self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
+
+    def test_resume_workflow_scheduler_executes_approved_multi_step_recovery_and_writes_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-workflow-run")
+            self._write_approval(workspace, "tx-workflow-run", "resume_preflight_backend_manifest_recovery")
+            self._write_approval(workspace, "tx-workflow-run", "resume_apply_backend_manifest_recovery")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-run",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-run",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    metadata={"source": "scheduler-test"},
+                )
+            ).execute().to_dict()
+
+            workflow_path = root / "delivery-resume-workflow.json"
+            journal_path = root / "delivery-resume-workflow-journal.json"
+            self.assertEqual(payload["status"], "completed")
+            self.assertEqual([step["status"] for step in payload["step_results"]], ["preflighted", "recovered"])
+            self.assertTrue(payload["side_effect_policy"]["writes_workflow_record"])
+            self.assertTrue(payload["side_effect_policy"]["writes_workflow_journal"])
+            self.assertTrue(payload["side_effect_policy"]["manifest_recovered"])
+            self.assertFalse(payload["side_effect_policy"]["external_delivery_performed"])
+            self.assertTrue(workflow_path.exists())
+            self.assertTrue(journal_path.exists())
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(journal["entry_count"], 2)
+            self.assertEqual([entry["action"] for entry in journal["entries"]], ["preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"])
+            self.assertTrue((root / "backend-artifact-manifest-recovery.json").exists())
+
+    def test_resume_workflow_scheduler_skips_completed_journaled_steps_on_resume_of_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-workflow-resume")
+            self._write_approval(workspace, "tx-workflow-resume", "resume_preflight_backend_manifest_recovery")
+
+            first = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-resume",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("preflight_backend_manifest_recovery",),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-resume",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                )
+            ).execute().to_dict()
+            self._write_approval(workspace, "tx-workflow-resume", "resume_apply_backend_manifest_recovery")
+
+            second = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-resume",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-resume",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                )
+            ).execute().to_dict()
+
+            journal = json.loads((root / "delivery-resume-workflow-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(first["status"], "completed")
+            self.assertEqual(second["status"], "completed")
+            self.assertEqual(second["step_results"][0]["status"], "skipped_completed")
+            self.assertEqual(second["step_results"][1]["status"], "recovered")
+            self.assertEqual(journal["entry_count"], 2)
+            self.assertEqual([entry["action"] for entry in journal["entries"]], ["preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"])
+
+    def test_resume_workflow_scheduler_records_noop_when_all_steps_are_journaled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-workflow-noop")
+            self._write_approval(workspace, "tx-workflow-noop", "resume_preflight_backend_manifest_recovery")
+            self._write_approval(workspace, "tx-workflow-noop", "resume_apply_backend_manifest_recovery")
+            step_actions = ("preflight_backend_manifest_recovery", "apply_backend_manifest_recovery")
+
+            first = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-noop",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=step_actions,
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-noop",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                )
+            ).execute().to_dict()
+            second = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-noop",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=step_actions,
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-noop",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(first["status"], "completed")
+            self.assertEqual(second["status"], "recorded")
+            self.assertEqual([step["status"] for step in second["step_results"]], ["skipped_completed", "skipped_completed"])
+            self.assertEqual(second["approval_summary"]["expected_step_actions"], [])
+            self.assertEqual(second["blocking_reasons"], [])
+
+    def test_resume_workflow_scheduler_tool_executes_with_matching_approvals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-workflow-tool")
+            self._write_approval(workspace, "tx-workflow-tool", "resume_preflight_backend_manifest_recovery")
+            self._write_approval(workspace, "tx-workflow-tool", "resume_apply_backend_manifest_recovery")
+            tool = make_delivery_resume_workflow_scheduler_tool(root)
+
+            payload = tool(
+                transaction_id="tx-workflow-tool",
+                action="execute_workflow",
+                mode="apply",
+                step_actions_json=json.dumps(["preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"]),
+                backend_manifest_path=str(manifest),
+                expected_transaction_id="tx-workflow-tool",
+                approval_ledger_path=str(workspace / "review-approval-ledger.json"),
+                metadata_json=json.dumps({"tool": True}),
+            )
+
+            self.assertEqual(payload["status"], "completed")
+            self.assertTrue(payload["metadata"]["tool"])
+            self.assertTrue((root / "delivery-resume-workflow.json").exists())
+            self.assertTrue((root / "delivery-resume-workflow-journal.json").exists())
 
 
 if __name__ == "__main__":

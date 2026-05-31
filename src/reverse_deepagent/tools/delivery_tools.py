@@ -17,6 +17,8 @@ from reverse_deepagent.delivery import (
     DeliveryResumePlannerConfig,
     DeliveryResumeRunner,
     DeliveryResumeRunnerConfig,
+    DeliveryResumeWorkflowScheduler,
+    DeliveryResumeWorkflowSchedulerConfig,
     DeliveryRollbackStateWriterConfig,
     DeliveryTransactionLockProviderConfig,
     DeliveryTransactionRecoveryExecutor,
@@ -294,6 +296,71 @@ def make_delivery_transaction_lock_provider_tool(default_lock_root: str | Path) 
         "External providers can be discovered through the reverse_deepagent.delivery_lock_providers entry point group."
     )
     return manage_delivery_transaction_lock_provider
+
+
+def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for durable multi-step delivery resume workflows."""
+
+    root = Path(default_delivery_root)
+
+    def execute_delivery_resume_workflow(
+        delivery_root: str | None = None,
+        transaction_id: str | None = None,
+        action: str = "plan_workflow",
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        step_actions_json: str | None = None,
+        max_steps: int = 5,
+        backend_manifest_path: str | None = None,
+        expected_transaction_id: str | None = None,
+        approval_ledger_path: str | None = None,
+        approval_decision: str = "approved",
+        require_review_approval: bool = True,
+        require_transaction_lock: bool = False,
+        transaction_lock_owner: str | None = None,
+        transaction_lock_lease_seconds: int = 900,
+        expected_resume_token: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan or execute a review-gated multi-step delivery resume workflow."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        raw_step_actions = json.loads(step_actions_json) if step_actions_json else []
+        if not isinstance(raw_step_actions, list):
+            raise ValueError("step_actions_json must decode to a list")
+        step_actions = tuple(str(item) for item in raw_step_actions)
+        target_root = Path(delivery_root) if delivery_root else root
+        config = DeliveryResumeWorkflowSchedulerConfig(
+            delivery_root=target_root,
+            transaction_id=transaction_id,
+            action=action,
+            mode=DeliveryExecutionMode(mode),
+            step_actions=step_actions,
+            max_steps=max_steps,
+            backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
+            expected_transaction_id=expected_transaction_id,
+            approval_ledger_path=Path(approval_ledger_path) if approval_ledger_path else None,
+            approval_decision=approval_decision,
+            require_review_approval=require_review_approval,
+            require_transaction_lock=require_transaction_lock,
+            transaction_lock_owner=transaction_lock_owner,
+            transaction_lock_lease_seconds=transaction_lock_lease_seconds,
+            expected_resume_token=expected_resume_token,
+            metadata=metadata,
+        )
+        return DeliveryResumeWorkflowScheduler(config).execute().to_dict()
+
+    execute_delivery_resume_workflow.__name__ = "execute_delivery_resume_workflow"
+    execute_delivery_resume_workflow.__doc__ = (
+        "Plan or execute a review-gated multi-step delivery resume workflow. "
+        "Dry-run is read-only. apply mode with action=execute_workflow requires review-approval-ledger entries for every pending step action, "
+        "then delegates each step to DeliveryResumeRunner and appends delivery-resume-workflow-journal.json. "
+        "step_actions_json should be a JSON list such as [\"preflight_backend_manifest_recovery\", \"apply_backend_manifest_recovery\"]. "
+        "The scheduler skips already completed journaled steps, writes delivery-resume-workflow.json for completed apply workflows, "
+        "and never starts new delivery, publishes external delivery, acquires/releases distributed locks, or executes physical rollback."
+    )
+    return execute_delivery_resume_workflow
 
 
 def make_delivery_transition_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:

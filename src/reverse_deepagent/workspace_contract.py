@@ -358,6 +358,8 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_delivery_distributed_transaction_lock_operation", "workspace/delivery-distributed-transaction-lock-operation.json", "/workspace/delivery/", "delivery-distributed-transaction-lock-operation.json", "audit", ("delivery", "review")),
         ("workspace_delivery_resume_plan", "workspace/delivery-resume-plan.json", "/workspace/delivery/", "delivery-resume-plan.json", "triage", ("delivery", "review")),
         ("workspace_delivery_resume_execution", "workspace/delivery-resume-execution.json", "/workspace/delivery/", "delivery-resume-execution.json", "triage", ("delivery", "review")),
+        ("workspace_delivery_resume_workflow", "workspace/delivery-resume-workflow.json", "/workspace/delivery/", "delivery-resume-workflow.json", "triage", ("delivery", "review")),
+        ("workspace_delivery_resume_workflow_journal", "workspace/delivery-resume-workflow-journal.json", "/workspace/delivery/", "delivery-resume-workflow-journal.json", "audit", ("delivery", "review")),
         ("workspace_delivery_transaction_idempotency_guard", "workspace/delivery-transaction-idempotency-guard.json", "/workspace/delivery/", "delivery-transaction-idempotency-guard.json", "export", ("delivery", "review")),
         ("workspace_delivery_rollback_state", "workspace/delivery-rollback-state.json", "/workspace/delivery/", "delivery-rollback-state.json", "triage", ("delivery", "review")),
         ("workspace_delivery_rollback_execution", "workspace/delivery-rollback-execution.json", "/workspace/delivery/", "delivery-rollback-execution.json", "triage", ("delivery", "review")),

@@ -10,6 +10,7 @@ from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.tools.delivery_tools import (
     make_delivery_recovery_executor_tool,
     make_delivery_resume_planner_tool,
+    make_delivery_resume_workflow_scheduler_tool,
     make_delivery_rollback_executor_tool,
     make_delivery_rollback_state_writer_tool,
     make_delivery_transaction_lock_provider_tool,
@@ -741,6 +742,7 @@ class DeliverySubagentToolTests(TestCase):
                     "execute_local_delivery",
                     "plan_delivery_resume",
                     "execute_delivery_resume",
+                    "execute_delivery_resume_workflow",
                     "manage_delivery_transaction_lock_provider",
                     "execute_delivery_transition",
                     "execute_delivery_recovery",
