@@ -1105,6 +1105,77 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["backend_manifest_mutated"])
             self.assertFalse(journal["external_delivery_performed"])
 
+    def test_duplicate_cross_run_transaction_commit_preserves_terminal_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-commit-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-first",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-commit-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            commit_path = delivery_root / "backend-artifact-manifest-transaction-commit.json"
+            original_commit = json.loads(commit_path.read_text(encoding="utf-8"))
+            duplicate = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-second",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-commit-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            guard_path = delivery_root / "delivery-transaction-idempotency-guard.json"
+            preserved_commit = json.loads(commit_path.read_text(encoding="utf-8"))
+            guard = json.loads(guard_path.read_text(encoding="utf-8"))
+            self.assertEqual(duplicate.status, "blocked")
+            self.assertIsNotNone(duplicate.transaction_idempotency_guard)
+            self.assertEqual(duplicate.transaction_idempotency_guard.operation, "commit_cross_run_transaction")
+            self.assertTrue(duplicate.transaction_state.flags["transaction_idempotency_guard_triggered"])
+            self.assertEqual(duplicate.transaction_state.evidence_paths["transaction_idempotency_guard"], str(guard_path.resolve()))
+            self.assertEqual(original_commit, preserved_commit)
+            self.assertEqual(guard["status"], "duplicate_blocked")
+            self.assertTrue(guard["duplicate_guard_triggered"])
+            self.assertTrue(guard["terminal_artifact_preserved"])
+            self.assertEqual(guard["terminal_artifact_path"], str(commit_path.resolve()))
+
     def test_backend_manifest_transaction_commit_blocks_stale_recovery_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1233,6 +1304,79 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["backend_manifest_mutated"])
             self.assertFalse(journal["cross_run_transaction_committed"])
             self.assertFalse(journal["external_delivery_performed"])
+
+    def test_duplicate_backend_manifest_recovery_preserves_terminal_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": [{"artifact_key": "existing", "path": "workspace/existing.json", "kind": "json"}]}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-first",
+                    mode=DeliveryExecutionMode.APPLY,
+                    apply_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            recovery_path = delivery_root / "backend-artifact-manifest-recovery.json"
+            original_recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+            duplicate = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-second",
+                    mode=DeliveryExecutionMode.APPLY,
+                    apply_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            guard_path = delivery_root / "delivery-transaction-idempotency-guard.json"
+            preserved_recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+            guard = json.loads(guard_path.read_text(encoding="utf-8"))
+            self.assertEqual(duplicate.status, "blocked")
+            self.assertIsNotNone(duplicate.transaction_idempotency_guard)
+            self.assertEqual(duplicate.transaction_idempotency_guard.operation, "apply_backend_manifest_recovery")
+            self.assertTrue(duplicate.transaction_state.flags["transaction_idempotency_guard_triggered"])
+            self.assertEqual(duplicate.transaction_state.evidence_paths["transaction_idempotency_guard"], str(guard_path.resolve()))
+            self.assertEqual(original_recovery, preserved_recovery)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertEqual(guard["status"], "duplicate_blocked")
+            self.assertTrue(guard["duplicate_guard_triggered"])
+            self.assertTrue(guard["terminal_artifact_preserved"])
+            self.assertEqual(guard["terminal_artifact_path"], str(recovery_path.resolve()))
 
     def test_backend_manifest_recovery_blocks_source_manifest_drift_after_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

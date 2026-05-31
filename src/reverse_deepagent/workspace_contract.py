@@ -350,6 +350,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_external_delivery_result", "workspace/external-delivery-result.json", "/workspace/delivery/", "external-delivery-result.json", "export", ("delivery", "review")),
         ("workspace_external_delivery_duplicate_guard", "workspace/external-delivery-duplicate-guard.json", "/workspace/delivery/", "external-delivery-duplicate-guard.json", "export", ("delivery", "review")),
         ("workspace_external_delivery_idempotency_ledger", "workspace/external-delivery-idempotency-ledger.json", "/workspace/delivery/", "external-delivery-idempotency-ledger.json", "export", ("delivery", "review")),
+        ("workspace_delivery_transaction_idempotency_guard", "workspace/delivery-transaction-idempotency-guard.json", "/workspace/delivery/", "delivery-transaction-idempotency-guard.json", "export", ("delivery", "review")),
         ("workspace_delivery_transition_execution", "workspace/delivery-transition-execution.json", "/workspace/delivery/", "delivery-transition-execution.json", "triage", ("delivery", "review")),
         ("workspace_delivery_recovery_execution", "workspace/delivery-recovery-execution.json", "/workspace/delivery/", "delivery-recovery-execution.json", "triage", ("delivery", "review")),
         ("workspace_delivery_manifest_revision", "workspace/delivery-manifest-revision.json", "/workspace/delivery/", "delivery-manifest-revision.json", "export", ("delivery", "review")),

@@ -13,6 +13,7 @@ DELIVERY_TRANSACTION_ARTIFACT_NAMES: dict[str, str] = {
     "external_delivery_result": "external-delivery-result.json",
     "external_delivery_idempotency_ledger": "external-delivery-idempotency-ledger.json",
     "delivery_transition_execution": "delivery-transition-execution.json",
+    "transaction_idempotency_guard": "delivery-transaction-idempotency-guard.json",
     "backend_manifest_recovery_preflight": "backend-artifact-manifest-recovery-preflight.json",
     "backend_manifest_recovery": "backend-artifact-manifest-recovery.json",
     "backend_manifest_transaction_commit": "backend-artifact-manifest-transaction-commit.json",

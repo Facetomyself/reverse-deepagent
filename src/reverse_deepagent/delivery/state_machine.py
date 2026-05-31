@@ -98,6 +98,7 @@ def evaluate_delivery_transaction_state(record: Mapping[str, Any] | None) -> Del
     journal = _mapping(payload.get("transaction_journal")) or payload
     external_result = _mapping(payload.get("external_delivery_result"))
     external_idempotency_ledger = _mapping(payload.get("external_delivery_idempotency_ledger"))
+    transaction_idempotency_guard = _mapping(payload.get("transaction_idempotency_guard"))
     recovery_preflight = _mapping(payload.get("backend_manifest_recovery_preflight"))
     recovery_result = _mapping(payload.get("backend_manifest_recovery"))
     transaction_commit = _mapping(payload.get("backend_manifest_transaction_commit"))
@@ -106,6 +107,7 @@ def evaluate_delivery_transaction_state(record: Mapping[str, Any] | None) -> Del
         payload.get("transaction_id"),
         journal.get("transaction_id"),
         external_result.get("transaction_id") if external_result else None,
+        transaction_idempotency_guard.get("transaction_id") if transaction_idempotency_guard else None,
         recovery_result.get("source_transaction_id") if recovery_result else None,
         transaction_commit.get("source_transaction_id") if transaction_commit else None,
     )
@@ -115,18 +117,27 @@ def evaluate_delivery_transaction_state(record: Mapping[str, Any] | None) -> Del
         journal,
         external_result,
         external_idempotency_ledger,
+        transaction_idempotency_guard,
         recovery_preflight,
         recovery_result,
         transaction_commit,
     )
     completed_states = _completed_states(flags)
-    blocking_reasons = _blocking_reasons(payload, external_result, recovery_preflight, recovery_result, transaction_commit)
+    blocking_reasons = _blocking_reasons(
+        payload,
+        external_result,
+        transaction_idempotency_guard,
+        recovery_preflight,
+        recovery_result,
+        transaction_commit,
+    )
     blocked = bool(blocking_reasons) or bool(payload.get("errors"))
     state = _current_state(flags, completed_states, blocked=blocked)
     evidence_paths = _evidence_paths(
         journal,
         external_result,
         external_idempotency_ledger,
+        transaction_idempotency_guard,
         recovery_preflight,
         recovery_result,
         transaction_commit,
@@ -142,6 +153,8 @@ def evaluate_delivery_transaction_state(record: Mapping[str, Any] | None) -> Del
         notes.append("external_delivery_performed_by_configured_provider")
     if flags.get("external_delivery_idempotency_ledger_recorded"):
         notes.append("external_delivery_idempotency_ledger_recorded")
+    if flags.get("transaction_idempotency_guard_triggered"):
+        notes.append("transaction_idempotency_guard_triggered")
     if flags.get("cross_run_transaction_committed"):
         notes.append("local_transaction_journal_marked_committed")
     return DeliveryTransactionSnapshot(
@@ -211,6 +224,7 @@ def _state_flags(
     journal: Mapping[str, Any],
     external_result: Mapping[str, Any],
     external_idempotency_ledger: Mapping[str, Any],
+    transaction_idempotency_guard: Mapping[str, Any],
     recovery_preflight: Mapping[str, Any],
     recovery_result: Mapping[str, Any],
     transaction_commit: Mapping[str, Any],
@@ -251,6 +265,10 @@ def _state_flags(
             payload.get("external_delivery_idempotency_ledger")
             or journal.get("external_delivery_idempotency_ledger_path")
             or external_idempotency_ledger.get("entry_count")
+        ),
+        "transaction_idempotency_guard_triggered": bool(
+            payload.get("transaction_idempotency_guard")
+            or transaction_idempotency_guard.get("duplicate_guard_triggered")
         ),
         "cross_run_transaction_committed": _bool(payload, journal, "cross_run_transaction_committed") or bool(transaction_commit.get("committed")),
     }
@@ -321,12 +339,13 @@ def _current_state(
 def _blocking_reasons(
     payload: Mapping[str, Any],
     external_result: Mapping[str, Any],
+    transaction_idempotency_guard: Mapping[str, Any],
     recovery_preflight: Mapping[str, Any],
     recovery_result: Mapping[str, Any],
     transaction_commit: Mapping[str, Any],
 ) -> list[str]:
     reasons: list[str] = []
-    for source in (payload, external_result, recovery_preflight, recovery_result, transaction_commit):
+    for source in (payload, external_result, transaction_idempotency_guard, recovery_preflight, recovery_result, transaction_commit):
         raw = source.get("blocking_reasons") if isinstance(source, Mapping) else None
         if isinstance(raw, list):
             reasons.extend(str(item) for item in raw if item)
@@ -342,6 +361,7 @@ def _evidence_paths(
     journal: Mapping[str, Any],
     external_result: Mapping[str, Any],
     external_idempotency_ledger: Mapping[str, Any],
+    transaction_idempotency_guard: Mapping[str, Any],
     recovery_preflight: Mapping[str, Any],
     recovery_result: Mapping[str, Any],
     transaction_commit: Mapping[str, Any],
@@ -362,6 +382,7 @@ def _evidence_paths(
         "external_delivery_result": journal.get("external_delivery_result_path") or external_result.get("result_path"),
         "external_delivery_idempotency_ledger": journal.get("external_delivery_idempotency_ledger_path")
         or external_idempotency_ledger.get("ledger_path"),
+        "transaction_idempotency_guard": transaction_idempotency_guard.get("guard_path"),
     }
     return {key: str(value) for key, value in candidates.items() if value}
 

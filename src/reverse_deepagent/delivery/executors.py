@@ -102,6 +102,7 @@ class DeliveryExecutorConfig:
     commit_cross_run_transaction: bool = False
     backend_manifest_transaction_commit_name: str = "backend-artifact-manifest-transaction-commit.json"
     expected_commit_transaction_id: str | None = None
+    transaction_idempotency_guard_name: str = "delivery-transaction-idempotency-guard.json"
     request_external_delivery: bool = False
     external_delivery_result_name: str = "external-delivery-result.json"
     external_delivery_provider_id: str = "review-only"
@@ -1783,6 +1784,46 @@ class BackendManifestTransactionCommit:
 
 
 @dataclass(frozen=True)
+class DeliveryTransactionIdempotencyGuard:
+    transaction_id: str
+    status: str
+    operation: str
+    guard_path: str | None
+    delivery_root: str
+    transaction_journal_path: str | None
+    terminal_artifact_path: str | None
+    terminal_artifact_kind: str
+    dry_run: bool
+    duplicate_guard_triggered: bool
+    terminal_artifact_preserved: bool
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    recommended_actions: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "operation": self.operation,
+            "guard_path": self.guard_path,
+            "delivery_root": self.delivery_root,
+            "transaction_journal_path": self.transaction_journal_path,
+            "terminal_artifact_path": self.terminal_artifact_path,
+            "terminal_artifact_kind": self.terminal_artifact_kind,
+            "dry_run": self.dry_run,
+            "duplicate_guard_triggered": self.duplicate_guard_triggered,
+            "terminal_artifact_preserved": self.terminal_artifact_preserved,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class DeliveryTransactionJournal:
     transaction_id: str
     status: str
@@ -1875,6 +1916,7 @@ class DeliveryExecutionResult:
     backend_manifest_recovery_preflight: BackendManifestRecoveryPreflight | None
     backend_manifest_recovery: BackendManifestRecovery | None
     backend_manifest_transaction_commit: BackendManifestTransactionCommit | None
+    transaction_idempotency_guard: DeliveryTransactionIdempotencyGuard | None
     external_delivery_result: ExternalDeliveryResult | None
     external_delivery_idempotency_ledger: ExternalDeliveryIdempotencyLedger | None
     planned_artifacts: list[dict[str, Any]]
@@ -1908,6 +1950,7 @@ class DeliveryExecutionResult:
             "backend_manifest_recovery_preflight": self.backend_manifest_recovery_preflight.to_dict() if self.backend_manifest_recovery_preflight else None,
             "backend_manifest_recovery": self.backend_manifest_recovery.to_dict() if self.backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": self.backend_manifest_transaction_commit.to_dict() if self.backend_manifest_transaction_commit else None,
+            "transaction_idempotency_guard": self.transaction_idempotency_guard.to_dict() if self.transaction_idempotency_guard else None,
             "external_delivery_result": self.external_delivery_result.to_dict() if self.external_delivery_result else None,
             "external_delivery_idempotency_ledger": (
                 self.external_delivery_idempotency_ledger.to_dict() if self.external_delivery_idempotency_ledger else None
@@ -2026,6 +2069,14 @@ class LocalDeliveryExecutor:
             if self.config.write_receipt and self.config.commit_cross_run_transaction and not dry_run and not errors
             else None
         )
+        transaction_idempotency_guard_path = (
+            str(delivery_root / self.config.transaction_idempotency_guard_name)
+            if self.config.write_receipt
+            and not dry_run
+            and not errors
+            and (self.config.apply_backend_manifest_recovery or self.config.commit_cross_run_transaction)
+            else None
+        )
         external_delivery_result_path = (
             str(delivery_root / self.config.external_delivery_result_name)
             if self.config.write_receipt and self.config.request_external_delivery and not dry_run
@@ -2130,6 +2181,17 @@ class LocalDeliveryExecutor:
             dry_run=dry_run,
             created_at=created_at,
         )
+        transaction_idempotency_guard = self._build_transaction_idempotency_guard(
+            guard_path=transaction_idempotency_guard_path,
+            recovery=backend_manifest_recovery,
+            commit=backend_manifest_transaction_commit,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        if transaction_idempotency_guard and transaction_idempotency_guard.operation == "apply_backend_manifest_recovery":
+            backend_manifest_recovery_path = None
+        if transaction_idempotency_guard and transaction_idempotency_guard.operation == "commit_cross_run_transaction":
+            backend_manifest_transaction_commit_path = None
         if recovery_apply_only and backend_manifest_recovery:
             if backend_manifest_recovery.recovered:
                 status = "recovered"
@@ -2332,6 +2394,8 @@ class LocalDeliveryExecutor:
             _write_json(Path(backend_manifest_recovery_path), backend_manifest_recovery.to_dict())
         if backend_manifest_transaction_commit_path and backend_manifest_transaction_commit:
             _write_json(Path(backend_manifest_transaction_commit_path), backend_manifest_transaction_commit.to_dict())
+        if transaction_idempotency_guard_path and transaction_idempotency_guard:
+            _write_json(Path(transaction_idempotency_guard_path), transaction_idempotency_guard.to_dict())
         if external_delivery_result_path and external_delivery_result:
             _write_json(Path(external_delivery_result_path), external_delivery_result.to_dict())
         if external_delivery_idempotency_ledger_path and external_delivery_idempotency_ledger:
@@ -2380,6 +2444,7 @@ class LocalDeliveryExecutor:
             "backend_manifest_recovery_preflight": backend_manifest_recovery_preflight.to_dict() if backend_manifest_recovery_preflight else None,
             "backend_manifest_recovery": backend_manifest_recovery.to_dict() if backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": backend_manifest_transaction_commit.to_dict() if backend_manifest_transaction_commit else None,
+            "transaction_idempotency_guard": transaction_idempotency_guard.to_dict() if transaction_idempotency_guard else None,
             "external_delivery_result": external_delivery_result.to_dict() if external_delivery_result else None,
             "external_delivery_idempotency_ledger": (
                 external_delivery_idempotency_ledger.to_dict() if external_delivery_idempotency_ledger else None
@@ -2420,11 +2485,108 @@ class LocalDeliveryExecutor:
             backend_manifest_recovery_preflight=backend_manifest_recovery_preflight,
             backend_manifest_recovery=backend_manifest_recovery,
             backend_manifest_transaction_commit=backend_manifest_transaction_commit,
+            transaction_idempotency_guard=transaction_idempotency_guard,
             external_delivery_result=external_delivery_result,
             external_delivery_idempotency_ledger=external_delivery_idempotency_ledger,
             planned_artifacts=planned,
             errors=errors,
             next_action=next_action,
+        )
+
+    def _build_transaction_idempotency_guard(
+        self,
+        *,
+        guard_path: str | None,
+        recovery: BackendManifestRecovery | None,
+        commit: BackendManifestTransactionCommit | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> DeliveryTransactionIdempotencyGuard | None:
+        if dry_run:
+            return None
+        operation: str | None = None
+        terminal_artifact_kind: str | None = None
+        terminal_artifact_path: str | None = None
+        terminal_artifact_successful = False
+        journal_terminal_flag = False
+        journal_path: str | None = None
+        if recovery and not recovery.recovered:
+            operation = "apply_backend_manifest_recovery"
+            terminal_artifact_kind = "backend_manifest_recovery"
+            terminal_artifact_path = recovery.recovery_path
+            journal_path = recovery.transaction_journal_path
+            journal_terminal_flag = "journal_not_already_recovered" in recovery.blocking_reasons
+            terminal_artifact_successful = _terminal_recovery_artifact_succeeded(terminal_artifact_path)
+        if commit and not commit.committed:
+            operation = "commit_cross_run_transaction"
+            terminal_artifact_kind = "backend_manifest_transaction_commit"
+            terminal_artifact_path = commit.commit_path
+            journal_path = commit.transaction_journal_path
+            journal_terminal_flag = "journal_not_already_cross_run_committed" in commit.blocking_reasons
+            terminal_artifact_successful = _terminal_commit_artifact_succeeded(terminal_artifact_path)
+        duplicate_guard_triggered = bool(operation and (journal_terminal_flag or terminal_artifact_successful))
+        if not duplicate_guard_triggered or operation is None or terminal_artifact_kind is None:
+            return None
+        terminal_artifact_exists = bool(terminal_artifact_path and Path(terminal_artifact_path).expanduser().exists())
+        checks = [
+            {
+                "name": "terminal_journal_flag_not_already_set",
+                "passed": not journal_terminal_flag,
+                "details": {
+                    "operation": operation,
+                    "journal_terminal_flag_set": journal_terminal_flag,
+                },
+            },
+            {
+                "name": "terminal_artifact_not_already_successful",
+                "passed": not terminal_artifact_successful,
+                "details": {
+                    "terminal_artifact_path": terminal_artifact_path,
+                    "terminal_artifact_exists": terminal_artifact_exists,
+                    "terminal_artifact_successful": terminal_artifact_successful,
+                },
+            },
+            {
+                "name": "terminal_artifact_preserved_on_duplicate",
+                "passed": True,
+                "details": {
+                    "terminal_artifact_path": terminal_artifact_path,
+                    "terminal_artifact_will_be_overwritten": False,
+                },
+            },
+        ]
+        return DeliveryTransactionIdempotencyGuard(
+            transaction_id=self.config.transaction_id,
+            status="duplicate_blocked",
+            operation=operation,
+            guard_path=guard_path,
+            delivery_root=str(self.config.resolved_delivery_root()),
+            transaction_journal_path=journal_path,
+            terminal_artifact_path=terminal_artifact_path,
+            terminal_artifact_kind=terminal_artifact_kind,
+            dry_run=dry_run,
+            duplicate_guard_triggered=True,
+            terminal_artifact_preserved=True,
+            checks=checks,
+            blocking_reasons=[check["name"] for check in checks if not check["passed"]],
+            recommended_actions=[
+                "inspect_existing_terminal_transaction_artifact",
+                "start_new_delivery_transaction_for_additional_changes",
+            ],
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "delivery-transaction-idempotency-guard-baseline",
+                "operation": operation,
+                "duplicate_terminal_action_blocked": True,
+                "terminal_artifact_preserved": True,
+                "limitations": [
+                    "single_delivery_root_guard_record",
+                    "does_not_distribute_transaction_locks",
+                    "does_not_retry_or_publish_external_delivery",
+                ],
+            },
         )
 
     def _run_external_delivery(
@@ -3724,6 +3886,26 @@ def _resolve_record_path(value: Any, base_dir: Path) -> Path | None:
     if not path.is_absolute():
         path = base_dir / path
     return path.resolve()
+
+
+def _terminal_recovery_artifact_succeeded(path_value: str | None) -> bool:
+    if not path_value:
+        return False
+    path = Path(path_value).expanduser()
+    if not path.exists():
+        return False
+    payload = _read_json_object(path)
+    return bool(payload.get("recovered")) or str(payload.get("status") or "") == "recovered"
+
+
+def _terminal_commit_artifact_succeeded(path_value: str | None) -> bool:
+    if not path_value:
+        return False
+    path = Path(path_value).expanduser()
+    if not path.exists():
+        return False
+    payload = _read_json_object(path)
+    return bool(payload.get("committed")) or str(payload.get("status") or "") == "committed"
 
 
 def _safe_archive_component(value: Any) -> str:
