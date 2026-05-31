@@ -713,6 +713,18 @@ Status: implemented as an explicit expected-token side-effect gate, not automati
 
 The same expected-token parameter is threaded through `execute_local_delivery`, `execute_delivery_transition`, `execute_delivery_resume`, `execute_delivery_resume_workflow`, `execute_delivery_recovery`, and `execute_delivery_rollback`, so reviewed recovery / commit / rollback workflows can opt into the same downstream fence before copying artifacts, mutating manifests, restoring rollback checkpoints, committing transactions, or calling external delivery providers.
 
-Boundary: this gate consumes the provider projection written by local-file / SQLite / Redis lock providers; it does not acquire a provider lock, renew leases, implement Redlock quorum consensus, provide cross-machine consensus, or make fencing automatic for every caller. Broader automatic fencing integration and lease-renewal loops remain follow-up work. Android / iOS / mini-program full runtime chains remain deferred.
+Boundary: this gate consumes the provider projection written by local-file / SQLite / Redis lock providers; it does not acquire a provider lock, renew leases, implement Redlock quorum consensus, provide cross-machine consensus, or make fencing automatic for every caller. Step 86 adds an explicit reviewed workflow renewal step, but broader automatic fencing integration and lease-renewal daemon / loop behavior remain follow-up work. Android / iOS / mini-program full runtime chains remain deferred.
 
 Tests cover matching fencing-token allow, mismatched token blocking, and delivery tool compatibility.
+
+### Step 86 execution record: Explicit lease renewal workflow step baseline
+
+Status: implemented as a review-gated workflow step, not a background lease-renewal daemon.
+
+`DeliveryResumeWorkflowScheduler` now includes `renew_delivery_transaction_lock_provider` in `SUPPORTED_DELIVERY_RESUME_WORKFLOW_STEP_ACTIONS`. The step uses the configured `DeliveryTransactionLockProvider` registry entry and calls `renew_lock` with the workflow transaction id, owner, lease seconds, optional expected fencing token, and provider-specific metadata. Apply mode still requires a matching `review-approval-ledger.json` entry with action `resume_renew_delivery_transaction_lock_provider`; dry-run only plans the step and does not call the provider or write lock operation artifacts.
+
+Successful renewal writes the normal provider projection / operation artifacts, records the lock operation in `delivery-resume-workflow.json`, and appends a workflow journal entry containing lock status, provider id, fencing token, lease expiry, and side-effect policy. `execute_delivery_resume_workflow` now exposes `transaction_lock_provider_id` and `transaction_lock_provider_metadata_json` so local-file, SQLite, Redis, or plugin providers can be selected explicitly without changing scheduler code.
+
+Boundary: this is an explicit reviewed lease-renewal step for long recovery / commit workflows. It does not acquire a lock, release a lock, run in the background, poll on a timer, automatically renew before expiry, take over stale locks, implement Redlock quorum consensus, publish external delivery, mutate manifests by itself, or replace downstream fencing-token checks. Automatic lease-renewal loops, distributed orchestration, broader automatic fencing integration, additional external lock providers beyond Redis / SQLite / local-file, broader physical rollback, advanced adaptive retry, and real third-party delivery providers remain follow-up work. Android / iOS / mini-program full runtime chains remain deferred.
+
+Tests cover dry-run renewal planning without provider writes, approval blocking, approved renewal journal emission, fencing-token increment evidence, tool provider metadata pass-through, and resume workflow regression coverage.

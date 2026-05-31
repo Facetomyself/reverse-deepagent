@@ -401,6 +401,28 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
     def _write_approval(self, workspace_root: Path, transaction_id: str, action: str) -> dict[str, object]:
         return DeliveryResumeRunnerTests()._write_approval(workspace_root, transaction_id, action)
 
+    def _write_provider_lock(self, root: Path, transaction_id: str, owner: str = "agent-a", fencing_token: str = "1") -> None:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "delivery-distributed-transaction-lock.json").write_text(
+            json.dumps(
+                {
+                    "version": "2026-06-01.delivery-transaction-lock-provider-v1",
+                    "provider_id": "local-file-lock",
+                    "transaction_id": transaction_id,
+                    "owner": owner,
+                    "fencing_token": fencing_token,
+                    "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                    "created_at": "2026-06-01T00:00:00+00:00",
+                    "renewed_at": None,
+                    "metadata": {
+                        "distributed_lock_contract": True,
+                        "coordination_scope": "local-filesystem-reference",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
     def test_resume_workflow_scheduler_dry_run_plans_explicit_steps_without_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -425,6 +447,28 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
             self.assertFalse(payload["side_effect_policy"]["writes_workflow_record"])
             self.assertFalse(payload["side_effect_policy"]["writes_workflow_journal"])
+
+    def test_resume_workflow_scheduler_dry_run_plans_lock_renewal_without_provider_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "delivery"
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-renew-plan",
+                    step_actions=("renew_delivery_transaction_lock_provider",),
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="1",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["planned_steps"][0]["action"], "renew_delivery_transaction_lock_provider")
+            self.assertEqual(payload["planned_steps"][0]["executor"], "DeliveryTransactionLockProvider")
+            self.assertEqual(payload["planned_steps"][0]["approval_action"], "resume_renew_delivery_transaction_lock_provider")
+            self.assertEqual(payload["step_results"][0]["status"], "planned")
+            self.assertFalse(payload["side_effect_policy"]["distributed_lock_renewed"])
+            self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
+            self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
 
     def test_resume_workflow_scheduler_apply_blocks_without_all_step_approvals(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -452,6 +496,70 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertEqual(payload["approval_summary"]["missing_step_actions"], ["apply_backend_manifest_recovery"])
             self.assertFalse((root / "backend-artifact-manifest-recovery-preflight.json").exists())
             self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
+
+    def test_resume_workflow_scheduler_apply_blocks_lock_renewal_without_review_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            self._write_provider_lock(root, "tx-renew-block")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-renew-block",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("renew_delivery_transaction_lock_provider",),
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="1",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("execute_requires_review_approval_for_all_pending_steps", payload["blocking_reasons"])
+            self.assertEqual(payload["approval_summary"]["missing_step_actions"], ["renew_delivery_transaction_lock_provider"])
+            self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
+            self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
+
+    def test_resume_workflow_scheduler_executes_approved_lock_renewal_and_writes_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            self._write_provider_lock(root, "tx-renew-run")
+            self._write_approval(workspace, "tx-renew-run", "resume_renew_delivery_transaction_lock_provider")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-renew-run",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("renew_delivery_transaction_lock_provider",),
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="1",
+                    transaction_lock_provider_metadata={"test": "renewal"},
+                )
+            ).execute().to_dict()
+
+            lock = json.loads((root / "delivery-distributed-transaction-lock.json").read_text(encoding="utf-8"))
+            operation = json.loads((root / "delivery-distributed-transaction-lock-operation.json").read_text(encoding="utf-8"))
+            journal = json.loads((root / "delivery-resume-workflow-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "completed")
+            self.assertEqual(payload["step_results"][0]["status"], "renewed")
+            self.assertEqual(payload["step_results"][0]["lock_operation"]["status"], "renewed")
+            self.assertTrue(payload["step_results"][0]["lock_operation"]["lock_renewed"])
+            self.assertTrue(payload["side_effect_policy"]["distributed_lock_renewed"])
+            self.assertEqual(lock["fencing_token"], "2")
+            self.assertEqual(operation["fencing_token"], "2")
+            self.assertEqual(journal["entry_count"], 1)
+            self.assertEqual(journal["entries"][0]["action"], "renew_delivery_transaction_lock_provider")
+            self.assertEqual(journal["entries"][0]["lock_status"], "renewed")
+            self.assertEqual(journal["entries"][0]["lock_provider_id"], "local-file-lock")
+            self.assertEqual(journal["entries"][0]["lock_fencing_token"], "2")
 
     def test_resume_workflow_scheduler_executes_approved_multi_step_recovery_and_writes_journal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -598,6 +706,33 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
 
             self.assertEqual(payload["status"], "completed")
             self.assertTrue(payload["metadata"]["tool"])
+            self.assertTrue((root / "delivery-resume-workflow.json").exists())
+            self.assertTrue((root / "delivery-resume-workflow-journal.json").exists())
+
+    def test_resume_workflow_scheduler_tool_executes_lock_renewal_with_provider_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            self._write_provider_lock(root, "tx-renew-tool")
+            self._write_approval(workspace, "tx-renew-tool", "resume_renew_delivery_transaction_lock_provider")
+            tool = make_delivery_resume_workflow_scheduler_tool(root)
+
+            payload = tool(
+                transaction_id="tx-renew-tool",
+                action="execute_workflow",
+                mode="apply",
+                step_actions_json=json.dumps(["renew_delivery_transaction_lock_provider"]),
+                approval_ledger_path=str(workspace / "review-approval-ledger.json"),
+                transaction_lock_owner="agent-a",
+                expected_transaction_lock_fencing_token="1",
+                transaction_lock_provider_id="local-file-lock",
+                transaction_lock_provider_metadata_json=json.dumps({"redis_lock_key": "unused-test-key"}),
+            )
+
+            self.assertEqual(payload["status"], "completed")
+            self.assertEqual(payload["step_results"][0]["lock_operation"]["status"], "renewed")
+            self.assertTrue(payload["side_effect_policy"]["distributed_lock_renewed"])
             self.assertTrue((root / "delivery-resume-workflow.json").exists())
             self.assertTrue((root / "delivery-resume-workflow-journal.json").exists())
 

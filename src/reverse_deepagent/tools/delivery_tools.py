@@ -325,6 +325,8 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
         expected_transaction_lock_fencing_token: str | None = None,
+        transaction_lock_provider_id: str = "local-file-lock",
+        transaction_lock_provider_metadata_json: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or execute a review-gated multi-step delivery resume workflow."""
@@ -332,6 +334,11 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
             raise ValueError("metadata_json must decode to an object")
+        transaction_lock_provider_metadata = (
+            json.loads(transaction_lock_provider_metadata_json) if transaction_lock_provider_metadata_json else {}
+        )
+        if not isinstance(transaction_lock_provider_metadata, dict):
+            raise ValueError("transaction_lock_provider_metadata_json must decode to an object")
         raw_step_actions = json.loads(step_actions_json) if step_actions_json else []
         if not isinstance(raw_step_actions, list):
             raise ValueError("step_actions_json must decode to a list")
@@ -354,6 +361,8 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
             expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
+            transaction_lock_provider_id=transaction_lock_provider_id,
+            transaction_lock_provider_metadata=transaction_lock_provider_metadata,
             metadata=metadata,
         )
         return DeliveryResumeWorkflowScheduler(config).execute().to_dict()
@@ -362,8 +371,10 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
     execute_delivery_resume_workflow.__doc__ = (
         "Plan or execute a review-gated multi-step delivery resume workflow. "
         "Dry-run is read-only. apply mode with action=execute_workflow requires review-approval-ledger entries for every pending step action, "
-        "then delegates each step to DeliveryResumeRunner and appends delivery-resume-workflow-journal.json. "
-        "step_actions_json should be a JSON list such as [\"preflight_backend_manifest_recovery\", \"apply_backend_manifest_recovery\"]. "
+        "then delegates resume steps to DeliveryResumeRunner and appends delivery-resume-workflow-journal.json. "
+        "step_actions_json should be a JSON list such as [\"preflight_backend_manifest_recovery\", \"apply_backend_manifest_recovery\"] "
+        "or [\"renew_delivery_transaction_lock_provider\"] for an explicit reviewed lease-renewal step. "
+        "transaction_lock_provider_id and transaction_lock_provider_metadata_json configure that renewal step; it calls the provider's renew_lock action and is not a background daemon or auto-renew loop. "
         "The scheduler skips already completed journaled steps, writes delivery-resume-workflow.json for completed apply workflows, "
         "and never starts new delivery, publishes external delivery, acquires/releases distributed locks, or executes physical rollback."
     )
