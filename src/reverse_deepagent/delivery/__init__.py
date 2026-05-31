@@ -6,6 +6,12 @@ from .recovery import (
     DeliveryRecoveryExecutorConfig,
     DeliveryTransactionRecoveryExecutor,
 )
+from .rollback_state import (
+    DeliveryRollbackPhase,
+    DeliveryRollbackState,
+    DeliveryRollbackTransition,
+    evaluate_delivery_rollback_state,
+)
 from .inspector import (
     DELIVERY_TRANSACTION_ARTIFACT_NAMES,
     DELIVERY_TRANSACTION_INSPECTOR_VERSION,
@@ -75,6 +81,10 @@ __all__ = [
     "DeliveryRecoveryExecution",
     "DeliveryRecoveryExecutorConfig",
     "DeliveryTransactionRecoveryExecutor",
+    "DeliveryRollbackPhase",
+    "DeliveryRollbackState",
+    "DeliveryRollbackTransition",
+    "evaluate_delivery_rollback_state",
     "SUPPORTED_DELIVERY_TRANSITIONS",
     "DeliveryTransactionTransitionExecutor",
     "DeliveryTransitionExecution",

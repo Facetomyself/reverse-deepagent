@@ -12,6 +12,7 @@ from reverse_deepagent.delivery import (
     DeliveryExecutorConfig,
     DeliveryRecoveryExecutorConfig,
     DeliveryTransactionRecoveryExecutor,
+    DeliveryRollbackPhase,
     DeliveryTransactionTransitionExecutor,
     DeliveryTransactionState,
     DeliveryTransitionExecutorConfig,
@@ -19,6 +20,7 @@ from reverse_deepagent.delivery import (
     ExternalDeliveryResult,
     LocalDeliveryExecutor,
     evaluate_delivery_transaction_state,
+    evaluate_delivery_rollback_state,
     plan_delivery_transition,
 )
 
@@ -125,6 +127,12 @@ class DeliveryTransactionStateMachineTests(TestCase):
             plan = plan_delivery_transition(snapshot)
             self.assertEqual(plan.recommended_transition, "apply_recovery_or_commit_after_review")
 
+            rollback_state = evaluate_delivery_rollback_state(result.to_dict()).to_dict()
+            self.assertEqual(rollback_state["phase"], DeliveryRollbackPhase.ROLLBACK_PREFLIGHT_REQUIRED.value)
+            self.assertEqual(rollback_state["recommended_action"], "preflight_backend_manifest_recovery")
+            self.assertEqual(rollback_state["allowed_transitions"][0]["name"], "preflight_backend_manifest_recovery")
+            self.assertTrue(rollback_state["side_effect_policy"]["read_only"])
+
     def test_external_delivery_result_maps_to_external_delivered_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -213,10 +221,157 @@ class DeliveryTransactionStateMachineTests(TestCase):
             self.assertTrue(state["flags"]["cross_run_transaction_committed"])
             self.assertIn("backend_manifest_transaction_commit", state["evidence_paths"])
 
+            rollback_state = evaluate_delivery_rollback_state(result.to_dict()).to_dict()
+            self.assertEqual(rollback_state["phase"], DeliveryRollbackPhase.COMMITTED.value)
+            self.assertTrue(rollback_state["terminal"])
+            self.assertEqual(rollback_state["recommended_action"], "review_committed_transaction_journal")
+
             journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
             reevaluated = evaluate_delivery_transaction_state(journal).to_dict()
             self.assertEqual(reevaluated["state"], DeliveryTransactionState.COMMITTED.value)
             self.assertEqual(reevaluated["transaction_id"], "tx-commit-source")
+
+    def test_rollback_state_machine_requires_review_decision_after_recovery_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-decision-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-decision-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-rollback-decision-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            rollback_state = evaluate_delivery_rollback_state(result.to_dict()).to_dict()
+            self.assertEqual(rollback_state["phase"], DeliveryRollbackPhase.ROLLBACK_DECISION_REQUIRED.value)
+            self.assertEqual(rollback_state["status"], "awaiting_reviewer_decision")
+            self.assertEqual(
+                [item["name"] for item in rollback_state["allowed_transitions"]],
+                ["apply_backend_manifest_recovery", "commit_cross_run_transaction"],
+            )
+            self.assertIn("reviewer_must_choose_recovery_or_commit_path", rollback_state["notes"])
+
+    def test_rollback_state_machine_reports_recovered_manifest_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-recovered-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-recovered-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-rollback-recovered-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-recovered-apply",
+                    mode=DeliveryExecutionMode.APPLY,
+                    apply_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-rollback-recovered-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            rollback_state = evaluate_delivery_rollback_state(result.to_dict()).to_dict()
+            self.assertEqual(rollback_state["phase"], DeliveryRollbackPhase.ROLLBACK_APPLIED.value)
+            self.assertEqual(rollback_state["status"], "recovered")
+            self.assertFalse(rollback_state["terminal"])
+            self.assertEqual(rollback_state["allowed_transitions"][0]["name"], "review_recovered_manifest_before_new_transaction")
+
+    def test_rollback_state_machine_reports_duplicate_terminal_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-duplicate-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-duplicate-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-rollback-duplicate-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-duplicate-commit-first",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-rollback-duplicate-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            duplicate = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-duplicate-commit-second",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-rollback-duplicate-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            rollback_state = evaluate_delivery_rollback_state(duplicate.to_dict()).to_dict()
+            self.assertEqual(rollback_state["phase"], DeliveryRollbackPhase.DUPLICATE_TERMINAL_ACTION_BLOCKED.value)
+            self.assertEqual(rollback_state["status"], "duplicate_blocked")
+            self.assertTrue(rollback_state["terminal"])
+            self.assertTrue(rollback_state["blocked"])
+            self.assertEqual(rollback_state["recommended_action"], "inspect_existing_terminal_transaction_artifact")
 
     def test_transition_executor_plans_supported_transition_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

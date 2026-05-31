@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .rollback_state import evaluate_delivery_rollback_state
 from .state_machine import evaluate_delivery_transaction_state, plan_delivery_transition
 
 DELIVERY_TRANSACTION_INSPECTOR_VERSION = "2026-05-31.delivery-transaction-inspector-v1"
@@ -28,6 +29,7 @@ class DeliveryTransactionInspection:
     ok: bool
     state_snapshot: dict[str, Any]
     transition_plan: dict[str, Any]
+    rollback_state: dict[str, Any]
     artifacts: dict[str, dict[str, Any]]
     missing_artifacts: list[str] = field(default_factory=list)
     load_errors: dict[str, str] = field(default_factory=dict)
@@ -40,6 +42,7 @@ class DeliveryTransactionInspection:
             "ok": self.ok,
             "state_snapshot": self.state_snapshot,
             "transition_plan": self.transition_plan,
+            "rollback_state": self.rollback_state,
             "artifacts": self.artifacts,
             "missing_artifacts": self.missing_artifacts,
             "load_errors": self.load_errors,
@@ -98,12 +101,14 @@ def inspect_delivery_transaction_root(root: str | Path) -> DeliveryTransactionIn
     state_input = _inspection_state_input(loaded_payload)
     snapshot = evaluate_delivery_transaction_state(state_input)
     transition = plan_delivery_transition(snapshot)
+    rollback_state = evaluate_delivery_rollback_state(state_input)
     ok = bool(loaded_payload.get("transaction_journal")) and not load_errors and not snapshot.blocked
     return DeliveryTransactionInspection(
         root=str(root_path),
         ok=ok,
         state_snapshot=snapshot.to_dict(),
         transition_plan=transition.to_dict(),
+        rollback_state=rollback_state.to_dict(),
         artifacts=artifacts,
         missing_artifacts=missing,
         load_errors=load_errors,

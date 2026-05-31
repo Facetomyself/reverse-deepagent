@@ -34,6 +34,8 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
         self.assertEqual(inspection["state_snapshot"]["transaction_id"], "tx-local")
         self.assertEqual(inspection["state_snapshot"]["state"], "local_applied")
         self.assertEqual(inspection["transition_plan"]["recommended_transition"], "review_or_commit_manifest_revision")
+        self.assertEqual(inspection["rollback_state"]["phase"], "local_delivery_applied")
+        self.assertEqual(inspection["rollback_state"]["recommended_action"], "review_or_commit_manifest_revision")
         self.assertTrue(inspection["side_effect_policy"]["read_only"])
         self.assertFalse(inspection["side_effect_policy"]["files_mutated"])
         self.assertFalse(inspection["side_effect_policy"]["external_delivery_performed"])
@@ -73,6 +75,8 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
 
         self.assertTrue(inspection["ok"])
         self.assertEqual(inspection["state_snapshot"]["state"], "committed")
+        self.assertEqual(inspection["rollback_state"]["phase"], "external_delivery_performed")
+        self.assertTrue(inspection["rollback_state"]["terminal"])
         self.assertIn("external_delivered", inspection["state_snapshot"]["completed_states"])
         self.assertTrue(inspection["state_snapshot"]["flags"]["external_delivery_idempotency_ledger_recorded"])
         self.assertIn("external_delivery_idempotency_ledger", inspection["state_snapshot"]["evidence_paths"])
