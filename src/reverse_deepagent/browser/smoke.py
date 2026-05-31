@@ -43,6 +43,61 @@ LIFECYCLE_STAGES: tuple[str, ...] = (
 BrowserProviderFactory = Callable[..., Any]
 
 
+def browser_provider_metadata_matrix_payload(
+    *,
+    provider_metadata: list[dict[str, Any]],
+    smoke_url: str = "about:blank",
+) -> dict[str, Any]:
+    """Build a BrowserProvider matrix from registration metadata only.
+
+    This path is stricter than ``browser_provider_smoke_matrix_payload``: it
+    does not call provider factories, availability checks, CDP probes, or launch
+    smoke. It is intended for doctor / CI metadata inventory.
+    """
+
+    rows = [_browser_provider_metadata_row(item, smoke_url=smoke_url) for item in provider_metadata]
+    return {
+        "matrix_version": BROWSER_SMOKE_MATRIX_VERSION,
+        "provider_ids": [str(item.get("provider_id")) for item in provider_metadata],
+        "side_effect_policy": {
+            "metadata_only_by_default": True,
+            "availability_check_requested": False,
+            "launch_smoke_requested": False,
+            "does_not_use_mcp": True,
+            "provider_factories_invoked": False,
+        },
+        "lifecycle_stages": list(LIFECYCLE_STAGES),
+        "capability_flags": list(CAPABILITY_FLAG_KEYS),
+        "providers": rows,
+        "summary": _matrix_summary(rows),
+    }
+
+
+def _browser_provider_metadata_row(metadata: dict[str, Any], *, smoke_url: str) -> dict[str, Any]:
+    provider_id = str(metadata.get("provider_id") or "unknown")
+    row: dict[str, Any] = {
+        "provider_id": provider_id,
+        "ok": True,
+        "configured": True,
+        "available": None,
+        "launched": False,
+        "launch_requested": False,
+        "smoke_url": smoke_url,
+        "capabilities": metadata,
+        "capability_matrix": _capability_matrix(metadata),
+        "supported_modes": _supported_modes(metadata),
+        "aliases": list(metadata.get("aliases", [])) if isinstance(metadata.get("aliases", []), list) else [],
+        "keys": list(metadata.get("keys", [])) if isinstance(metadata.get("keys", []), list) else [],
+        "lifecycle": [],
+        "smoke": {"requested": False, "ok": None, "status": "skipped", "reason": "metadata-only registry matrix"},
+    }
+    _append_lifecycle(row, "configured", "ok", "provider registration metadata captured without invoking provider factory")
+    _append_lifecycle(row, "capability_described", "ok", "provider capabilities read from registration metadata")
+    _append_lifecycle(row, "availability_checked", "not_checked", "availability check is explicit and was not requested")
+    _append_lifecycle(row, "session_start_requested", "skipped", "launch smoke was not requested")
+    return row
+
+
 def browser_provider_smoke_matrix_payload(
     *,
     provider_ids: tuple[str, ...] | list[str] | None = None,

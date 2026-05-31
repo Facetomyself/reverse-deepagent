@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from reverse_deepagent.browser import BrowserProvider, BrowserProviderUnavailableError, BrowserSession
+from reverse_deepagent.browser import BrowserProvider, BrowserProviderRegistryError, BrowserProviderUnavailableError, BrowserSession, build_default_browser_provider_registry
 from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
 from reverse_deepagent.browser.hooks import (
     BreakpointManager,
@@ -28,14 +28,6 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionActionSpec,
     SourceLogpointManager,
     SourceLogpointSpec,
-)
-from reverse_deepagent.browser.providers import (
-    CloakBrowserConfig,
-    CloakBrowserProvider,
-    PlaywrightChromiumConfig,
-    PlaywrightChromiumProvider,
-    RemoteCDPConfig,
-    RemoteCDPProvider,
 )
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
@@ -2693,40 +2685,13 @@ class NativeWebRuntime(WebReverseRuntime):
 
 
 def create_native_web_runtime(*, browser_provider: BrowserProvider | None = None, browser: str | None = None, **kwargs: Any) -> NativeWebRuntime:
-    """Create a NativeWebRuntime with a selectable BrowserProvider."""
+    """Create a NativeWebRuntime with a registry-resolved BrowserProvider."""
 
     if browser_provider is not None:
         return NativeWebRuntime(browser_provider=browser_provider)
     browser_id = browser or kwargs.get("browser_provider") or "playwright-chromium"
-    browser_headless = kwargs.get("browser_headless")
-    if browser_id in {"playwright-chromium", "playwright", "chromium"}:
-        config = PlaywrightChromiumConfig(
-            headless=True if browser_headless is None else bool(browser_headless),
-            profile_dir=kwargs.get("browser_profile_dir"),
-            browser_url=kwargs.get("browser_url"),
-            executable_path=kwargs.get("browser_executable_path"),
-            args=kwargs.get("browser_args") or [],
-        )
-        return NativeWebRuntime(browser_provider=PlaywrightChromiumProvider(config=config))
-    if browser_id in {"cloakbrowser", "cloak", "cloak-browser"}:
-        browser_humanize = kwargs.get("browser_humanize")
-        config = CloakBrowserConfig(
-            headless=False if browser_headless is None else bool(browser_headless),
-            humanize=True if browser_humanize is None else bool(browser_humanize),
-            profile_dir=kwargs.get("browser_profile_dir"),
-            browser_url=kwargs.get("browser_url") or kwargs.get("cdp_browser_url"),
-            proxy=kwargs.get("browser_proxy"),
-            geoip=bool(kwargs.get("browser_geoip", False)),
-            locale=kwargs.get("browser_locale"),
-            timezone=kwargs.get("browser_timezone"),
-            args=kwargs.get("browser_args") or [],
-        )
-        return NativeWebRuntime(browser_provider=CloakBrowserProvider(config=config))
-    if browser_id in {"remote-cdp", "chrome-cdp-provider", "cdp-provider"}:
-        config = RemoteCDPConfig(
-            browser_url=kwargs.get("browser_url") or kwargs.get("cdp_browser_url") or "http://127.0.0.1:9222",
-            connect_timeout=float(kwargs.get("request_timeout") or kwargs.get("browser_connect_timeout") or 5.0),
-            navigation_wait=float(kwargs.get("browser_navigation_wait") or 0.5),
-        )
-        return NativeWebRuntime(browser_provider=RemoteCDPProvider(config=config))
-    raise BrowserProviderUnavailableError(f"Unsupported native browser provider: {browser_id}")
+    try:
+        provider = build_default_browser_provider_registry().create(browser_id, **kwargs)
+    except BrowserProviderRegistryError as exc:
+        raise BrowserProviderUnavailableError(f"Unsupported native browser provider: {browser_id}. {exc}") from exc
+    return NativeWebRuntime(browser_provider=provider)

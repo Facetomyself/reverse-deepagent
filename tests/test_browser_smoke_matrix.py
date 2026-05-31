@@ -3,6 +3,7 @@ import unittest
 from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
 from reverse_deepagent.browser.smoke import (
     DEFAULT_BROWSER_PROVIDER_MATRIX,
+    browser_provider_metadata_matrix_payload,
     browser_provider_smoke_matrix_payload,
     browser_provider_smoke_row,
     legacy_browser_provider_payload_from_smoke_row,
@@ -102,6 +103,34 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
             lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
             self.assertEqual(lifecycle["availability_checked"], "not_checked")
             self.assertEqual(lifecycle["session_start_requested"], "skipped")
+
+
+    def test_registration_metadata_matrix_does_not_call_provider_factory(self) -> None:
+        metadata = [
+            BrowserProviderCapabilities(
+                provider_id="registered-browser",
+                display_name="Registered Browser",
+                engine="chromium",
+                transport="registry",
+                supports_connect=True,
+                supports_cdp=True,
+                supports_runtime_eval=True,
+            ).model_dump(mode="json")
+            | {"aliases": ["registered-alias"], "keys": ["registered-browser", "registered-alias"]}
+        ]
+
+        payload = browser_provider_metadata_matrix_payload(provider_metadata=metadata)
+
+        self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
+        self.assertEqual(payload["summary"]["provider_count"], 1)
+        row = payload["providers"][0]
+        self.assertEqual(row["provider_id"], "registered-browser")
+        self.assertEqual(row["aliases"], ["registered-alias"])
+        self.assertEqual(row["supported_modes"], ["connect", "cdp", "runtime-eval"])
+        lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
+        self.assertEqual(lifecycle["configured"], "ok")
+        self.assertEqual(lifecycle["availability_checked"], "not_checked")
+        self.assertEqual(row["smoke"]["status"], "skipped")
 
     def test_availability_and_launch_lifecycle_are_recorded(self) -> None:
         row = browser_provider_smoke_row(

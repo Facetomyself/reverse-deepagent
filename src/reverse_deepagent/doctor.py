@@ -12,9 +12,10 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 
 from reverse_deepagent.adapters.native_web import create_native_web_runtime
+from reverse_deepagent.browser import BROWSER_PROVIDER_ENTRY_POINT_GROUP, build_default_browser_provider_registry
 from reverse_deepagent.browser.smoke import (
     DEFAULT_BROWSER_PROVIDER_MATRIX,
-    browser_provider_smoke_matrix_payload,
+    browser_provider_metadata_matrix_payload,
     browser_provider_smoke_row,
     legacy_browser_provider_payload_from_smoke_row,
 )
@@ -183,23 +184,27 @@ def _check_browser_provider(args: argparse.Namespace) -> dict[str, Any]:
 def _browser_provider_matrix(args: argparse.Namespace) -> dict[str, Any]:
     try:
         provider_kwargs = _browser_provider_kwargs(args)
+        registry = build_default_browser_provider_registry()
+        provider_metadata = registry.list_registration_metadata()
+        provider_ids = [str(item["provider_id"]) for item in provider_metadata]
     except Exception as exc:
         return {
             "matrix_version": "unavailable",
+            "entry_point_group": BROWSER_PROVIDER_ENTRY_POINT_GROUP,
             "provider_ids": list(DEFAULT_BROWSER_PROVIDER_MATRIX),
             "ok": False,
             "error": str(exc),
             "providers": [],
             "summary": {"provider_count": 0},
         }
-    payload = browser_provider_smoke_matrix_payload(
-        provider_ids=DEFAULT_BROWSER_PROVIDER_MATRIX,
-        provider_factory=create_native_web_runtime,
-        provider_kwargs=provider_kwargs,
-        include_availability=False,
-        launch_smoke=False,
+    payload = browser_provider_metadata_matrix_payload(
+        provider_metadata=provider_metadata,
         smoke_url=args.browser_smoke_url,
     )
+    payload["entry_point_group"] = BROWSER_PROVIDER_ENTRY_POINT_GROUP
+    payload["provider_registration_metadata"] = provider_metadata
+    payload["registered_provider_ids"] = registry.provider_ids()
+    payload["side_effect_policy"]["provider_factories_invoked"] = False
     payload["ok"] = all(bool(item.get("configured")) for item in payload["providers"])
     return payload
 

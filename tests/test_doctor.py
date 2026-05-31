@@ -257,6 +257,9 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(matrix["ok"])
         self.assertFalse(matrix["side_effect_policy"]["availability_check_requested"])
         self.assertFalse(matrix["side_effect_policy"]["launch_smoke_requested"])
+        self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
+        self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.browser_providers")
+        self.assertIn("provider_registration_metadata", matrix)
         self.assertEqual(matrix["summary"]["provider_count"], 3)
         by_provider = {item["provider_id"]: item for item in matrix["providers"]}
         self.assertIn("playwright-chromium", by_provider)
