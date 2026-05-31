@@ -1039,6 +1039,40 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["external_delivery_performed"])
             self.assertTrue(external_result["external_delivery_performed"])
 
+    def test_external_delivery_provider_config_is_summarized_without_exporting_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            provider = CountingExternalDeliveryProvider()
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-provider-config-summary",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider=provider,
+                    external_delivery_provider_config={
+                        "webhook_url": "https://example.invalid/hook",
+                        "api_token": "super-secret-token",
+                    },
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertEqual(provider.calls, 1)
+            summary = provider.packages[0].metadata["external_delivery_provider_config_summary"]
+            self.assertEqual(summary["key_count"], 2)
+            self.assertEqual(summary["non_secret_keys"], ["webhook_url"])
+            self.assertEqual(summary["secret_like_key_count"], 1)
+            self.assertFalse(summary["raw_values_exported"])
+            serialized_package = json.dumps(provider.packages[0].to_dict(), ensure_ascii=False)
+            self.assertNotIn("super-secret-token", serialized_package)
+            self.assertNotIn("https://example.invalid/hook", serialized_package)
+
     def test_local_archive_external_delivery_dry_run_is_side_effect_free(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

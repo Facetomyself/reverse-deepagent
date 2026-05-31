@@ -13,6 +13,7 @@ from reverse_deepagent.delivery import (
     LocalArchiveExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
     build_default_external_delivery_provider_registry,
+    external_delivery_metadata_has_secret_like_keys,
 )
 from reverse_deepagent.delivery import registry as delivery_registry
 
@@ -111,6 +112,21 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
                     capabilities=ExternalDeliveryProviderCapabilities(provider_id="other", display_name="Other"),
                     factory=lambda **_: DummyExternalDeliveryProvider(),
                 )
+            )
+
+    def test_secret_like_capability_metadata_is_rejected(self) -> None:
+        self.assertTrue(external_delivery_metadata_has_secret_like_keys({"config": {"api_token": "redacted"}}))
+        self.assertTrue(external_delivery_metadata_has_secret_like_keys({"headers": {"Authorization": "Bearer redacted"}}))
+        self.assertFalse(external_delivery_metadata_has_secret_like_keys({"config": {"archive_root_configurable": True}}))
+        with self.assertRaisesRegex(ValueError, "secret-like"):
+            ExternalDeliveryProviderRegistration(
+                provider_id="leaky-delivery",
+                capabilities=ExternalDeliveryProviderCapabilities(
+                    provider_id="leaky-delivery",
+                    display_name="Leaky Delivery",
+                    metadata={"api_token": "redacted"},
+                ),
+                factory=lambda **_: DummyExternalDeliveryProvider(),
             )
 
     def test_registry_loads_entry_point_without_invoking_provider_factory(self) -> None:

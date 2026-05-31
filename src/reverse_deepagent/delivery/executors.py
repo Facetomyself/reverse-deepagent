@@ -1417,6 +1417,9 @@ class LocalDeliveryExecutor:
                 **self.config.metadata,
                 "executor": "local-filesystem",
                 "provider_id": provider.provider_id,
+                "external_delivery_provider_config_summary": _external_delivery_provider_config_summary(
+                    self.config.external_delivery_provider_config
+                ),
                 "external_delivery_idempotency_key": self._external_delivery_idempotency_key(),
                 "allow_duplicate_external_delivery": self.config.allow_duplicate_external_delivery,
                 "automatic_delivery": False,
@@ -2570,6 +2573,59 @@ def _safe_archive_component(value: Any) -> str:
     if not safe or safe in {".", ".."}:
         raise ValueError(f"Invalid archive path component: {value!r}")
     return safe
+
+
+EXTERNAL_DELIVERY_SECRET_KEYWORDS = (
+    "key",
+    "token",
+    "secret",
+    "password",
+    "cookie",
+    "authorization",
+    "credential",
+    "private",
+)
+
+
+def external_delivery_metadata_has_secret_like_keys(value: Any) -> bool:
+    """Return True when a JSON-like metadata object exposes secret-like key names."""
+
+    if isinstance(value, dict):
+        for key, item in value.items():
+            lowered = str(key).lower()
+            if any(keyword in lowered for keyword in EXTERNAL_DELIVERY_SECRET_KEYWORDS):
+                return True
+            if external_delivery_metadata_has_secret_like_keys(item):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(external_delivery_metadata_has_secret_like_keys(item) for item in value)
+    return False
+
+
+def _external_delivery_provider_config_summary(config: dict[str, Any]) -> dict[str, Any]:
+    if not config:
+        return {
+            "configured": False,
+            "key_count": 0,
+            "non_secret_keys": [],
+            "secret_like_key_count": 0,
+            "raw_values_exported": False,
+        }
+    non_secret_keys: list[str] = []
+    secret_like_key_count = 0
+    for key in sorted(str(item) for item in config):
+        if external_delivery_metadata_has_secret_like_keys({key: None}):
+            secret_like_key_count += 1
+        else:
+            non_secret_keys.append(key)
+    return {
+        "configured": True,
+        "key_count": len(config),
+        "non_secret_keys": non_secret_keys,
+        "secret_like_key_count": secret_like_key_count,
+        "raw_values_exported": False,
+    }
 
 
 def _journal_bool(journal: dict[str, Any], key: str, default: bool) -> bool:

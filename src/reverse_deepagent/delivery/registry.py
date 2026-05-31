@@ -9,6 +9,7 @@ from reverse_deepagent.delivery.executors import (
     ExternalDeliveryProvider,
     LocalArchiveExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
+    external_delivery_metadata_has_secret_like_keys,
 )
 
 ExternalDeliveryProviderFactory = Callable[..., ExternalDeliveryProvider]
@@ -41,6 +42,10 @@ class ExternalDeliveryProviderRegistration:
     capabilities: ExternalDeliveryProviderCapabilities
     factory: ExternalDeliveryProviderFactory
     aliases: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if external_delivery_metadata_has_secret_like_keys(self.capabilities.to_dict()):
+            raise ValueError(f"External delivery provider capabilities for {self.provider_id!r} contain secret-like metadata keys")
 
     @property
     def keys(self) -> tuple[str, ...]:

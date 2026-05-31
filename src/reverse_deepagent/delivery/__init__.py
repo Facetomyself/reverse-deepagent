@@ -20,6 +20,7 @@ from .executors import (
     LocalArchiveExternalDeliveryProvider,
     LocalDeliveryExecutor,
     ReviewOnlyExternalDeliveryProvider,
+    external_delivery_metadata_has_secret_like_keys,
 )
 from .registry import (
     EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP,
@@ -60,4 +61,5 @@ __all__ = [
     "LocalArchiveExternalDeliveryProvider",
     "LocalDeliveryExecutor",
     "ReviewOnlyExternalDeliveryProvider",
+    "external_delivery_metadata_has_secret_like_keys",
 ]
