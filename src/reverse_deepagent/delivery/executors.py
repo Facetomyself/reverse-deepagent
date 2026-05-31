@@ -601,6 +601,173 @@ class WebhookExternalDeliveryProvider:
 
 
 @dataclass(frozen=True)
+class PresignedObjectExternalDeliveryProvider:
+    """HTTP PUT provider for presigned object-storage URLs.
+
+    The provider uploads the provider-neutral delivery package as JSON to an
+    already prepared presigned URL.  It deliberately avoids cloud SDKs and
+    credentials: dry-run never opens a socket, and apply mode only performs an
+    explicit PUT to the configured URL.  Query strings and credentials in the
+    presigned URL are redacted from result metadata.
+    """
+
+    presigned_url: str | None = None
+    object_name: str | None = None
+    content_type: str = "application/json"
+    headers: dict[str, str] = field(default_factory=dict)
+    timeout_seconds: float = 10.0
+    provider_id: str = "presigned-object"
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        package_digest = _json_payload_sha256(package.to_dict())
+        normalized_url = _normalize_external_delivery_url(self.presigned_url)
+        redacted_url = _redact_url_for_metadata(normalized_url)
+        local_ready = not package.local_errors
+        url_configured = bool(normalized_url)
+        scheme_supported = _http_scheme_supported(normalized_url)
+        content_type_configured = bool(str(self.content_type or "").strip())
+        checks = [
+            {
+                "name": "local_delivery_package_has_no_errors",
+                "passed": local_ready,
+                "details": {"local_errors": package.local_errors},
+            },
+            {
+                "name": "presigned_object_url_configured",
+                "passed": url_configured,
+                "details": {"configured": url_configured},
+            },
+            {
+                "name": "presigned_object_url_scheme_supported",
+                "passed": scheme_supported,
+                "details": {"supported_schemes": ["http", "https"], "target_url": redacted_url},
+            },
+            {
+                "name": "presigned_object_content_type_configured",
+                "passed": content_type_configured,
+                "details": {"configured": content_type_configured},
+            },
+        ]
+        preflight_blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        payload = {
+            "provider_id": self.provider_id,
+            "transaction_id": package.transaction_id,
+            "created_at": created_at,
+            "object_name": self.object_name,
+            "package_digest_sha256": package_digest,
+            "package": package.to_dict(),
+        }
+        request_body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        request_body_digest = hashlib.sha256(request_body).hexdigest()
+        response_status_code: int | None = None
+        request_error: str | None = None
+        request_attempted = False
+        request_succeeded = False
+        if dry_run:
+            status = "planned" if not preflight_blocking_reasons else "blocked"
+            blocking_reasons = preflight_blocking_reasons
+        elif preflight_blocking_reasons:
+            status = "blocked"
+            blocking_reasons = preflight_blocking_reasons
+        else:
+            request_attempted = True
+            response_status_code, request_error = self._put_json(normalized_url, request_body)
+            request_succeeded = bool(response_status_code is not None and 200 <= response_status_code < 300)
+            checks.append(
+                {
+                    "name": "presigned_object_response_status_successful",
+                    "passed": request_succeeded,
+                    "details": {
+                        "status_code": response_status_code,
+                        "request_error": request_error,
+                        "target_url": redacted_url,
+                    },
+                }
+            )
+            blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+            status = "delivered" if request_succeeded else "blocked"
+        return ExternalDeliveryResult(
+            transaction_id=package.transaction_id,
+            status=status,
+            provider_id=self.provider_id,
+            result_path=result_path,
+            delivery_root=package.delivery_root,
+            dry_run=dry_run,
+            external_delivery_requested=True,
+            external_delivery_performed=request_succeeded,
+            package_digest_sha256=package_digest,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=(
+                ["review_presigned_object_external_delivery_result"]
+                if request_succeeded
+                else ["apply_local_delivery_before_presigned_object_upload"]
+                if dry_run and not blocking_reasons
+                else ["fix_presigned_object_external_delivery_blockers"]
+            ),
+            created_at=created_at,
+            metadata={
+                **package.metadata,
+                "scope": "presigned-object-external-delivery-provider-baseline",
+                "target_url": redacted_url,
+                "target_query_redacted": _url_has_query(normalized_url),
+                "target_credentials_redacted": _url_has_credentials(normalized_url),
+                "object_name": self.object_name,
+                "request_method": "PUT",
+                "request_body_digest_sha256": request_body_digest,
+                "request_body_bytes": len(request_body),
+                "request_attempted": request_attempted,
+                "request_succeeded": request_succeeded,
+                "response_status_code": response_status_code,
+                "response_body_recorded": False,
+                "response_headers_recorded": False,
+                "request_headers_recorded": False,
+                "configured_header_count": len(self.headers),
+                "content_type": str(self.content_type or ""),
+                "timeout_seconds": self.timeout_seconds,
+                "automatic_delivery": False,
+                "publishes_externally": True,
+                "transport": "object-storage",
+                "limitations": [
+                    "presigned_url_http_put_only",
+                    "does_not_record_response_body_or_headers",
+                    "does_not_retry_object_upload",
+                    "does_not_manage_cloud_credentials_or_buckets",
+                    "full_cross_run_transaction_state_machine_not_implemented",
+                ],
+            },
+        )
+
+    def _put_json(self, url: str, body: bytes) -> tuple[int | None, str | None]:
+        request_headers = {
+            "Content-Type": str(self.content_type or "application/json"),
+            "User-Agent": "reverse-deepagent-presigned-object-delivery/0",
+            **{str(key): str(value) for key, value in self.headers.items()},
+        }
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers=request_headers,
+            method="PUT",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
+                response.read(0)
+                return int(response.status), None
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return None, exc.__class__.__name__
+
+
+@dataclass(frozen=True)
 class DeliveryManifestRevision:
     transaction_id: str
     status: str
@@ -2796,16 +2963,24 @@ def _external_delivery_provider_config_summary(config: dict[str, Any]) -> dict[s
     }
 
 
-def _normalize_webhook_url(value: str | None) -> str:
+def _normalize_external_delivery_url(value: str | None) -> str:
     if value is None:
         return ""
     return str(value).strip()
 
 
-def _webhook_scheme_supported(value: str) -> bool:
+def _normalize_webhook_url(value: str | None) -> str:
+    return _normalize_external_delivery_url(value)
+
+
+def _http_scheme_supported(value: str) -> bool:
     if not value:
         return False
     return urllib.parse.urlsplit(value).scheme.lower() in {"http", "https"}
+
+
+def _webhook_scheme_supported(value: str) -> bool:
+    return _http_scheme_supported(value)
 
 
 def _redact_url_for_metadata(value: str) -> str | None:

@@ -8,6 +8,7 @@ from typing import Any, Callable
 from reverse_deepagent.delivery.executors import (
     ExternalDeliveryProvider,
     LocalArchiveExternalDeliveryProvider,
+    PresignedObjectExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
     WebhookExternalDeliveryProvider,
     external_delivery_metadata_has_secret_like_keys,
@@ -184,6 +185,32 @@ def local_archive_external_delivery_provider_registration() -> ExternalDeliveryP
     )
 
 
+def presigned_object_external_delivery_provider_registration() -> ExternalDeliveryProviderRegistration:
+    return ExternalDeliveryProviderRegistration(
+        provider_id="presigned-object",
+        aliases=("object-storage", "presigned-url", "s3-presigned"),
+        capabilities=ExternalDeliveryProviderCapabilities(
+            provider_id="presigned-object",
+            display_name="Presigned object storage external delivery",
+            transport="object-storage",
+            supports_external_delivery=True,
+            review_only=False,
+            metadata={
+                "side_effect_free": False,
+                "dry_run_side_effect_free": True,
+                "writes_external_delivery_result": True,
+                "publishes_externally": True,
+                "external_boundary": "presigned-object-storage-url",
+                "sends_http_put": True,
+                "records_response_body": False,
+                "records_response_headers": False,
+                "cloud_sdk_required": False,
+            },
+        ),
+        factory=lambda **kwargs: PresignedObjectExternalDeliveryProvider(**kwargs),
+    )
+
+
 def webhook_external_delivery_provider_registration() -> ExternalDeliveryProviderRegistration:
     return ExternalDeliveryProviderRegistration(
         provider_id="webhook",
@@ -212,6 +239,7 @@ def webhook_external_delivery_provider_registration() -> ExternalDeliveryProvide
 def build_default_external_delivery_provider_registry(*, load_entry_points: bool = True) -> ExternalDeliveryProviderRegistry:
     registry = ExternalDeliveryProviderRegistry()
     registry.register(local_archive_external_delivery_provider_registration())
+    registry.register(presigned_object_external_delivery_provider_registration())
     registry.register(review_only_external_delivery_provider_registration())
     registry.register(webhook_external_delivery_provider_registration())
     if load_entry_points:

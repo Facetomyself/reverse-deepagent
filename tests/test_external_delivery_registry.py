@@ -11,6 +11,7 @@ from reverse_deepagent.delivery import (
     ExternalDeliveryProviderRegistry,
     ExternalDeliveryResult,
     LocalArchiveExternalDeliveryProvider,
+    PresignedObjectExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
     WebhookExternalDeliveryProvider,
     build_default_external_delivery_provider_registry,
@@ -105,6 +106,20 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertEqual(metadata["transport"], "webhook")
         provider = registry.create("webhook-json", webhook_url="https://example.invalid/deliver")
         self.assertIsInstance(provider, WebhookExternalDeliveryProvider)
+
+    def test_default_registry_exposes_presigned_object_provider_and_aliases(self) -> None:
+        registry = build_default_external_delivery_provider_registry(load_entry_points=False)
+
+        self.assertEqual(registry.resolve("object-storage").provider_id, "presigned-object")
+        self.assertIn("presigned-url", registry.provider_ids())
+        self.assertIn("s3-presigned", registry.provider_ids())
+        by_provider = {metadata["provider_id"]: metadata for metadata in registry.list_metadata()}
+        metadata = by_provider["presigned-object"]
+        self.assertTrue(metadata["supports_external_delivery"])
+        self.assertFalse(metadata["review_only"])
+        self.assertEqual(metadata["transport"], "object-storage")
+        provider = registry.create("s3-presigned", presigned_url="https://example.invalid/object")
+        self.assertIsInstance(provider, PresignedObjectExternalDeliveryProvider)
 
     def test_registry_rejects_duplicate_keys(self) -> None:
         registry = ExternalDeliveryProviderRegistry()

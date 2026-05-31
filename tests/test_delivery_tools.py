@@ -352,6 +352,40 @@ class DeliveryToolTests(TestCase):
             self.assertTrue((release_dir / "local-archive-manifest.json").exists())
             self.assertTrue((release_dir / "local-archive-checksums.json").exists())
 
+    def test_local_delivery_tool_can_plan_presigned_object_provider_config_without_exporting_raw_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-presigned-object-plan",
+                request_external_delivery=True,
+                external_delivery_provider_id="presigned-url",
+                external_delivery_provider_config_json=json.dumps(
+                    {
+                        "presigned_url": "https://example.invalid/release.json?upload_token=hidden",
+                        "object_name": "release.json",
+                        "headers": {"Authorization": "Token hidden"},
+                    }
+                ),
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["external_delivery_performed"])
+            self.assertEqual(result["external_delivery_result"]["provider_id"], "presigned-object")
+            metadata = result["external_delivery_result"]["metadata"]
+            self.assertEqual(metadata["target_url"], "https://example.invalid/release.json")
+            self.assertEqual(metadata["object_name"], "release.json")
+            self.assertTrue(metadata["target_query_redacted"])
+            serialized_result = json.dumps(result, ensure_ascii=False)
+            self.assertNotIn("upload_token=hidden", serialized_result)
+            self.assertNotIn("Token hidden", serialized_result)
+            self.assertFalse((root / "delivery").exists())
+
 
 class DeliverySubagentToolTests(TestCase):
     def test_delivery_subagent_exposes_rebuild_and_local_delivery_tools(self) -> None:

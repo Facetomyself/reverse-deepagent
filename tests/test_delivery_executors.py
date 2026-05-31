@@ -85,6 +85,26 @@ class RecordingWebhookHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
+class RecordingObjectHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def do_PUT(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self.__class__.requests.append(
+            {
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
 class LocalDeliveryExecutorTests(TestCase):
     def test_dry_run_plans_local_delivery_without_writing_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1266,6 +1286,108 @@ class LocalDeliveryExecutorTests(TestCase):
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("local-test-secret", serialized_result)
             self.assertNotIn("query_secret=redacted", serialized_result)
+            self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_presigned_object_external_delivery_dry_run_redacts_target_without_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            presigned_url = "https://user:pass@example.invalid/releases/final.json?X-Amz-Signature=secret-value"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=root / "delivery",
+                    transaction_id="tx-presigned-object-dry-run",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    request_external_delivery=True,
+                    external_delivery_provider_id="object-storage",
+                    external_delivery_provider_config={
+                        "presigned_url": presigned_url,
+                        "object_name": "final.json",
+                        "headers": {"x-amz-meta-secret": "hidden-value"},
+                    },
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "planned")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.external_delivery_result)
+            self.assertEqual(result.external_delivery_result.provider_id, "presigned-object")
+            metadata = result.external_delivery_result.metadata
+            self.assertEqual(metadata["target_url"], "https://example.invalid/releases/final.json")
+            self.assertEqual(metadata["object_name"], "final.json")
+            self.assertTrue(metadata["target_query_redacted"])
+            self.assertTrue(metadata["target_credentials_redacted"])
+            self.assertFalse(metadata["request_attempted"])
+            self.assertEqual(metadata["external_delivery_provider_config_summary"]["secret_like_key_count"], 1)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("secret-value", serialized_result)
+            self.assertNotIn("hidden-value", serialized_result)
+            self.assertNotIn("user:pass", serialized_result)
+            self.assertFalse((root / "delivery").exists())
+
+    def test_presigned_object_external_delivery_apply_puts_json_without_recording_response_body_or_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingObjectHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingObjectHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=server.handle_request)
+            thread.daemon = True
+            thread.start()
+            try:
+                presigned_url = f"http://127.0.0.1:{server.server_port}/bucket/final.json?upload_secret=redacted"
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-presigned-object-apply",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="s3-presigned",
+                        external_delivery_provider_config={
+                            "presigned_url": presigned_url,
+                            "object_name": "final.json",
+                            "content_type": "application/vnd.reverse-agent.delivery+json",
+                            "headers": {"x-amz-meta-review": "approved-local-test-secret"},
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingObjectHandler.requests), 1)
+            request = RecordingObjectHandler.requests[0]
+            self.assertEqual(request["path"], "/bucket/final.json?upload_secret=redacted")
+            request_headers = {str(key).lower(): value for key, value in dict(request["headers"]).items()}
+            self.assertEqual(request_headers["x-amz-meta-review"], "approved-local-test-secret")
+            self.assertEqual(request_headers["content-type"], "application/vnd.reverse-agent.delivery+json")
+            body = json.loads(bytes(request["body"]).decode("utf-8"))
+            self.assertEqual(body["provider_id"], "presigned-object")
+            self.assertEqual(body["transaction_id"], "tx-presigned-object-apply")
+            self.assertEqual(body["object_name"], "final.json")
+            self.assertEqual(body["package"]["metadata"]["provider_id"], "presigned-object")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertEqual(metadata["target_url"], f"http://127.0.0.1:{server.server_port}/bucket/final.json")
+            self.assertEqual(metadata["request_method"], "PUT")
+            self.assertTrue(metadata["target_query_redacted"])
+            self.assertTrue(metadata["request_attempted"])
+            self.assertTrue(metadata["request_succeeded"])
+            self.assertEqual(metadata["response_status_code"], 200)
+            self.assertFalse(metadata["response_body_recorded"])
+            self.assertFalse(metadata["response_headers_recorded"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("approved-local-test-secret", serialized_result)
+            self.assertNotIn("upload_secret=redacted", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
 
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:
