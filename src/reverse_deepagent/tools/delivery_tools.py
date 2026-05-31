@@ -8,6 +8,8 @@ from reverse_deepagent.delivery import (
     DeliveryArtifact,
     DeliveryExecutionMode,
     DeliveryExecutorConfig,
+    DeliveryRecoveryExecutorConfig,
+    DeliveryTransactionRecoveryExecutor,
     DeliveryTransactionTransitionExecutor,
     DeliveryTransitionExecutorConfig,
     LocalDeliveryExecutor,
@@ -146,6 +148,49 @@ def make_delivery_transition_executor_tool(default_delivery_root: str | Path) ->
         "The tool writes delivery-transition-execution.json only for successful explicit apply-mode transition attempts and never publishes external delivery."
     )
     return execute_delivery_transition
+
+
+def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for explicit delivery transaction recovery workflows."""
+
+    root = Path(default_delivery_root)
+
+    def execute_delivery_recovery(
+        transaction_id: str,
+        action: str = "plan_recovery",
+        delivery_root: str | None = None,
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        backend_manifest_path: str | None = None,
+        expected_transaction_id: str | None = None,
+        approve_recovery: bool = False,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan or explicitly execute a reviewed delivery recovery workflow."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        target_root = Path(delivery_root) if delivery_root else root
+        config = DeliveryRecoveryExecutorConfig(
+            delivery_root=target_root,
+            transaction_id=transaction_id,
+            action=action,
+            mode=DeliveryExecutionMode(mode),
+            backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
+            expected_transaction_id=expected_transaction_id,
+            approve_recovery=approve_recovery,
+            metadata=metadata,
+        )
+        return DeliveryTransactionRecoveryExecutor(config).execute().to_dict()
+
+    execute_delivery_recovery.__name__ = "execute_delivery_recovery"
+    execute_delivery_recovery.__doc__ = (
+        "Plan or explicitly execute a delivery transaction recovery workflow. "
+        "Supported actions are plan_recovery, preflight_recovery, and apply_recovery. "
+        "mode defaults to dry-run and is read-only. apply_recovery in apply mode requires approve_recovery=true and an expected_transaction_id, then orchestrates preflight_backend_manifest_recovery followed by apply_backend_manifest_recovery through the transition executor. "
+        "The tool writes delivery-recovery-execution.json only for successful explicit apply-mode recovery workflows and never publishes external delivery or commits cross-run transactions."
+    )
+    return execute_delivery_recovery
 
 
 def _artifact_from_payload(payload: Any) -> DeliveryArtifact:

@@ -10,6 +10,8 @@ from reverse_deepagent.delivery import (
     DeliveryArtifact,
     DeliveryExecutionMode,
     DeliveryExecutorConfig,
+    DeliveryRecoveryExecutorConfig,
+    DeliveryTransactionRecoveryExecutor,
     DeliveryTransactionTransitionExecutor,
     DeliveryTransactionState,
     DeliveryTransitionExecutorConfig,
@@ -341,6 +343,128 @@ class DeliveryTransactionStateMachineTests(TestCase):
             self.assertTrue(payload["side_effect_policy"]["transaction_committed"])
             self.assertFalse(payload["side_effect_policy"]["external_delivery_performed"])
             self.assertTrue((delivery_root / "delivery-transition-execution.json").exists())
+
+    def test_recovery_executor_plans_recovery_workflow_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-plan-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            execution = DeliveryTransactionRecoveryExecutor(
+                DeliveryRecoveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-plan",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    action="plan_recovery",
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-recovery-plan-source",
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "planned")
+            self.assertTrue(payload["dry_run"])
+            self.assertEqual(payload["action"], "plan_recovery")
+            self.assertEqual(payload["before_state"]["state"], DeliveryTransactionState.RECOVERY_REQUIRED.value)
+            self.assertEqual(payload["transition_executions"], [])
+            self.assertFalse(payload["side_effect_policy"]["manifest_recovered"])
+            self.assertFalse((delivery_root / "delivery-recovery-execution.json").exists())
+
+    def test_recovery_executor_blocks_apply_without_explicit_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-blocked-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            execution = DeliveryTransactionRecoveryExecutor(
+                DeliveryRecoveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    action="apply_recovery",
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-recovery-blocked-source",
+                    approve_recovery=False,
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("apply_recovery_requires_explicit_approval", payload["blocking_reasons"])
+            self.assertEqual(payload["transition_executions"], [])
+            self.assertFalse((delivery_root / "delivery-recovery-execution.json").exists())
+
+    def test_recovery_executor_can_apply_preflight_then_recovery_when_approved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            original_manifest = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-apply-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            execution = DeliveryTransactionRecoveryExecutor(
+                DeliveryRecoveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-apply",
+                    mode=DeliveryExecutionMode.APPLY,
+                    action="apply_recovery",
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-recovery-apply-source",
+                    approve_recovery=True,
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "recovered")
+            self.assertEqual([item["resolved_transition"] for item in payload["transition_executions"]], [
+                "preflight_backend_manifest_recovery",
+                "apply_backend_manifest_recovery",
+            ])
+            self.assertTrue(payload["side_effect_policy"]["manifest_recovered"])
+            self.assertFalse(payload["side_effect_policy"]["external_delivery_performed"])
+            self.assertEqual(payload["after_state"]["state"], DeliveryTransactionState.RECOVERED.value)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertTrue((delivery_root / "delivery-recovery-execution.json").exists())
+            self.assertFalse((delivery_root / "delivery-transition-execution.json").exists())
+
 
 
 def _write_source(root: Path) -> Path:

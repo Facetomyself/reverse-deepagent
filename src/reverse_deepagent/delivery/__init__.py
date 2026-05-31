@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from .recovery import (
+    SUPPORTED_DELIVERY_RECOVERY_ACTIONS,
+    DeliveryRecoveryExecution,
+    DeliveryRecoveryExecutorConfig,
+    DeliveryTransactionRecoveryExecutor,
+)
 from .inspector import (
     DELIVERY_TRANSACTION_ARTIFACT_NAMES,
     DELIVERY_TRANSACTION_INSPECTOR_VERSION,
@@ -64,6 +70,10 @@ __all__ = [
     "DeliveryTransactionInspection",
     "DELIVERY_TRANSACTION_INSPECTOR_VERSION",
     "DELIVERY_TRANSACTION_ARTIFACT_NAMES",
+    "SUPPORTED_DELIVERY_RECOVERY_ACTIONS",
+    "DeliveryRecoveryExecution",
+    "DeliveryRecoveryExecutorConfig",
+    "DeliveryTransactionRecoveryExecutor",
     "SUPPORTED_DELIVERY_TRANSITIONS",
     "DeliveryTransactionTransitionExecutor",
     "DeliveryTransitionExecution",
