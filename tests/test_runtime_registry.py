@@ -82,6 +82,10 @@ class RuntimeRegistryTests(unittest.TestCase):
         metadata = registry.list_metadata()
         self.assertEqual(metadata[0]["backend_id"], "dummy")
         self.assertTrue(metadata[0]["supports_web_recon"])
+        registration_metadata = registry.list_registration_metadata()
+        self.assertEqual(registration_metadata[0]["backend_id"], "dummy")
+        self.assertEqual(registration_metadata[0]["aliases"], ["alias-dummy"])
+        self.assertEqual(registration_metadata[0]["keys"], ["dummy", "alias-dummy"])
         self.assertIsInstance(registry.create("dummy"), DummyRuntime)
 
     def test_registry_rejects_duplicate_keys(self) -> None:

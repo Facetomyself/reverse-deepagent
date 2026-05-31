@@ -22,6 +22,7 @@ from reverse_deepagent.delivery.registry import (
     EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP,
     build_default_external_delivery_provider_registry,
 )
+from reverse_deepagent.coordinator import build_default_runtime_registry
 from reverse_deepagent.runtime.chrome import (
     ChromeDebugConfig,
     DEFAULT_CHROME_PATH,
@@ -32,6 +33,7 @@ from reverse_deepagent.runtime.chrome import (
     stop_chrome_debug,
 )
 from reverse_deepagent.runtime.legacy_mcp import DEFAULT_JSREVERSER_MCP_COMMAND, check_legacy_mcp_tools
+from reverse_deepagent.runtime.registry import RUNTIME_BACKEND_ENTRY_POINT_GROUP
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BROWSER_URL = "http://127.0.0.1:9222"
@@ -72,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--external-delivery-providers",
         action="store_true",
         help="Emit a side-effect-free ExternalDeliveryProvider metadata matrix without invoking provider factories.",
+    )
+    parser.add_argument(
+        "--runtime-backends",
+        action="store_true",
+        help="Emit a side-effect-free RuntimeBackend metadata matrix without invoking backend factories.",
     )
     parser.add_argument("--request-timeout", type=float, default=10.0, help="MCP request timeout in seconds.")
     parser.add_argument("--startup-timeout", type=float, default=10.0, help="MCP startup timeout in seconds.")
@@ -258,6 +265,78 @@ def _external_delivery_provider_matrix() -> dict[str, Any]:
     }
 
 
+_RUNTIME_BACKEND_CAPABILITY_FLAGS = [
+    "supports_browser_session",
+    "supports_web_recon",
+    "supports_protection_patch",
+    "supports_artifact_export",
+    "supports_runtime_context",
+    "supports_replay_validation",
+    "managed_chrome",
+    "mcp_backed",
+]
+
+
+def _runtime_backend_matrix() -> dict[str, Any]:
+    try:
+        registry = build_default_runtime_registry()
+        backends = registry.list_registration_metadata()
+        backend_ids = registry.backend_ids()
+    except Exception as exc:
+        return {
+            "matrix_version": "unavailable",
+            "entry_point_group": RUNTIME_BACKEND_ENTRY_POINT_GROUP,
+            "ok": False,
+            "error": str(exc),
+            "backends": [],
+            "backend_ids": [],
+            "capability_flags": list(_RUNTIME_BACKEND_CAPABILITY_FLAGS),
+            "summary": {"backend_count": 0},
+            "side_effect_policy": {
+                "backend_factories_invoked": False,
+                "browser_sessions_started": False,
+                "chrome_started": False,
+                "mcp_started": False,
+                "platform_tools_invoked": False,
+            },
+        }
+    target_platforms = sorted(
+        {
+            platform
+            for backend in backends
+            for platform in backend.get("target_platforms", [])
+            if isinstance(platform, str)
+        }
+    )
+    return {
+        "matrix_version": "2026-05-31.runtime-backends",
+        "entry_point_group": RUNTIME_BACKEND_ENTRY_POINT_GROUP,
+        "ok": True,
+        "backends": backends,
+        "backend_ids": backend_ids,
+        "capability_flags": list(_RUNTIME_BACKEND_CAPABILITY_FLAGS),
+        "summary": {
+            "backend_count": len(backends),
+            "registered_key_count": len(backend_ids),
+            "web_backend_count": sum(1 for backend in backends if "web" in backend.get("target_platforms", [])),
+            "non_web_backend_count": sum(1 for backend in backends if "web" not in backend.get("target_platforms", [])),
+            "browser_session_capable_count": sum(1 for backend in backends if backend.get("supports_browser_session")),
+            "web_recon_capable_count": sum(1 for backend in backends if backend.get("supports_web_recon")),
+            "mcp_backed_count": sum(1 for backend in backends if backend.get("mcp_backed")),
+            "managed_chrome_capable_count": sum(1 for backend in backends if backend.get("managed_chrome")),
+            "target_platforms": target_platforms,
+        },
+        "side_effect_policy": {
+            "backend_factories_invoked": False,
+            "browser_sessions_started": False,
+            "chrome_started": False,
+            "mcp_started": False,
+            "platform_tools_invoked": False,
+            "metadata_only_by_default": True,
+        },
+    }
+
+
 def _check_mcp(args: argparse.Namespace) -> dict[str, Any]:
     command_status = _command_check(args.jsreverser_mcp_command)
     if not command_status["exists"]:
@@ -287,6 +366,7 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     check_legacy_mcp = bool(getattr(args, "legacy_mcp", False) or args.check_mcp)
     check_provider_matrix = bool(getattr(args, "browser_provider_matrix", False))
     check_external_delivery_providers = bool(getattr(args, "external_delivery_providers", False))
+    check_runtime_backends = bool(getattr(args, "runtime_backends", False))
     check_browser_provider = bool(
         args.browser
         or (
@@ -294,10 +374,11 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             and not check_legacy_mcp
             and not check_provider_matrix
             and not check_external_delivery_providers
+            and not check_runtime_backends
         )
     )
     metadata_only_check = bool(
-        (check_provider_matrix or check_external_delivery_providers)
+        (check_provider_matrix or check_external_delivery_providers or check_runtime_backends)
         and not check_browser_provider
         and not args.ensure_chrome
         and not check_legacy_mcp
@@ -336,6 +417,9 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     if check_external_delivery_providers:
         payload["external_delivery_provider_matrix"] = _external_delivery_provider_matrix()
 
+    if check_runtime_backends:
+        payload["runtime_backend_matrix"] = _runtime_backend_matrix()
+
     if check_browser_provider:
         payload["browser_provider"] = _check_browser_provider(args)
 
@@ -357,6 +441,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             required_ok.append(bool(payload.get("browser_provider_smoke_matrix", {}).get("ok")))
         if check_external_delivery_providers:
             required_ok.append(bool(payload.get("external_delivery_provider_matrix", {}).get("ok")))
+        if check_runtime_backends:
+            required_ok.append(bool(payload.get("runtime_backend_matrix", {}).get("ok")))
     else:
         required_ok = [
             payload["chrome"]["path"]["exists"],
@@ -372,6 +458,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             required_ok.append(bool(payload.get("browser_provider_smoke_matrix", {}).get("ok")))
         if check_external_delivery_providers:
             required_ok.append(bool(payload.get("external_delivery_provider_matrix", {}).get("ok")))
+        if check_runtime_backends:
+            required_ok.append(bool(payload.get("runtime_backend_matrix", {}).get("ok")))
         if check_legacy_mcp:
             required_ok.append(bool(payload.get("legacy_mcp_check", {}).get("ok")))
     payload["ok"] = all(required_ok)

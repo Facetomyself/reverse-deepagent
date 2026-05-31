@@ -142,6 +142,14 @@ reverse-agent-doctor --external-delivery-providers
 
 输出里的 `external_delivery_provider_matrix` 会列出 `review-only`、`local-archive`、`webhook`、`presigned-object` 及其 alias，并显示 `reverse_deepagent.external_delivery_providers` entry point group、provider transport、`review_only`、`supports_external_delivery` 和 side-effect policy。当前内置 provider 已覆盖 review-only handoff、本地归档、HTTP JSON webhook，以及 presigned object-storage URL 的 HTTP PUT baseline；GitHub Release / 第三方 release provider 仍需以后续插件形式接入。
 
+RuntimeBackend doctor 示例，默认只读取 runtime backend registration metadata，不调用 backend factory，不启动 Chrome / MCP / 平台工具：
+
+```bash
+reverse-agent-doctor --runtime-backends
+```
+
+输出里的 `runtime_backend_matrix` 会列出 `mock`、`native-web`、`remote-cdp`、轻量 Web backend、平台 minimal backend 以及已安装 entry point plugin 的 backend id / alias / target platforms / capability flags，并显示 `reverse_deepagent.runtime_backends` entry point group、summary counts 和 side-effect policy。未安装 `reverse-deepagent-legacy-mcp` 时不会伪装存在 `legacy-mcp`；需要 legacy MCP 时应安装 optional plugin 或继续使用 `native-web`。
+
 需要真实启动 smoke 时显式打开：
 
 ```bash
@@ -951,17 +959,19 @@ capabilities = runtime.describe_capabilities()
 print(capabilities.model_dump(mode="json"))
 ```
 
-`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。Registry 还会加载 `reverse_deepagent.runtime_backends` Python entry-point group 里的外部 backend registration，加载 metadata 时不会调用 backend factory；`legacy-mcp` 的 registration / factory / alias warning 已从 coordinator 内联代码挪到 `reverse_deepagent.runtime.legacy_mcp`，并且 `build_default_runtime_registry(include_legacy_mcp=False)` 可以构建不带 MCP backend 的 clean registry。仓库现在还包含 `packages/reverse-deepagent-legacy-mcp/` optional plugin package，声明同一个 entry-point group，并已拥有 legacy MCP registration / factory、`JSReverserMcpConfig` 和 stdio bridge 实现；core 侧 `reverse_deepagent.runtime.legacy_mcp` 现在只保留兼容 shim、默认命令常量、alias warning、doctor 代理和 install guidance，不再内置 legacy MCP factory fallback 或 stdio MCP transport；默认 registry 会先加载外部 entry points，若未安装 `reverse-deepagent-legacy-mcp`，`--runtime legacy-mcp` / `mcp` 会返回结构化安装建议，并推荐继续使用 `native-web`。当前默认内置注册：
+`build_runtime(...)` 现在通过 `RuntimeBackendRegistry` 创建后端。架构方向是新增 `native-web`，通过 BrowserProvider 切换 `playwright-chromium`、`cloakbrowser`、`chrome-cdp`、`remote-cdp` 等浏览器实现，并把 MCP 降级为 legacy 兼容后端。Registry 还会加载 `reverse_deepagent.runtime_backends` Python entry-point group 里的外部 backend registration，加载 metadata 时不会调用 backend factory；`legacy-mcp` 的 registration / factory / alias warning 已从 coordinator 内联代码挪到 `reverse_deepagent.runtime.legacy_mcp`，并且 `build_default_runtime_registry(include_legacy_mcp=False)` 可以构建不带 MCP backend 的 clean registry。仓库现在还包含 `packages/reverse-deepagent-legacy-mcp/` optional plugin package，声明同一个 entry-point group，并已拥有 legacy MCP registration / factory、`JSReverserMcpConfig` 和 stdio bridge 实现；core 侧 `reverse_deepagent.runtime.legacy_mcp` 现在只保留兼容 shim、默认命令常量、alias warning、doctor 代理和 install guidance，不再内置 legacy MCP factory fallback 或 stdio MCP transport；默认 registry 会先加载外部 entry points，若未安装 `reverse-deepagent-legacy-mcp`，`--runtime legacy-mcp` / `mcp` 会返回结构化安装建议，并推荐继续使用 `native-web`。当前默认 registry metadata 通常包含以下 core backend；`legacy-mcp` 只有安装 optional plugin 后才会通过 entry point 出现在 registry / doctor matrix 中：
 
 - `mock`（别名：`in-process`）：公开 CI 和本地 deterministic demo 使用
 - `native-web`（别名：`web`, `browser-native`）：BrowserProvider-backed native Web runtime，目标默认路径，当前支持 `playwright-chromium`、`cloakbrowser` 和 `remote-cdp` provider；真实二进制 smoke 需要显式触发
-- `legacy-mcp`（别名：`mcp`, `jsreverser-mcp`）：legacy JSReverser MCP + Chrome DevTools 兼容运行时；`mcp` / `jsreverser-mcp` 仅作为旧命令 alias 保留，CLI 会输出 deprecation warning，新脚本应改用 `legacy-mcp`
+- `legacy-mcp`（别名：`mcp`, `jsreverser-mcp`）：optional plugin 提供的 legacy JSReverser MCP + Chrome DevTools 兼容运行时；未安装 `reverse-deepagent-legacy-mcp` 时不会出现在默认 matrix 中，`mcp` / `jsreverser-mcp` 仅作为旧命令 alias 保留，CLI 会输出 deprecation warning，新脚本应改用 `legacy-mcp`
 - `playwright-cli`（别名：`playwright`, `pw-cli`）：轻量 Playwright CLI 探测与静态源码拉取，不主动启动浏览器
 - `chrome-cdp`（别名：`cdp`, `devtools`）：连接既有 Chrome DevTools 端点，不主动启动 Chrome
 - `browser-cli`（别名：`cli-browser`, `browser-command`）：通用浏览器 CLI 适配命令 backend，默认 command 未配置
 - `android-adb`（别名：`adb`, `android-device`）：Android ADB 工具链探测与平台 artifact 导出
 - `ios-simulator`（别名：`simctl`, `ios-sim`）：iOS Simulator / `xcrun simctl` 工具链探测与平台 artifact 导出
 - `mini-program-devtools`（别名：`mp-devtools`, `wechat-devtools`）：小程序 vendor devtools CLI 配置探测与平台 artifact 导出
+
+`reverse-agent-doctor --runtime-backends` 可 side-effect-free 输出 runtime backend matrix，列出 backend id、alias、target platforms、capability flags、entry point group 和 side-effect policy，且不会调用 backend factory 或启动外部工具。
 
 每次 pipeline 会额外写出 `workspace/backend-artifact-manifest.json`，用 `RuntimeArtifactManifest` / `RuntimeArtifactManifestEntry` 描述 artifact key、路径、类别、kind、producer backend、transport 和 target platforms。这个 manifest 是新增索引，不替换现有 `exports/artifact-index.json`。跨平台 artifact category 词表见 [`docs/runtime/platform-neutral-artifact-categories.md`](docs/runtime/platform-neutral-artifact-categories.md)。
 

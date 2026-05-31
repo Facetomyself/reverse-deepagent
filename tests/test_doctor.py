@@ -15,6 +15,11 @@ from reverse_deepagent.delivery import (
 )
 from reverse_deepagent.delivery import registry as delivery_registry
 from reverse_deepagent.doctor import run_doctor
+from reverse_deepagent.runtime import (
+    RuntimeBackendCapabilities,
+    RuntimeBackendRegistration,
+)
+from reverse_deepagent.runtime import registry as runtime_registry
 
 
 PACKAGE_SRC = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-legacy-mcp" / "src"
@@ -34,6 +39,22 @@ class FakeDeliveryEntryPoints(list):
         if group == "reverse_deepagent.external_delivery_providers":
             return FakeDeliveryEntryPoints(self)
         return FakeDeliveryEntryPoints()
+
+
+class FakeRuntimeEntryPoint:
+    def __init__(self, name: str, value) -> None:
+        self.name = name
+        self.value = value
+
+    def load(self):
+        return self.value
+
+
+class FakeRuntimeEntryPoints(list):
+    def select(self, *, group: str):
+        if group == "reverse_deepagent.runtime_backends":
+            return FakeRuntimeEntryPoints(self)
+        return FakeRuntimeEntryPoints()
 
 
 class DoctorTests(unittest.TestCase):
@@ -80,6 +101,7 @@ class DoctorTests(unittest.TestCase):
             "launch_browser_smoke": False,
             "browser_smoke_url": "about:blank",
             "external_delivery_providers": False,
+            "runtime_backends": False,
             "request_timeout": 1.0,
             "startup_timeout": 1.0,
             "strict": False,
@@ -287,6 +309,72 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(presigned["transport"], "object-storage")
         self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
         self.assertFalse(matrix["side_effect_policy"]["external_delivery_performed"])
+
+    def test_doctor_can_emit_side_effect_free_runtime_backend_matrix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = run_doctor(
+                self.make_args(
+                    Path(tmp),
+                    runtime_backends=True,
+                    jsreverser_mcp_command=str(Path(tmp) / "missing-mcp"),
+                )
+            )
+        matrix = payload["runtime_backend_matrix"]
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["mcp"]["command"]["exists"])
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.runtime_backends")
+        self.assertEqual(matrix["summary"]["backend_count"], 9)
+        self.assertEqual(matrix["summary"]["registered_key_count"], 26)
+        self.assertEqual(matrix["summary"]["web_backend_count"], 6)
+        self.assertEqual(matrix["summary"]["non_web_backend_count"], 3)
+        self.assertEqual(matrix["summary"]["mcp_backed_count"], 0)
+        self.assertEqual(matrix["summary"]["managed_chrome_capable_count"], 0)
+        self.assertEqual(matrix["summary"]["target_platforms"], ["android", "ios", "mini-program", "web"])
+        self.assertIn("native-web", matrix["backend_ids"])
+        self.assertIn("browser-native", matrix["backend_ids"])
+        self.assertIn("android-adb", matrix["backend_ids"])
+        self.assertIn("wechat-devtools", matrix["backend_ids"])
+        by_backend = {backend["backend_id"]: backend for backend in matrix["backends"]}
+        self.assertEqual(by_backend["native-web"]["aliases"], ["web", "browser-native"])
+        self.assertTrue(by_backend["native-web"]["supports_web_recon"])
+        self.assertFalse(by_backend["native-web"]["mcp_backed"])
+        self.assertEqual(by_backend["android-adb"]["target_platforms"], ["android"])
+        self.assertFalse(by_backend["android-adb"]["supports_browser_session"])
+        self.assertFalse(matrix["side_effect_policy"]["backend_factories_invoked"])
+        self.assertFalse(matrix["side_effect_policy"]["chrome_started"])
+        self.assertFalse(matrix["side_effect_policy"]["mcp_started"])
+        self.assertFalse(matrix["side_effect_policy"]["platform_tools_invoked"])
+
+    def test_runtime_backend_matrix_loads_entry_points_without_invoking_factories(self) -> None:
+        factory_calls: list[str] = []
+        registration = RuntimeBackendRegistration(
+            backend_id="plugin-runtime",
+            aliases=("plugin-runtime-alias",),
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="plugin-runtime",
+                display_name="Plugin Runtime",
+                transport="plugin",
+                target_platforms=["web"],
+                supports_web_recon=True,
+            ),
+            factory=lambda **_: factory_calls.append("called"),
+        )
+        entry_points = FakeRuntimeEntryPoints([FakeRuntimeEntryPoint("plugin-runtime", registration)])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(runtime_registry.importlib_metadata, "entry_points", return_value=entry_points):
+                payload = run_doctor(self.make_args(Path(tmp), runtime_backends=True))
+
+        matrix = payload["runtime_backend_matrix"]
+        self.assertTrue(payload["ok"])
+        self.assertEqual(factory_calls, [])
+        self.assertIn("plugin-runtime", matrix["backend_ids"])
+        self.assertIn("plugin-runtime-alias", matrix["backend_ids"])
+        by_backend = {item["backend_id"]: item for item in matrix["backends"]}
+        self.assertEqual(by_backend["plugin-runtime"]["aliases"], ["plugin-runtime-alias"])
+        self.assertTrue(by_backend["plugin-runtime"]["supports_web_recon"])
 
     def test_external_delivery_provider_matrix_loads_entry_points_without_invoking_factories(self) -> None:
         factory_calls: list[str] = []

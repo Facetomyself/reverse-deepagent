@@ -91,6 +91,18 @@ class RuntimeBackendRegistry:
     def list_metadata(self) -> list[dict[str, Any]]:
         return [item.model_dump(mode="json") for item in self.list_capabilities()]
 
+    def list_registration_metadata(self) -> list[dict[str, Any]]:
+        """Return canonical backend metadata plus aliases without creating runtimes."""
+
+        payloads: list[dict[str, Any]] = []
+        for backend_id in sorted(self._registrations):
+            registration = self._registrations[backend_id]
+            payload = registration.capabilities.model_dump(mode="json")
+            payload["aliases"] = list(registration.aliases)
+            payload["keys"] = list(registration.keys)
+            payloads.append(payload)
+        return payloads
+
     @staticmethod
     def _coerce_plugin_registrations(entry_point_name: str, value: Any) -> list[RuntimeBackendRegistration]:
         if isinstance(value, RuntimeBackendRegistration):
