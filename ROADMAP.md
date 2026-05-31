@@ -23,6 +23,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Remote CDP provider.
 - CloakBrowser optional provider skeleton, launch / persistent-context / connect baseline, and manual smoke path.
 - Browser provider doctor mode and side-effect-free provider matrix.
+- Extensible BrowserProvider capability compatibility rule catalog for CDP/debugger/network/lifecycle plus proxy, humanize, mobile emulation, and extension capability checks.
 - Managed Chrome debug launcher scripts and docs.
 - MCP legacy downgrade, alias warnings, and optional legacy MCP package split.
 
@@ -87,7 +88,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 ### Browser / CDP / hook depth
 
 - Real third-party BrowserProvider plugin implementation beyond the template.
-- Compatibility rule evolution for newly added provider capability flags.
+- Provider-specific compatibility rule additions when real third-party provider plugins introduce new capability flags.
 - Cross-process live CDP paused execution continuation.
 - Arbitrary custom loader traversal and async chunk graph analysis.
 - Execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.

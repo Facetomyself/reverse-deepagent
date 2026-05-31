@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from reverse_deepagent.browser.base import BrowserProvider
@@ -44,6 +45,146 @@ LIFECYCLE_STAGES: tuple[str, ...] = (
 BrowserProviderFactory = Callable[..., Any]
 
 
+@dataclass(frozen=True, slots=True)
+class BrowserProviderCompatibilityRule:
+    """One metadata-only BrowserProvider capability compatibility rule."""
+
+    rule_id: str
+    severity: str
+    message: str
+    when_all: tuple[str, ...] = field(default_factory=tuple)
+    when_any: tuple[str, ...] = field(default_factory=tuple)
+    requires_all: tuple[str, ...] = field(default_factory=tuple)
+    requires_any: tuple[str, ...] = field(default_factory=tuple)
+
+    def applies_to(self, capabilities: dict[str, Any]) -> bool:
+        if self.when_all and not all(_capability_enabled(capabilities, key) for key in self.when_all):
+            return False
+        if self.when_any and not any(_capability_enabled(capabilities, key) for key in self.when_any):
+            return False
+        return True
+
+    def satisfied_by(self, capabilities: dict[str, Any]) -> bool:
+        if self.requires_all and not all(_capability_enabled(capabilities, key) for key in self.requires_all):
+            return False
+        if self.requires_any and not any(_capability_enabled(capabilities, key) for key in self.requires_any):
+            return False
+        return True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rule_id": self.rule_id,
+            "severity": self.severity,
+            "message": self.message,
+            "when_all": list(self.when_all),
+            "when_any": list(self.when_any),
+            "requires_all": list(self.requires_all),
+            "requires_any": list(self.requires_any),
+        }
+
+
+BROWSER_PROVIDER_COMPATIBILITY_RULES: tuple[BrowserProviderCompatibilityRule, ...] = (
+    BrowserProviderCompatibilityRule(
+        rule_id="breakpoints_require_cdp",
+        severity="error",
+        when_all=("supports_breakpoints",),
+        requires_all=("supports_cdp",),
+        message="supports_breakpoints requires supports_cdp for Debugger domain access",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="persistent_context_requires_lifecycle",
+        severity="error",
+        when_all=("supports_persistent_context",),
+        requires_any=("supports_launch", "supports_connect"),
+        message="supports_persistent_context requires launch or connect lifecycle support",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="response_body_requires_network_or_cdp",
+        severity="error",
+        when_all=("supports_response_body",),
+        requires_any=("supports_network_events", "supports_cdp"),
+        message="supports_response_body requires supports_network_events or supports_cdp",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="request_initiator_requires_network_or_cdp",
+        severity="error",
+        when_all=("supports_request_initiator",),
+        requires_any=("supports_network_events", "supports_cdp"),
+        message="supports_request_initiator requires supports_network_events or supports_cdp",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="websocket_frames_require_network_or_cdp",
+        severity="error",
+        when_all=("supports_websocket_frames",),
+        requires_any=("supports_network_events", "supports_cdp"),
+        message="supports_websocket_frames requires supports_network_events or supports_cdp",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="runtime_eval_without_known_transport",
+        severity="warning",
+        when_all=("supports_runtime_eval",),
+        requires_any=("supports_playwright_api", "supports_cdp"),
+        message="supports_runtime_eval is declared without supports_playwright_api or supports_cdp",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="script_source_without_known_acquisition_path",
+        severity="warning",
+        when_all=("supports_script_source",),
+        requires_any=("supports_cdp", "supports_network_events", "supports_runtime_eval"),
+        message="supports_script_source is declared without CDP, network events, or runtime eval",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="cdp_without_lifecycle_mode",
+        severity="warning",
+        when_all=("supports_cdp",),
+        requires_any=("supports_launch", "supports_connect"),
+        message="supports_cdp is declared but provider cannot launch or connect",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="managed_browser_without_launch",
+        severity="warning",
+        when_all=("managed_browser",),
+        requires_all=("supports_launch",),
+        message="managed_browser usually implies supports_launch",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="humanize_requires_page_control_transport",
+        severity="warning",
+        when_all=("supports_humanize",),
+        requires_any=("supports_playwright_api", "supports_cdp"),
+        message="supports_humanize should expose Playwright or CDP page control",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="mobile_emulation_requires_page_control_transport",
+        severity="warning",
+        when_all=("supports_mobile_emulation",),
+        requires_any=("supports_playwright_api", "supports_cdp"),
+        message="supports_mobile_emulation should expose Playwright or CDP emulation controls",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="extensions_require_launch_or_persistent_context",
+        severity="warning",
+        when_all=("supports_extensions",),
+        requires_any=("supports_launch", "supports_persistent_context"),
+        message="supports_extensions usually requires launch or persistent-context control",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="proxy_requires_launch_or_managed_browser",
+        severity="warning",
+        when_all=("supports_proxy",),
+        requires_any=("supports_launch", "managed_browser"),
+        message="provider-level proxy configuration usually requires launch control or a managed browser service",
+    ),
+    BrowserProviderCompatibilityRule(
+        rule_id="capabilities_without_lifecycle_mode",
+        severity="warning",
+        when_any=tuple(key for key in CAPABILITY_FLAG_KEYS if key != "managed_browser"),
+        requires_any=("supports_launch", "supports_connect"),
+        message="runtime capabilities are declared but provider cannot launch or connect",
+    ),
+)
+
+
 def browser_provider_metadata_matrix_payload(
     *,
     provider_metadata: list[dict[str, Any]],
@@ -71,6 +212,7 @@ def browser_provider_metadata_matrix_payload(
         "lifecycle_stages": list(LIFECYCLE_STAGES),
         "capability_flags": list(CAPABILITY_FLAG_KEYS),
         "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
+        "compatibility_rules": list_browser_provider_compatibility_rules(),
         "providers": rows,
         "summary": _matrix_summary(rows),
     }
@@ -145,6 +287,7 @@ def browser_provider_smoke_matrix_payload(
         "lifecycle_stages": list(LIFECYCLE_STAGES),
         "capability_flags": list(CAPABILITY_FLAG_KEYS),
         "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
+        "compatibility_rules": list_browser_provider_compatibility_rules(),
         "providers": rows,
         "summary": _matrix_summary(rows),
     }
@@ -311,6 +454,12 @@ def _supported_modes(capabilities: dict[str, Any]) -> list[str]:
     return modes
 
 
+def list_browser_provider_compatibility_rules() -> list[dict[str, Any]]:
+    """Return metadata-only BrowserProvider compatibility rule catalog."""
+
+    return [rule.to_dict() for rule in BROWSER_PROVIDER_COMPATIBILITY_RULES]
+
+
 def validate_browser_provider_capability_compatibility(capabilities: dict[str, Any]) -> dict[str, Any]:
     """Validate BrowserProvider capability combinations without side effects.
 
@@ -321,55 +470,33 @@ def validate_browser_provider_capability_compatibility(capabilities: dict[str, A
     """
 
     provider_id = str(capabilities.get("provider_id") or "unknown")
-    errors: list[dict[str, str]] = []
-    warnings: list[dict[str, str]] = []
-
-    def enabled(key: str) -> bool:
-        return bool(capabilities.get(key))
-
-    def add_error(code: str, message: str) -> None:
-        errors.append({"code": code, "message": message})
-
-    def add_warning(code: str, message: str) -> None:
-        warnings.append({"code": code, "message": message})
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    evaluated_rules: list[dict[str, Any]] = []
 
     if provider_id == "unknown":
-        add_error("missing_provider_id", "capabilities must include a stable provider_id")
+        errors.append({"code": "missing_provider_id", "message": "capabilities must include a stable provider_id", "severity": "error"})
 
-    has_lifecycle_mode = enabled("supports_launch") or enabled("supports_connect")
-    if enabled("supports_breakpoints") and not enabled("supports_cdp"):
-        add_error("breakpoints_require_cdp", "supports_breakpoints requires supports_cdp for Debugger domain access")
-    if enabled("supports_persistent_context") and not has_lifecycle_mode:
-        add_error(
-            "persistent_context_requires_lifecycle",
-            "supports_persistent_context requires launch or connect lifecycle support",
-        )
-    for feature_key, code in (
-        ("supports_response_body", "response_body_requires_network_or_cdp"),
-        ("supports_request_initiator", "request_initiator_requires_network_or_cdp"),
-        ("supports_websocket_frames", "websocket_frames_require_network_or_cdp"),
-    ):
-        if enabled(feature_key) and not (enabled("supports_network_events") or enabled("supports_cdp")):
-            add_error(code, f"{feature_key} requires supports_network_events or supports_cdp")
-
-    if enabled("supports_runtime_eval") and not (enabled("supports_playwright_api") or enabled("supports_cdp")):
-        add_warning(
-            "runtime_eval_without_known_transport",
-            "supports_runtime_eval is declared without supports_playwright_api or supports_cdp",
-        )
-    if enabled("supports_script_source") and not (
-        enabled("supports_cdp") or enabled("supports_network_events") or enabled("supports_runtime_eval")
-    ):
-        add_warning(
-            "script_source_without_known_acquisition_path",
-            "supports_script_source is declared without CDP, network events, or runtime eval",
-        )
-    if enabled("supports_cdp") and not has_lifecycle_mode:
-        add_warning("cdp_without_lifecycle_mode", "supports_cdp is declared but provider cannot launch or connect")
-    if enabled("managed_browser") and not enabled("supports_launch"):
-        add_warning("managed_browser_without_launch", "managed_browser usually implies supports_launch")
-    if any(enabled(key) for key in CAPABILITY_FLAG_KEYS if key != "managed_browser") and not has_lifecycle_mode:
-        add_warning("capabilities_without_lifecycle_mode", "runtime capabilities are declared but provider cannot launch or connect")
+    for rule in BROWSER_PROVIDER_COMPATIBILITY_RULES:
+        if not rule.applies_to(capabilities):
+            continue
+        passed = rule.satisfied_by(capabilities)
+        evaluated_rules.append({"rule_id": rule.rule_id, "severity": rule.severity, "passed": passed})
+        if passed:
+            continue
+        issue = {
+            "code": rule.rule_id,
+            "message": rule.message,
+            "severity": rule.severity,
+            "when_all": list(rule.when_all),
+            "when_any": list(rule.when_any),
+            "requires_all": list(rule.requires_all),
+            "requires_any": list(rule.requires_any),
+        }
+        if rule.severity == "error":
+            errors.append(issue)
+        else:
+            warnings.append(issue)
 
     status = "error" if errors else "warning" if warnings else "compatible"
     return {
@@ -377,11 +504,18 @@ def validate_browser_provider_capability_compatibility(capabilities: dict[str, A
         "provider_id": provider_id,
         "status": status,
         "ok": not errors,
+        "rule_count": len(BROWSER_PROVIDER_COMPATIBILITY_RULES),
+        "evaluated_rule_count": len(evaluated_rules),
         "error_count": len(errors),
         "warning_count": len(warnings),
         "errors": errors,
         "warnings": warnings,
+        "evaluated_rules": evaluated_rules,
     }
+
+
+def _capability_enabled(capabilities: dict[str, Any], key: str) -> bool:
+    return bool(capabilities.get(key))
 
 
 def _append_lifecycle(row: dict[str, Any], stage: str, status: str, message: str) -> None:

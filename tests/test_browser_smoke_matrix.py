@@ -4,6 +4,7 @@ from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
 from reverse_deepagent.browser.smoke import (
     BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
     DEFAULT_BROWSER_PROVIDER_MATRIX,
+    list_browser_provider_compatibility_rules,
     browser_provider_metadata_matrix_payload,
     browser_provider_smoke_matrix_payload,
     browser_provider_smoke_row,
@@ -107,6 +108,21 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
             self.assertEqual(lifecycle["session_start_requested"], "skipped")
 
 
+
+    def test_compatibility_rule_catalog_is_serializable_and_extensible(self) -> None:
+        rules = list_browser_provider_compatibility_rules()
+        rule_ids = {rule["rule_id"] for rule in rules}
+        self.assertIn("breakpoints_require_cdp", rule_ids)
+        self.assertIn("humanize_requires_page_control_transport", rule_ids)
+        self.assertIn("mobile_emulation_requires_page_control_transport", rule_ids)
+        self.assertIn("extensions_require_launch_or_persistent_context", rule_ids)
+        self.assertIn("proxy_requires_launch_or_managed_browser", rule_ids)
+        for rule in rules:
+            self.assertIn(rule["severity"], {"error", "warning"})
+            self.assertIn("message", rule)
+            self.assertIsInstance(rule["when_all"], list)
+            self.assertIsInstance(rule["requires_any"], list)
+
     def test_registration_metadata_matrix_does_not_call_provider_factory(self) -> None:
         metadata = [
             BrowserProviderCapabilities(
@@ -126,6 +142,8 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["compatibility_rule_version"], BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION)
+        self.assertIn("compatibility_rules", payload)
+        self.assertGreater(len(payload["compatibility_rules"]), 5)
         self.assertEqual(payload["summary"]["provider_count"], 1)
         self.assertEqual(payload["summary"]["compatibility"]["compatible_count"], 1)
         row = payload["providers"][0]
@@ -152,6 +170,29 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertFalse(compatibility["ok"])
         self.assertEqual(compatibility["status"], "error")
         self.assertIn("breakpoints_require_cdp", {item["code"] for item in compatibility["errors"]})
+        self.assertGreaterEqual(compatibility["rule_count"], 10)
+        self.assertGreaterEqual(compatibility["evaluated_rule_count"], 2)
+
+    def test_new_provider_flags_emit_compatibility_warnings(self) -> None:
+        compatibility = validate_browser_provider_capability_compatibility(
+            BrowserProviderCapabilities(
+                provider_id="thin-stealth-service",
+                display_name="Thin Stealth Service",
+                supports_connect=True,
+                supports_proxy=True,
+                supports_humanize=True,
+                supports_mobile_emulation=True,
+                supports_extensions=True,
+            ).model_dump(mode="json")
+        )
+
+        self.assertTrue(compatibility["ok"])
+        self.assertEqual(compatibility["status"], "warning")
+        warning_codes = {item["code"] for item in compatibility["warnings"]}
+        self.assertIn("humanize_requires_page_control_transport", warning_codes)
+        self.assertIn("mobile_emulation_requires_page_control_transport", warning_codes)
+        self.assertIn("extensions_require_launch_or_persistent_context", warning_codes)
+        self.assertIn("proxy_requires_launch_or_managed_browser", warning_codes)
 
     def test_metadata_matrix_marks_incompatible_provider_not_ok(self) -> None:
         metadata = [

@@ -182,7 +182,7 @@ The matrix records standard capability flags, supported modes, metadata-only com
 configured -> capability_described -> availability_checked -> session_start_requested -> session_opened -> page_ready -> session_closed
 ```
 
-The default matrix path is metadata-only and side-effect free: it reads provider registration metadata and `describe()` output, runs capability compatibility rules such as `breakpoints_require_cdp`, `response_body_requires_network_or_cdp`, and `persistent_context_requires_lifecycle`, but does not call provider factories for external plugins, import optional browser binaries, probe remote CDP endpoints, launch browsers, or touch MCP. Availability checks and launch smoke are explicit knobs. Doctor exposes this through:
+The default matrix path is metadata-only and side-effect free: it reads provider registration metadata and `describe()` output, runs a serializable compatibility rule catalog such as `breakpoints_require_cdp`, `response_body_requires_network_or_cdp`, `persistent_context_requires_lifecycle`, `humanize_requires_page_control_transport`, `mobile_emulation_requires_page_control_transport`, `extensions_require_launch_or_persistent_context`, and `proxy_requires_launch_or_managed_browser`, but does not call provider factories for external plugins, import optional browser binaries, probe remote CDP endpoints, launch browsers, or touch MCP. Matrix output includes `compatibility_rules`, per-provider `rule_count`, and `evaluated_rules` so provider plugins can review capability drift without starting a browser. Availability checks and launch smoke are explicit knobs. Doctor exposes this through:
 
 ```bash
 reverse-agent-doctor --browser-provider-matrix

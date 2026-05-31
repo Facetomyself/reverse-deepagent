@@ -888,3 +888,15 @@ The scoring labels are intentionally review-facing: `strong_pure_candidate`, `re
 Boundary: this score is advisory only. It does not change the authoritative `ready` calculation, does not collect runtime context, does not execute replay, does not start BrowserProvider sessions, does not call MCP, does not install hooks, does not mutate generated code, and does not touch Android / iOS / mini-program full runtime chains.
 
 Tests cover strong pure strategy scoring, runtime-context drift scoring, protected-flow runtime-assisted scoring, detector payload compatibility, and rebuild-plan propagation.
+
+### Step 101 execution record: BrowserProvider compatibility rule catalog baseline
+
+Status: implemented as metadata-only provider compatibility rule evolution, not a runtime smoke, browser launcher, or provider-specific integration.
+
+`reverse_deepagent.browser.smoke` now exposes a serializable `BrowserProviderCompatibilityRule` catalog through `list_browser_provider_compatibility_rules()`. The existing `validate_browser_provider_capability_compatibility(...)` API keeps its compatibility fields while evaluating declarative rules and returning `rule_count`, `evaluated_rule_count`, and `evaluated_rules`. Browser provider matrix payloads now include `compatibility_rules` so doctor / CI output can show which metadata-only rules were used without invoking provider factories.
+
+The catalog preserves existing checks for debugger/CDP, persistent-context lifecycle, response body / request initiator / WebSocket frame capture, runtime eval transport, script source acquisition, CDP lifecycle, managed-browser launch, and capabilities-without-lifecycle. It also adds baseline rules for newer provider flags: humanized input and mobile emulation should expose Playwright or CDP page-control transport, extensions should have launch or persistent-context control, and provider-level proxy configuration should have launch control or a managed-browser service.
+
+Boundary: this is metadata validation only. It does not import optional browser SDKs, call provider factories for external plugins, probe CDP endpoints, start browsers, install hooks, collect Web artifacts, or touch Android / iOS / mini-program full runtime chains. Real third-party BrowserProvider plugins may still add provider-specific rules later when they introduce new capability flags.
+
+Tests cover rule catalog serialization, metadata matrix rule export, legacy compatibility errors, new humanize / mobile emulation / extension / proxy warnings, and side-effect-free matrix behavior.
