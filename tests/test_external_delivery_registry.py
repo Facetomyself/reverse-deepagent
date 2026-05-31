@@ -132,6 +132,7 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertTrue(metadata["supports_external_delivery"])
         self.assertFalse(metadata["review_only"])
         self.assertEqual(metadata["transport"], "github-release")
+        self.assertTrue(metadata["metadata"]["supports_existing_release_reuse"])
         provider = registry.create(
             "github-release-assets",
             repository="owner/repo",

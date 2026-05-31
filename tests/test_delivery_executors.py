@@ -148,6 +148,66 @@ class RecordingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
+class RecordingGitHubReleaseReuseHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def _record_request(self, body: bytes = b"") -> None:
+        self.__class__.requests.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
+        if self.path == "/repos/owner/repo/releases":
+            response = b'{"message":"already_exists","secret":"body-not-recorded"}'
+            self.send_response(422)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/existing?name="):
+            response = b'{"id":3,"secret":"upload-response-not-recorded"}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path == "/repos/owner/repo/releases/tags/v0-existing":
+            response = json.dumps(
+                {
+                    "id": 2,
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/existing{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
 class LocalDeliveryExecutorTests(TestCase):
     def test_dry_run_plans_local_delivery_without_writing_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1550,6 +1610,79 @@ class LocalDeliveryExecutorTests(TestCase):
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("ghp_local_secret", serialized_result)
             self.assertNotIn("Authorization", serialized_result)
+            self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_github_release_external_delivery_apply_can_reuse_existing_release_when_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseReuseHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseReuseHandler)
+            server.timeout = 5
+            thread = threading.Thread(
+                target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()]
+            )
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-reuse",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-existing",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_reuse_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "reuse_existing_release": True,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseReuseHandler.requests), 3)
+            create_request, lookup_request, upload_request = RecordingGitHubReleaseReuseHandler.requests
+            self.assertEqual(create_request["method"], "POST")
+            self.assertEqual(create_request["path"], "/repos/owner/repo/releases")
+            self.assertEqual(lookup_request["method"], "GET")
+            self.assertEqual(lookup_request["path"], "/repos/owner/repo/releases/tags/v0-existing")
+            self.assertEqual(upload_request["method"], "POST")
+            self.assertEqual(upload_request["path"], "/uploads/existing?name=reverse-delivery.json")
+            for request in (create_request, lookup_request, upload_request):
+                headers = {str(key).lower(): value for key, value in dict(request["headers"]).items()}
+                self.assertEqual(headers["authorization"], "Bearer ghp_reuse_secret")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["reuse_existing_release"])
+            self.assertTrue(metadata["release_request_attempted"])
+            self.assertEqual(metadata["release_status_code"], 422)
+            self.assertFalse(metadata["release_created"])
+            self.assertTrue(metadata["existing_release_lookup_attempted"])
+            self.assertTrue(metadata["existing_release_lookup_succeeded"])
+            self.assertTrue(metadata["existing_release_reused"])
+            self.assertEqual(metadata["existing_release_status_code"], 200)
+            self.assertEqual(
+                metadata["existing_release_api_url"],
+                f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/tags/v0-existing",
+            )
+            self.assertTrue(metadata["release_succeeded"])
+            self.assertTrue(metadata["upload_succeeded"])
+            self.assertEqual(metadata["upload_status_code"], 201)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_reuse_secret", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+            self.assertNotIn("upload-response-not-recorded", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
 
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:

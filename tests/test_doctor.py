@@ -306,6 +306,7 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(github_release["aliases"], ["gh-release", "github-release-assets"])
         self.assertTrue(github_release["supports_external_delivery"])
         self.assertEqual(github_release["transport"], "github-release")
+        self.assertTrue(github_release["metadata"]["supports_existing_release_reuse"])
         provider = by_provider["review-only"]
         self.assertEqual(provider["aliases"], ["noop", "manual-handoff"])
         self.assertFalse(provider["supports_external_delivery"])

@@ -786,6 +786,7 @@ class GitHubReleaseExternalDeliveryProvider:
     token: str | None = None
     api_base_url: str = "https://api.github.com"
     timeout_seconds: float = 10.0
+    reuse_existing_release: bool = False
     provider_id: str = "github-release"
 
     def deliver(
@@ -804,10 +805,17 @@ class GitHubReleaseExternalDeliveryProvider:
         asset_name = _safe_github_asset_name(self.asset_name or f"reverse-deepagent-{package.transaction_id}.json")
         api_base_url = _normalize_external_delivery_url(self.api_base_url).rstrip("/")
         release_api_url = f"{api_base_url}/repos/{owner}/{repo}/releases" if owner and repo else ""
+        existing_release_api_url = (
+            f"{api_base_url}/repos/{owner}/{repo}/releases/tags/{urllib.parse.quote(tag_name, safe='')}"
+            if owner and repo and tag_name
+            else ""
+        )
         redacted_release_api_url = _redact_url_for_metadata(release_api_url)
+        redacted_existing_release_api_url = _redact_url_for_metadata(existing_release_api_url)
         local_ready = not package.local_errors
         token_configured = bool(str(self.token or "").strip())
         api_scheme_supported = _http_scheme_supported(api_base_url)
+        reuse_existing_release = bool(self.reuse_existing_release)
         checks = [
             {
                 "name": "local_delivery_package_has_no_errors",
@@ -850,11 +858,17 @@ class GitHubReleaseExternalDeliveryProvider:
         request_body_digest = hashlib.sha256(request_body).hexdigest()
         release_status_code: int | None = None
         upload_status_code: int | None = None
+        existing_release_status_code: int | None = None
         release_error: str | None = None
+        existing_release_error: str | None = None
         upload_error: str | None = None
         upload_url_redacted: str | None = None
         release_request_attempted = False
+        existing_release_lookup_attempted = False
         upload_request_attempted = False
+        release_created = False
+        existing_release_lookup_succeeded = False
+        existing_release_reused = False
         release_succeeded = False
         upload_succeeded = False
         if dry_run:
@@ -870,16 +884,38 @@ class GitHubReleaseExternalDeliveryProvider:
                 tag_name=tag_name,
                 release_name=release_name,
             )
-            release_succeeded = bool(release_status_code is not None and 200 <= release_status_code < 300 and upload_url)
+            release_created = bool(release_status_code is not None and 200 <= release_status_code < 300 and upload_url)
+            release_succeeded = release_created
+            if not release_created and reuse_existing_release:
+                existing_release_lookup_attempted = True
+                existing_release_status_code, existing_upload_url, existing_release_error = self._get_release_by_tag(
+                    existing_release_api_url
+                )
+                existing_release_lookup_succeeded = bool(
+                    existing_release_status_code is not None
+                    and 200 <= existing_release_status_code < 300
+                    and existing_upload_url
+                )
+                if existing_release_lookup_succeeded and existing_upload_url:
+                    upload_url = existing_upload_url
+                    existing_release_reused = True
+                    release_succeeded = True
             checks.append(
                 {
-                    "name": "github_release_create_successful",
+                    "name": "github_release_available",
                     "passed": release_succeeded,
                     "details": {
                         "status_code": release_status_code,
                         "request_error": release_error,
                         "target_url": redacted_release_api_url,
                         "upload_url_present": bool(upload_url),
+                        "release_created": release_created,
+                        "reuse_existing_release": reuse_existing_release,
+                        "existing_release_lookup_attempted": existing_release_lookup_attempted,
+                        "existing_release_lookup_status_code": existing_release_status_code,
+                        "existing_release_lookup_error": existing_release_error,
+                        "existing_release_lookup_url": redacted_existing_release_api_url,
+                        "existing_release_reused": existing_release_reused,
                     },
                 }
             )
@@ -930,17 +966,24 @@ class GitHubReleaseExternalDeliveryProvider:
                 "release_name": release_name or None,
                 "asset_name": asset_name,
                 "release_api_url": redacted_release_api_url,
+                "existing_release_api_url": redacted_existing_release_api_url,
                 "upload_url": upload_url_redacted,
                 "api_query_redacted": _url_has_query(api_base_url),
                 "api_credentials_redacted": _url_has_credentials(api_base_url),
                 "request_method": "POST",
                 "request_body_digest_sha256": request_body_digest,
                 "request_body_bytes": len(request_body),
+                "reuse_existing_release": reuse_existing_release,
                 "release_request_attempted": release_request_attempted,
+                "existing_release_lookup_attempted": existing_release_lookup_attempted,
                 "upload_request_attempted": upload_request_attempted,
+                "release_created": release_created,
+                "existing_release_lookup_succeeded": existing_release_lookup_succeeded,
+                "existing_release_reused": existing_release_reused,
                 "release_succeeded": release_succeeded,
                 "upload_succeeded": upload_succeeded,
                 "release_status_code": release_status_code,
+                "existing_release_status_code": existing_release_status_code,
                 "upload_status_code": upload_status_code,
                 "response_body_recorded": False,
                 "response_headers_recorded": False,
@@ -951,9 +994,10 @@ class GitHubReleaseExternalDeliveryProvider:
                 "transport": "github-release",
                 "limitations": [
                     "github_release_json_asset_upload_baseline",
+                    "existing_release_reuse_requires_explicit_config",
                     "does_not_record_response_body_or_headers",
                     "does_not_retry_github_requests",
-                    "does_not_delete_or_overwrite_existing_release_assets",
+                    "does_not_detect_delete_or_overwrite_existing_release_assets",
                     "full_cross_run_transaction_state_machine_not_implemented",
                 ],
             },
@@ -983,6 +1027,18 @@ class GitHubReleaseExternalDeliveryProvider:
             separators=(",", ":"),
         ).encode("utf-8")
         request = urllib.request.Request(url, data=body, headers=self._request_headers(), method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
+                response_body = response.read()
+                upload_url = _github_upload_url_from_response_body(response_body)
+                return int(response.status), upload_url, None
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), None, None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return None, None, exc.__class__.__name__
+
+    def _get_release_by_tag(self, url: str) -> tuple[int | None, str | None, str | None]:
+        request = urllib.request.Request(url, headers=self._request_headers(), method="GET")
         try:
             with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
                 response_body = response.read()

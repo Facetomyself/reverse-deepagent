@@ -254,6 +254,7 @@ def github_release_external_delivery_provider_registration() -> ExternalDelivery
                 "publishes_externally": True,
                 "external_boundary": "github-release-asset",
                 "sends_http_post": True,
+                "supports_existing_release_reuse": True,
                 "records_response_body": False,
                 "records_response_headers": False,
                 "github_sdk_required": False,
