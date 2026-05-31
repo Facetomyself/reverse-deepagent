@@ -12,6 +12,7 @@ from reverse_deepagent.tools.delivery_tools import (
     make_delivery_resume_planner_tool,
     make_delivery_rollback_executor_tool,
     make_delivery_rollback_state_writer_tool,
+    make_delivery_transaction_lock_provider_tool,
     make_delivery_transition_executor_tool,
     make_local_delivery_executor_tool,
 )
@@ -130,6 +131,28 @@ class DeliveryToolTests(TestCase):
             self.assertTrue(result["transaction_lock_release"]["lock_removed"])
             self.assertFalse(lock_path.exists())
             self.assertTrue((delivery_root / "delivery-transaction-lock-release.json").exists())
+
+    def test_delivery_transaction_lock_provider_tool_apply_writes_provider_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool = make_delivery_transaction_lock_provider_tool(root / "delivery")
+
+            result = tool(
+                transaction_id="tx-tool-provider-lock",
+                owner="agent-a",
+                action="acquire_lock",
+                mode="apply",
+                metadata_json=json.dumps({"source": "delivery-tool-test"}),
+            )
+
+            self.assertEqual(result["status"], "acquired")
+            self.assertEqual(result["provider_id"], "local-file-lock")
+            self.assertTrue(result["lock_acquired"])
+            self.assertTrue(result["side_effect_policy"]["distributed_lock_contract"])
+            self.assertFalse(result["side_effect_policy"]["external_service_contacted"])
+            self.assertFalse(result["side_effect_policy"]["delivery_executed"])
+            self.assertTrue((root / "delivery" / "delivery-distributed-transaction-lock.json").exists())
+            self.assertTrue((root / "delivery" / "delivery-distributed-transaction-lock-operation.json").exists())
 
     def test_local_delivery_tool_can_commit_manifest_revision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -718,6 +741,7 @@ class DeliverySubagentToolTests(TestCase):
                     "execute_local_delivery",
                     "plan_delivery_resume",
                     "execute_delivery_resume",
+                    "manage_delivery_transaction_lock_provider",
                     "execute_delivery_transition",
                     "execute_delivery_recovery",
                     "write_delivery_rollback_state",

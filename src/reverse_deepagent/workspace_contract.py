@@ -354,6 +354,8 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_external_delivery_idempotency_ledger", "workspace/external-delivery-idempotency-ledger.json", "/workspace/delivery/", "external-delivery-idempotency-ledger.json", "export", ("delivery", "review")),
         ("workspace_delivery_transaction_lock", "workspace/delivery-transaction-lock.json", "/workspace/delivery/", "delivery-transaction-lock.json", "triage", ("delivery", "review")),
         ("workspace_delivery_transaction_lock_release", "workspace/delivery-transaction-lock-release.json", "/workspace/delivery/", "delivery-transaction-lock-release.json", "audit", ("delivery", "review")),
+        ("workspace_delivery_distributed_transaction_lock", "workspace/delivery-distributed-transaction-lock.json", "/workspace/delivery/", "delivery-distributed-transaction-lock.json", "triage", ("delivery", "review")),
+        ("workspace_delivery_distributed_transaction_lock_operation", "workspace/delivery-distributed-transaction-lock-operation.json", "/workspace/delivery/", "delivery-distributed-transaction-lock-operation.json", "audit", ("delivery", "review")),
         ("workspace_delivery_resume_plan", "workspace/delivery-resume-plan.json", "/workspace/delivery/", "delivery-resume-plan.json", "triage", ("delivery", "review")),
         ("workspace_delivery_resume_execution", "workspace/delivery-resume-execution.json", "/workspace/delivery/", "delivery-resume-execution.json", "triage", ("delivery", "review")),
         ("workspace_delivery_transaction_idempotency_guard", "workspace/delivery-transaction-idempotency-guard.json", "/workspace/delivery/", "delivery-transaction-idempotency-guard.json", "export", ("delivery", "review")),

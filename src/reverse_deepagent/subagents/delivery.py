@@ -9,6 +9,7 @@ from reverse_deepagent.tools.delivery_tools import (
     make_delivery_resume_planner_tool,
     make_delivery_resume_runner_tool,
     make_delivery_rollback_state_writer_tool,
+    make_delivery_transaction_lock_provider_tool,
     make_delivery_transition_executor_tool,
     make_local_delivery_executor_tool,
 )
@@ -34,6 +35,7 @@ def build_delivery_subagent(
             make_local_delivery_executor_tool(Path(artifact_root) / "delivery"),
             make_delivery_resume_planner_tool(Path(artifact_root) / "delivery"),
             make_delivery_resume_runner_tool(Path(artifact_root) / "delivery"),
+            make_delivery_transaction_lock_provider_tool(Path(artifact_root) / "delivery"),
             make_delivery_transition_executor_tool(Path(artifact_root) / "delivery"),
             make_delivery_recovery_executor_tool(Path(artifact_root) / "delivery"),
             make_delivery_rollback_state_writer_tool(Path(artifact_root) / "delivery"),

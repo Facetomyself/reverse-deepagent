@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,10 +18,12 @@ from reverse_deepagent.delivery import (
     DeliveryResumeRunner,
     DeliveryResumeRunnerConfig,
     DeliveryRollbackStateWriterConfig,
+    DeliveryTransactionLockProviderConfig,
     DeliveryTransactionRecoveryExecutor,
     DeliveryTransactionTransitionExecutor,
     DeliveryTransitionExecutorConfig,
     LocalDeliveryExecutor,
+    build_default_delivery_transaction_lock_provider_registry,
 )
 
 
@@ -237,6 +240,60 @@ def make_delivery_resume_runner_tool(default_delivery_root: str | Path) -> Deliv
         "It writes delivery-resume-execution.json only after explicit apply execution and never starts new delivery, publishes external delivery, or executes physical rollback."
     )
     return execute_delivery_resume
+
+
+def make_delivery_transaction_lock_provider_tool(default_lock_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for pluggable delivery transaction lock providers."""
+
+    root = Path(default_lock_root)
+
+    def manage_delivery_transaction_lock_provider(
+        transaction_id: str,
+        owner: str,
+        action: str = "inspect_lock",
+        lock_root: str | None = None,
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        lease_seconds: int = 900,
+        expected_owner: str | None = None,
+        expected_fencing_token: str | None = None,
+        approve_release: bool = False,
+        allow_stale_takeover: bool = False,
+        provider_id: str = "local-file-lock",
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Inspect, acquire, renew, or release a delivery transaction lock provider record."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        target_root = Path(lock_root) if lock_root else root
+        registry = build_default_delivery_transaction_lock_provider_registry()
+        provider = registry.create(provider_id)
+        config = DeliveryTransactionLockProviderConfig(
+            lock_root=target_root,
+            transaction_id=transaction_id,
+            owner=owner,
+            action=action,
+            mode=DeliveryExecutionMode(mode),
+            lease_seconds=lease_seconds,
+            expected_owner=expected_owner,
+            expected_fencing_token=expected_fencing_token,
+            approve_release=approve_release,
+            allow_stale_takeover=allow_stale_takeover,
+            metadata=metadata,
+        )
+        return provider.manage_lock(config, created_at=datetime.now(timezone.utc).isoformat()).to_dict()
+
+    manage_delivery_transaction_lock_provider.__name__ = "manage_delivery_transaction_lock_provider"
+    manage_delivery_transaction_lock_provider.__doc__ = (
+        "Inspect, acquire, renew, or release a pluggable delivery transaction lock provider record. "
+        "The default local-file-lock provider is a contract baseline that writes delivery-distributed-transaction-lock.json "
+        "and delivery-distributed-transaction-lock-operation.json only in apply mode. Dry-run is read-only. "
+        "This does not execute delivery, publish external delivery, mutate manifests, commit transactions, replace the existing "
+        "delivery-transaction-lock.json LocalDeliveryExecutor gate, contact external services, or provide distributed consensus by itself. "
+        "External providers can be discovered through the reverse_deepagent.delivery_lock_providers entry point group."
+    )
+    return manage_delivery_transaction_lock_provider
 
 
 def make_delivery_transition_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:

@@ -1,5 +1,20 @@
 from __future__ import annotations
 
+from .lock_provider import (
+    DELIVERY_LOCK_PROVIDER_ENTRY_POINT_GROUP,
+    SUPPORTED_DELIVERY_LOCK_PROVIDER_ACTIONS,
+    DeliveryTransactionLockOperation,
+    DeliveryTransactionLockProvider,
+    DeliveryTransactionLockProviderCapabilities,
+    DeliveryTransactionLockProviderConfig,
+    DeliveryTransactionLockProviderFactory,
+    DeliveryTransactionLockProviderRegistration,
+    DeliveryTransactionLockProviderRegistry,
+    LocalFileDeliveryTransactionLockProvider,
+    build_default_delivery_transaction_lock_provider_registry,
+    local_file_delivery_transaction_lock_provider_registration,
+    manage_delivery_transaction_lock,
+)
 from .resume_runner import (
     SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS,
     DeliveryResumeExecution,
@@ -98,6 +113,19 @@ from .state_machine import (
 )
 
 __all__ = [
+    "DELIVERY_LOCK_PROVIDER_ENTRY_POINT_GROUP",
+    "SUPPORTED_DELIVERY_LOCK_PROVIDER_ACTIONS",
+    "DeliveryTransactionLockOperation",
+    "DeliveryTransactionLockProvider",
+    "DeliveryTransactionLockProviderCapabilities",
+    "DeliveryTransactionLockProviderConfig",
+    "DeliveryTransactionLockProviderFactory",
+    "DeliveryTransactionLockProviderRegistration",
+    "DeliveryTransactionLockProviderRegistry",
+    "LocalFileDeliveryTransactionLockProvider",
+    "build_default_delivery_transaction_lock_provider_registry",
+    "local_file_delivery_transaction_lock_provider_registration",
+    "manage_delivery_transaction_lock",
     "SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS",
     "DeliveryResumeExecution",
     "DeliveryResumeRunner",
