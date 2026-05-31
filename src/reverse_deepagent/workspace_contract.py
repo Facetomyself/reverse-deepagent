@@ -165,7 +165,7 @@ def default_subagent_roles() -> tuple[SubagentRoleContract, ...]:
         SubagentRoleContract(
             role="browser_runtime",
             responsibility="Owns BrowserProvider lifecycle, provider capability discovery, and browser smoke evidence.",
-            current_status="planned-contract",
+            current_status="implemented",
             workspace_folders=("/workspace/browser/", "/workspace/runtime/"),
         ),
         SubagentRoleContract(
