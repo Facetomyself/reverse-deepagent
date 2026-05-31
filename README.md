@@ -203,11 +203,12 @@ agent = build_reverse_agent(
 
 ## DeepAgents workspace contract
 
-每次 deterministic pipeline 现在都会额外输出 `workspace/workspace-contract.json`，用于把 DeepAgents 子智能体、middleware checkpoint 和 workspace artifact 路由固化成机器可读契约。这个文件当前是 **indexed-only** baseline：
+每次 deterministic pipeline 现在都会额外输出 `workspace/workspace-contract.json`，用于把 DeepAgents 子智能体、middleware checkpoint 和 workspace artifact 路由固化成机器可读契约。这个文件当前保持 **indexed-only** contract，同时 `workspace/backend-artifact-manifest.json` 会为已登记 workspace artifact 提供 manifest-only foldered alias：
 
 - 现有 `workspace/*.json` 扁平 artifact 路径仍是 canonical path，不会被自动迁移。
-- `artifact_routes[].virtual_folder` 和 `artifact_routes[].future_path` 只表示后续虚拟文件夹组织目标。
-- 新增或调整 subagent、middleware、runtime artifact、hook artifact 时，必须同步 `workspace-contract.json` 的生成逻辑和测试。
+- `artifact_routes[].virtual_folder` 和 `artifact_routes[].future_path` 表示虚拟文件夹组织目标。
+- manifest entry 的 `metadata.workspace_alias` 会记录 `canonical_path`、`virtual_folder`、`future_path`、`virtual_uri`、`producer_roles` 和 `migration_status=manifest-alias-only`，让消费者可以先读取 `/workspace/<area>/...` 语义而不要求物理迁移。
+- 新增或调整 subagent、middleware、runtime artifact、hook artifact 时，必须同步 `workspace-contract.json` 的生成逻辑、manifest alias metadata 和测试。
 - 不得在没有 compatibility alias、manifest 覆盖和回归测试的情况下直接移动现有 artifact 路径。
 
 当前 contract 覆盖的虚拟协作区包括 `/workspace/recon/`、`/workspace/browser/`、`/workspace/debugger/`、`/workspace/hooks/`、`/workspace/timeline/`、`/workspace/rebuild/`、`/workspace/review/`、`/workspace/delivery/`、`/workspace/runtime/` 和 `/workspace/evidence/`。它把已实现角色 `coordinator`、`router`、`web_recon`、`protector`、`delivery` 与规划角色 `browser_runtime`、`debugger`、`hook`、`timeline`、`rebuild`、`review` 放在同一张表里，方便后续拆分更细的子智能体。

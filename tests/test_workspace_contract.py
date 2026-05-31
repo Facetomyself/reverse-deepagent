@@ -10,6 +10,8 @@ from reverse_deepagent.workspace_contract import (
     default_workspace_artifact_routes,
     default_workspace_folders,
     workspace_contract_payload,
+    workspace_manifest_alias_metadata,
+    workspace_virtual_uri,
 )
 
 
@@ -20,6 +22,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("indexed-only", encoded)
         self.assertEqual(payload["status"], "indexed-only")
         self.assertTrue(payload["path_migration_policy"]["existing_flat_workspace_paths_remain_canonical"])
+        self.assertTrue(payload["path_migration_policy"]["backend_manifest_includes_foldered_aliases"])
+        self.assertTrue(payload["path_migration_policy"]["foldered_aliases_are_manifest_only"])
         self.assertGreaterEqual(payload["artifact_route_count"], 20)
 
     def test_virtual_folders_include_deepagents_collaboration_areas(self) -> None:
@@ -98,6 +102,19 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/workspace-contract.json"].future_path, "/workspace/delivery/workspace-contract.json")
         self.assertTrue(all(item.migration_status == "indexed-only" for item in routes.values()))
 
+    def test_manifest_alias_metadata_indexes_foldered_virtual_paths_without_moving_files(self) -> None:
+        alias = workspace_manifest_alias_metadata("workspace_flow_timeline")["workspace_alias"]
+        self.assertEqual(alias["canonical_path"], "workspace/flow-timeline.json")
+        self.assertTrue(alias["canonical_path_remains_authoritative"])
+        self.assertEqual(alias["virtual_folder"], "/workspace/timeline/")
+        self.assertEqual(alias["future_path"], "/workspace/timeline/flow-timeline.json")
+        self.assertEqual(alias["virtual_uri"], "virtual://workspace/timeline/flow-timeline.json")
+        self.assertEqual(alias["migration_status"], "manifest-alias-only")
+        self.assertEqual(alias["route_migration_status"], "indexed-only")
+        self.assertIn("timeline", alias["producer_roles"])
+        self.assertEqual(workspace_virtual_uri("/workspace/review/review-gate.json"), "virtual://workspace/review/review-gate.json")
+        self.assertEqual(workspace_manifest_alias_metadata("non_workspace_report"), {})
+
     def test_web_pipeline_writes_workspace_contract_and_manifest_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output = run_reverse_pipeline(
@@ -116,6 +133,17 @@ class WorkspaceContractTests(unittest.TestCase):
             manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
             self.assertEqual(manifest_by_key["workspace_workspace_contract"]["category"], "workspace")
             self.assertEqual(manifest_by_key["workspace_workspace_contract"]["kind"], "json")
+            contract_alias = manifest_by_key["workspace_workspace_contract"]["metadata"]["workspace_alias"]
+            self.assertEqual(contract_alias["canonical_path"], "workspace/workspace-contract.json")
+            self.assertEqual(contract_alias["future_path"], "/workspace/delivery/workspace-contract.json")
+            self.assertEqual(contract_alias["virtual_uri"], "virtual://workspace/delivery/workspace-contract.json")
+            self.assertTrue(contract_alias["canonical_path_remains_authoritative"])
+            self.assertEqual(contract_alias["migration_status"], "manifest-alias-only")
+
+            task_alias = manifest_by_key["workspace_task_card"]["metadata"]["workspace_alias"]
+            self.assertEqual(task_alias["virtual_folder"], "/workspace/recon/")
+            self.assertEqual(task_alias["future_path"], "/workspace/recon/task-card.json")
+            self.assertEqual(Path(manifest_by_key["workspace_task_card"]["path"]).name, "task-card.json")
 
             index_path = Path(output.artifacts["index"])
             index = json.loads(index_path.read_text(encoding="utf-8"))
@@ -137,6 +165,12 @@ class WorkspaceContractTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
             self.assertEqual(manifest_by_key["workspace_workspace_contract"]["category"], "workspace")
+            contract_alias = manifest_by_key["workspace_workspace_contract"]["metadata"]["workspace_alias"]
+            self.assertEqual(contract_alias["future_path"], "/workspace/delivery/workspace-contract.json")
+            self.assertEqual(contract_alias["virtual_uri"], "virtual://workspace/delivery/workspace-contract.json")
+            probe_alias = manifest_by_key["workspace_platform_tool_probe"]["metadata"]["workspace_alias"]
+            self.assertEqual(probe_alias["virtual_folder"], "/workspace/runtime/")
+            self.assertEqual(probe_alias["future_path"], "/workspace/runtime/platform-tool-probe.json")
 
 
 if __name__ == "__main__":

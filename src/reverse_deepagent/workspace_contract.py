@@ -59,6 +59,18 @@ def _jsonable_dataclass_items(items: tuple[Any, ...]) -> list[dict[str, Any]]:
     return [asdict(item) for item in items]
 
 
+def workspace_virtual_uri(path: str) -> str:
+    """Return the stable virtual URI for a workspace path.
+
+    ``WorkspaceArtifactRoute.future_path`` uses a leading ``/workspace/...``
+    folder path for human readability. Runtime artifact refs historically use
+    ``virtual://workspace/...`` without the leading slash, so manifest aliases
+    keep that existing URI style.
+    """
+
+    return f"virtual://{path.lstrip('/')}"
+
+
 def default_workspace_folders() -> tuple[WorkspaceFolderContract, ...]:
     """Return the stable indexed-only virtual folder layout."""
 
@@ -323,6 +335,38 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
     )
 
 
+def workspace_artifact_routes_by_key() -> dict[str, WorkspaceArtifactRoute]:
+    """Return workspace artifact routes keyed by canonical artifact key."""
+
+    return {route.artifact_key: route for route in default_workspace_artifact_routes()}
+
+
+def workspace_manifest_alias_metadata(artifact_key: str) -> dict[str, Any]:
+    """Return manifest-only virtual folder alias metadata for an artifact.
+
+    Existing flat ``workspace/*.json`` paths remain canonical. The returned
+    metadata is an alias index that lets consumers discover the future
+    DeepAgents virtual folder path without requiring a physical path migration.
+    """
+
+    route = workspace_artifact_routes_by_key().get(artifact_key)
+    if route is None:
+        return {}
+    return {
+        "workspace_alias": {
+            "canonical_path": route.legacy_path,
+            "canonical_path_remains_authoritative": True,
+            "virtual_folder": route.virtual_folder,
+            "future_path": route.future_path,
+            "virtual_uri": workspace_virtual_uri(route.future_path),
+            "migration_status": "manifest-alias-only",
+            "route_migration_status": route.migration_status,
+            "category": route.category,
+            "producer_roles": list(route.producer_roles),
+        }
+    }
+
+
 def workspace_contract_payload() -> dict[str, Any]:
     """Return the current DeepAgents workspace contract as JSON-ready data."""
 
@@ -334,6 +378,8 @@ def workspace_contract_payload() -> dict[str, Any]:
             "existing_flat_workspace_paths_remain_canonical": True,
             "do_not_move_existing_artifacts_without_compatibility_aliases": True,
             "foldered_paths_are_future_targets": True,
+            "backend_manifest_includes_foldered_aliases": True,
+            "foldered_aliases_are_manifest_only": True,
         },
         "workspace_folders": _jsonable_dataclass_items(default_workspace_folders()),
         "subagent_roles": _jsonable_dataclass_items(default_subagent_roles()),

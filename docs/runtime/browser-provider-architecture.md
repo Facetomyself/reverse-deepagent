@@ -360,7 +360,7 @@ Cross-process live CDP paused execution continuation, arbitrary custom loader tr
 
 Current baseline emits:
 
-- `workspace/workspace-contract.json` with the indexed-only DeepAgents virtual folder, subagent role, middleware chain, and artifact route contract. Existing flat `workspace/*.json` artifact paths remain canonical; foldered paths are future migration targets only.
+- `workspace/workspace-contract.json` with the indexed-only DeepAgents virtual folder, subagent role, middleware chain, and artifact route contract. Existing flat `workspace/*.json` artifact paths remain canonical; `workspace/backend-artifact-manifest.json` now adds manifest-only `metadata.workspace_alias` records with foldered `/workspace/<area>/...` future paths and `virtual://workspace/<area>/...` URIs so consumers can adopt the virtual layout before any physical migration.
 - `workspace/function-candidates.json`
 - `workspace/function-validations.json`
 - `workspace/function-validation-summary.json`
@@ -392,7 +392,7 @@ Current implementation status:
 | BrowserProvider registry | Implemented | `src/reverse_deepagent/browser/registry.py` |
 | BrowserProvider smoke matrix / lifecycle | Baseline implemented | `src/reverse_deepagent/browser/smoke.py`, `tests/test_browser_smoke_matrix.py`; doctor supports `--browser-provider-matrix` without launching browsers or probing remote endpoints |
 | Native collectors | Baseline implemented | `src/reverse_deepagent/browser/collectors/` |
-| DeepAgents workspace contract | Indexed-only baseline implemented | `src/reverse_deepagent/workspace_contract.py`, `tests/test_workspace_contract.py`; emits `workspace/workspace-contract.json` without migrating existing flat workspace paths |
+| DeepAgents workspace contract | Indexed-only contract + manifest-only folder alias baseline implemented | `src/reverse_deepagent/workspace_contract.py`, `tests/test_workspace_contract.py`; emits `workspace/workspace-contract.json` and adds `metadata.workspace_alias` to backend manifest entries without migrating existing flat workspace paths |
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
 | CloakBrowser provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/cloakbrowser.py`, `docs/runtime/cloakbrowser-provider.md` |
 | Remote CDP provider | Implemented | `src/reverse_deepagent/browser/providers/remote_cdp.py`, `tests/test_remote_cdp_provider.py` |

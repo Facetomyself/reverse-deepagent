@@ -87,7 +87,7 @@ git fetch origin
 - coordinator 不应直接依赖 Playwright、CDP、CloakBrowser 或 MCP tool name。
 - 新增 runtime / provider / collector / hook / artifact schema 时，必须同步测试和文档。
 - DeepAgents workspace contract 由 `src/reverse_deepagent/workspace_contract.py` 维护；新增或改变 subagent role、middleware checkpoint、workspace artifact、manifest key 或虚拟文件夹规划时，必须同步 `tests/test_workspace_contract.py`、README / runtime docs，并保持 `workspace/workspace-contract.json` 输出。
-- `workspace/workspace-contract.json` 当前是 indexed-only baseline；现有扁平 `workspace/*.json` artifact 路径仍为 canonical path。没有 compatibility alias、manifest 覆盖和回归测试时，不得移动或重命名既有 artifact 路径。
+- `workspace/workspace-contract.json` 当前保持 indexed-only contract；现有扁平 `workspace/*.json` artifact 路径仍为 canonical path。`workspace/backend-artifact-manifest.json` 的 entry metadata 会为已登记 workspace artifact 提供 manifest-only `workspace_alias`，指向 `/workspace/<area>/...` foldered future path / `virtual://workspace/<area>/...` URI；没有 manifest alias、兼容覆盖和回归测试时，不得移动或重命名既有 artifact 路径。
 
 重点文件变更要求：
 

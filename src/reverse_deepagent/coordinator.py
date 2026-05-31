@@ -51,7 +51,7 @@ from reverse_deepagent.schemas import (
     TaskCard,
 )
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
-from reverse_deepagent.workspace_contract import workspace_contract_payload
+from reverse_deepagent.workspace_contract import workspace_contract_payload, workspace_manifest_alias_metadata
 
 class ReversePipelineOutput(SchemaBaseModel):
     """Complete result returned by the deterministic coordinator pipeline."""
@@ -872,7 +872,7 @@ def _build_backend_artifact_manifest(
             producer_transport=capabilities.transport,
             target_platforms=capabilities.target_platforms,
             description=_artifact_description_from_key(key),
-            metadata=_artifact_manifest_entry_metadata(capabilities, path),
+            metadata=_artifact_manifest_entry_metadata(capabilities, key, path),
         )
         for key, path in sorted(output_paths.items())
     ]
@@ -953,8 +953,9 @@ ARTIFACT_CATEGORY_BY_KEY = {
 }
 
 
-def _artifact_manifest_entry_metadata(capabilities: RuntimeBackendCapabilities, path: str) -> dict[str, Any]:
+def _artifact_manifest_entry_metadata(capabilities: RuntimeBackendCapabilities, artifact_key: str, path: str) -> dict[str, Any]:
     metadata: dict[str, Any] = {"path_style": "virtual" if path.startswith("virtual://") else "filesystem"}
+    metadata.update(workspace_manifest_alias_metadata(artifact_key))
     provider = capabilities.config.get("provider") if isinstance(capabilities.config, dict) else None
     if isinstance(provider, dict):
         provider_id = provider.get("provider_id")
