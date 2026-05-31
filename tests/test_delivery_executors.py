@@ -100,6 +100,12 @@ class RetryingWebhookHandler(http.server.BaseHTTPRequestHandler):
         )
         if len(self.__class__.requests) == 1:
             self.send_response(503)
+            self.send_header("Retry-After", "2")
+            self.send_header("X-RateLimit-Limit", "60")
+            self.send_header("X-RateLimit-Remaining", "0")
+            self.send_header("X-RateLimit-Reset", "1234567890")
+            self.send_header("X-RateLimit-Used", "60")
+            self.send_header("X-RateLimit-Resource", "webhook")
             self.end_headers()
             return
         self.send_response(204)
@@ -176,6 +182,86 @@ class RecordingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         self._record_request()
         if self.path.startswith("/repos/owner/repo/releases/1/assets"):
+            response = b"[]"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
+class RetryingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def _record_request(self, body: bytes = b"") -> None:
+        self.__class__.requests.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
+        release_request_count = sum(
+            1
+            for request in self.__class__.requests
+            if request.get("method") == "POST" and request.get("path") == "/repos/owner/repo/releases"
+        )
+        if self.path == "/repos/owner/repo/releases" and release_request_count == 1:
+            response = b'{"message":"secondary rate limit","secret":"body-not-recorded"}'
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.send_header("Retry-After", "3")
+            self.send_header("X-RateLimit-Limit", "5000")
+            self.send_header("X-RateLimit-Remaining", "0")
+            self.send_header("X-RateLimit-Reset", "1234567891")
+            self.send_header("X-RateLimit-Used", "5000")
+            self.send_header("X-RateLimit-Resource", "core")
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path == "/repos/owner/repo/releases":
+            response = json.dumps(
+                {
+                    "id": 9,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/9/assets?asset_query=hidden",
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/retry{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/retry?name="):
+            response = b'{"id":10}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path.startswith("/repos/owner/repo/releases/9/assets"):
             response = b"[]"
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -1600,8 +1686,18 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(metadata["response_status_code"], 204)
             self.assertEqual(metadata["request_attempts"][0]["status_code"], 503)
             self.assertTrue(metadata["request_attempts"][0]["will_retry"])
+            self.assertEqual(metadata["request_attempts"][0]["retry_after_seconds"], 2)
+            self.assertTrue(metadata["request_attempts"][0]["retry_after_seen"])
+            self.assertFalse(metadata["request_attempts"][0]["retry_after_honored"])
+            self.assertEqual(metadata["request_attempts"][0]["planned_retry_delay_seconds"], 0.0)
+            self.assertEqual(metadata["request_attempts"][0]["rate_limit"]["remaining"], 0)
+            self.assertEqual(metadata["request_attempts"][0]["rate_limit"]["resource"], "webhook")
             self.assertEqual(metadata["request_attempts"][1]["status_code"], 204)
             self.assertFalse(metadata["request_attempts"][1]["will_retry"])
+            self.assertTrue(metadata["request_retry_summary"]["retry_after_seen"])
+            self.assertFalse(metadata["request_retry_summary"]["retry_after_honored"])
+            self.assertTrue(metadata["request_retry_summary"]["rate_limit_seen"])
+            self.assertFalse(metadata["request_retry_summary"]["headers_recorded"])
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("retry-secret", serialized_result)
             self.assertNotIn("query_secret=redacted", serialized_result)
@@ -1610,7 +1706,12 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(attempt_summary["attempt_count"], 2)
             self.assertEqual(attempt_summary["retry_count"], 1)
             self.assertEqual(attempt_summary["stages"][0]["stage"], "request")
+            self.assertTrue(attempt_summary["retry_after_seen"])
+            self.assertTrue(attempt_summary["rate_limit_seen"])
+            self.assertFalse(attempt_summary["headers_recorded"])
             self.assertEqual(attempt_summary["stages"][0]["attempts"][0]["status_code"], 503)
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][0]["retry_after_seconds"], 2)
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][0]["rate_limit"]["limit"], 60)
             self.assertEqual(attempt_summary["stages"][0]["attempts"][1]["status_code"], 204)
             serialized_ledger = json.dumps(ledger, ensure_ascii=False)
             self.assertNotIn("retry-secret", serialized_ledger)
@@ -1854,6 +1955,78 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertNotIn("Authorization", serialized_result)
             self.assertNotIn("asset_query=hidden", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_github_release_external_delivery_records_retry_after_and_rate_limit_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RetryingGitHubReleaseHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RetryingGitHubReleaseHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-retry-rate-limit",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-retry",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_retry_rate_limit_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "timeout_seconds": 5,
+                            "retry_attempts": 1,
+                            "retry_backoff_seconds": 0,
+                            "retry_jitter_seconds": 0,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RetryingGitHubReleaseHandler.requests), 4)
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertEqual(metadata["release_request_attempt_count"], 2)
+            self.assertEqual(metadata["release_request_retry_count"], 1)
+            self.assertEqual(metadata["release_request_attempts"][0]["status_code"], 429)
+            self.assertEqual(metadata["release_request_attempts"][0]["retry_after_seconds"], 3)
+            self.assertTrue(metadata["release_request_attempts"][0]["retry_after_seen"])
+            self.assertFalse(metadata["release_request_attempts"][0]["retry_after_honored"])
+            self.assertEqual(metadata["release_request_attempts"][0]["planned_retry_delay_seconds"], 0.0)
+            self.assertEqual(metadata["release_request_attempts"][0]["rate_limit"]["limit"], 5000)
+            self.assertEqual(metadata["release_request_attempts"][0]["rate_limit"]["remaining"], 0)
+            self.assertEqual(metadata["release_request_attempts"][0]["rate_limit"]["resource"], "core")
+            self.assertEqual(metadata["release_request_attempts"][1]["status_code"], 201)
+            self.assertTrue(metadata["release_request_retry_summary"]["retry_after_seen"])
+            self.assertTrue(metadata["release_request_retry_summary"]["rate_limit_seen"])
+            self.assertFalse(metadata["release_request_retry_summary"]["headers_recorded"])
+            self.assertEqual(metadata["retry_jitter_seconds"], 0.0)
+            self.assertTrue(metadata["honor_retry_after"])
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            attempt_summary = ledger["entries"][0]["attempt_summary"]
+            self.assertTrue(attempt_summary["retry_after_seen"])
+            self.assertTrue(attempt_summary["rate_limit_seen"])
+            release_stage = next(stage for stage in attempt_summary["stages"] if stage["stage"] == "release_request")
+            self.assertEqual(release_stage["attempts"][0]["retry_after_seconds"], 3)
+            self.assertEqual(release_stage["attempts"][0]["rate_limit"]["used"], 5000)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            serialized_ledger = json.dumps(ledger, ensure_ascii=False)
+            self.assertNotIn("ghp_retry_rate_limit_secret", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+            self.assertNotIn("ghp_retry_rate_limit_secret", serialized_ledger)
+            self.assertNotIn("body-not-recorded", serialized_ledger)
 
     def test_github_release_external_delivery_apply_can_reuse_existing_release_when_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

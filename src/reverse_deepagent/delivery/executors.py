@@ -26,6 +26,9 @@ class ExternalDeliveryHttpRequestResult:
     status_code: int | None
     error: str | None
     attempts: list[dict[str, Any]]
+    retry_after_honored: bool = False
+    retry_after_seen: bool = False
+    retry_budget_exhausted: bool = False
     body: bytes = b""
 
     @property
@@ -530,6 +533,8 @@ class WebhookExternalDeliveryProvider:
     timeout_seconds: float = 10.0
     retry_attempts: int = 0
     retry_backoff_seconds: float = 0.0
+    retry_jitter_seconds: float = 0.0
+    honor_retry_after: bool = True
     retry_status_codes: tuple[int, ...] = DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
     provider_id: str = "webhook"
 
@@ -640,6 +645,7 @@ class WebhookExternalDeliveryProvider:
                 "request_attempt_count": len(request_attempts),
                 "request_retry_count": max(0, len(request_attempts) - 1),
                 "request_attempts": request_attempts,
+                "request_retry_summary": _http_attempts_policy_summary(request_attempts),
                 "request_succeeded": request_succeeded,
                 "response_status_code": response_status_code,
                 "response_body_recorded": False,
@@ -650,6 +656,8 @@ class WebhookExternalDeliveryProvider:
                 "retry_enabled": _coerce_retry_attempts(self.retry_attempts) > 0,
                 "retry_attempts_configured": _coerce_retry_attempts(self.retry_attempts),
                 "retry_backoff_seconds": _coerce_retry_backoff_seconds(self.retry_backoff_seconds),
+                "retry_jitter_seconds": _coerce_retry_jitter_seconds(self.retry_jitter_seconds),
+                "honor_retry_after": bool(self.honor_retry_after),
                 "retry_status_codes": list(_coerce_retry_status_codes(self.retry_status_codes)),
                 "automatic_delivery": False,
                 "publishes_externally": True,
@@ -680,6 +688,8 @@ class WebhookExternalDeliveryProvider:
             retry_attempts=self.retry_attempts,
             retry_status_codes=self.retry_status_codes,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            retry_jitter_seconds=self.retry_jitter_seconds,
+            honor_retry_after=self.honor_retry_after,
         )
 
 
@@ -701,6 +711,8 @@ class PresignedObjectExternalDeliveryProvider:
     timeout_seconds: float = 10.0
     retry_attempts: int = 0
     retry_backoff_seconds: float = 0.0
+    retry_jitter_seconds: float = 0.0
+    honor_retry_after: bool = True
     retry_status_codes: tuple[int, ...] = DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
     provider_id: str = "presigned-object"
 
@@ -819,6 +831,7 @@ class PresignedObjectExternalDeliveryProvider:
                 "request_attempt_count": len(request_attempts),
                 "request_retry_count": max(0, len(request_attempts) - 1),
                 "request_attempts": request_attempts,
+                "request_retry_summary": _http_attempts_policy_summary(request_attempts),
                 "request_succeeded": request_succeeded,
                 "response_status_code": response_status_code,
                 "response_body_recorded": False,
@@ -830,6 +843,8 @@ class PresignedObjectExternalDeliveryProvider:
                 "retry_enabled": _coerce_retry_attempts(self.retry_attempts) > 0,
                 "retry_attempts_configured": _coerce_retry_attempts(self.retry_attempts),
                 "retry_backoff_seconds": _coerce_retry_backoff_seconds(self.retry_backoff_seconds),
+                "retry_jitter_seconds": _coerce_retry_jitter_seconds(self.retry_jitter_seconds),
+                "honor_retry_after": bool(self.honor_retry_after),
                 "retry_status_codes": list(_coerce_retry_status_codes(self.retry_status_codes)),
                 "automatic_delivery": False,
                 "publishes_externally": True,
@@ -861,6 +876,8 @@ class PresignedObjectExternalDeliveryProvider:
             retry_attempts=self.retry_attempts,
             retry_status_codes=self.retry_status_codes,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            retry_jitter_seconds=self.retry_jitter_seconds,
+            honor_retry_after=self.honor_retry_after,
         )
 
 
@@ -889,6 +906,8 @@ class GitHubReleaseExternalDeliveryProvider:
     expected_existing_asset_id: str | int | None = None
     retry_attempts: int = 0
     retry_backoff_seconds: float = 0.0
+    retry_jitter_seconds: float = 0.0
+    honor_retry_after: bool = True
     retry_status_codes: tuple[int, ...] = DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
     provider_id: str = "github-release"
 
@@ -1252,22 +1271,27 @@ class GitHubReleaseExternalDeliveryProvider:
                 "release_request_attempt_count": len(release_request_attempts),
                 "release_request_retry_count": max(0, len(release_request_attempts) - 1),
                 "release_request_attempts": release_request_attempts,
+                "release_request_retry_summary": _http_attempts_policy_summary(release_request_attempts),
                 "existing_release_lookup_attempted": existing_release_lookup_attempted,
                 "existing_release_lookup_attempt_count": len(existing_release_lookup_attempts),
                 "existing_release_lookup_retry_count": max(0, len(existing_release_lookup_attempts) - 1),
                 "existing_release_lookup_attempts": existing_release_lookup_attempts,
+                "existing_release_lookup_retry_summary": _http_attempts_policy_summary(existing_release_lookup_attempts),
                 "asset_lookup_attempted": asset_lookup_attempted,
                 "asset_lookup_attempt_count": len(asset_lookup_attempts),
                 "asset_lookup_retry_count": max(0, len(asset_lookup_attempts) - 1),
                 "asset_lookup_attempts": asset_lookup_attempts,
+                "asset_lookup_retry_summary": _http_attempts_policy_summary(asset_lookup_attempts),
                 "existing_asset_delete_request_attempted": existing_asset_delete_request_attempted,
                 "existing_asset_delete_attempt_count": len(existing_asset_delete_attempts),
                 "existing_asset_delete_retry_count": max(0, len(existing_asset_delete_attempts) - 1),
                 "existing_asset_delete_attempts": existing_asset_delete_attempts,
+                "existing_asset_delete_retry_summary": _http_attempts_policy_summary(existing_asset_delete_attempts),
                 "upload_request_attempted": upload_request_attempted,
                 "upload_request_attempt_count": len(upload_request_attempts),
                 "upload_request_retry_count": max(0, len(upload_request_attempts) - 1),
                 "upload_request_attempts": upload_request_attempts,
+                "upload_request_retry_summary": _http_attempts_policy_summary(upload_request_attempts),
                 "release_created": release_created,
                 "existing_release_lookup_succeeded": existing_release_lookup_succeeded,
                 "existing_release_reused": existing_release_reused,
@@ -1296,6 +1320,8 @@ class GitHubReleaseExternalDeliveryProvider:
                 "retry_enabled": _coerce_retry_attempts(self.retry_attempts) > 0,
                 "retry_attempts_configured": _coerce_retry_attempts(self.retry_attempts),
                 "retry_backoff_seconds": _coerce_retry_backoff_seconds(self.retry_backoff_seconds),
+                "retry_jitter_seconds": _coerce_retry_jitter_seconds(self.retry_jitter_seconds),
+                "honor_retry_after": bool(self.honor_retry_after),
                 "retry_status_codes": list(_coerce_retry_status_codes(self.retry_status_codes)),
                 "automatic_delivery": False,
                 "publishes_externally": True,
@@ -1343,6 +1369,8 @@ class GitHubReleaseExternalDeliveryProvider:
             retry_attempts=self.retry_attempts,
             retry_status_codes=self.retry_status_codes,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            retry_jitter_seconds=self.retry_jitter_seconds,
+            honor_retry_after=self.honor_retry_after,
             read_response_body=True,
         )
         upload_url, assets_url = _github_release_urls_from_response_body(result.body)
@@ -1355,6 +1383,8 @@ class GitHubReleaseExternalDeliveryProvider:
             retry_attempts=self.retry_attempts,
             retry_status_codes=self.retry_status_codes,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            retry_jitter_seconds=self.retry_jitter_seconds,
+            honor_retry_after=self.honor_retry_after,
             read_response_body=True,
         )
         upload_url, assets_url = _github_release_urls_from_response_body(result.body)
@@ -1369,6 +1399,8 @@ class GitHubReleaseExternalDeliveryProvider:
             retry_attempts=self.retry_attempts,
             retry_status_codes=self.retry_status_codes,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            retry_jitter_seconds=self.retry_jitter_seconds,
+            honor_retry_after=self.honor_retry_after,
             read_response_body=True,
         )
         exists, count, existing_asset, existing_asset_delete_url = _github_asset_lookup_from_response_body(result.body, asset_name)
@@ -1387,6 +1419,8 @@ class GitHubReleaseExternalDeliveryProvider:
             retry_attempts=self.retry_attempts,
             retry_status_codes=self.retry_status_codes,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            retry_jitter_seconds=self.retry_jitter_seconds,
+            honor_retry_after=self.honor_retry_after,
         )
         return result.status_code, result.attempts, result.error
 
@@ -1402,6 +1436,8 @@ class GitHubReleaseExternalDeliveryProvider:
             retry_attempts=self.retry_attempts,
             retry_status_codes=self.retry_status_codes,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            retry_jitter_seconds=self.retry_jitter_seconds,
+            honor_retry_after=self.honor_retry_after,
         )
         return result.status_code, result.attempts, result.error
 
@@ -3772,6 +3808,42 @@ def _external_delivery_provider_factory_invoked(metadata: dict[str, Any]) -> boo
     return None
 
 
+def _http_attempts_policy_summary(attempts: Any) -> dict[str, Any]:
+    safe_attempts = [item for item in attempts if isinstance(item, dict)] if isinstance(attempts, list) else []
+    retry_count = sum(1 for item in safe_attempts if bool(item.get("will_retry")))
+    retry_after_seen = any(bool(item.get("retry_after_seen")) for item in safe_attempts)
+    retry_after_honored = any(bool(item.get("retry_after_honored")) for item in safe_attempts)
+    retry_budget_exhausted = any(
+        bool(item.get("retryable")) and not bool(item.get("will_retry"))
+        for item in safe_attempts[-1:]
+    )
+    rate_limit_seen = any(
+        isinstance(item.get("rate_limit"), dict) and bool(item.get("rate_limit", {}).get("headers_present"))
+        for item in safe_attempts
+    )
+    planned_retry_delay_seconds_total = 0.0
+    max_planned_retry_delay_seconds = 0.0
+    jitter_seconds_configured = 0.0
+    for item in safe_attempts:
+        planned_delay = _float_or_default(item.get("planned_retry_delay_seconds"), 0.0)
+        planned_retry_delay_seconds_total += planned_delay
+        max_planned_retry_delay_seconds = max(max_planned_retry_delay_seconds, planned_delay)
+        jitter_seconds_configured = max(jitter_seconds_configured, _float_or_default(item.get("jitter_seconds_configured"), 0.0))
+    return {
+        "attempt_count": len(safe_attempts),
+        "retry_count": retry_count,
+        "retry_after_seen": retry_after_seen,
+        "retry_after_honored": retry_after_honored,
+        "retry_budget_exhausted": retry_budget_exhausted,
+        "rate_limit_seen": rate_limit_seen,
+        "planned_retry_delay_seconds_total": planned_retry_delay_seconds_total,
+        "max_planned_retry_delay_seconds": max_planned_retry_delay_seconds,
+        "jitter_seconds_configured": jitter_seconds_configured,
+        "headers_recorded": False,
+        "response_body_recorded": False,
+    }
+
+
 def _external_delivery_attempt_summary(result: ExternalDeliveryResult) -> dict[str, Any]:
     metadata = result.metadata if isinstance(result.metadata, dict) else {}
     stages: list[dict[str, Any]] = []
@@ -3809,6 +3881,10 @@ def _external_delivery_attempt_summary(result: ExternalDeliveryResult) -> dict[s
         "stage_count": len(stages),
         "stages": stages,
         "attempt_metadata_recorded": bool(stages),
+        "retry_after_seen": any(bool(stage.get("retry_after_seen")) for stage in stages),
+        "retry_after_honored": any(bool(stage.get("retry_after_honored")) for stage in stages),
+        "retry_budget_exhausted": any(bool(stage.get("retry_budget_exhausted")) for stage in stages),
+        "rate_limit_seen": any(bool(stage.get("rate_limit_seen")) for stage in stages),
         "headers_recorded": False,
         "response_body_recorded": False,
     }
@@ -3832,6 +3908,12 @@ def _external_delivery_attempt_stage(
                     "error": item.get("error"),
                     "retryable": bool(item.get("retryable")),
                     "will_retry": bool(item.get("will_retry")),
+                    "retry_after_seconds": item.get("retry_after_seconds"),
+                    "retry_after_seen": bool(item.get("retry_after_seen")),
+                    "retry_after_honored": bool(item.get("retry_after_honored")),
+                    "planned_retry_delay_seconds": _float_or_default(item.get("planned_retry_delay_seconds"), 0.0),
+                    "jitter_seconds_configured": _float_or_default(item.get("jitter_seconds_configured"), 0.0),
+                    "rate_limit": _safe_rate_limit_summary(item.get("rate_limit")),
                 }
             )
     return {
@@ -3839,7 +3921,44 @@ def _external_delivery_attempt_stage(
         "attempt_count": _int_or_len(attempt_count, safe_attempts),
         "retry_count": _int_or_default(retry_count, max(0, len(safe_attempts) - 1)),
         "attempts": safe_attempts,
+        "retry_after_seen": any(bool(item.get("retry_after_seen")) for item in safe_attempts),
+        "retry_after_honored": any(bool(item.get("retry_after_honored")) for item in safe_attempts),
+        "retry_budget_exhausted": any(
+            bool(item.get("retryable")) and not bool(item.get("will_retry"))
+            for item in safe_attempts[-1:]
+        ),
+        "rate_limit_seen": any(bool(item.get("rate_limit", {}).get("headers_present")) for item in safe_attempts),
     }
+
+
+def _safe_rate_limit_summary(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return _empty_rate_limit_summary()
+    return {
+        "headers_present": bool(value.get("headers_present")),
+        "limit": _optional_int(value.get("limit")),
+        "remaining": _optional_int(value.get("remaining")),
+        "reset_epoch": _optional_int(value.get("reset_epoch")),
+        "used": _optional_int(value.get("used")),
+        "resource": str(value.get("resource")) if value.get("resource") is not None else None,
+        "retry_after_seconds": _optional_int(value.get("retry_after_seconds")),
+    }
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _float_or_default(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _int_or_len(value: Any, items: list[Any]) -> int:
@@ -3889,6 +4008,14 @@ def _coerce_retry_backoff_seconds(value: Any) -> float:
     return max(0.0, min(seconds, 30.0))
 
 
+def _coerce_retry_jitter_seconds(value: Any) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(seconds, 5.0))
+
+
 def _coerce_retry_status_codes(value: Any) -> tuple[int, ...]:
     if value is None:
         return DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
@@ -3910,6 +4037,98 @@ def _coerce_retry_status_codes(value: Any) -> tuple[int, ...]:
     return tuple(status_codes) if status_codes else DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
 
 
+def _retry_after_seconds_from_headers(headers: Any) -> int | None:
+    value = _header_value(headers, "Retry-After")
+    if value is None:
+        return None
+    try:
+        seconds = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(seconds, 3600))
+
+
+def _header_value(headers: Any, name: str) -> str | None:
+    if headers is None:
+        return None
+    try:
+        value = headers.get(name)
+    except AttributeError:
+        value = None
+    if value is None:
+        try:
+            value = headers.get(name.lower())
+        except AttributeError:
+            value = None
+    if value is None:
+        return None
+    return str(value)
+
+
+def _empty_rate_limit_summary() -> dict[str, Any]:
+    return {
+        "headers_present": False,
+        "limit": None,
+        "remaining": None,
+        "reset_epoch": None,
+        "used": None,
+        "resource": None,
+        "retry_after_seconds": None,
+    }
+
+
+def _rate_limit_summary_from_headers(headers: Any) -> dict[str, Any]:
+    summary = _empty_rate_limit_summary()
+    limit = _int_header(headers, "X-RateLimit-Limit")
+    remaining = _int_header(headers, "X-RateLimit-Remaining")
+    reset_epoch = _int_header(headers, "X-RateLimit-Reset")
+    used = _int_header(headers, "X-RateLimit-Used")
+    resource = _header_value(headers, "X-RateLimit-Resource")
+    retry_after_seconds = _retry_after_seconds_from_headers(headers)
+    headers_present = any(
+        value is not None
+        for value in (limit, remaining, reset_epoch, used, resource, retry_after_seconds)
+    )
+    summary.update(
+        {
+            "headers_present": headers_present,
+            "limit": limit,
+            "remaining": remaining,
+            "reset_epoch": reset_epoch,
+            "used": used,
+            "resource": resource,
+            "retry_after_seconds": retry_after_seconds,
+        }
+    )
+    return summary
+
+
+def _int_header(headers: Any, name: str) -> int | None:
+    value = _header_value(headers, name)
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _planned_retry_delay_seconds(
+    *,
+    attempt_number: int,
+    backoff_seconds: float,
+    retry_after_seconds: int | None,
+    honor_retry_after: bool,
+    jitter_seconds: float,
+) -> float:
+    exponential_backoff = backoff_seconds * (2 ** (attempt_number - 1)) if backoff_seconds > 0 else 0.0
+    retry_after_delay = float(retry_after_seconds or 0) if honor_retry_after else 0.0
+    base_delay = max(exponential_backoff, retry_after_delay) if exponential_backoff > 0 else 0.0
+    if base_delay <= 0:
+        return 0.0
+    return min(3600.0, base_delay + jitter_seconds)
+
+
 def _http_request_with_retries(
     request_factory: Any,
     *,
@@ -3917,31 +4136,61 @@ def _http_request_with_retries(
     retry_attempts: Any = 0,
     retry_status_codes: Any = None,
     retry_backoff_seconds: Any = 0.0,
+    honor_retry_after: Any = True,
+    retry_jitter_seconds: Any = 0.0,
     read_response_body: bool = False,
 ) -> ExternalDeliveryHttpRequestResult:
     max_retries = _coerce_retry_attempts(retry_attempts)
     retryable_status_codes = set(_coerce_retry_status_codes(retry_status_codes))
     backoff_seconds = _coerce_retry_backoff_seconds(retry_backoff_seconds)
+    jitter_seconds = _coerce_retry_jitter_seconds(retry_jitter_seconds)
+    honor_retry_after_flag = bool(honor_retry_after)
     total_attempts = max_retries + 1
     attempts: list[dict[str, Any]] = []
     final_status_code: int | None = None
     final_error: str | None = None
     final_body = b""
+    retry_after_seen = False
+    retry_after_honored = False
+    retry_budget_exhausted = False
     for attempt_number in range(1, total_attempts + 1):
         status_code: int | None = None
         error: str | None = None
         body = b""
+        retry_after_seconds: int | None = None
+        rate_limit_summary: dict[str, Any] = _empty_rate_limit_summary()
         try:
             request = request_factory()
             with urllib.request.urlopen(request, timeout=float(timeout_seconds)) as response:
                 body = response.read() if read_response_body else response.read(0)
                 status_code = int(response.status)
+                retry_after_seconds = _retry_after_seconds_from_headers(response.headers)
+                rate_limit_summary = _rate_limit_summary_from_headers(response.headers)
         except urllib.error.HTTPError as exc:
             status_code = int(exc.code)
+            retry_after_seconds = _retry_after_seconds_from_headers(exc.headers)
+            rate_limit_summary = _rate_limit_summary_from_headers(exc.headers)
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             error = exc.__class__.__name__
         retryable = bool(error or (status_code in retryable_status_codes))
         will_retry = retryable and attempt_number < total_attempts
+        retry_after_seen = retry_after_seen or retry_after_seconds is not None
+        planned_delay_seconds = _planned_retry_delay_seconds(
+            attempt_number=attempt_number,
+            backoff_seconds=backoff_seconds,
+            retry_after_seconds=retry_after_seconds,
+            honor_retry_after=honor_retry_after_flag,
+            jitter_seconds=jitter_seconds,
+        ) if will_retry else 0.0
+        retry_after_honored_this_attempt = bool(
+            will_retry
+            and honor_retry_after_flag
+            and retry_after_seconds is not None
+            and planned_delay_seconds > 0
+            and planned_delay_seconds >= float(retry_after_seconds)
+        )
+        retry_after_honored = retry_after_honored or retry_after_honored_this_attempt
+        retry_budget_exhausted = bool(retryable and not will_retry and attempt_number >= total_attempts)
         attempts.append(
             {
                 "attempt": attempt_number,
@@ -3949,6 +4198,12 @@ def _http_request_with_retries(
                 "error": error,
                 "retryable": retryable,
                 "will_retry": will_retry,
+                "retry_after_seconds": retry_after_seconds,
+                "retry_after_seen": retry_after_seconds is not None,
+                "retry_after_honored": retry_after_honored_this_attempt,
+                "planned_retry_delay_seconds": planned_delay_seconds,
+                "jitter_seconds_configured": jitter_seconds,
+                "rate_limit": rate_limit_summary,
             }
         )
         final_status_code = status_code
@@ -3956,12 +4211,15 @@ def _http_request_with_retries(
         final_body = body
         if not will_retry:
             break
-        if backoff_seconds > 0:
-            time.sleep(backoff_seconds * (2 ** (attempt_number - 1)))
+        if planned_delay_seconds > 0:
+            time.sleep(planned_delay_seconds)
     return ExternalDeliveryHttpRequestResult(
         status_code=final_status_code,
         error=final_error,
         attempts=attempts,
+        retry_after_honored=retry_after_honored,
+        retry_after_seen=retry_after_seen,
+        retry_budget_exhausted=retry_budget_exhausted,
         body=final_body,
     )
 
