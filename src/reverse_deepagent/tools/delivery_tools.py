@@ -91,8 +91,9 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "apply_backend_manifest_recovery restores the source backend manifest from the local rollback checkpoint only when recovery preflight and digest checks pass. "
         "commit_cross_run_transaction writes a local backend-artifact-manifest-transaction-commit.json record and updates the prior journal only when recovery preflight and digest checks pass. "
         "request_external_delivery invokes the configured ExternalDeliveryProvider contract; the built-in review-only provider writes a blocked handoff record and never publishes externally, "
-        "while local-archive/filesystem-release can copy delivered files into a configured local archive root after apply. "
-        "external_delivery_provider_config_json passes provider-specific JSON options such as {\"archive_root\": \"...\"}. "
+        "local-archive/filesystem-release can copy delivered files into a configured local archive root after apply, "
+        "and webhook/http-webhook can POST a redacted JSON delivery package to an explicit webhook_url after apply. "
+        "external_delivery_provider_config_json passes provider-specific JSON options such as {\"archive_root\": \"...\"} or {\"webhook_url\": \"...\", \"headers\": {...}}; raw config values are not exported in package metadata. "
         "external_delivery_idempotency_key defaults to the transaction id; duplicate external delivery is blocked by default unless allow_duplicate_external_delivery is explicitly true."
     )
     return execute_local_delivery

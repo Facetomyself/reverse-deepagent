@@ -20,6 +20,7 @@ from .executors import (
     LocalArchiveExternalDeliveryProvider,
     LocalDeliveryExecutor,
     ReviewOnlyExternalDeliveryProvider,
+    WebhookExternalDeliveryProvider,
     external_delivery_metadata_has_secret_like_keys,
 )
 from .registry import (
@@ -31,6 +32,7 @@ from .registry import (
     build_default_external_delivery_provider_registry,
     local_archive_external_delivery_provider_registration,
     review_only_external_delivery_provider_registration,
+    webhook_external_delivery_provider_registration,
 )
 
 __all__ = [
@@ -42,6 +44,7 @@ __all__ = [
     "build_default_external_delivery_provider_registry",
     "local_archive_external_delivery_provider_registration",
     "review_only_external_delivery_provider_registration",
+    "webhook_external_delivery_provider_registration",
     "BackendManifestInPlaceMutation",
     "BackendManifestInPlacePreflight",
     "BackendManifestRecovery",
@@ -61,5 +64,6 @@ __all__ = [
     "LocalArchiveExternalDeliveryProvider",
     "LocalDeliveryExecutor",
     "ReviewOnlyExternalDeliveryProvider",
+    "WebhookExternalDeliveryProvider",
     "external_delivery_metadata_has_secret_like_keys",
 ]

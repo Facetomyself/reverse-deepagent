@@ -3,6 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
@@ -442,6 +445,159 @@ class LocalArchiveExternalDeliveryProvider:
             "digest_sha256": digest,
             "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
         }
+
+
+@dataclass(frozen=True)
+class WebhookExternalDeliveryProvider:
+    """HTTP JSON webhook external delivery provider.
+
+    The provider only sends a request in apply mode.  Dry-run returns a planned
+    result without opening a socket.  Runtime config values such as webhook URL
+    and headers are used for the request but never written verbatim to metadata.
+    """
+
+    webhook_url: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
+    timeout_seconds: float = 10.0
+    provider_id: str = "webhook"
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        package_digest = _json_payload_sha256(package.to_dict())
+        normalized_url = _normalize_webhook_url(self.webhook_url)
+        redacted_url = _redact_url_for_metadata(normalized_url)
+        local_ready = not package.local_errors
+        url_configured = bool(normalized_url)
+        scheme_supported = _webhook_scheme_supported(normalized_url)
+        checks = [
+            {
+                "name": "local_delivery_package_has_no_errors",
+                "passed": local_ready,
+                "details": {"local_errors": package.local_errors},
+            },
+            {
+                "name": "webhook_url_configured",
+                "passed": url_configured,
+                "details": {"configured": url_configured},
+            },
+            {
+                "name": "webhook_url_scheme_supported",
+                "passed": scheme_supported,
+                "details": {"supported_schemes": ["http", "https"], "target_url": redacted_url},
+            },
+        ]
+        preflight_blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        payload = {
+            "provider_id": self.provider_id,
+            "transaction_id": package.transaction_id,
+            "created_at": created_at,
+            "package_digest_sha256": package_digest,
+            "package": package.to_dict(),
+        }
+        request_body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        request_body_digest = hashlib.sha256(request_body).hexdigest()
+        response_status_code: int | None = None
+        request_error: str | None = None
+        request_attempted = False
+        request_succeeded = False
+        if dry_run:
+            status = "planned" if not preflight_blocking_reasons else "blocked"
+            blocking_reasons = preflight_blocking_reasons
+        elif preflight_blocking_reasons:
+            status = "blocked"
+            blocking_reasons = preflight_blocking_reasons
+        else:
+            request_attempted = True
+            response_status_code, request_error = self._post_json(normalized_url, request_body)
+            request_succeeded = bool(response_status_code is not None and 200 <= response_status_code < 300)
+            checks.append(
+                {
+                    "name": "webhook_response_status_successful",
+                    "passed": request_succeeded,
+                    "details": {
+                        "status_code": response_status_code,
+                        "request_error": request_error,
+                        "target_url": redacted_url,
+                    },
+                }
+            )
+            blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+            status = "delivered" if request_succeeded else "blocked"
+        return ExternalDeliveryResult(
+            transaction_id=package.transaction_id,
+            status=status,
+            provider_id=self.provider_id,
+            result_path=result_path,
+            delivery_root=package.delivery_root,
+            dry_run=dry_run,
+            external_delivery_requested=True,
+            external_delivery_performed=request_succeeded,
+            package_digest_sha256=package_digest,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=(
+                ["review_webhook_external_delivery_result"]
+                if request_succeeded
+                else ["apply_local_delivery_before_webhook_delivery"]
+                if dry_run and not blocking_reasons
+                else ["fix_webhook_external_delivery_blockers"]
+            ),
+            created_at=created_at,
+            metadata={
+                **package.metadata,
+                "scope": "webhook-external-delivery-provider-baseline",
+                "target_url": redacted_url,
+                "target_query_redacted": _url_has_query(normalized_url),
+                "target_credentials_redacted": _url_has_credentials(normalized_url),
+                "request_method": "POST",
+                "request_body_digest_sha256": request_body_digest,
+                "request_body_bytes": len(request_body),
+                "request_attempted": request_attempted,
+                "request_succeeded": request_succeeded,
+                "response_status_code": response_status_code,
+                "response_body_recorded": False,
+                "response_headers_recorded": False,
+                "request_headers_recorded": False,
+                "configured_header_count": len(self.headers),
+                "timeout_seconds": self.timeout_seconds,
+                "automatic_delivery": False,
+                "publishes_externally": True,
+                "transport": "webhook",
+                "limitations": [
+                    "http_json_webhook_only",
+                    "does_not_record_response_body_or_headers",
+                    "does_not_retry_webhook_request",
+                    "full_cross_run_transaction_state_machine_not_implemented",
+                ],
+            },
+        )
+
+    def _post_json(self, url: str, body: bytes) -> tuple[int | None, str | None]:
+        request_headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "reverse-deepagent-webhook-delivery/0",
+            **{str(key): str(value) for key, value in self.headers.items()},
+        }
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers=request_headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
+                response.read(0)
+                return int(response.status), None
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return None, exc.__class__.__name__
 
 
 @dataclass(frozen=True)
@@ -2603,6 +2759,19 @@ def external_delivery_metadata_has_secret_like_keys(value: Any) -> bool:
     return False
 
 
+def _count_external_delivery_secret_like_keys(value: Any) -> int:
+    if isinstance(value, dict):
+        total = 0
+        for key, item in value.items():
+            if any(keyword in str(key).lower() for keyword in EXTERNAL_DELIVERY_SECRET_KEYWORDS):
+                total += 1
+            total += _count_external_delivery_secret_like_keys(item)
+        return total
+    if isinstance(value, list):
+        return sum(_count_external_delivery_secret_like_keys(item) for item in value)
+    return 0
+
+
 def _external_delivery_provider_config_summary(config: dict[str, Any]) -> dict[str, Any]:
     if not config:
         return {
@@ -2613,12 +2782,11 @@ def _external_delivery_provider_config_summary(config: dict[str, Any]) -> dict[s
             "raw_values_exported": False,
         }
     non_secret_keys: list[str] = []
-    secret_like_key_count = 0
+    secret_like_key_count = _count_external_delivery_secret_like_keys(config)
     for key in sorted(str(item) for item in config):
         if external_delivery_metadata_has_secret_like_keys({key: None}):
-            secret_like_key_count += 1
-        else:
-            non_secret_keys.append(key)
+            continue
+        non_secret_keys.append(key)
     return {
         "configured": True,
         "key_count": len(config),
@@ -2626,6 +2794,53 @@ def _external_delivery_provider_config_summary(config: dict[str, Any]) -> dict[s
         "secret_like_key_count": secret_like_key_count,
         "raw_values_exported": False,
     }
+
+
+def _normalize_webhook_url(value: str | None) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _webhook_scheme_supported(value: str) -> bool:
+    if not value:
+        return False
+    return urllib.parse.urlsplit(value).scheme.lower() in {"http", "https"}
+
+
+def _redact_url_for_metadata(value: str) -> str | None:
+    if not value:
+        return None
+    parts = urllib.parse.urlsplit(value)
+    host = parts.hostname or ""
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = host
+    if parts.port is not None:
+        netloc = f"{netloc}:{parts.port}"
+    redacted = urllib.parse.urlunsplit(
+        (
+            parts.scheme,
+            netloc,
+            parts.path,
+            "",
+            "",
+        )
+    )
+    return redacted or None
+
+
+def _url_has_query(value: str) -> bool:
+    if not value:
+        return False
+    return bool(urllib.parse.urlsplit(value).query)
+
+
+def _url_has_credentials(value: str) -> bool:
+    if not value:
+        return False
+    parts = urllib.parse.urlsplit(value)
+    return bool(parts.username or parts.password)
 
 
 def _journal_bool(journal: dict[str, Any], key: str, default: bool) -> bool:

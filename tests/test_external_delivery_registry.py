@@ -12,6 +12,7 @@ from reverse_deepagent.delivery import (
     ExternalDeliveryResult,
     LocalArchiveExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
+    WebhookExternalDeliveryProvider,
     build_default_external_delivery_provider_registry,
     external_delivery_metadata_has_secret_like_keys,
 )
@@ -91,6 +92,19 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertEqual(metadata["transport"], "filesystem")
         provider = registry.create("filesystem-release", archive_root="/tmp/reverse-agent-archive")
         self.assertIsInstance(provider, LocalArchiveExternalDeliveryProvider)
+
+    def test_default_registry_exposes_webhook_provider_and_aliases(self) -> None:
+        registry = build_default_external_delivery_provider_registry(load_entry_points=False)
+
+        self.assertEqual(registry.resolve("http-webhook").provider_id, "webhook")
+        self.assertIn("webhook-json", registry.provider_ids())
+        by_provider = {metadata["provider_id"]: metadata for metadata in registry.list_metadata()}
+        metadata = by_provider["webhook"]
+        self.assertTrue(metadata["supports_external_delivery"])
+        self.assertFalse(metadata["review_only"])
+        self.assertEqual(metadata["transport"], "webhook")
+        provider = registry.create("webhook-json", webhook_url="https://example.invalid/deliver")
+        self.assertIsInstance(provider, WebhookExternalDeliveryProvider)
 
     def test_registry_rejects_duplicate_keys(self) -> None:
         registry = ExternalDeliveryProviderRegistry()

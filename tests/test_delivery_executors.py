@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import http.server
 import json
 import tempfile
+import threading
 from pathlib import Path
 from unittest import TestCase
 
@@ -61,6 +63,26 @@ class CountingExternalDeliveryProvider(FakeExternalDeliveryProvider):
         self.calls += 1
         self.packages.append(package)
         return super().deliver(package, dry_run=dry_run, result_path=result_path, created_at=created_at)
+
+
+class RecordingWebhookHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self.__class__.requests.append(
+            {
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
 
 
 class LocalDeliveryExecutorTests(TestCase):
@@ -1152,6 +1174,99 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(external_result["external_delivery_performed"])
             self.assertTrue(journal["external_delivery_performed"])
             self.assertEqual(Path(journal["external_delivery_result_path"]).resolve(), external_result_path.resolve())
+
+    def test_webhook_external_delivery_dry_run_redacts_target_without_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            webhook_url = "https://user:pass@example.invalid/hook?delivery_token=secret-value"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=root / "delivery",
+                    transaction_id="tx-webhook-dry-run",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    request_external_delivery=True,
+                    external_delivery_provider_id="webhook",
+                    external_delivery_provider_config={
+                        "webhook_url": webhook_url,
+                        "headers": {"Authorization": "Token hidden-value"},
+                    },
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "planned")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.external_delivery_result)
+            metadata = result.external_delivery_result.metadata
+            self.assertEqual(metadata["target_url"], "https://example.invalid/hook")
+            self.assertTrue(metadata["target_query_redacted"])
+            self.assertTrue(metadata["target_credentials_redacted"])
+            self.assertFalse(metadata["request_attempted"])
+            self.assertEqual(metadata["external_delivery_provider_config_summary"]["secret_like_key_count"], 1)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("secret-value", serialized_result)
+            self.assertNotIn("hidden-value", serialized_result)
+            self.assertNotIn("user:pass", serialized_result)
+            self.assertFalse((root / "delivery").exists())
+
+    def test_webhook_external_delivery_apply_posts_json_without_recording_response_body_or_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingWebhookHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingWebhookHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=server.handle_request)
+            thread.daemon = True
+            thread.start()
+            try:
+                webhook_url = f"http://127.0.0.1:{server.server_port}/deliver?query_secret=redacted"
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-webhook-apply",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="http-webhook",
+                        external_delivery_provider_config={
+                            "webhook_url": webhook_url,
+                            "headers": {"Authorization": "Token local-test-secret"},
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingWebhookHandler.requests), 1)
+            request = RecordingWebhookHandler.requests[0]
+            self.assertEqual(request["path"], "/deliver?query_secret=redacted")
+            self.assertEqual(request["headers"]["Authorization"], "Token local-test-secret")
+            body = json.loads(bytes(request["body"]).decode("utf-8"))
+            self.assertEqual(body["provider_id"], "webhook")
+            self.assertEqual(body["transaction_id"], "tx-webhook-apply")
+            self.assertEqual(body["package"]["metadata"]["provider_id"], "webhook")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertEqual(metadata["target_url"], f"http://127.0.0.1:{server.server_port}/deliver")
+            self.assertTrue(metadata["target_query_redacted"])
+            self.assertTrue(metadata["request_attempted"])
+            self.assertTrue(metadata["request_succeeded"])
+            self.assertEqual(metadata["response_status_code"], 204)
+            self.assertFalse(metadata["response_body_recorded"])
+            self.assertFalse(metadata["response_headers_recorded"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("local-test-secret", serialized_result)
+            self.assertNotIn("query_secret=redacted", serialized_result)
+            self.assertTrue((delivery_root / "external-delivery-result.json").exists())
 
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

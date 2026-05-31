@@ -261,11 +261,12 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(payload["port_before"]["skipped"])
         self.assertTrue(payload["port_after_launch"]["skipped"])
         self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.external_delivery_providers")
-        self.assertEqual(matrix["summary"]["provider_count"], 2)
+        self.assertEqual(matrix["summary"]["provider_count"], 3)
         self.assertEqual(matrix["summary"]["review_only_count"], 1)
-        self.assertEqual(matrix["summary"]["external_delivery_capable_count"], 1)
+        self.assertEqual(matrix["summary"]["external_delivery_capable_count"], 2)
         self.assertIn("manual-handoff", matrix["provider_ids"])
         self.assertIn("filesystem-release", matrix["provider_ids"])
+        self.assertIn("http-webhook", matrix["provider_ids"])
         by_provider = {provider["provider_id"]: provider for provider in matrix["providers"]}
         provider = by_provider["review-only"]
         self.assertEqual(provider["aliases"], ["noop", "manual-handoff"])
@@ -274,6 +275,10 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(local_archive["aliases"], ["filesystem-release", "archive"])
         self.assertTrue(local_archive["supports_external_delivery"])
         self.assertEqual(local_archive["transport"], "filesystem")
+        webhook = by_provider["webhook"]
+        self.assertEqual(webhook["aliases"], ["webhook-json", "http-webhook"])
+        self.assertTrue(webhook["supports_external_delivery"])
+        self.assertEqual(webhook["transport"], "webhook")
         self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
         self.assertFalse(matrix["side_effect_policy"]["external_delivery_performed"])
 
@@ -281,7 +286,7 @@ class DoctorTests(unittest.TestCase):
         factory_calls: list[str] = []
         registration = ExternalDeliveryProviderRegistration(
             provider_id="webhook-draft",
-            aliases=("webhook",),
+            aliases=("webhook-draft-alias",),
             capabilities=ExternalDeliveryProviderCapabilities(
                 provider_id="webhook-draft",
                 display_name="Webhook Draft Delivery",
@@ -301,9 +306,9 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(factory_calls, [])
         self.assertIn("webhook-draft", matrix["provider_ids"])
-        self.assertIn("webhook", matrix["provider_ids"])
+        self.assertIn("webhook-draft-alias", matrix["provider_ids"])
         by_provider = {item["provider_id"]: item for item in matrix["providers"]}
-        self.assertEqual(by_provider["webhook-draft"]["aliases"], ["webhook"])
+        self.assertEqual(by_provider["webhook-draft"]["aliases"], ["webhook-draft-alias"])
         self.assertTrue(by_provider["webhook-draft"]["supports_external_delivery"])
 
     def test_doctor_redacts_cloakbrowser_proxy_and_does_not_launch_by_default(self) -> None:

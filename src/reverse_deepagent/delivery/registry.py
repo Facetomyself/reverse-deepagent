@@ -9,6 +9,7 @@ from reverse_deepagent.delivery.executors import (
     ExternalDeliveryProvider,
     LocalArchiveExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
+    WebhookExternalDeliveryProvider,
     external_delivery_metadata_has_secret_like_keys,
 )
 
@@ -183,10 +184,36 @@ def local_archive_external_delivery_provider_registration() -> ExternalDeliveryP
     )
 
 
+def webhook_external_delivery_provider_registration() -> ExternalDeliveryProviderRegistration:
+    return ExternalDeliveryProviderRegistration(
+        provider_id="webhook",
+        aliases=("webhook-json", "http-webhook"),
+        capabilities=ExternalDeliveryProviderCapabilities(
+            provider_id="webhook",
+            display_name="HTTP JSON webhook external delivery",
+            transport="webhook",
+            supports_external_delivery=True,
+            review_only=False,
+            metadata={
+                "side_effect_free": False,
+                "dry_run_side_effect_free": True,
+                "writes_external_delivery_result": True,
+                "publishes_externally": True,
+                "external_boundary": "http-json-webhook",
+                "sends_http_post": True,
+                "records_response_body": False,
+                "records_response_headers": False,
+            },
+        ),
+        factory=lambda **kwargs: WebhookExternalDeliveryProvider(**kwargs),
+    )
+
+
 def build_default_external_delivery_provider_registry(*, load_entry_points: bool = True) -> ExternalDeliveryProviderRegistry:
     registry = ExternalDeliveryProviderRegistry()
     registry.register(local_archive_external_delivery_provider_registration())
     registry.register(review_only_external_delivery_provider_registration())
+    registry.register(webhook_external_delivery_provider_registration())
     if load_entry_points:
         registry.load_entry_points()
     return registry
