@@ -12,6 +12,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
 
+from .state_machine import DeliveryTransactionSnapshot, evaluate_delivery_transaction_state
+
 
 class DeliveryExecutionMode(str, Enum):
     """Supported delivery executor side-effect modes."""
@@ -1190,6 +1192,7 @@ class DeliveryExecutionResult:
     backend_manifest_recovered: bool
     receipt: DeliveryReceipt
     transaction_journal: DeliveryTransactionJournal
+    transaction_state: DeliveryTransactionSnapshot
     manifest_revision: DeliveryManifestRevision | None
     backend_manifest_mutation: BackendManifestMutation | None
     backend_manifest_in_place_preflight: BackendManifestInPlacePreflight | None
@@ -1221,6 +1224,7 @@ class DeliveryExecutionResult:
             "backend_manifest_recovered": self.backend_manifest_recovered,
             "receipt": self.receipt.to_dict(),
             "transaction_journal": self.transaction_journal.to_dict(),
+            "transaction_state": self.transaction_state.to_dict(),
             "manifest_revision": self.manifest_revision.to_dict() if self.manifest_revision else None,
             "backend_manifest_mutation": self.backend_manifest_mutation.to_dict() if self.backend_manifest_mutation else None,
             "backend_manifest_in_place_preflight": self.backend_manifest_in_place_preflight.to_dict() if self.backend_manifest_in_place_preflight else None,
@@ -1646,6 +1650,41 @@ class LocalDeliveryExecutor:
             next_action = "review_backend_manifest_recovery_preflight_before_cross_run_commit"
         elif backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.blocking_reasons:
             next_action = "fix_backend_manifest_recovery_preflight_blockers"
+        result_payload_for_state = {
+            "status": status,
+            "mode": mode.value,
+            "transaction_id": self.config.transaction_id,
+            "dry_run": dry_run,
+            "delivery_allowed": not bool(errors)
+            and not bool(external_delivery_result and external_delivery_result.blocking_reasons),
+            "filesystem_artifact_mutated": bool(delivered),
+            "external_delivery_performed": external_delivery_performed,
+            "cross_run_transaction_committed": cross_run_transaction_committed,
+            "manifest_revision_committed": bool(manifest_revision and manifest_revision.committed),
+            "backend_manifest_patch_written": bool(backend_manifest_mutation and backend_manifest_mutation.backend_manifest_patch_written),
+            "backend_manifest_in_place_preflight_passed": bool(
+                backend_manifest_in_place_preflight and backend_manifest_in_place_preflight.in_place_mutation_allowed
+            ),
+            "backend_manifest_recovery_preflight_passed": bool(
+                backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.status in {"ready_for_review", "no_recovery_required"}
+            ),
+            "backend_manifest_rollback_written": backend_manifest_rollback_written,
+            "backend_manifest_mutated": backend_manifest_mutated,
+            "backend_manifest_recovered": backend_manifest_recovered,
+            "transaction_journal": journal.to_dict(),
+            "manifest_revision": manifest_revision.to_dict() if manifest_revision else None,
+            "backend_manifest_mutation": backend_manifest_mutation.to_dict() if backend_manifest_mutation else None,
+            "backend_manifest_in_place_preflight": backend_manifest_in_place_preflight.to_dict() if backend_manifest_in_place_preflight else None,
+            "backend_manifest_in_place_mutation": backend_manifest_in_place_mutation.to_dict() if backend_manifest_in_place_mutation else None,
+            "backend_manifest_recovery_preflight": backend_manifest_recovery_preflight.to_dict() if backend_manifest_recovery_preflight else None,
+            "backend_manifest_recovery": backend_manifest_recovery.to_dict() if backend_manifest_recovery else None,
+            "backend_manifest_transaction_commit": backend_manifest_transaction_commit.to_dict() if backend_manifest_transaction_commit else None,
+            "external_delivery_result": external_delivery_result.to_dict() if external_delivery_result else None,
+            "planned_artifacts": planned,
+            "errors": errors,
+            "next_action": next_action,
+        }
+        transaction_state = evaluate_delivery_transaction_state(result_payload_for_state)
         return DeliveryExecutionResult(
             status=status,
             mode=mode.value,
@@ -1669,6 +1708,7 @@ class LocalDeliveryExecutor:
             backend_manifest_recovered=backend_manifest_recovered,
             receipt=receipt,
             transaction_journal=journal,
+            transaction_state=transaction_state,
             manifest_revision=manifest_revision,
             backend_manifest_mutation=backend_manifest_mutation,
             backend_manifest_in_place_preflight=backend_manifest_in_place_preflight,

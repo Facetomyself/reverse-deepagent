@@ -36,6 +36,13 @@ from .registry import (
     review_only_external_delivery_provider_registration,
     webhook_external_delivery_provider_registration,
 )
+from .state_machine import (
+    DeliveryTransactionSnapshot,
+    DeliveryTransactionState,
+    DeliveryTransitionPlan,
+    evaluate_delivery_transaction_state,
+    plan_delivery_transition,
+)
 
 __all__ = [
     "EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP",
@@ -70,4 +77,9 @@ __all__ = [
     "ReviewOnlyExternalDeliveryProvider",
     "WebhookExternalDeliveryProvider",
     "external_delivery_metadata_has_secret_like_keys",
+    "DeliveryTransactionSnapshot",
+    "DeliveryTransactionState",
+    "DeliveryTransitionPlan",
+    "evaluate_delivery_transaction_state",
+    "plan_delivery_transition",
 ]
