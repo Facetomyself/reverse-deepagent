@@ -521,6 +521,14 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertFalse(readiness["side_effects_performed"])
             self.assertFalse(readiness["automatic_execution"])
             self.assertFalse(readiness["starts_daemon"])
+            dependencies = readiness["step_dependency_contexts"]
+            self.assertEqual([item["action"] for item in dependencies], ["acquire_delivery_transaction_lock_provider", "preflight_backend_manifest_recovery"])
+            self.assertEqual(dependencies[0]["fencing_dependency"]["status"], "step_produces_fencing_evidence")
+            self.assertFalse(dependencies[0]["fencing_dependency"]["required"])
+            self.assertEqual(dependencies[1]["provider_lock_dependency"]["status"], "planned_predecessor_lock_action")
+            self.assertEqual(dependencies[1]["provider_lock_dependency"]["planned_predecessor_lock_actions"], ["acquire_delivery_transaction_lock_provider"])
+            self.assertTrue(all(item["readonly_dependency_metadata_only"] for item in dependencies))
+            self.assertFalse(readiness["dependency_summary"]["side_effects_performed"])
             self.assertFalse(payload["lock_lifecycle_plan"]["automatic_lock_acquire"])
             self.assertFalse(payload["lock_lifecycle_plan"]["automatic_lock_lifecycle"])
             self.assertFalse(payload["lock_lifecycle_plan"]["starts_daemon"])
@@ -712,6 +720,12 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertTrue(readiness["requires_lock_provider_action"])
             self.assertTrue(readiness["requires_fencing_review"])
             self.assertFalse(readiness["side_effects_performed"])
+            dependencies = readiness["step_dependency_contexts"]
+            self.assertEqual(dependencies[0]["provider_lock_dependency"]["status"], "step_acquires_provider_lock")
+            self.assertEqual(dependencies[0]["fencing_dependency"]["status"], "step_produces_fencing_evidence")
+            self.assertEqual(dependencies[1]["provider_lock_dependency"]["status"], "planned_predecessor_lock_action")
+            self.assertEqual(dependencies[1]["fencing_dependency"]["status"], "planned_predecessor_fencing_evidence")
+            self.assertEqual(readiness["dependency_summary"]["runtime_gate_review_step_count"], 2)
             self.assertEqual([step["status"] for step in payload["step_results"]], ["acquired", "released"])
             self.assertTrue(payload["step_results"][0]["lock_operation"]["lock_acquired"])
             self.assertTrue(payload["step_results"][1]["lock_operation"]["lock_released"])
@@ -915,6 +929,11 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             propagation = payload["step_results"][2]["fencing_token_propagation"]
             self.assertFalse(propagation["workflow_fencing_token_propagated"])
             self.assertIsNone(propagation["workflow_expected_transaction_lock_fencing_token"])
+            dependencies = payload["workflow_readiness_plan"]["step_dependency_contexts"]
+            self.assertEqual(dependencies[2]["provider_lock_dependency"]["status"], "runtime_provider_lock_review_required")
+            self.assertEqual(dependencies[2]["provider_lock_dependency"]["planned_predecessor_lock_actions"], [])
+            self.assertEqual(dependencies[2]["fencing_dependency"]["status"], "runtime_fencing_review_required")
+            self.assertEqual(dependencies[2]["fencing_dependency"]["planned_predecessor_fencing_actions"], [])
 
     def test_resume_workflow_scheduler_replayed_release_clears_journaled_fencing_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1165,6 +1184,12 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertEqual(second["step_results"][0]["journal_replay"]["transition_status"], "executed")
             self.assertTrue(second["step_results"][0]["journal_replay"]["readonly_replay_metadata_only"])
             self.assertFalse(second["step_results"][0]["journal_replay"]["side_effects_replayed"])
+            dependencies = second["workflow_readiness_plan"]["step_dependency_contexts"]
+            self.assertTrue(dependencies[0]["journal_replay_available"])
+            self.assertEqual(dependencies[0]["readiness"], "journal_replay_available")
+            self.assertEqual(dependencies[1]["recovery_preflight_dependency"]["status"], "journal_completed_recovery_preflight")
+            self.assertTrue(dependencies[1]["recovery_preflight_dependency"]["runtime_gate_must_revalidate"])
+            self.assertEqual(second["workflow_readiness_plan"]["dependency_summary"]["journal_replay_step_count"], 1)
             self.assertEqual(journal["entry_count"], 2)
             self.assertEqual([entry["action"] for entry in journal["entries"]], ["preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"])
 

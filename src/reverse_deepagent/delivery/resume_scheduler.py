@@ -239,6 +239,8 @@ class DeliveryResumeWorkflowScheduler:
             existing_journal_summary=existing_journal_summary,
             lock_lifecycle_plan=lock_lifecycle_plan,
             lease_renewal_plan=lease_renewal_plan,
+            require_transaction_lock=self.config.require_transaction_lock,
+            explicit_expected_fencing_token_configured=bool(self.config.expected_transaction_lock_fencing_token),
         )
         step_results: list[dict[str, Any]] = []
         if not blocking_reasons:
@@ -641,6 +643,8 @@ def _workflow_readiness_plan(
     existing_journal_summary: dict[str, Any],
     lock_lifecycle_plan: dict[str, Any],
     lease_renewal_plan: dict[str, Any],
+    require_transaction_lock: bool,
+    explicit_expected_fencing_token_configured: bool,
 ) -> dict[str, Any]:
     """Build a side-effect-free readiness summary for review/subagent routing."""
 
@@ -657,6 +661,17 @@ def _workflow_readiness_plan(
     lock_lifecycle_recommended = bool(lock_lifecycle_plan.get("recommended_step_actions"))
     lease_renewal_recommended = bool(lease_renewal_plan.get("recommended_step_action"))
     uses_journal_replay_context = bool(existing_journal_summary.get("completed_actions")) or any(step.get("already_completed") for step in planned_steps)
+    step_dependency_contexts = _workflow_step_dependency_contexts(
+        planned_steps=planned_steps,
+        approval_summary=approval_summary,
+        blocking_reasons=blocking_reasons,
+        existing_journal_summary=existing_journal_summary,
+        lock_lifecycle_plan=lock_lifecycle_plan,
+        lease_renewal_plan=lease_renewal_plan,
+        require_transaction_lock=require_transaction_lock,
+        explicit_expected_fencing_token_configured=explicit_expected_fencing_token_configured,
+    )
+    dependency_summary = _workflow_step_dependency_summary(step_dependency_contexts)
 
     if blocking_reasons or failed_checks:
         status = "blocked"
@@ -703,6 +718,8 @@ def _workflow_readiness_plan(
         ),
         "uses_journal_replay_context": uses_journal_replay_context,
         "journal_completed_actions": list(existing_journal_summary.get("completed_actions", [])),
+        "step_dependency_contexts": step_dependency_contexts,
+        "dependency_summary": dependency_summary,
         "next_review_actions": next_review_actions,
         "dry_run_plan_only": True,
         "side_effects_performed": False,
@@ -710,6 +727,240 @@ def _workflow_readiness_plan(
         "starts_daemon": False,
         "automatic_lock_lifecycle": False,
         "automatic_lease_renewal": False,
+    }
+
+
+def _workflow_step_dependency_contexts(
+    *,
+    planned_steps: list[dict[str, Any]],
+    approval_summary: dict[str, Any],
+    blocking_reasons: list[str],
+    existing_journal_summary: dict[str, Any],
+    lock_lifecycle_plan: dict[str, Any],
+    lease_renewal_plan: dict[str, Any],
+    require_transaction_lock: bool,
+    explicit_expected_fencing_token_configured: bool,
+) -> list[dict[str, Any]]:
+    """Describe conservative step dependencies without claiming gate success."""
+
+    matched_step_actions = {str(action) for action in approval_summary.get("matched_step_actions", [])}
+    missing_step_actions = {str(action) for action in approval_summary.get("missing_step_actions", [])}
+    journal_completed_actions = {str(action) for action in existing_journal_summary.get("completed_actions", [])}
+    contexts: list[dict[str, Any]] = []
+    preceding_steps: list[dict[str, Any]] = []
+    planned_lock_source_actions: list[str] = []
+    planned_fencing_source_actions: list[str] = []
+    for step in planned_steps:
+        action = str(step.get("action") or "")
+        already_completed = bool(step.get("already_completed"))
+        predecessor_actions = [str(item.get("action") or "") for item in preceding_steps]
+        completed_predecessor_actions = [
+            str(item.get("action") or "")
+            for item in preceding_steps
+            if item.get("already_completed") or str(item.get("action") or "") in journal_completed_actions
+        ]
+        planned_predecessor_actions = [
+            str(item.get("action") or "")
+            for item in preceding_steps
+            if not item.get("already_completed") and str(item.get("action") or "") not in journal_completed_actions
+        ]
+        approval_action = RESUME_WORKFLOW_ACTION_TO_APPROVAL_ACTION.get(action)
+        approval_required = not already_completed and bool(approval_action)
+        approval_matched = not approval_required or action in matched_step_actions
+        approval_missing = approval_required and action in missing_step_actions
+        provider_lock_dependency = _provider_lock_dependency(
+            action=action,
+            preceding_lock_actions=planned_lock_source_actions,
+            lock_lifecycle_plan=lock_lifecycle_plan,
+            require_transaction_lock=require_transaction_lock,
+        )
+        fencing_dependency = _fencing_dependency(
+            action=action,
+            preceding_fencing_actions=planned_fencing_source_actions,
+            lock_lifecycle_plan=lock_lifecycle_plan,
+            lease_renewal_plan=lease_renewal_plan,
+            require_transaction_lock=require_transaction_lock,
+            explicit_expected_fencing_token_configured=explicit_expected_fencing_token_configured,
+        )
+        recovery_preflight_dependency = _recovery_preflight_dependency(
+            action=action,
+            predecessor_actions=predecessor_actions,
+            journal_completed_actions=journal_completed_actions,
+        )
+        if already_completed:
+            readiness = "journal_replay_available"
+        elif approval_missing:
+            readiness = "review_approval_required"
+        elif blocking_reasons:
+            readiness = "workflow_checks_blocked"
+        else:
+            readiness = "ready_for_ordered_execution_review"
+        runtime_gate_checks = _runtime_gate_checks_for_step(action)
+        contexts.append(
+            {
+                "order": step.get("order"),
+                "action": action,
+                "executor": step.get("executor"),
+                "readiness": readiness,
+                "already_completed": already_completed,
+                "journal_replay_available": already_completed and action in journal_completed_actions,
+                "approval": {
+                    "required": approval_required,
+                    "action": approval_action,
+                    "matched": approval_matched,
+                    "missing": approval_missing,
+                },
+                "serial_dependencies": {
+                    "predecessor_actions": predecessor_actions,
+                    "completed_predecessor_actions": completed_predecessor_actions,
+                    "planned_predecessor_actions": planned_predecessor_actions,
+                    "runtime_order_enforced_by_scheduler": True,
+                },
+                "provider_lock_dependency": provider_lock_dependency,
+                "fencing_dependency": fencing_dependency,
+                "recovery_preflight_dependency": recovery_preflight_dependency,
+                "runtime_gate_checks": runtime_gate_checks,
+                "runtime_gate_review_required": bool(runtime_gate_checks),
+                "side_effects_performed": False,
+                "readonly_dependency_metadata_only": True,
+            }
+        )
+        preceding_steps.append(step)
+        if action in {DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION, DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION}:
+            planned_lock_source_actions = [action]
+            planned_fencing_source_actions = [action]
+        elif action == DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION:
+            planned_lock_source_actions = []
+            planned_fencing_source_actions = []
+    return contexts
+
+
+def _provider_lock_dependency(
+    *,
+    action: str,
+    preceding_lock_actions: list[str],
+    lock_lifecycle_plan: dict[str, Any],
+    require_transaction_lock: bool,
+) -> dict[str, Any]:
+    provider_action = action in {
+        DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION,
+        DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION,
+    }
+    runner_action = action in SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS and action != "plan_only"
+    required = provider_action or bool(require_transaction_lock and runner_action)
+    evidence_present = bool(lock_lifecycle_plan.get("provider_lock_evidence_present"))
+    if action == DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION:
+        status = "step_acquires_provider_lock"
+    elif preceding_lock_actions:
+        status = "planned_predecessor_lock_action"
+    elif evidence_present:
+        status = "provider_projection_or_journal_evidence_present"
+    elif required:
+        status = "runtime_provider_lock_review_required"
+    else:
+        status = "not_required"
+    return {
+        "required": required,
+        "status": status,
+        "provider_lock_evidence_present": evidence_present,
+        "planned_predecessor_lock_actions": preceding_lock_actions,
+        "runtime_gate_must_revalidate": required,
+    }
+
+
+def _fencing_dependency(
+    *,
+    action: str,
+    preceding_fencing_actions: list[str],
+    lock_lifecycle_plan: dict[str, Any],
+    lease_renewal_plan: dict[str, Any],
+    require_transaction_lock: bool,
+    explicit_expected_fencing_token_configured: bool,
+) -> dict[str, Any]:
+    runner_action = action in SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS and action != "plan_only"
+    lock_provider_action = action in {
+        DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION,
+        DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION,
+    }
+    required = bool(
+        explicit_expected_fencing_token_configured
+        or (require_transaction_lock and runner_action)
+        or lock_provider_action
+    )
+    evidence_present = bool(lock_lifecycle_plan.get("fencing_token_present"))
+    if action == DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION:
+        status = "step_produces_fencing_evidence"
+    elif explicit_expected_fencing_token_configured:
+        status = "explicit_expected_fencing_token_configured"
+    elif preceding_fencing_actions:
+        status = "planned_predecessor_fencing_evidence"
+    elif evidence_present:
+        status = "provider_projection_or_journal_fencing_evidence_present"
+    elif required:
+        status = "runtime_fencing_review_required"
+    else:
+        status = "not_required"
+    return {
+        "required": required,
+        "status": status,
+        "explicit_expected_fencing_token_configured": explicit_expected_fencing_token_configured,
+        "fencing_token_evidence_present": evidence_present,
+        "lease_renewal_status": lease_renewal_plan.get("status"),
+        "planned_predecessor_fencing_actions": preceding_fencing_actions,
+        "runtime_gate_must_revalidate": required,
+    }
+
+
+def _recovery_preflight_dependency(
+    *,
+    action: str,
+    predecessor_actions: list[str],
+    journal_completed_actions: set[str],
+) -> dict[str, Any]:
+    required = action in {"apply_backend_manifest_recovery", "commit_cross_run_transaction"}
+    if not required:
+        status = "not_required"
+    elif "preflight_backend_manifest_recovery" in journal_completed_actions:
+        status = "journal_completed_recovery_preflight"
+    elif "preflight_backend_manifest_recovery" in predecessor_actions:
+        status = "planned_predecessor_recovery_preflight"
+    else:
+        status = "runtime_recovery_preflight_artifact_review_required"
+    return {
+        "required": required,
+        "status": status,
+        "runtime_gate_must_revalidate": required,
+    }
+
+
+def _runtime_gate_checks_for_step(action: str) -> list[str]:
+    if action == DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION:
+        return ["provider_acquire_lock_contract_checks"]
+    if action == DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION:
+        return ["provider_lock_owner_and_fencing_checks", "provider_lease_renewal_checks"]
+    if action == DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION:
+        return ["provider_lock_owner_and_fencing_checks", "provider_release_approval_checks"]
+    if action == "preflight_backend_manifest_recovery":
+        return ["transaction_journal_and_manifest_digest_checks", "rollback_checkpoint_evidence_checks_if_mutated"]
+    if action == "apply_backend_manifest_recovery":
+        return ["recovery_preflight_artifact_checks", "rollback_checkpoint_and_manifest_digest_checks", "transaction_lock_and_fencing_checks_if_configured"]
+    if action == "commit_cross_run_transaction":
+        return ["recovery_preflight_artifact_checks", "manifest_digest_and_transaction_id_checks", "transaction_lock_and_fencing_checks_if_configured"]
+    return ["supported_step_runtime_checks"]
+
+
+def _workflow_step_dependency_summary(contexts: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "step_count": len(contexts),
+        "approval_required_step_count": sum(1 for item in contexts if item.get("approval", {}).get("required")),
+        "approval_missing_step_count": sum(1 for item in contexts if item.get("approval", {}).get("missing")),
+        "journal_replay_step_count": sum(1 for item in contexts if item.get("journal_replay_available")),
+        "provider_lock_review_step_count": sum(1 for item in contexts if item.get("provider_lock_dependency", {}).get("required")),
+        "fencing_review_step_count": sum(1 for item in contexts if item.get("fencing_dependency", {}).get("required")),
+        "recovery_preflight_review_step_count": sum(1 for item in contexts if item.get("recovery_preflight_dependency", {}).get("required")),
+        "runtime_gate_review_step_count": sum(1 for item in contexts if item.get("runtime_gate_review_required")),
+        "side_effects_performed": False,
+        "readonly_dependency_metadata_only": True,
     }
 
 

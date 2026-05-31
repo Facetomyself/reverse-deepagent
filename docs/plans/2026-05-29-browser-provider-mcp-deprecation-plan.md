@@ -812,3 +812,15 @@ The plan reports `ready_for_review`, `ready_to_execute`, `blocked`, or `no_steps
 Boundary: this is metadata only. It does not execute provider actions, write lock operation artifacts, replay side effects, start a daemon, perform automatic acquire / renew / release, bypass review approvals, decide rollback versus commit, or publish external delivery. Android / iOS / mini-program full runtime chains remain deferred.
 
 Tests cover missing provider-lock planning readiness, apply-mode missing approval blockers, and approved apply-mode pre-execution readiness for explicit lock lifecycle steps.
+
+### Step 94 execution record: Workflow step dependency context baseline
+
+Status: implemented as a read-only per-step dependency matrix, not a replacement for apply-time runtime gates.
+
+`workflow_readiness_plan` now includes `step_dependency_contexts` plus a compact `dependency_summary`. Each planned workflow step exposes approval state, serial predecessor actions, completed versus still-planned predecessors, journal replay availability, provider-lock dependency status, fencing dependency status, recovery-preflight dependency status, and the low-level runtime checks that must still be revalidated during execution.
+
+The evidence model is deliberately conservative. A journaled step can be marked `journal_replay_available`; a planned acquire / renew / recovery-preflight predecessor can be marked as a candidate dependency source for later steps; a planned release clears subsequent lock / fencing candidate state; and an apply-time gate that has not yet run remains explicitly marked for runtime revalidation. The scheduler does not claim that planned predecessor evidence proves a digest, rollback-checkpoint, provider-lease, transaction-lock, or fencing-token gate has already passed.
+
+Boundary: this is dependency metadata only. It does not execute workflow steps, call providers, write lock-operation artifacts, replay side effects, bypass LocalDeliveryExecutor checks, start a daemon, perform automatic acquire / renew / release, decide rollback versus commit, or publish external delivery. Android / iOS / mini-program full runtime chains remain deferred.
+
+Tests cover default acquire planning, approved acquire / release lifecycle metadata, planned release clearing later lock / fencing dependency state, and resume-of-resume journal replay dependency context for a skipped recovery-preflight step.
