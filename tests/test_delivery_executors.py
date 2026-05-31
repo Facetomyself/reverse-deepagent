@@ -498,6 +498,174 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertIn("does_not_publish_external_delivery", journal["metadata"]["limitations"])
 
 
+    def test_apply_can_acquire_local_transaction_lock_when_required(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-apply",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    transaction_lock_lease_seconds=60,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            self.assertEqual(result.status, "delivered")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertTrue(result.transaction_lock.lock_acquired)
+            self.assertFalse(result.transaction_lock.stale_lock_detected)
+            self.assertTrue(lock_path.exists())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["status"], "acquired")
+            self.assertEqual(lock["owner"], "agent-a")
+            self.assertEqual(lock["operation"], "local_delivery_apply")
+            self.assertFalse(lock["metadata"]["distributed_lock"])
+
+    def test_apply_blocks_when_local_transaction_lock_is_held_by_other_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-b",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "review_or_release_delivery_transaction_lock")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertIn("transaction_lock_not_held_by_other_owner", result.transaction_lock.blocking_reasons)
+            self.assertFalse((delivery_root / "final-result.json").exists())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["owner"], "agent-a")
+
+    def test_apply_can_resume_local_transaction_lock_with_matching_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            (delivery_root / "delivery-transaction-lock.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-resume",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-b",
+                    expected_resume_token="resume-a",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "delivered")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertTrue(result.transaction_lock.lock_acquired)
+            self.assertTrue(result.transaction_lock.resume_accepted)
+            self.assertEqual(result.transaction_lock.resume_token, "resume-a")
+            self.assertTrue((delivery_root / "final-result.json").exists())
+
+
+    def test_lock_blocking_prevents_backend_manifest_in_place_mutation_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": []}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False) + "\n", encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-blocks-manifest",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-b",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "review_or_release_delivery_transaction_lock")
+            self.assertFalse(result.filesystem_artifact_mutated)
+            self.assertFalse(result.backend_manifest_mutated)
+            self.assertFalse(result.backend_manifest_rollback_written)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertFalse((delivery_root / "backend-artifact-manifest-in-place-mutation.json").exists())
+            self.assertFalse((delivery_root / "backend-artifact-manifest.rollback.json").exists())
+            self.assertFalse((delivery_root / "delivery-transaction-journal.json").exists())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["owner"], "agent-a")
+
+
     def test_apply_can_commit_local_manifest_revision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

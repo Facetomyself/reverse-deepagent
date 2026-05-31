@@ -50,6 +50,10 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         external_delivery_provider_config_json: str | None = None,
         external_delivery_idempotency_key: str | None = None,
         allow_duplicate_external_delivery: bool = False,
+        require_transaction_lock: bool = False,
+        transaction_lock_owner: str | None = None,
+        transaction_lock_lease_seconds: int = 900,
+        expected_resume_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or apply local filesystem delivery for reviewed artifact paths."""
@@ -88,6 +92,10 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
             external_delivery_provider_config=external_delivery_provider_config,
             external_delivery_idempotency_key=external_delivery_idempotency_key,
             allow_duplicate_external_delivery=allow_duplicate_external_delivery,
+            require_transaction_lock=require_transaction_lock,
+            transaction_lock_owner=transaction_lock_owner,
+            transaction_lock_lease_seconds=transaction_lock_lease_seconds,
+            expected_resume_token=expected_resume_token,
             metadata=metadata,
         )
         return LocalDeliveryExecutor(config).execute(artifacts).to_dict()
@@ -108,7 +116,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "webhook/http-webhook can POST a redacted JSON delivery package to an explicit webhook_url after apply, "
         "and presigned-object/object-storage can PUT a redacted JSON delivery package to an explicit presigned_url after apply. "
         "external_delivery_provider_config_json passes provider-specific JSON options such as {\"archive_root\": \"...\"}, {\"webhook_url\": \"...\", \"headers\": {...}}, or {\"presigned_url\": \"...\", \"object_name\": \"release.json\", \"headers\": {...}}; raw config values are not exported in package metadata. "
-        "external_delivery_idempotency_key defaults to the transaction id; duplicate external delivery is blocked by default unless allow_duplicate_external_delivery is explicitly true."
+        "external_delivery_idempotency_key defaults to the transaction id; duplicate external delivery is blocked by default unless allow_duplicate_external_delivery is explicitly true. "
+        "require_transaction_lock enables a local delivery-transaction-lock.json gate for apply-mode side effects; transaction_lock_owner, transaction_lock_lease_seconds, and expected_resume_token control the local lease / resume preflight baseline."
     )
     return execute_local_delivery
 
@@ -125,6 +134,10 @@ def make_delivery_transition_executor_tool(default_delivery_root: str | Path) ->
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         backend_manifest_path: str | None = None,
         expected_transaction_id: str | None = None,
+        require_transaction_lock: bool = False,
+        transaction_lock_owner: str | None = None,
+        transaction_lock_lease_seconds: int = 900,
+        expected_resume_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or explicitly execute one supported delivery transaction transition."""
@@ -140,6 +153,10 @@ def make_delivery_transition_executor_tool(default_delivery_root: str | Path) ->
             mode=DeliveryExecutionMode(mode),
             backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
             expected_transaction_id=expected_transaction_id,
+            require_transaction_lock=require_transaction_lock,
+            transaction_lock_owner=transaction_lock_owner,
+            transaction_lock_lease_seconds=transaction_lock_lease_seconds,
+            expected_resume_token=expected_resume_token,
             metadata=metadata,
         )
         return DeliveryTransactionTransitionExecutor(config).execute().to_dict()
@@ -149,7 +166,8 @@ def make_delivery_transition_executor_tool(default_delivery_root: str | Path) ->
         "Plan or explicitly execute one supported delivery transaction transition. "
         "Supported transitions are preflight_backend_manifest_recovery, apply_backend_manifest_recovery, and commit_cross_run_transaction. "
         "mode defaults to dry-run and is read-only. apply mode requires an explicit transition value rather than auto, then delegates to LocalDeliveryExecutor so existing journal, digest, recovery, commit, and external-delivery checks still apply. "
-        "The tool writes delivery-transition-execution.json only for successful explicit apply-mode transition attempts and never publishes external delivery."
+        "The tool writes delivery-transition-execution.json only for successful explicit apply-mode transition attempts and never publishes external delivery. "
+        "require_transaction_lock enables the local delivery-transaction-lock.json gate for apply-mode transition side effects."
     )
     return execute_delivery_transition
 
@@ -167,6 +185,10 @@ def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> D
         backend_manifest_path: str | None = None,
         expected_transaction_id: str | None = None,
         approve_recovery: bool = False,
+        require_transaction_lock: bool = False,
+        transaction_lock_owner: str | None = None,
+        transaction_lock_lease_seconds: int = 900,
+        expected_resume_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or explicitly execute a reviewed delivery recovery workflow."""
@@ -183,6 +205,10 @@ def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> D
             backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
             expected_transaction_id=expected_transaction_id,
             approve_recovery=approve_recovery,
+            require_transaction_lock=require_transaction_lock,
+            transaction_lock_owner=transaction_lock_owner,
+            transaction_lock_lease_seconds=transaction_lock_lease_seconds,
+            expected_resume_token=expected_resume_token,
             metadata=metadata,
         )
         return DeliveryTransactionRecoveryExecutor(config).execute().to_dict()
@@ -192,7 +218,8 @@ def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> D
         "Plan or explicitly execute a delivery transaction recovery workflow. "
         "Supported actions are plan_recovery, preflight_recovery, and apply_recovery. "
         "mode defaults to dry-run and is read-only. apply_recovery in apply mode requires approve_recovery=true and an expected_transaction_id, then orchestrates preflight_backend_manifest_recovery followed by apply_backend_manifest_recovery through the transition executor. "
-        "The tool writes delivery-recovery-execution.json only for successful explicit apply-mode recovery workflows and never publishes external delivery or commits cross-run transactions."
+        "The tool writes delivery-recovery-execution.json only for successful explicit apply-mode recovery workflows and never publishes external delivery or commits cross-run transactions. "
+        "require_transaction_lock enables the local delivery-transaction-lock.json gate for apply-mode recovery side effects."
     )
     return execute_delivery_recovery
 
@@ -250,6 +277,10 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
         expected_transaction_id: str | None = None,
         approve_rollback: bool = False,
         expected_rollback_phase: str | None = None,
+        require_transaction_lock: bool = False,
+        transaction_lock_owner: str | None = None,
+        transaction_lock_lease_seconds: int = 900,
+        expected_resume_token: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan, preflight, or explicitly apply a reviewed delivery rollback workflow."""
@@ -267,6 +298,10 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
             expected_transaction_id=expected_transaction_id,
             approve_rollback=approve_rollback,
             expected_rollback_phase=expected_rollback_phase,
+            require_transaction_lock=require_transaction_lock,
+            transaction_lock_owner=transaction_lock_owner,
+            transaction_lock_lease_seconds=transaction_lock_lease_seconds,
+            expected_resume_token=expected_resume_token,
             metadata=metadata,
         )
         return DeliveryRollbackExecutor(config).execute().to_dict()
@@ -277,7 +312,8 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
         "Supported actions are plan_rollback, preflight_rollback, and apply_rollback. "
         "mode defaults to dry-run and is read-only. preflight_rollback in apply mode writes delivery-rollback-state.json and backend-artifact-manifest-recovery-preflight.json, "
         "while apply_rollback in apply mode additionally requires approve_rollback=true, expected_transaction_id, backend_manifest_path, and a matching rollback phase before delegating local manifest recovery to the recovery executor. "
-        "It does not commit transactions, does not call external delivery providers, does not acquire distributed locks, does not publish externally, and does not execute broader filesystem physical rollback."
+        "It does not commit transactions, does not call external delivery providers, does not acquire distributed locks, does not publish externally, and does not execute broader filesystem physical rollback. "
+        "require_transaction_lock enables the local delivery-transaction-lock.json gate for apply-mode rollback side effects."
     )
     return execute_delivery_rollback
 

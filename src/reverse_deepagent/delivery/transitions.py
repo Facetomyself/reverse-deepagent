@@ -32,6 +32,10 @@ class DeliveryTransitionExecutorConfig:
     mode: DeliveryExecutionMode = DeliveryExecutionMode.DRY_RUN
     backend_manifest_path: Path | None = None
     expected_transaction_id: str | None = None
+    require_transaction_lock: bool = False
+    transaction_lock_owner: str | None = None
+    transaction_lock_lease_seconds: int = 900
+    expected_resume_token: str | None = None
     write_execution_record: bool = True
     execution_record_name: str = "delivery-transition-execution.json"
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -208,6 +212,10 @@ class DeliveryTransactionTransitionExecutor:
             "transaction_id": self.config.transaction_id,
             "mode": self.config.mode,
             "backend_manifest_path": self.config.backend_manifest_path,
+            "require_transaction_lock": self.config.require_transaction_lock,
+            "transaction_lock_owner": self.config.transaction_lock_owner,
+            "transaction_lock_lease_seconds": self.config.transaction_lock_lease_seconds,
+            "expected_resume_token": self.config.expected_resume_token,
             "metadata": {
                 **self.config.metadata,
                 "transition_executor": True,
@@ -257,4 +265,3 @@ class DeliveryTransactionTransitionExecutor:
         if execution_result:
             return [execution_result.next_action]
         return ["review_transition_execution"]
-

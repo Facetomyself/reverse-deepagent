@@ -34,6 +34,10 @@ class DeliveryRecoveryExecutorConfig:
     backend_manifest_path: Path | None = None
     expected_transaction_id: str | None = None
     approve_recovery: bool = False
+    require_transaction_lock: bool = False
+    transaction_lock_owner: str | None = None
+    transaction_lock_lease_seconds: int = 900
+    expected_resume_token: str | None = None
     write_execution_record: bool = True
     execution_record_name: str = "delivery-recovery-execution.json"
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -244,6 +248,10 @@ class DeliveryTransactionRecoveryExecutor:
                     mode=self.config.mode,
                     backend_manifest_path=self.config.backend_manifest_path,
                     expected_transaction_id=self.config.expected_transaction_id,
+                    require_transaction_lock=self.config.require_transaction_lock,
+                    transaction_lock_owner=self.config.transaction_lock_owner,
+                    transaction_lock_lease_seconds=self.config.transaction_lock_lease_seconds,
+                    expected_resume_token=self.config.expected_resume_token,
                     write_execution_record=False,
                     metadata={
                         **self.config.metadata,

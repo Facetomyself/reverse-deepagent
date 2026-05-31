@@ -8,7 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
@@ -113,6 +113,11 @@ class DeliveryExecutorConfig:
     allow_duplicate_external_delivery: bool = False
     external_delivery_duplicate_guard_name: str = "external-delivery-duplicate-guard.json"
     external_delivery_idempotency_ledger_name: str = "external-delivery-idempotency-ledger.json"
+    require_transaction_lock: bool = False
+    transaction_lock_name: str = "delivery-transaction-lock.json"
+    transaction_lock_owner: str | None = None
+    transaction_lock_lease_seconds: int = 900
+    expected_resume_token: str | None = None
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -1824,6 +1829,54 @@ class DeliveryTransactionIdempotencyGuard:
 
 
 @dataclass(frozen=True)
+class DeliveryTransactionLock:
+    transaction_id: str
+    status: str
+    operation: str
+    lock_path: str | None
+    delivery_root: str
+    owner: str
+    resume_token: str | None
+    expected_resume_token: str | None
+    lease_expires_at: str | None
+    dry_run: bool
+    lock_required: bool
+    lock_acquired: bool
+    resume_accepted: bool
+    stale_lock_detected: bool
+    existing_lock: dict[str, Any] | None
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    recommended_actions: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "operation": self.operation,
+            "lock_path": self.lock_path,
+            "delivery_root": self.delivery_root,
+            "owner": self.owner,
+            "resume_token": self.resume_token,
+            "expected_resume_token": self.expected_resume_token,
+            "lease_expires_at": self.lease_expires_at,
+            "dry_run": self.dry_run,
+            "lock_required": self.lock_required,
+            "lock_acquired": self.lock_acquired,
+            "resume_accepted": self.resume_accepted,
+            "stale_lock_detected": self.stale_lock_detected,
+            "existing_lock": self.existing_lock,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class DeliveryTransactionJournal:
     transaction_id: str
     status: str
@@ -1916,6 +1969,7 @@ class DeliveryExecutionResult:
     backend_manifest_recovery_preflight: BackendManifestRecoveryPreflight | None
     backend_manifest_recovery: BackendManifestRecovery | None
     backend_manifest_transaction_commit: BackendManifestTransactionCommit | None
+    transaction_lock: DeliveryTransactionLock | None
     transaction_idempotency_guard: DeliveryTransactionIdempotencyGuard | None
     external_delivery_result: ExternalDeliveryResult | None
     external_delivery_idempotency_ledger: ExternalDeliveryIdempotencyLedger | None
@@ -1950,6 +2004,7 @@ class DeliveryExecutionResult:
             "backend_manifest_recovery_preflight": self.backend_manifest_recovery_preflight.to_dict() if self.backend_manifest_recovery_preflight else None,
             "backend_manifest_recovery": self.backend_manifest_recovery.to_dict() if self.backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": self.backend_manifest_transaction_commit.to_dict() if self.backend_manifest_transaction_commit else None,
+            "transaction_lock": self.transaction_lock.to_dict() if self.transaction_lock else None,
             "transaction_idempotency_guard": self.transaction_idempotency_guard.to_dict() if self.transaction_idempotency_guard else None,
             "external_delivery_result": self.external_delivery_result.to_dict() if self.external_delivery_result else None,
             "external_delivery_idempotency_ledger": (
@@ -1981,6 +2036,27 @@ class LocalDeliveryExecutor:
         recovery_only = self._is_recovery_preflight_only(artifacts)
         recovery_apply_only = self._is_backend_manifest_recovery_apply_only(artifacts)
         transaction_commit_only = self._is_cross_run_transaction_commit_only(artifacts)
+        lock_operation = self._transaction_lock_operation(artifacts)
+        transaction_lock_path = (
+            str(delivery_root / self.config.transaction_lock_name)
+            if self.config.write_receipt
+            and not dry_run
+            and not errors
+            and self.config.require_transaction_lock
+            and lock_operation is not None
+            else None
+        )
+        transaction_lock = self._build_transaction_lock(
+            lock_path=transaction_lock_path,
+            operation=lock_operation,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        transaction_lock_blocking = bool(transaction_lock and transaction_lock.blocking_reasons)
+        side_effects_blocked_by_lock = transaction_lock_blocking
+        effective_dry_run = dry_run or side_effects_blocked_by_lock
+        if transaction_lock_path and transaction_lock and transaction_lock.lock_acquired:
+            _write_json(Path(transaction_lock_path), transaction_lock.to_dict())
         delivered: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
 
@@ -1991,6 +2067,10 @@ class LocalDeliveryExecutor:
             status = "planned"
             next_action = "approve_local_delivery_apply"
             skipped = [dict(item, reason="dry_run") for item in planned]
+        elif transaction_lock_blocking:
+            status = "blocked"
+            next_action = "review_or_release_delivery_transaction_lock"
+            skipped = [dict(item, reason="transaction_lock_blocked") for item in planned]
         elif recovery_only:
             status = "preflighted"
             next_action = "review_backend_manifest_recovery_preflight"
@@ -2016,42 +2096,42 @@ class LocalDeliveryExecutor:
 
         receipt_path = (
             str(delivery_root / "delivery-receipt.json")
-            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not recovery_apply_only and not transaction_commit_only
+            if self.config.write_receipt and not dry_run and not errors and not transaction_lock_blocking and not recovery_only and not recovery_apply_only and not transaction_commit_only
             else None
         )
         journal_path = (
             str(delivery_root / "delivery-transaction-journal.json")
-            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not recovery_apply_only and not transaction_commit_only
+            if self.config.write_receipt and not dry_run and not errors and not transaction_lock_blocking and not recovery_only and not recovery_apply_only and not transaction_commit_only
             else None
         )
         manifest_revision_path = (
             str(delivery_root / self.config.manifest_revision_name)
-            if self.config.write_receipt and self.config.commit_manifest_revision and not dry_run and not errors
+            if self.config.write_receipt and self.config.commit_manifest_revision and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         backend_manifest_mutation_path = (
             str(delivery_root / self.config.backend_manifest_mutation_name)
-            if self.config.write_receipt and self.config.commit_backend_manifest_mutation and not dry_run and not errors
+            if self.config.write_receipt and self.config.commit_backend_manifest_mutation and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         backend_manifest_patched_path = (
             str(delivery_root / self.config.backend_manifest_patched_name)
-            if self.config.write_receipt and self.config.commit_backend_manifest_mutation and not dry_run and not errors
+            if self.config.write_receipt and self.config.commit_backend_manifest_mutation and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         backend_manifest_preflight_path = (
             str(delivery_root / self.config.backend_manifest_preflight_name)
-            if self.config.write_receipt and self.config.preflight_backend_manifest_in_place_mutation and not dry_run and not errors
+            if self.config.write_receipt and self.config.preflight_backend_manifest_in_place_mutation and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         backend_manifest_in_place_mutation_path = (
             str(delivery_root / self.config.backend_manifest_in_place_mutation_name)
-            if self.config.write_receipt and self.config.approve_backend_manifest_in_place_mutation and not dry_run and not errors
+            if self.config.write_receipt and self.config.approve_backend_manifest_in_place_mutation and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         backend_manifest_rollback_path = (
             str(delivery_root / self.config.backend_manifest_rollback_name)
-            if self.config.write_receipt and self.config.approve_backend_manifest_in_place_mutation and not dry_run and not errors
+            if self.config.write_receipt and self.config.approve_backend_manifest_in_place_mutation and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         backend_manifest_recovery_preflight_path = (
@@ -2061,12 +2141,12 @@ class LocalDeliveryExecutor:
         )
         backend_manifest_recovery_path = (
             str(delivery_root / self.config.backend_manifest_recovery_name)
-            if self.config.write_receipt and self.config.apply_backend_manifest_recovery and not dry_run and not errors
+            if self.config.write_receipt and self.config.apply_backend_manifest_recovery and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         backend_manifest_transaction_commit_path = (
             str(delivery_root / self.config.backend_manifest_transaction_commit_name)
-            if self.config.write_receipt and self.config.commit_cross_run_transaction and not dry_run and not errors
+            if self.config.write_receipt and self.config.commit_cross_run_transaction and not dry_run and not errors and not transaction_lock_blocking
             else None
         )
         transaction_idempotency_guard_path = (
@@ -2074,25 +2154,26 @@ class LocalDeliveryExecutor:
             if self.config.write_receipt
             and not dry_run
             and not errors
+            and not transaction_lock_blocking
             and (self.config.apply_backend_manifest_recovery or self.config.commit_cross_run_transaction)
             else None
         )
         external_delivery_result_path = (
             str(delivery_root / self.config.external_delivery_result_name)
-            if self.config.write_receipt and self.config.request_external_delivery and not dry_run
+            if self.config.write_receipt and self.config.request_external_delivery and not dry_run and not transaction_lock_blocking
             else None
         )
         external_delivery_idempotency_ledger_path = (
             str(delivery_root / self.config.external_delivery_idempotency_ledger_name)
-            if self.config.write_receipt and self.config.request_external_delivery and not dry_run
+            if self.config.write_receipt and self.config.request_external_delivery and not dry_run and not transaction_lock_blocking
             else None
         )
         backend_manifest_transaction_commit = self._build_backend_manifest_transaction_commit(
             commit_path=backend_manifest_transaction_commit_path,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
-        if transaction_commit_only and backend_manifest_transaction_commit:
+        if transaction_commit_only and backend_manifest_transaction_commit and not transaction_lock_blocking:
             if backend_manifest_transaction_commit.committed:
                 status = "committed"
                 next_action = "review_committed_transaction_before_external_delivery"
@@ -2119,7 +2200,7 @@ class LocalDeliveryExecutor:
             delivered=delivered,
             planned=planned,
             status=status,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
             revision_path=manifest_revision_path,
         )
@@ -2128,7 +2209,7 @@ class LocalDeliveryExecutor:
             delivered=delivered,
             planned=planned,
             status=status,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
             mutation_path=backend_manifest_mutation_path,
             patched_manifest_path=backend_manifest_patched_path,
@@ -2147,7 +2228,7 @@ class LocalDeliveryExecutor:
             mutation=backend_manifest_mutation,
             patched_manifest=patched_backend_manifest,
             preflight_path=backend_manifest_preflight_path,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
         backend_manifest_in_place_mutation = self._apply_backend_manifest_in_place_mutation(
@@ -2156,7 +2237,7 @@ class LocalDeliveryExecutor:
             patched_manifest=patched_backend_manifest,
             mutation_path=backend_manifest_in_place_mutation_path,
             rollback_path=backend_manifest_rollback_path,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
         backend_manifest_mutated = bool(backend_manifest_in_place_mutation and backend_manifest_in_place_mutation.backend_manifest_mutated)
@@ -2173,26 +2254,26 @@ class LocalDeliveryExecutor:
             )
         backend_manifest_recovery_preflight = self._build_backend_manifest_recovery_preflight(
             preflight_path=backend_manifest_recovery_preflight_path,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
         backend_manifest_recovery = self._apply_backend_manifest_recovery(
             recovery_path=backend_manifest_recovery_path,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
         transaction_idempotency_guard = self._build_transaction_idempotency_guard(
             guard_path=transaction_idempotency_guard_path,
             recovery=backend_manifest_recovery,
             commit=backend_manifest_transaction_commit,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
         if transaction_idempotency_guard and transaction_idempotency_guard.operation == "apply_backend_manifest_recovery":
             backend_manifest_recovery_path = None
         if transaction_idempotency_guard and transaction_idempotency_guard.operation == "commit_cross_run_transaction":
             backend_manifest_transaction_commit_path = None
-        if recovery_apply_only and backend_manifest_recovery:
+        if recovery_apply_only and backend_manifest_recovery and not transaction_lock_blocking:
             if backend_manifest_recovery.recovered:
                 status = "recovered"
                 next_action = "review_backend_manifest_recovery_before_transaction_commit"
@@ -2213,13 +2294,13 @@ class LocalDeliveryExecutor:
             delivered=delivered,
             planned=planned,
             errors=errors,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
         if external_delivery_result and external_delivery_result.result_path:
             external_delivery_result_path = external_delivery_result.result_path
         external_delivery_performed = bool(external_delivery_result and external_delivery_result.external_delivery_performed)
-        if external_delivery_result:
+        if external_delivery_result and not transaction_lock_blocking:
             if external_delivery_performed:
                 status = "external_delivered"
                 next_action = "review_external_delivery_result"
@@ -2258,7 +2339,7 @@ class LocalDeliveryExecutor:
             ledger_path=external_delivery_idempotency_ledger_path,
             result_path=external_delivery_result_path,
             external_delivery_result=external_delivery_result,
-            dry_run=dry_run,
+            dry_run=effective_dry_run,
             created_at=created_at,
         )
         if external_delivery_idempotency_ledger and external_delivery_idempotency_ledger.ledger_path:
@@ -2400,6 +2481,8 @@ class LocalDeliveryExecutor:
             _write_json(Path(external_delivery_result_path), external_delivery_result.to_dict())
         if external_delivery_idempotency_ledger_path and external_delivery_idempotency_ledger:
             _write_json(Path(external_delivery_idempotency_ledger_path), external_delivery_idempotency_ledger.to_dict())
+        if transaction_lock_path and transaction_lock and transaction_lock.lock_acquired:
+            _write_json(Path(transaction_lock_path), transaction_lock.to_dict())
         should_write_journal = bool(journal_path) and (
             (not transaction_commit_only and not recovery_apply_only)
             or bool(backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed)
@@ -2407,7 +2490,9 @@ class LocalDeliveryExecutor:
         )
         if should_write_journal:
             _write_json(Path(journal_path), journal.to_dict())
-        if backend_manifest_mutated:
+        if transaction_lock_blocking:
+            next_action = "review_or_release_delivery_transaction_lock"
+        elif backend_manifest_mutated:
             next_action = "review_backend_manifest_in_place_mutation_before_cross_run_commit"
         elif backend_manifest_in_place_mutation and backend_manifest_in_place_mutation.blocking_reasons:
             next_action = "fix_backend_manifest_in_place_mutation_blockers"
@@ -2444,6 +2529,7 @@ class LocalDeliveryExecutor:
             "backend_manifest_recovery_preflight": backend_manifest_recovery_preflight.to_dict() if backend_manifest_recovery_preflight else None,
             "backend_manifest_recovery": backend_manifest_recovery.to_dict() if backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": backend_manifest_transaction_commit.to_dict() if backend_manifest_transaction_commit else None,
+            "transaction_lock": transaction_lock.to_dict() if transaction_lock else None,
             "transaction_idempotency_guard": transaction_idempotency_guard.to_dict() if transaction_idempotency_guard else None,
             "external_delivery_result": external_delivery_result.to_dict() if external_delivery_result else None,
             "external_delivery_idempotency_ledger": (
@@ -2485,6 +2571,7 @@ class LocalDeliveryExecutor:
             backend_manifest_recovery_preflight=backend_manifest_recovery_preflight,
             backend_manifest_recovery=backend_manifest_recovery,
             backend_manifest_transaction_commit=backend_manifest_transaction_commit,
+            transaction_lock=transaction_lock,
             transaction_idempotency_guard=transaction_idempotency_guard,
             external_delivery_result=external_delivery_result,
             external_delivery_idempotency_ledger=external_delivery_idempotency_ledger,
@@ -2585,6 +2672,150 @@ class LocalDeliveryExecutor:
                     "single_delivery_root_guard_record",
                     "does_not_distribute_transaction_locks",
                     "does_not_retry_or_publish_external_delivery",
+                ],
+            },
+        )
+
+    def _transaction_lock_operation(self, artifacts: list[DeliveryArtifact]) -> str | None:
+        if self.config.mode == DeliveryExecutionMode.DRY_RUN:
+            return None
+        if self.config.apply_backend_manifest_recovery:
+            return "apply_backend_manifest_recovery"
+        if self.config.commit_cross_run_transaction:
+            return "commit_cross_run_transaction"
+        if self.config.request_external_delivery:
+            return "request_external_delivery"
+        if self.config.approve_backend_manifest_in_place_mutation:
+            return "approve_backend_manifest_in_place_mutation"
+        if artifacts:
+            return "local_delivery_apply"
+        return None
+
+    def _build_transaction_lock(
+        self,
+        *,
+        lock_path: str | None,
+        operation: str | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> DeliveryTransactionLock | None:
+        if not self.config.require_transaction_lock or operation is None:
+            return None
+        delivery_root = self.config.resolved_delivery_root()
+        owner = str(self.config.transaction_lock_owner or self.config.transaction_id).strip() or self.config.transaction_id
+        expected_resume_token = str(self.config.expected_resume_token or "").strip() or None
+        resolved_lock_path = Path(lock_path).expanduser().resolve() if lock_path else (delivery_root / self.config.transaction_lock_name).resolve()
+        existing_lock: dict[str, Any] | None = None
+        existing_lock_load_error: str | None = None
+        if resolved_lock_path.exists():
+            try:
+                existing_lock = _read_json_object(resolved_lock_path)
+            except Exception as exc:  # noqa: BLE001 - malformed lock should block apply actions.
+                existing_lock_load_error = str(exc)
+                existing_lock = {}
+        existing_owner = str(existing_lock.get("owner") or "") if existing_lock else ""
+        existing_resume_token = str(existing_lock.get("resume_token") or "") if existing_lock else ""
+        existing_transaction_id = str(existing_lock.get("transaction_id") or "") if existing_lock else ""
+        existing_lease_expires_at = str(existing_lock.get("lease_expires_at") or "") if existing_lock else ""
+        stale_lock_detected = bool(existing_lock) and _iso_datetime_is_past(existing_lease_expires_at, created_at)
+        same_owner = bool(existing_lock) and existing_owner == owner
+        resume_matches = bool(expected_resume_token and existing_resume_token and expected_resume_token == existing_resume_token)
+        existing_lock_blocks = bool(existing_lock) and not stale_lock_detected and not same_owner and not resume_matches
+        resume_required_but_missing = bool(expected_resume_token and not resume_matches and existing_lock)
+        checks = [
+            {
+                "name": "transaction_lock_required_for_apply",
+                "passed": True,
+                "details": {"require_transaction_lock": True, "operation": operation},
+            },
+            {
+                "name": "transaction_lock_file_is_valid",
+                "passed": existing_lock_load_error is None,
+                "details": {"load_error": existing_lock_load_error, "lock_path": str(resolved_lock_path)},
+            },
+            {
+                "name": "transaction_lock_not_held_by_other_owner",
+                "passed": not existing_lock_blocks,
+                "details": {
+                    "owner": owner,
+                    "existing_owner": existing_owner or None,
+                    "existing_transaction_id": existing_transaction_id or None,
+                    "stale_lock_detected": stale_lock_detected,
+                    "resume_token_matches": resume_matches,
+                },
+            },
+            {
+                "name": "expected_resume_token_matches_lock",
+                "passed": not resume_required_but_missing,
+                "details": {
+                    "expected_resume_token_configured": bool(expected_resume_token),
+                    "existing_resume_token_present": bool(existing_resume_token),
+                    "resume_token_matches": resume_matches,
+                },
+            },
+            {
+                "name": "stale_lock_requires_manual_cleanup",
+                "passed": not stale_lock_detected,
+                "details": {
+                    "stale_lock_detected": stale_lock_detected,
+                    "existing_lease_expires_at": existing_lease_expires_at or None,
+                },
+            },
+        ]
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        lease_expires_at = None
+        if not dry_run and not blocking_reasons:
+            lease_expires_at = (
+                datetime.fromisoformat(created_at).astimezone(timezone.utc)
+                + timedelta(seconds=max(1, int(self.config.transaction_lock_lease_seconds)))
+            ).isoformat()
+        resume_token = expected_resume_token or _json_payload_sha256(
+            {
+                "transaction_id": self.config.transaction_id,
+                "owner": owner,
+                "operation": operation,
+                "created_at": created_at,
+            }
+        )
+        if existing_lock and (same_owner or resume_matches) and existing_resume_token:
+            resume_token = existing_resume_token
+        status = "blocked" if blocking_reasons else "planned" if dry_run else "acquired"
+        return DeliveryTransactionLock(
+            transaction_id=self.config.transaction_id,
+            status=status,
+            operation=operation,
+            lock_path=str(resolved_lock_path) if lock_path or not dry_run else None,
+            delivery_root=str(delivery_root),
+            owner=owner,
+            resume_token=resume_token if not blocking_reasons else existing_resume_token or resume_token,
+            expected_resume_token=expected_resume_token,
+            lease_expires_at=lease_expires_at if not blocking_reasons else existing_lease_expires_at or None,
+            dry_run=dry_run,
+            lock_required=True,
+            lock_acquired=status == "acquired",
+            resume_accepted=bool(existing_lock and (same_owner or resume_matches) and not blocking_reasons),
+            stale_lock_detected=stale_lock_detected,
+            existing_lock=existing_lock if existing_lock else None,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=(
+                ["review_or_release_existing_delivery_transaction_lock"]
+                if blocking_reasons
+                else ["continue_delivery_transaction_with_lock"]
+            ),
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "delivery-transaction-lock-preflight-baseline",
+                "local_file_lock": True,
+                "distributed_lock": False,
+                "automatic_stale_lock_takeover": False,
+                "limitations": [
+                    "local_delivery_root_lock_only",
+                    "does_not_provide_distributed_consensus",
+                    "does_not_auto_take_over_stale_locks",
+                    "resume_token_is_local_audit_token",
                 ],
             },
         )
@@ -3874,6 +4105,21 @@ def _read_json_object(path: Path | None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Backend artifact manifest must be a JSON object: {path}")
     return payload
+
+
+def _iso_datetime_is_past(value: str | None, now_value: str) -> bool:
+    if not value:
+        return False
+    try:
+        candidate = datetime.fromisoformat(value)
+        now = datetime.fromisoformat(now_value)
+    except ValueError:
+        return False
+    if candidate.tzinfo is None:
+        candidate = candidate.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return candidate.astimezone(timezone.utc) < now.astimezone(timezone.utc)
 
 
 def _resolve_record_path(value: Any, base_dir: Path) -> Path | None:
