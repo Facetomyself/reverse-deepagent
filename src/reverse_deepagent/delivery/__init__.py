@@ -11,9 +11,11 @@ from .lock_provider import (
     DeliveryTransactionLockProviderRegistration,
     DeliveryTransactionLockProviderRegistry,
     LocalFileDeliveryTransactionLockProvider,
+    SQLiteDeliveryTransactionLockProvider,
     build_default_delivery_transaction_lock_provider_registry,
     local_file_delivery_transaction_lock_provider_registration,
     manage_delivery_transaction_lock,
+    sqlite_delivery_transaction_lock_provider_registration,
 )
 from .resume_runner import (
     SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS,
@@ -130,8 +132,10 @@ __all__ = [
     "DeliveryTransactionLockProviderRegistration",
     "DeliveryTransactionLockProviderRegistry",
     "LocalFileDeliveryTransactionLockProvider",
+    "SQLiteDeliveryTransactionLockProvider",
     "build_default_delivery_transaction_lock_provider_registry",
     "local_file_delivery_transaction_lock_provider_registration",
+    "sqlite_delivery_transaction_lock_provider_registration",
     "manage_delivery_transaction_lock",
     "SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS",
     "DeliveryResumeExecution",

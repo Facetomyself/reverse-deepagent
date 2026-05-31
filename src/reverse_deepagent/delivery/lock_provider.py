@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -359,6 +360,199 @@ class LocalFileDeliveryTransactionLockProvider:
         return operation_record
 
 
+@dataclass(frozen=True)
+class SQLiteDeliveryTransactionLockProvider:
+    """SQLite-backed transactional lock provider baseline.
+
+    This provider stores the authoritative lock row in a local SQLite database
+    using ``BEGIN IMMEDIATE`` for serialized write transactions.  It is stronger
+    than the JSON-file reference provider for same-host concurrent processes,
+    but it is still not a distributed consensus system.
+    """
+
+    database_name: str = "delivery-distributed-transaction-lock.sqlite3"
+    provider_id: str = "sqlite-lock"
+
+    def manage_lock(
+        self,
+        config: DeliveryTransactionLockProviderConfig,
+        *,
+        created_at: str,
+    ) -> DeliveryTransactionLockOperation:
+        lock_root = config.resolved_lock_root()
+        lock_path = lock_root / config.lock_name
+        operation_record_path = lock_root / config.operation_record_name
+        database_path = lock_root / self.database_name
+        dry_run = config.mode == DeliveryExecutionMode.DRY_RUN
+        existing_lock, load_error = self._read_existing(database_path=database_path, dry_run=dry_run)
+        stale = bool(existing_lock) and _lease_is_past(str(existing_lock.get("lease_expires_at") or ""), created_at)
+        checks = _base_checks(config=config, existing_lock=existing_lock, load_error=load_error, stale=stale)
+        action = str(config.action or "")
+        resulting_lock: dict[str, Any] | None = existing_lock.copy() if existing_lock else None
+        lock_acquired = False
+        lock_renewed = False
+        lock_released = False
+        fencing_token: str | None = str(existing_lock.get("fencing_token")) if existing_lock and existing_lock.get("fencing_token") is not None else None
+        lease_expires_at: str | None = str(existing_lock.get("lease_expires_at")) if existing_lock and existing_lock.get("lease_expires_at") else None
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        if not blocking_reasons and action in {"acquire_lock", "renew_lock"}:
+            fencing_token = _next_fencing_token(existing_lock)
+            lease_expires_at = _lease_expires_at(created_at, config.lease_seconds)
+            resulting_lock = self._lock_record(
+                config=config,
+                created_at=created_at,
+                fencing_token=fencing_token,
+                lease_expires_at=lease_expires_at,
+                action=action,
+            )
+            if not dry_run:
+                self._upsert_lock(database_path=database_path, lock_record=resulting_lock)
+                _write_json(lock_path, resulting_lock)
+            lock_acquired = action == "acquire_lock" and not dry_run
+            lock_renewed = action == "renew_lock" and not dry_run
+        elif not blocking_reasons and action == "release_lock":
+            if not dry_run:
+                self._delete_lock(database_path=database_path)
+                if lock_path.exists():
+                    lock_path.unlink()
+            resulting_lock = None
+            lock_released = not dry_run
+        status = _status_for(action, dry_run, blocking_reasons, lock_acquired, lock_renewed, lock_released)
+        operation_record = DeliveryTransactionLockOperation(
+            provider_id=self.provider_id,
+            action=action,
+            status=status,
+            mode=config.mode.value,
+            dry_run=dry_run,
+            lock_root=str(lock_root),
+            lock_path=str(lock_path),
+            operation_record_path=str(operation_record_path) if not dry_run and status in {"acquired", "renewed", "released", "inspected"} else None,
+            transaction_id=config.transaction_id,
+            owner=config.owner,
+            expected_owner=config.expected_owner,
+            fencing_token=fencing_token,
+            expected_fencing_token=config.expected_fencing_token,
+            lease_expires_at=lease_expires_at,
+            lock_acquired=lock_acquired,
+            lock_renewed=lock_renewed,
+            lock_released=lock_released,
+            stale_lock_detected=stale,
+            stale_takeover_allowed=config.allow_stale_takeover,
+            existing_lock=existing_lock,
+            resulting_lock=resulting_lock,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=_recommended_actions(status, action, stale),
+            created_at=created_at,
+            metadata={
+                **config.metadata,
+                "provider_id": self.provider_id,
+                "provider_transport": "sqlite",
+                "database_path": str(database_path),
+                "distributed_lock_contract": True,
+                "coordination_scope": "local-sqlite-transaction",
+                "supports_fencing_token": True,
+                "supports_lease": True,
+                "supports_distributed_consensus": False,
+                "sqlite_transactional_storage": True,
+                "limitations": [
+                    "sqlite_provider_serializes_same_database_writers",
+                    "does_not_provide_cross_machine_consensus_by_itself",
+                    "database_file_must_be_on_a_reliable_local_or_shared_filesystem",
+                    "downstream_writers_must_still_enforce_fencing_tokens",
+                ],
+            },
+        )
+        if operation_record.operation_record_path:
+            _write_json(Path(operation_record.operation_record_path), operation_record.to_dict())
+        return operation_record
+
+    def _read_existing(self, *, database_path: Path, dry_run: bool) -> tuple[dict[str, Any] | None, str | None]:
+        if not database_path.exists():
+            return None, None
+        try:
+            with sqlite3.connect(database_path) as connection:
+                _ensure_sqlite_schema(connection)
+                row = connection.execute(
+                    "SELECT lock_json FROM delivery_transaction_locks WHERE lock_key = ?",
+                    ("delivery",),
+                ).fetchone()
+        except Exception as exc:  # noqa: BLE001 - returned as structured blocker.
+            return {}, str(exc)
+        if row is None:
+            return None, None
+        try:
+            value = json.loads(str(row[0]))
+        except Exception as exc:  # noqa: BLE001
+            return {}, str(exc)
+        if not isinstance(value, dict):
+            return {}, "sqlite lock record must decode to a JSON object"
+        return value, None
+
+    def _upsert_lock(self, *, database_path: Path, lock_record: dict[str, Any]) -> None:
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            _ensure_sqlite_schema(connection)
+            connection.execute(
+                """
+                INSERT INTO delivery_transaction_locks(lock_key, transaction_id, owner, fencing_token, lease_expires_at, lock_json, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(lock_key) DO UPDATE SET
+                    transaction_id = excluded.transaction_id,
+                    owner = excluded.owner,
+                    fencing_token = excluded.fencing_token,
+                    lease_expires_at = excluded.lease_expires_at,
+                    lock_json = excluded.lock_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    "delivery",
+                    str(lock_record.get("transaction_id") or ""),
+                    str(lock_record.get("owner") or ""),
+                    str(lock_record.get("fencing_token") or ""),
+                    str(lock_record.get("lease_expires_at") or ""),
+                    json.dumps(lock_record, ensure_ascii=False, sort_keys=True),
+                    str(lock_record.get("renewed_at") or lock_record.get("created_at") or ""),
+                ),
+            )
+            connection.commit()
+
+    def _delete_lock(self, *, database_path: Path) -> None:
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            _ensure_sqlite_schema(connection)
+            connection.execute("DELETE FROM delivery_transaction_locks WHERE lock_key = ?", ("delivery",))
+            connection.commit()
+
+    def _lock_record(
+        self,
+        *,
+        config: DeliveryTransactionLockProviderConfig,
+        created_at: str,
+        fencing_token: str,
+        lease_expires_at: str,
+        action: str,
+    ) -> dict[str, Any]:
+        return {
+            "version": "2026-06-01.delivery-transaction-lock-provider-v1",
+            "provider_id": self.provider_id,
+            "transaction_id": config.transaction_id,
+            "owner": config.owner,
+            "fencing_token": fencing_token,
+            "lease_expires_at": lease_expires_at,
+            "created_at": created_at,
+            "renewed_at": created_at if action == "renew_lock" else None,
+            "metadata": {
+                **config.metadata,
+                "distributed_lock_contract": True,
+                "coordination_scope": "local-sqlite-transaction",
+                "sqlite_transactional_storage": True,
+            },
+        }
+
+
 def local_file_delivery_transaction_lock_provider_registration() -> DeliveryTransactionLockProviderRegistration:
     return DeliveryTransactionLockProviderRegistration(
         provider_id="local-file-lock",
@@ -383,9 +577,37 @@ def local_file_delivery_transaction_lock_provider_registration() -> DeliveryTran
     )
 
 
+def sqlite_delivery_transaction_lock_provider_registration() -> DeliveryTransactionLockProviderRegistration:
+    return DeliveryTransactionLockProviderRegistration(
+        provider_id="sqlite-lock",
+        aliases=("db-lock", "sqlite-transaction-lock", "local-db-lock"),
+        capabilities=DeliveryTransactionLockProviderCapabilities(
+            provider_id="sqlite-lock",
+            display_name="SQLite transaction lock provider",
+            transport="sqlite",
+            coordination_scope="local-sqlite-transaction",
+            supports_distributed_consensus=False,
+            metadata={
+                "contract_baseline": True,
+                "writes_lock_record": True,
+                "writes_operation_record": True,
+                "writes_sqlite_database": True,
+                "supports_fencing_token": True,
+                "supports_lease": True,
+                "external_service_required": False,
+                "sqlite_transactional_storage": True,
+                "recommended_for": "same-host-or-shared-database-transaction-lock-tests",
+                "not_consensus": True,
+            },
+        ),
+        factory=lambda **kwargs: SQLiteDeliveryTransactionLockProvider(**kwargs),
+    )
+
+
 def build_default_delivery_transaction_lock_provider_registry(*, load_entry_points: bool = True) -> DeliveryTransactionLockProviderRegistry:
     registry = DeliveryTransactionLockProviderRegistry()
     registry.register(local_file_delivery_transaction_lock_provider_registration())
+    registry.register(sqlite_delivery_transaction_lock_provider_registration())
     if load_entry_points:
         registry.load_entry_points()
     return registry
@@ -507,6 +729,22 @@ def _entry_points_for_group(group: str) -> list[Any]:
     if hasattr(entry_points, "select"):
         return list(entry_points.select(group=group))
     return list(entry_points.get(group, []))
+
+
+def _ensure_sqlite_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS delivery_transaction_locks (
+            lock_key TEXT PRIMARY KEY,
+            transaction_id TEXT NOT NULL,
+            owner TEXT NOT NULL,
+            fencing_token TEXT NOT NULL,
+            lease_expires_at TEXT NOT NULL,
+            lock_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
 
 
 _LOCK_PROVIDER_SAFE_SECRET_KEY_NAMES = {
