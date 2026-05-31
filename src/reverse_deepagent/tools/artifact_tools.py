@@ -29,7 +29,6 @@ def make_read_workspace_artifact_tool(default_artifact_root: str | Path) -> Arti
     """Create a read-only resolver-backed workspace artifact reader tool."""
 
     root = Path(default_artifact_root)
-    resolver = WorkspacePathResolver()
 
     def read_workspace_artifact(
         artifact_ref: str,
@@ -38,31 +37,12 @@ def make_read_workspace_artifact_tool(default_artifact_root: str | Path) -> Arti
     ) -> dict[str, Any]:
         """Read a workspace artifact by key, legacy path, future path, or virtual URI without mutating files."""
 
-        effective_root = Path(artifact_root) if artifact_root else root
-        resolution = resolver.resolve_artifact_key(artifact_ref) or resolver.resolve_path(artifact_ref)
-        candidate_paths = _candidate_paths(effective_root, artifact_ref, resolution)
-        checked_paths: list[str] = []
-        for candidate in candidate_paths:
-            checked_paths.append(str(candidate))
-            if not candidate.exists() or not candidate.is_file():
-                continue
-            return _read_artifact_file(
-                candidate,
-                artifact_ref=artifact_ref,
-                artifact_root=effective_root,
-                resolution=resolution,
-                checked_paths=checked_paths,
-                max_chars=max_chars,
-            )
-        return {
-            "status": "missing",
-            "artifact_ref": artifact_ref,
-            "artifact_root": str(effective_root),
-            "resolution_status": "resolved" if resolution else "direct-path-fallback",
-            "resolution": resolution.to_dict() if resolution else {},
-            "checked_paths": checked_paths,
-            "side_effect_policy": _reader_side_effect_policy(),
-        }
+        return read_workspace_artifact_payload(
+            artifact_ref=artifact_ref,
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            max_chars=max_chars,
+        )
 
     read_workspace_artifact.__name__ = "read_workspace_artifact"
     read_workspace_artifact.__doc__ = (
@@ -71,6 +51,87 @@ def make_read_workspace_artifact_tool(default_artifact_root: str | Path) -> Arti
         "The tool is read-only and does not migrate or dual-write artifacts."
     )
     return read_workspace_artifact
+
+
+def read_workspace_artifact_payload(
+    *,
+    artifact_ref: str,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    max_chars: int = 20000,
+) -> dict[str, Any]:
+    """Read a workspace artifact and return the same payload as the public reader tool."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    resolver = WorkspacePathResolver()
+    resolution = resolver.resolve_artifact_key(artifact_ref) or resolver.resolve_path(artifact_ref)
+    candidate_paths = _candidate_paths(effective_root, artifact_ref, resolution)
+    checked_paths: list[str] = []
+    for candidate in candidate_paths:
+        checked_paths.append(str(candidate))
+        if not candidate.exists() or not candidate.is_file():
+            continue
+        return _read_artifact_file(
+            candidate,
+            artifact_ref=artifact_ref,
+            artifact_root=effective_root,
+            resolution=resolution,
+            checked_paths=checked_paths,
+            max_chars=max_chars,
+        )
+    return {
+        "status": "missing",
+        "artifact_ref": artifact_ref,
+        "artifact_root": str(effective_root),
+        "resolution_status": "resolved" if resolution else "direct-path-fallback",
+        "resolution": resolution.to_dict() if resolution else {},
+        "checked_paths": checked_paths,
+        "side_effect_policy": _reader_side_effect_policy(),
+    }
+
+
+def load_workspace_artifact_json_object(
+    *,
+    artifact_ref: str,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    field_name: str = "artifact_ref",
+    max_chars: int = 20000,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Read a workspace artifact and return its JSON object plus read diagnostics."""
+
+    result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        artifact_root=artifact_root,
+        max_chars=max_chars,
+    )
+    if result.get("status") != "found":
+        raise ValueError(f"{field_name} could not be read: {result.get('status')}; checked_paths={result.get('checked_paths')}")
+    if result.get("content_type") != "json":
+        raise ValueError(f"{field_name} must resolve to a JSON object artifact; content_type={result.get('content_type')}")
+    value = result.get("json")
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must resolve to a JSON object artifact")
+    return value, result
+
+def summarize_workspace_artifact_read(result: dict[str, Any] | None) -> dict[str, Any]:
+    """Return compact, secret-safe diagnostics for artifact-ref based tool inputs."""
+
+    if not result:
+        return {}
+    return {
+        "status": result.get("status"),
+        "artifact_ref": result.get("artifact_ref"),
+        "artifact_root": result.get("artifact_root"),
+        "path": result.get("path"),
+        "content_type": result.get("content_type"),
+        "content_truncated": bool(result.get("content_truncated")),
+        "resolution_status": result.get("resolution_status"),
+        "resolution": result.get("resolution") or {},
+        "checked_paths": result.get("checked_paths") or [],
+    }
 
 
 def _candidate_paths(root: Path, artifact_ref: str, resolution: WorkspacePathResolution | None) -> list[Path]:

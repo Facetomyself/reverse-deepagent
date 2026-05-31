@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -95,6 +96,52 @@ class ReviewSubagentTests(unittest.TestCase):
         self.assertFalse(payload["blocked"])
         self.assertEqual(payload["next_action"], "delivery_allowed")
         self.assertEqual(payload["info_hint_codes"], ["pure_strategy_detected"])
+
+
+    def test_evaluate_review_gate_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            rebuild = RebuildResult(
+                status=ExecutionStatus.SUCCESS,
+                rebuild_plan={
+                    "ready": True,
+                    "review_hints": [
+                        {
+                            "severity": "info",
+                            "category": "strategy",
+                            "code": "pure_strategy_detected",
+                            "message": "Pure strategy detected.",
+                            "evidence": ["strategy=sig_keyword_timestamp_template"],
+                        }
+                    ],
+                },
+                next_action="run_replay_demo_or_integrate_scrapy",
+            )
+            evidence = promote_evidence(
+                [
+                    EvidenceItem(
+                        summary="validated replay ready",
+                        kind=EvidenceKind.NOTE,
+                        source="function_validation_summary",
+                        anchor="candidate-1",
+                        details={"replay_ready": True, "best_candidate_id": "candidate-1"},
+                        confidence=ConfidenceLevel.HIGH,
+                    )
+                ]
+            )
+            (workspace / "rebuild-result.json").write_text(rebuild.model_dump_json(), encoding="utf-8")
+            (workspace / "evidence-promotion.json").write_text(evidence.model_dump_json(), encoding="utf-8")
+
+            payload = make_evaluate_review_gate_tool(artifact_root)(
+                rebuild_result_artifact_ref="workspace/rebuild-result.json",
+                evidence_promotion_artifact_ref="workspace_evidence_promotion",
+            )
+
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["artifact_input"]["evidence_promotion"]["artifact_ref"], "workspace_evidence_promotion")
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
 
     def test_build_review_subagent_exposes_gate_and_approval_tools(self) -> None:
         subagent = build_review_subagent()

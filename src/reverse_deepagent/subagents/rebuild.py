@@ -24,6 +24,6 @@ def build_rebuild_subagent(
         "name": REBUILD_SUBAGENT_NAME,
         "description": REBUILD_SUBAGENT_DESCRIPTION,
         "system_prompt": load_rebuild_prompt(prompt_path),
-        "tools": [make_read_workspace_artifact_tool(artifact_root), make_build_rebuild_delivery_tool(artifact_root), make_review_rebuild_artifacts_tool()],
+        "tools": [make_read_workspace_artifact_tool(artifact_root), make_build_rebuild_delivery_tool(artifact_root), make_review_rebuild_artifacts_tool(artifact_root)],
         "response_format": RebuildResult,
     }

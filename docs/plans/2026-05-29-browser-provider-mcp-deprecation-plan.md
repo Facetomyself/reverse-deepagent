@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-103 is implemented through the workspace artifact reader resolver baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-104 is implemented through the read-only review helper artifact-ref resolver adoption baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -924,3 +924,15 @@ The coordinator and read-only review/rebuild/timeline/hook/debugger subagents no
 Boundary: this is read-only. It does not write artifacts, create directories, move files, enable dual-write, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains. Physical folder migration remains deferred until broader resolver adoption and compatibility metrics are in place.
 
 Tests cover key / legacy / future / virtual URI reads, dual-write future path fallback, direct relative fallback, missing path diagnostics, side-effect policy, and subagent tool exposure.
+
+### Step 104 execution record: Review helper artifact-ref resolver adoption baseline
+
+Status: implemented as read-only artifact-ref inputs for specialized review helpers, not delivery-path mutation, physical folder migration, or automatic artifact materialization.
+
+`read_workspace_artifact_payload(...)`, `load_workspace_artifact_json_object(...)`, and `summarize_workspace_artifact_read(...)` now provide reusable resolver-backed loading for tools that need a JSON object from the workspace. The existing `read_workspace_artifact` tool delegates to the same helper, keeping key / legacy path / future path / `virtual://workspace/...` URI / artifact-root-relative behavior consistent.
+
+The read-only `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_artifacts`, `review_rebuild_artifacts`, and `evaluate_delivery_review_gate` tools now accept artifact-ref inputs in addition to their original JSON string inputs. Subagent builders pass the configured artifact root into these helpers, and review outputs include compact `artifact_input` diagnostics with resolved path, checked paths, content type, and resolution metadata.
+
+Boundary: this does not change review decisions, execute delivery, write artifacts, enable dual-write, migrate workspace paths, start browsers, call MCP, install hooks, resume debuggers, run replay code, or touch Android / iOS / mini-program full runtime chains. Delivery apply paths and physical foldered-canonical migration remain separate follow-ups.
+
+Tests cover artifact-ref reads for timeline, hook, debugger, rebuild, and review gate helpers while preserving existing JSON-input behavior and read-only side-effect policies.

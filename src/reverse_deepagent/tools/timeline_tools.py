@@ -2,19 +2,35 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from pathlib import Path
 from typing import Any
+
+from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_object, summarize_workspace_artifact_read
 
 
 FLOW_TIMELINE_REVIEW_VERSION = "2026-05-31.flow-timeline-review-v1"
 
 
-def make_review_flow_timeline_tool():
+def make_review_flow_timeline_tool(default_artifact_root: str | Path | None = None):
     """Create a read-only tool that summarizes flow timeline review state."""
 
-    def review_flow_timeline(flow_timeline_json: str) -> dict[str, Any]:
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def review_flow_timeline(
+        flow_timeline_json: str | None = None,
+        flow_timeline_artifact_ref: str | None = None,
+        artifact_root: str | None = None,
+    ) -> dict[str, Any]:
         """Review a flow-timeline JSON payload without mutating artifacts or approving stitching."""
 
-        timeline = _loads_object(flow_timeline_json, field_name="flow_timeline_json")
+        timeline, artifact_read = _loads_object_or_artifact(
+            flow_timeline_json,
+            artifact_ref=flow_timeline_artifact_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="flow_timeline_json",
+            artifact_field_name="flow_timeline_artifact_ref",
+        )
         entries = _list_of_dicts(timeline.get("entries"))
         correlation_groups = _list_of_dicts(timeline.get("correlation_groups"))
         stitch_candidates = _list_of_dicts(timeline.get("stitch_candidates"))
@@ -60,6 +76,7 @@ def make_review_flow_timeline_tool():
             "blocked": bool(blockers),
             "warnings_present": bool(warnings),
             "next_action": next_action,
+            "artifact_input": summarize_workspace_artifact_read(artifact_read),
             "summary": {
                 "entry_count": len(entries),
                 "entry_source_counts": _source_counts(entries),
@@ -97,6 +114,28 @@ def make_review_flow_timeline_tool():
 
     review_flow_timeline.__name__ = "review_flow_timeline"
     return review_flow_timeline
+
+
+def _loads_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if artifact_ref:
+        value, read_result = load_workspace_artifact_json_object(
+            artifact_ref=artifact_ref,
+            default_artifact_root=default_artifact_root,
+            artifact_root=artifact_root,
+            field_name=artifact_field_name,
+        )
+        return value, read_result
+    if payload is None:
+        raise ValueError(f"{field_name} or {artifact_field_name} is required")
+    return _loads_object(payload, field_name=field_name), None
 
 
 def _loads_object(payload: str, *, field_name: str) -> dict[str, Any]:

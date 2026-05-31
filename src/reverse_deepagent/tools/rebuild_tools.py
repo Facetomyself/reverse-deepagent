@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from reverse_deepagent.rebuild import write_rebuild_bundle
+from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_object, summarize_workspace_artifact_read
 from reverse_deepagent.schemas import FinalResult, RebuildResult, TaskCard
 
 
@@ -37,18 +38,37 @@ def make_build_rebuild_delivery_tool(default_artifact_root: str | Path) -> Rebui
 
 
 
-def make_review_rebuild_artifacts_tool():
+def make_review_rebuild_artifacts_tool(default_artifact_root: str | Path | None = None):
     """Create a read-only tool for reviewing rebuild results and rebuild-plan payloads."""
 
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
     def review_rebuild_artifacts(
-        rebuild_result_json: str,
+        rebuild_result_json: str | None = None,
         rebuild_plan_json: str | None = None,
+        rebuild_result_artifact_ref: str | None = None,
+        rebuild_plan_artifact_ref: str | None = None,
+        artifact_root: str | None = None,
     ) -> dict[str, Any]:
         """Review RebuildResult JSON without writing artifacts, running replay code, or executing delivery."""
 
-        rebuild_payload = _loads_object(rebuild_result_json, field_name="rebuild_result_json")
+        rebuild_payload, rebuild_artifact_read = _loads_object_or_artifact(
+            rebuild_result_json,
+            artifact_ref=rebuild_result_artifact_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="rebuild_result_json",
+            artifact_field_name="rebuild_result_artifact_ref",
+        )
         rebuild = RebuildResult.model_validate(rebuild_payload)
-        explicit_plan = _loads_object(rebuild_plan_json, field_name="rebuild_plan_json") if rebuild_plan_json else None
+        explicit_plan, plan_artifact_read = _loads_optional_object_or_artifact(
+            rebuild_plan_json,
+            artifact_ref=rebuild_plan_artifact_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="rebuild_plan_json",
+            artifact_field_name="rebuild_plan_artifact_ref",
+        )
         plan = explicit_plan or rebuild.rebuild_plan or {}
         generated_files = dict(rebuild.generated_files or {})
         artifacts = [artifact.model_dump(mode="json") for artifact in rebuild.artifacts]
@@ -83,6 +103,10 @@ def make_review_rebuild_artifacts_tool():
             "blocked": bool(blockers),
             "warnings_present": bool(warnings),
             "next_action": _rebuild_next_action(status, blockers, warnings, rebuild.next_action),
+            "artifact_input": {
+                "rebuild_result": summarize_workspace_artifact_read(rebuild_artifact_read),
+                "rebuild_plan": summarize_workspace_artifact_read(plan_artifact_read),
+            },
             "summary": {
                 "rebuild_status": str(rebuild.status),
                 "stage": str(rebuild.stage),
@@ -118,6 +142,50 @@ def make_review_rebuild_artifacts_tool():
 
     review_rebuild_artifacts.__name__ = "review_rebuild_artifacts"
     return review_rebuild_artifacts
+
+
+def _loads_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if artifact_ref:
+        value, read_result = load_workspace_artifact_json_object(
+            artifact_ref=artifact_ref,
+            default_artifact_root=default_artifact_root,
+            artifact_root=artifact_root,
+            field_name=artifact_field_name,
+        )
+        return value, read_result
+    if payload is None:
+        raise ValueError(f"{field_name} or {artifact_field_name} is required")
+    return _loads_object(payload, field_name=field_name), None
+
+
+def _loads_optional_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if artifact_ref:
+        value, read_result = load_workspace_artifact_json_object(
+            artifact_ref=artifact_ref,
+            default_artifact_root=default_artifact_root,
+            artifact_root=artifact_root,
+            field_name=artifact_field_name,
+        )
+        return value, read_result
+    if payload:
+        return _loads_object(payload, field_name=field_name), None
+    return None, None
 
 
 def _loads_object(payload: str, *, field_name: str) -> dict[str, Any]:

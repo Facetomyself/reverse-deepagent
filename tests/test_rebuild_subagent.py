@@ -88,6 +88,33 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertIn("rebuild_plan_not_ready", result["warnings"])
         self.assertEqual(result["next_action"], "manual_port_or_expand_source_context")
 
+
+    def test_review_rebuild_artifacts_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            rebuild = RebuildResult(
+                status=ExecutionStatus.SUCCESS,
+                rebuild_plan={"ready": True, "review_hints": []},
+                generated_files={"rebuild_plan": "/tmp/rebuild-plan.json"},
+                artifacts=[ArtifactRef(path="/tmp/rebuild-plan.json", kind=ArtifactKind.JSON, description="plan")],
+                next_action="run_replay_demo_or_integrate_scrapy",
+            )
+            plan = {"ready": True, "entrypoint": "buildSign", "review_hints": []}
+            (workspace / "rebuild-result.json").write_text(rebuild.model_dump_json(), encoding="utf-8")
+            (workspace / "rebuild-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+            result = make_review_rebuild_artifacts_tool(artifact_root)(
+                rebuild_result_artifact_ref="workspace/rebuild-result.json",
+                rebuild_plan_artifact_ref="workspace_rebuild_plan",
+            )
+
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["summary"]["entrypoint"], "buildSign")
+            self.assertEqual(result["artifact_input"]["rebuild_plan"]["artifact_ref"], "workspace_rebuild_plan")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_build_rebuild_subagent_exposes_build_and_review_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             subagent = build_rebuild_subagent(Path(tmp) / "artifacts")

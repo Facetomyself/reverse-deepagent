@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -57,6 +58,25 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("hook_artifact_reports_failure", result["blockers"])
         self.assertEqual(result["next_action"], "inspect_hook_failure_and_adjust_target_paths")
         self.assertEqual(result["review_required_items"][0]["module_hook_error"], "missing export")
+
+
+    def test_review_hook_artifacts_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            payload = {
+                "function_hooks": {"status": "success", "installed": {"window.buildSign": True}},
+                "function_hook_timeline": {"events": [{"type": "call"}]},
+            }
+            (workspace / "function-hooks.json").write_text(json.dumps(payload), encoding="utf-8")
+
+            result = make_review_hook_artifacts_tool(artifact_root)(hook_artifacts_ref="workspace_function_hooks")
+
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["summary"]["installed_function_hook_count"], 1)
+            self.assertEqual(result["artifact_input"]["artifact_ref"], "workspace_function_hooks")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
 
     def test_build_hook_subagent_exposes_read_only_review_tool(self) -> None:
         subagent = build_hook_subagent()

@@ -24,5 +24,5 @@ def build_timeline_subagent(
         "name": TIMELINE_SUBAGENT_NAME,
         "description": TIMELINE_SUBAGENT_DESCRIPTION,
         "system_prompt": load_timeline_prompt(prompt_path),
-        "tools": [make_read_workspace_artifact_tool(root), make_review_flow_timeline_tool()],
+        "tools": [make_read_workspace_artifact_tool(root), make_review_flow_timeline_tool(root)],
     }

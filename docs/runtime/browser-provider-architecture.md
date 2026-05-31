@@ -238,7 +238,7 @@ This split leaves the `delivery` subagent focused on local delivery, backend man
 
 The resolver introduces an opt-in dual-write writer seam. `WorkspacePathResolver(enable_dual_write=True)` returns both the legacy canonical path and foldered future path in `write_paths`; the deterministic Web and platform pipelines expose `enable_workspace_dual_write=True` to actually write both physical paths under the artifact root and emit `workspace/workspace-dual-write-plan.json` as an audit record. The legacy flat path remains authoritative, existing artifacts are not moved, and full physical migration remains a separate follow-up.
 
-`read_workspace_artifact` is the first shared resolver consumer exposed to the coordinator and read-only review / rebuild / timeline / hook / debugger subagents. It can read by artifact key, legacy path, future `/workspace/<area>/...` path, `virtual://workspace/...` URI, or artifact-root-relative fallback while reporting checked paths and a read-only side-effect policy. It does not write artifacts, create directories, enable dual-write, change canonical paths, start browsers, or call MCP.
+`read_workspace_artifact` is the shared resolver consumer exposed to the coordinator and read-only review / rebuild / timeline / hook / debugger subagents. It can read by artifact key, legacy path, future `/workspace/<area>/...` path, `virtual://workspace/...` URI, or artifact-root-relative fallback while reporting checked paths and a read-only side-effect policy. The specialized read-only review helpers for flow timeline, hook artifacts, debugger artifacts, rebuild artifacts, and delivery review gate can also accept artifact-ref inputs directly and return compact `artifact_input` diagnostics. These paths do not write artifacts, create directories, enable dual-write, change canonical paths, start browsers, or call MCP.
 
 ## 5.9 BrowserProvider plugin package template
 
@@ -435,7 +435,7 @@ The following items used to be listed as broad follow-ups and now have conservat
 - Generated rebuild review hints derived from runtime-context diff classifications, including volatile, session-bound, missing-field, type-drift, and object-drift risk hints.
 - Plan-only protected-flow triage hook planner for WASM / VM / obfuscation / anti-debug / dynamic-secret markers, including workspace routes for `protection-triage-hooks.json`, `wasm-runtime-candidates.json`, and `vm-dispatcher-candidates.json`.
 - Provider-neutral strategy evidence scoring baseline for review-only `evidence_score` payloads across strategy detection and rebuild plans; it does not change readiness, execute replay, start browsers, or call MCP.
-- Workspace artifact reader resolver baseline exposed through `read_workspace_artifact` for coordinator and review / rebuild / timeline / hook / debugger subagents; it consumes artifact keys, legacy paths, future paths, virtual URIs, and artifact-root-relative fallback paths without moving or writing artifacts.
+- Workspace artifact reader and read-only review-helper artifact-ref resolver baselines exposed through `read_workspace_artifact`, `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_artifacts`, `review_rebuild_artifacts`, and `evaluate_delivery_review_gate`; they consume artifact keys, legacy paths, future paths, virtual URIs, and artifact-root-relative fallback paths without moving or writing artifacts.
 
 These baselines are intentionally review-gated, read-only, or pure-analysis-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, automatic browser context collection, or automatic external publication.
 
@@ -456,7 +456,7 @@ The remaining Web-first work should continue behind provider / runtime / artifac
 - Advanced adaptive provider retry policy, retry budgets, provider-specific rate-limit behavior, and partial-failure recovery.
 - Additional external distributed lock providers beyond local-file / SQLite / Redis when a deployment actually needs them.
 - More complete cross-request timeline conflict resolution and reviewer UX.
-- Broader workspace resolver adoption in delivery and specialized review helpers before any foldered-canonical migration pilot.
+- Broader workspace resolver adoption in delivery planning / artifact listing paths before any foldered-canonical migration pilot.
 
 ### Explicitly deferred automation
 

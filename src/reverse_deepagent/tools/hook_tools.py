@@ -2,19 +2,35 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from pathlib import Path
 from typing import Any
+
+from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_object, summarize_workspace_artifact_read
 
 
 HOOK_ARTIFACT_REVIEW_VERSION = "2026-05-31.hook-artifact-review-v1"
 
 
-def make_review_hook_artifacts_tool():
+def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = None):
     """Create a read-only tool that reviews hook inventory and timeline artifacts."""
 
-    def review_hook_artifacts(hook_artifacts_json: str) -> dict[str, Any]:
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def review_hook_artifacts(
+        hook_artifacts_json: str | None = None,
+        hook_artifacts_ref: str | None = None,
+        artifact_root: str | None = None,
+    ) -> dict[str, Any]:
         """Review hook artifacts without installing hooks, evaluating JavaScript, or triggering targets."""
 
-        payload = _loads_object(hook_artifacts_json, field_name="hook_artifacts_json")
+        payload, artifact_read = _loads_object_or_artifact(
+            hook_artifacts_json,
+            artifact_ref=hook_artifacts_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="hook_artifacts_json",
+            artifact_field_name="hook_artifacts_ref",
+        )
         function_hooks = _object_alias(payload, "function_hooks", "function-hooks", "functionHooks")
         function_timeline = _object_alias(payload, "function_hook_timeline", "function-hook-timeline", "functionHookTimeline")
         module_hooks = _object_alias(payload, "module_hooks", "module-hooks", "moduleHooks")
@@ -56,6 +72,7 @@ def make_review_hook_artifacts_tool():
             "blocked": bool(blockers),
             "warnings_present": bool(warnings),
             "next_action": _next_action(blockers, warnings),
+            "artifact_input": summarize_workspace_artifact_read(artifact_read),
             "summary": {
                 "artifact_count": artifact_count,
                 "installed_function_hook_count": installed_function_count,
@@ -90,6 +107,28 @@ def make_review_hook_artifacts_tool():
 
     review_hook_artifacts.__name__ = "review_hook_artifacts"
     return review_hook_artifacts
+
+
+def _loads_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if artifact_ref:
+        value, read_result = load_workspace_artifact_json_object(
+            artifact_ref=artifact_ref,
+            default_artifact_root=default_artifact_root,
+            artifact_root=artifact_root,
+            field_name=artifact_field_name,
+        )
+        return value, read_result
+    if payload is None:
+        raise ValueError(f"{field_name} or {artifact_field_name} is required")
+    return _loads_object(payload, field_name=field_name), None
 
 
 def _loads_object(payload: str, *, field_name: str) -> dict[str, Any]:

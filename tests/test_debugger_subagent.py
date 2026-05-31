@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -90,6 +91,26 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertEqual(result["status"], "warn")
         self.assertIn("no_debugger_artifacts_provided", result["warnings"])
         self.assertEqual(result["next_action"], "collect_debugger_pause_artifacts_before_review")
+
+
+    def test_review_debugger_artifacts_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            payload = {
+                "debugger_session": {"session_id": "live-1", "status": "success"},
+                "debugger_paused": {"status": "paused"},
+                "callframes": [{"functionName": "sign"}],
+            }
+            (workspace / "debugger-session.json").write_text(json.dumps(payload), encoding="utf-8")
+
+            result = make_review_debugger_artifacts_tool(artifact_root)(debugger_artifacts_ref="workspace_debugger_session")
+
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["summary"]["session_id"], "live-1")
+            self.assertEqual(result["artifact_input"]["artifact_ref"], "workspace_debugger_session")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
 
     def test_build_debugger_subagent_exposes_read_only_review_tool(self) -> None:
         subagent = build_debugger_subagent()

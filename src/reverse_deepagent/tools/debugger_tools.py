@@ -2,20 +2,36 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from pathlib import Path
 from typing import Any
+
+from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_object, summarize_workspace_artifact_read
 
 
 DEBUGGER_ARTIFACT_REVIEW_VERSION = "2026-05-31.debugger-artifact-review-v1"
 _LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe"}
 
 
-def make_review_debugger_artifacts_tool():
+def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None = None):
     """Create a read-only tool that reviews debugger / paused-session artifacts."""
 
-    def review_debugger_artifacts(debugger_artifacts_json: str) -> dict[str, Any]:
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def review_debugger_artifacts(
+        debugger_artifacts_json: str | None = None,
+        debugger_artifacts_ref: str | None = None,
+        artifact_root: str | None = None,
+    ) -> dict[str, Any]:
         """Review debugger artifact JSON without resuming, stepping, evaluating, or mutating runtime state."""
 
-        payload = _loads_object(debugger_artifacts_json, field_name="debugger_artifacts_json")
+        payload, artifact_read = _loads_object_or_artifact(
+            debugger_artifacts_json,
+            artifact_ref=debugger_artifacts_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="debugger_artifacts_json",
+            artifact_field_name="debugger_artifacts_ref",
+        )
         session = _object_alias(payload, "debugger_session", "debugger-session", "debuggerSession")
         timeline = _object_alias(payload, "debugger_timeline", "debugger-timeline", "debuggerTimeline")
         paused = _object_alias(payload, "debugger_paused", "debugger-paused", "debuggerPaused", "paused")
@@ -65,6 +81,7 @@ def make_review_debugger_artifacts_tool():
             "blocked": bool(blockers),
             "warnings_present": bool(warnings),
             "next_action": _next_action(status, blockers, warnings, requested_action, live_continuation_available),
+            "artifact_input": summarize_workspace_artifact_read(artifact_read),
             "summary": {
                 "artifact_count": artifact_count,
                 "session_id": _string(session.get("session_id") or session.get("pause_session_id") or payload.get("session_id")),
@@ -101,6 +118,28 @@ def make_review_debugger_artifacts_tool():
 
     review_debugger_artifacts.__name__ = "review_debugger_artifacts"
     return review_debugger_artifacts
+
+
+def _loads_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if artifact_ref:
+        value, read_result = load_workspace_artifact_json_object(
+            artifact_ref=artifact_ref,
+            default_artifact_root=default_artifact_root,
+            artifact_root=artifact_root,
+            field_name=artifact_field_name,
+        )
+        return value, read_result
+    if payload is None:
+        raise ValueError(f"{field_name} or {artifact_field_name} is required")
+    return _loads_object(payload, field_name=field_name), None
 
 
 def _loads_object(payload: str, *, field_name: str) -> dict[str, Any]:

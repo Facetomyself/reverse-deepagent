@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -79,6 +80,23 @@ class TimelineSubagentTests(unittest.TestCase):
         self.assertEqual(payload["next_action"], "timeline_review_passed")
         self.assertEqual(payload["summary"]["approved_stitch_proposal_count"], 1)
         self.assertEqual(payload["summary"]["approved_materialization_count"], 1)
+
+
+    def test_review_flow_timeline_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            timeline = {"entries": [{"id": "entry-1", "source": "network"}], "correlation_groups": []}
+            (workspace / "flow-timeline.json").write_text(json.dumps(timeline), encoding="utf-8")
+
+            payload = make_review_flow_timeline_tool(artifact_root)(flow_timeline_artifact_ref="workspace_flow_timeline")
+
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["summary"]["entry_count"], 1)
+            self.assertEqual(payload["artifact_input"]["artifact_ref"], "workspace_flow_timeline")
+            self.assertEqual(payload["artifact_input"]["resolution"]["artifact_key"], "workspace_flow_timeline")
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
 
     def test_build_timeline_subagent_exposes_read_only_review_tool(self) -> None:
         subagent = build_timeline_subagent()

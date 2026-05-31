@@ -25,5 +25,5 @@ def build_review_subagent(
         "name": REVIEW_SUBAGENT_NAME,
         "description": REVIEW_SUBAGENT_DESCRIPTION,
         "system_prompt": load_review_prompt(prompt_path),
-        "tools": [make_read_workspace_artifact_tool(root), make_evaluate_review_gate_tool(), make_record_review_approval_tool(review_root)],
+        "tools": [make_read_workspace_artifact_tool(root), make_evaluate_review_gate_tool(root), make_record_review_approval_tool(review_root)],
     }

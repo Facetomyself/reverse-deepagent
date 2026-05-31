@@ -24,5 +24,5 @@ def build_hook_subagent(
         "name": HOOK_SUBAGENT_NAME,
         "description": HOOK_SUBAGENT_DESCRIPTION,
         "system_prompt": load_hook_prompt(prompt_path),
-        "tools": [make_read_workspace_artifact_tool(root), make_review_hook_artifacts_tool()],
+        "tools": [make_read_workspace_artifact_tool(root), make_review_hook_artifacts_tool(root)],
     }

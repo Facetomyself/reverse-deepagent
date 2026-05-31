@@ -24,5 +24,5 @@ def build_debugger_subagent(
         "name": DEBUGGER_SUBAGENT_NAME,
         "description": DEBUGGER_SUBAGENT_DESCRIPTION,
         "system_prompt": load_debugger_prompt(prompt_path),
-        "tools": [make_read_workspace_artifact_tool(root), make_review_debugger_artifacts_tool()],
+        "tools": [make_read_workspace_artifact_tool(root), make_review_debugger_artifacts_tool(root)],
     }

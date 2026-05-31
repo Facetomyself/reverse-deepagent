@@ -8,22 +8,46 @@ from reverse_deepagent.evidence import EvidencePromotionResult
 from reverse_deepagent.review_approval import ReviewApprovalConfig, ReviewApprovalLedgerWriter
 from reverse_deepagent.review_gate import evaluate_review_gate
 from reverse_deepagent.schemas import RebuildResult
+from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_object, summarize_workspace_artifact_read
 
 
-def make_evaluate_review_gate_tool():
+def make_evaluate_review_gate_tool(default_artifact_root: str | Path | None = None):
     """Create a read-only tool for evaluating delivery review gates."""
 
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
     def evaluate_delivery_review_gate(
-        rebuild_result_json: str,
+        rebuild_result_json: str | None = None,
         evidence_promotion_json: str | None = None,
+        rebuild_result_artifact_ref: str | None = None,
+        evidence_promotion_artifact_ref: str | None = None,
+        artifact_root: str | None = None,
     ) -> dict[str, Any]:
         """Evaluate review gate from RebuildResult JSON and optional EvidencePromotionResult JSON."""
 
-        rebuild_payload = _loads_object(rebuild_result_json, field_name="rebuild_result_json")
-        evidence_payload = _loads_object(evidence_promotion_json, field_name="evidence_promotion_json") if evidence_promotion_json else None
+        rebuild_payload, rebuild_artifact_read = _loads_object_or_artifact(
+            rebuild_result_json,
+            artifact_ref=rebuild_result_artifact_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="rebuild_result_json",
+            artifact_field_name="rebuild_result_artifact_ref",
+        )
+        evidence_payload, evidence_artifact_read = _loads_optional_object_or_artifact(
+            evidence_promotion_json,
+            artifact_ref=evidence_promotion_artifact_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="evidence_promotion_json",
+            artifact_field_name="evidence_promotion_artifact_ref",
+        )
         rebuild = RebuildResult.model_validate(rebuild_payload)
         evidence = EvidencePromotionResult.model_validate(evidence_payload) if evidence_payload is not None else None
         gate = evaluate_review_gate(rebuild, evidence).model_dump(mode="json")
+        gate["artifact_input"] = {
+            "rebuild_result": summarize_workspace_artifact_read(rebuild_artifact_read),
+            "evidence_promotion": summarize_workspace_artifact_read(evidence_artifact_read),
+        }
         gate["side_effect_policy"] = {
             "read_only": True,
             "files_mutated": False,
@@ -82,6 +106,50 @@ def make_record_review_approval_tool(default_review_root: str | Path):
 
     record_review_approval.__name__ = "record_review_approval"
     return record_review_approval
+
+
+def _loads_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if artifact_ref:
+        value, read_result = load_workspace_artifact_json_object(
+            artifact_ref=artifact_ref,
+            default_artifact_root=default_artifact_root,
+            artifact_root=artifact_root,
+            field_name=artifact_field_name,
+        )
+        return value, read_result
+    if payload is None:
+        raise ValueError(f"{field_name} or {artifact_field_name} is required")
+    return _loads_object(payload, field_name=field_name), None
+
+
+def _loads_optional_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if artifact_ref:
+        value, read_result = load_workspace_artifact_json_object(
+            artifact_ref=artifact_ref,
+            default_artifact_root=default_artifact_root,
+            artifact_root=artifact_root,
+            field_name=artifact_field_name,
+        )
+        return value, read_result
+    if payload:
+        return _loads_object(payload, field_name=field_name), None
+    return None, None
 
 
 def _loads_object(payload: str, *, field_name: str) -> dict[str, Any]:
