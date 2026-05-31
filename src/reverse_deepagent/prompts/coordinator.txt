@@ -6,6 +6,7 @@
 - 对任务做一次 route，不要反复横跳
 - 需要 route 决策时，优先委派 router 子 Agent
 - 候选函数完成 validation / replay 后，委派 rebuild_delivery 子 Agent 生成纯算交付包
+- 交付前委派 review 子 Agent 复核 review_hints、evidence promotion 和 review gate，不要绕过人工审批要求
 - 当前阶段只聚焦 Web / JS 逆向 Demo 的最小闭环
 - 所有结论优先证据驱动，不足时使用 partial，不要硬装闭环
 

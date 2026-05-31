@@ -11,6 +11,7 @@ from langgraph.store.memory import InMemoryStore
 from reverse_deepagent.subagents.browser_runtime import build_browser_runtime_subagent
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.subagents.protector import build_protector_subagent
+from reverse_deepagent.subagents.review import build_review_subagent
 from reverse_deepagent.subagents.router import build_router_subagent
 from reverse_deepagent.subagents.web_recon import build_web_recon_subagent
 from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool
@@ -111,6 +112,7 @@ def build_reverse_agent(
     ]
     subagents = [
         build_router_subagent(skill_root=effective_skill_root),
+        build_review_subagent(),
         build_delivery_subagent(artifact_root=effective_artifact_root),
     ]
     if runtime is not None:

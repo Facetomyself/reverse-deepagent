@@ -200,7 +200,13 @@ Single-provider doctor checks keep the existing `browser_provider` shape and add
 
 This subagent does not perform Web recon, source search, network sampling, hook installation, breakpoint work, or protection patching. Those responsibilities remain with `web_recon` and `protector`; `browser_runtime` only owns provider capability discovery and browser session health boundaries.
 
-## 5.3 BrowserProvider plugin package template
+## 5.3 Review Subagent baseline
+
+`review` is now an implemented DeepAgents subagent boundary for delivery-readiness review. It exposes `evaluate_delivery_review_gate`, a read-only tool that consumes `RebuildResult` JSON plus optional `EvidencePromotionResult` JSON, delegates to `evaluate_review_gate(...)`, and returns the normalized gate result with an explicit side-effect policy. The tool does not write artifacts, mutate files, execute local delivery, call external delivery providers, or record approval decisions.
+
+This subagent owns risk / warning review hints, evidence-level review requirements, and delivery gate next-action summaries. Pending stitch proposals remain blocked with `next_action=review_stitch_proposals_before_delivery` until explicit reviewer-approved materialization data exists; the subagent cannot approve proposals, rollback plans, materialization plans, or delivery by itself.
+
+## 5.4 BrowserProvider plugin package template
 
 `packages/reverse-deepagent-browser-provider-template/` is the copy-and-replace package template for external BrowserProvider integrations. It declares the `reverse_deepagent.browser_providers` entry point and returns a `BrowserProviderRegistration` for `template-browser` without calling the provider factory. The template provider is intentionally runtime-unavailable: `start()` and `connect()` raise `BrowserProviderUnavailableError` until an integrator replaces them with real launch / attach code.
 

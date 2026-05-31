@@ -45,9 +45,9 @@ class WorkspaceContractTests(unittest.TestCase):
 
     def test_subagent_roles_cover_current_and_planned_boundaries(self) -> None:
         roles = {item.role: item for item in default_subagent_roles()}
-        for implemented_role in {"coordinator", "router", "browser_runtime", "web_recon", "protector", "delivery"}:
+        for implemented_role in {"coordinator", "router", "browser_runtime", "web_recon", "protector", "delivery", "review"}:
             self.assertEqual(roles[implemented_role].current_status, "implemented")
-        for planned_role in {"debugger", "hook", "timeline", "rebuild", "review"}:
+        for planned_role in {"debugger", "hook", "timeline", "rebuild"}:
             self.assertEqual(roles[planned_role].current_status, "planned-contract")
 
     def test_middleware_chain_order_is_deterministic(self) -> None:
