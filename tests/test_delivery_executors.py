@@ -45,6 +45,24 @@ class FakeExternalDeliveryProvider:
         )
 
 
+class CountingExternalDeliveryProvider(FakeExternalDeliveryProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+        self.packages: list[ExternalDeliveryPackage] = []
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        self.calls += 1
+        self.packages.append(package)
+        return super().deliver(package, dry_run=dry_run, result_path=result_path, created_at=created_at)
+
+
 class LocalDeliveryExecutorTests(TestCase):
     def test_dry_run_plans_local_delivery_without_writing_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1020,6 +1038,99 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(result.external_delivery_result.provider_id, "fake-provider")
             self.assertTrue(journal["external_delivery_performed"])
             self.assertTrue(external_result["external_delivery_performed"])
+
+    def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            first_provider = CountingExternalDeliveryProvider()
+
+            first = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-first",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider=first_provider,
+                    external_delivery_idempotency_key="delivery-key-1",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(first.status, "external_delivered")
+            self.assertEqual(first_provider.calls, 1)
+            first_result_path = delivery_root / "external-delivery-result.json"
+            self.assertTrue(first_result_path.exists())
+            first_result = json.loads(first_result_path.read_text(encoding="utf-8"))
+            self.assertTrue(first_result["external_delivery_performed"])
+
+            retry_provider = CountingExternalDeliveryProvider()
+            retry = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-retry",
+                    mode=DeliveryExecutionMode.APPLY,
+                    overwrite=True,
+                    request_external_delivery=True,
+                    external_delivery_provider=retry_provider,
+                    external_delivery_idempotency_key="delivery-key-1",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            guard_path = delivery_root / "external-delivery-duplicate-guard.json"
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(retry.status, "external_delivery_blocked")
+            self.assertEqual(retry_provider.calls, 0)
+            self.assertFalse(retry.external_delivery_performed)
+            self.assertIsNotNone(retry.external_delivery_result)
+            self.assertIn("external_delivery_not_previously_performed", retry.external_delivery_result.blocking_reasons)
+            self.assertTrue(retry.external_delivery_result.metadata["duplicate_guard_triggered"])
+            self.assertEqual(Path(retry.external_delivery_result.result_path).resolve(), guard_path.resolve())
+            self.assertTrue(guard_path.exists())
+            self.assertTrue(journal["external_delivery_performed"])
+            self.assertEqual(journal["external_delivery_idempotency_key"], "delivery-key-1")
+            self.assertEqual(Path(journal["external_delivery_result_path"]).resolve(), first_result_path.resolve())
+            self.assertTrue(json.loads(first_result_path.read_text(encoding="utf-8"))["external_delivery_performed"])
+
+    def test_external_delivery_duplicate_guard_can_be_explicitly_overridden(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            first_provider = CountingExternalDeliveryProvider()
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-first",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider=first_provider,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            override_provider = CountingExternalDeliveryProvider()
+            retry = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-override",
+                    mode=DeliveryExecutionMode.APPLY,
+                    overwrite=True,
+                    request_external_delivery=True,
+                    external_delivery_provider=override_provider,
+                    allow_duplicate_external_delivery=True,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(retry.status, "external_delivered")
+            self.assertEqual(override_provider.calls, 1)
+            self.assertTrue(retry.external_delivery_performed)
+            self.assertEqual(override_provider.packages[0].metadata["external_delivery_idempotency_key"], "tx-external-override")
+            self.assertTrue(override_provider.packages[0].metadata["allow_duplicate_external_delivery"])
 
 
 def _sha256_file(path: Path) -> str:

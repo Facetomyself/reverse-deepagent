@@ -77,6 +77,9 @@ class DeliveryExecutorConfig:
     external_delivery_provider_id: str = "review-only"
     external_delivery_provider: ExternalDeliveryProvider | None = None
     external_delivery_provider_registry: Any | None = None
+    external_delivery_idempotency_key: str | None = None
+    allow_duplicate_external_delivery: bool = False
+    external_delivery_duplicate_guard_name: str = "external-delivery-duplicate-guard.json"
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -614,6 +617,7 @@ class DeliveryTransactionJournal:
     external_delivery_performed: bool
     rollback_available: bool
     external_delivery_result_path: str | None
+    external_delivery_idempotency_key: str | None
     manifest_revision_path: str | None
     backend_manifest_mutation_path: str | None
     backend_manifest_patched_path: str | None
@@ -644,6 +648,7 @@ class DeliveryTransactionJournal:
             "external_delivery_performed": self.external_delivery_performed,
             "rollback_available": self.rollback_available,
             "external_delivery_result_path": self.external_delivery_result_path,
+            "external_delivery_idempotency_key": self.external_delivery_idempotency_key,
             "manifest_revision_path": self.manifest_revision_path,
             "backend_manifest_mutation_path": self.backend_manifest_mutation_path,
             "backend_manifest_patched_path": self.backend_manifest_patched_path,
@@ -961,6 +966,8 @@ class LocalDeliveryExecutor:
             dry_run=dry_run,
             created_at=created_at,
         )
+        if external_delivery_result and external_delivery_result.result_path:
+            external_delivery_result_path = external_delivery_result.result_path
         external_delivery_performed = bool(external_delivery_result and external_delivery_result.external_delivery_performed)
         if external_delivery_result:
             if external_delivery_performed:
@@ -978,6 +985,14 @@ class LocalDeliveryExecutor:
                 previous_journal = _read_json_object(previous_journal_path)
         if recovery_apply_only and backend_manifest_recovery and backend_manifest_recovery.transaction_journal_path:
             previous_journal_path = Path(backend_manifest_recovery.transaction_journal_path)
+            if previous_journal_path.exists():
+                previous_journal = _read_json_object(previous_journal_path)
+        if (
+            external_delivery_result
+            and external_delivery_result.metadata.get("duplicate_guard_triggered")
+            and not previous_journal
+        ):
+            previous_journal_path = delivery_root / "delivery-transaction-journal.json"
             if previous_journal_path.exists():
                 previous_journal = _read_json_object(previous_journal_path)
         cross_run_transaction_committed = bool(
@@ -1023,6 +1038,11 @@ class LocalDeliveryExecutor:
             external_delivery_performed=_journal_bool(previous_journal, "external_delivery_performed", external_delivery_performed),
             rollback_available=_journal_bool(previous_journal, "rollback_available", bool(delivered)),
             external_delivery_result_path=_journal_str(previous_journal, "external_delivery_result_path", external_delivery_result_path),
+            external_delivery_idempotency_key=_journal_str(
+                previous_journal,
+                "external_delivery_idempotency_key",
+                self._external_delivery_idempotency_key() if self.config.request_external_delivery else None,
+            ),
             manifest_revision_path=_journal_str(previous_journal, "manifest_revision_path", manifest_revision_path),
             backend_manifest_mutation_path=_journal_str(previous_journal, "backend_manifest_mutation_path", backend_manifest_mutation_path),
             backend_manifest_patched_path=_journal_str(previous_journal, "backend_manifest_patched_path", backend_manifest_patched_path),
@@ -1179,6 +1199,20 @@ class LocalDeliveryExecutor:
     ) -> ExternalDeliveryResult | None:
         if not self.config.request_external_delivery:
             return None
+        configured_provider_id = (
+            self.config.external_delivery_provider.provider_id
+            if self.config.external_delivery_provider is not None
+            else self.config.external_delivery_provider_id
+        )
+        duplicate_guard = self._build_external_delivery_duplicate_guard(
+            delivery_root=delivery_root,
+            result_path=result_path,
+            provider_id=configured_provider_id,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        if duplicate_guard is not None:
+            return duplicate_guard
         provider = self.config.external_delivery_provider
         if provider is None:
             registry = self.config.external_delivery_provider_registry
@@ -1203,6 +1237,8 @@ class LocalDeliveryExecutor:
                 **self.config.metadata,
                 "executor": "local-filesystem",
                 "provider_id": provider.provider_id,
+                "external_delivery_idempotency_key": self._external_delivery_idempotency_key(),
+                "allow_duplicate_external_delivery": self.config.allow_duplicate_external_delivery,
                 "automatic_delivery": False,
             },
         )
@@ -1211,6 +1247,110 @@ class LocalDeliveryExecutor:
             dry_run=dry_run,
             result_path=result_path,
             created_at=created_at,
+        )
+
+    def _external_delivery_idempotency_key(self) -> str:
+        return self.config.external_delivery_idempotency_key or self.config.transaction_id
+
+    def _build_external_delivery_duplicate_guard(
+        self,
+        *,
+        delivery_root: Path,
+        result_path: str | None,
+        provider_id: str,
+        dry_run: bool,
+        created_at: str,
+    ) -> ExternalDeliveryResult | None:
+        if self.config.allow_duplicate_external_delivery:
+            return None
+        idempotency_key = self._external_delivery_idempotency_key()
+        journal_path = delivery_root / "delivery-transaction-journal.json"
+        journal_exists = journal_path.exists()
+        journal = _read_json_object(journal_path) if journal_exists else {}
+        journal_result_path = _resolve_record_path(journal.get("external_delivery_result_path"), delivery_root)
+        configured_result_path = Path(result_path).expanduser().resolve() if result_path else None
+        candidate_result_paths = [
+            path for path in (journal_result_path, configured_result_path) if path is not None and path.exists()
+        ]
+        prior_result_path = candidate_result_paths[0] if candidate_result_paths else None
+        prior_result = _read_json_object(prior_result_path) if prior_result_path else {}
+        journal_performed = bool(journal.get("external_delivery_performed"))
+        result_performed = bool(prior_result.get("external_delivery_performed"))
+        if not journal_performed and not result_performed:
+            return None
+        previous_metadata = prior_result.get("metadata") if isinstance(prior_result.get("metadata"), dict) else {}
+        journal_metadata = journal.get("metadata") if isinstance(journal.get("metadata"), dict) else {}
+        previous_idempotency_key = (
+            journal.get("external_delivery_idempotency_key")
+            or journal_metadata.get("external_delivery_idempotency_key")
+            or previous_metadata.get("external_delivery_idempotency_key")
+            or journal.get("transaction_id")
+            or prior_result.get("transaction_id")
+        )
+        guard_path = (
+            str((delivery_root / self.config.external_delivery_duplicate_guard_name).resolve())
+            if result_path and not dry_run
+            else result_path
+        )
+        details = {
+            "idempotency_key": idempotency_key,
+            "previous_idempotency_key": previous_idempotency_key,
+            "previous_transaction_id": journal.get("transaction_id") or prior_result.get("transaction_id"),
+            "previous_provider_id": prior_result.get("provider_id"),
+            "previous_journal_path": str(journal_path) if journal_exists else None,
+            "previous_result_path": str(prior_result_path) if prior_result_path else None,
+            "journal_external_delivery_performed": journal_performed,
+            "result_external_delivery_performed": result_performed,
+        }
+        checks = [
+            {
+                "name": "external_delivery_not_previously_performed",
+                "passed": False,
+                "details": details,
+            },
+            {
+                "name": "duplicate_external_delivery_not_allowed",
+                "passed": False,
+                "details": {"allow_duplicate_external_delivery": False},
+            },
+            {
+                "name": "provider_factory_not_invoked_by_duplicate_guard",
+                "passed": True,
+                "details": {"provider_id": provider_id},
+            },
+        ]
+        return ExternalDeliveryResult(
+            transaction_id=self.config.transaction_id,
+            status="blocked",
+            provider_id=provider_id,
+            result_path=guard_path,
+            delivery_root=str(delivery_root),
+            dry_run=dry_run,
+            external_delivery_requested=True,
+            external_delivery_performed=False,
+            package_digest_sha256=_json_payload_sha256(details),
+            checks=checks,
+            blocking_reasons=[check["name"] for check in checks if not check["passed"]],
+            recommended_actions=[
+                "review_previous_external_delivery_before_retry",
+                "set_allow_duplicate_external_delivery_only_after_manual_review",
+            ],
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "external-delivery-idempotency-guard-baseline",
+                "external_delivery_idempotency_key": idempotency_key,
+                "allow_duplicate_external_delivery": False,
+                "duplicate_guard_triggered": True,
+                "provider_factory_invoked": False,
+                "automatic_delivery": False,
+                "limitations": [
+                    "duplicate_guard_blocks_provider_invocation",
+                    "does_not_publish_external_delivery",
+                    "full_cross_run_transaction_state_machine_not_implemented",
+                ],
+            },
         )
 
     def _build_manifest_revision(

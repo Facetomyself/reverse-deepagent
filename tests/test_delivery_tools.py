@@ -303,13 +303,17 @@ class DeliveryToolTests(TestCase):
                 transaction_id="tx-tool-external-review-only",
                 mode="apply",
                 request_external_delivery=True,
+                external_delivery_idempotency_key="tool-delivery-key",
             )
 
             external_result_path = root / "delivery" / "external-delivery-result.json"
+            journal_path = root / "delivery" / "delivery-transaction-journal.json"
             self.assertEqual(result["status"], "external_delivery_blocked")
             self.assertFalse(result["external_delivery_performed"])
             self.assertEqual(result["external_delivery_result"]["provider_id"], "review-only")
             self.assertIn("external_delivery_provider_configured", result["external_delivery_result"]["blocking_reasons"])
+            self.assertEqual(result["transaction_journal"]["external_delivery_idempotency_key"], "tool-delivery-key")
+            self.assertEqual(json.loads(journal_path.read_text(encoding="utf-8"))["external_delivery_idempotency_key"], "tool-delivery-key")
             self.assertTrue(external_result_path.exists())
 
 

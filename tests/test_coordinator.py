@@ -214,6 +214,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_timeline"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_stitched_flow"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_external_delivery_duplicate_guard"), "export")
 
     def test_build_runtime_legacy_mcp_without_optional_plugin_reports_guidance(self) -> None:
         with self.assertRaisesRegex(LegacyMcpPluginUnavailableError, "install_hint") as ctx:
