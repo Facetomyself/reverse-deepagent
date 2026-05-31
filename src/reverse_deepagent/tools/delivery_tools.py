@@ -14,6 +14,8 @@ from reverse_deepagent.delivery import (
     DeliveryRollbackStateArtifactWriter,
     DeliveryResumePlanner,
     DeliveryResumePlannerConfig,
+    DeliveryResumeRunner,
+    DeliveryResumeRunnerConfig,
     DeliveryRollbackStateWriterConfig,
     DeliveryTransactionRecoveryExecutor,
     DeliveryTransactionTransitionExecutor,
@@ -174,6 +176,67 @@ def make_delivery_resume_planner_tool(default_delivery_root: str | Path) -> Deli
         "expected_resume_token and transaction_lock_owner are used only to decide whether an existing local delivery-transaction-lock.json allows a reviewed resume plan."
     )
     return plan_delivery_resume
+
+
+def make_delivery_resume_runner_tool(default_delivery_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for reviewed durable delivery resume execution."""
+
+    root = Path(default_delivery_root)
+
+    def execute_delivery_resume(
+        delivery_root: str | None = None,
+        transaction_id: str | None = None,
+        action: str = "plan_only",
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        backend_manifest_path: str | None = None,
+        expected_transaction_id: str | None = None,
+        approval_ledger_path: str | None = None,
+        approval_subject_id: str | None = None,
+        approval_action: str | None = None,
+        approval_decision: str = "approved",
+        approval_id: str | None = None,
+        require_review_approval: bool = True,
+        require_transaction_lock: bool = False,
+        transaction_lock_owner: str | None = None,
+        transaction_lock_lease_seconds: int = 900,
+        expected_resume_token: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan or execute one review-approved durable delivery resume transition."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        target_root = Path(delivery_root) if delivery_root else root
+        config = DeliveryResumeRunnerConfig(
+            delivery_root=target_root,
+            transaction_id=transaction_id,
+            action=action,
+            mode=DeliveryExecutionMode(mode),
+            backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
+            expected_transaction_id=expected_transaction_id,
+            approval_ledger_path=Path(approval_ledger_path) if approval_ledger_path else None,
+            approval_subject_id=approval_subject_id,
+            approval_action=approval_action,
+            approval_decision=approval_decision,
+            approval_id=approval_id,
+            require_review_approval=require_review_approval,
+            require_transaction_lock=require_transaction_lock,
+            transaction_lock_owner=transaction_lock_owner,
+            transaction_lock_lease_seconds=transaction_lock_lease_seconds,
+            expected_resume_token=expected_resume_token,
+            metadata=metadata,
+        )
+        return DeliveryResumeRunner(config).execute().to_dict()
+
+    execute_delivery_resume.__name__ = "execute_delivery_resume"
+    execute_delivery_resume.__doc__ = (
+        "Plan or execute one review-approved durable delivery resume transition. "
+        "mode defaults to dry-run. apply mode requires a matching review-approval-ledger entry unless require_review_approval is false, "
+        "then delegates to the existing transition executor for preflight_backend_manifest_recovery, apply_backend_manifest_recovery, or commit_cross_run_transaction. "
+        "It writes delivery-resume-execution.json only after explicit apply execution and never starts new delivery, publishes external delivery, or executes physical rollback."
+    )
+    return execute_delivery_resume
 
 
 def make_delivery_transition_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:

@@ -9,8 +9,11 @@ from reverse_deepagent.delivery import (
     DeliveryExecutionMode,
     DeliveryResumePlanner,
     DeliveryResumePlannerConfig,
+    DeliveryResumeRunner,
+    DeliveryResumeRunnerConfig,
 )
-from reverse_deepagent.tools.delivery_tools import make_delivery_resume_planner_tool
+from reverse_deepagent.review_approval import ReviewApprovalConfig, ReviewApprovalLedgerWriter
+from reverse_deepagent.tools.delivery_tools import make_delivery_resume_planner_tool, make_delivery_resume_runner_tool
 
 
 class DeliveryResumePlannerTests(unittest.TestCase):
@@ -197,6 +200,159 @@ class DeliveryResumePlannerTests(unittest.TestCase):
         self.assertEqual(result["metadata"]["tool"], True)
         self.assertTrue(resume_exists)
         self.assertTrue(result["side_effect_policy"]["writes_resume_plan_artifact"])
+
+
+
+class DeliveryResumeRunnerTests(unittest.TestCase):
+    def _write_mutated_manifest_transaction(self, root: Path, transaction_id: str) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        source_manifest = root / "backend-artifact-manifest.json"
+        rollback_manifest = root / "backend-artifact-manifest.rollback.json"
+        mutation_record = root / "backend-artifact-manifest-in-place-mutation.json"
+        journal_path = root / "delivery-transaction-journal.json"
+        source_manifest.write_text(json.dumps({"version": 2, "entries": []}), encoding="utf-8")
+        rollback_manifest.write_text(json.dumps({"version": 1, "entries": []}), encoding="utf-8")
+        mutation_record.write_text(
+            json.dumps(
+                {
+                    "transaction_id": transaction_id,
+                    "mutated": True,
+                    "source_manifest_path": str(source_manifest),
+                    "rollback_path": str(rollback_manifest),
+                }
+            ),
+            encoding="utf-8",
+        )
+        journal_path.write_text(
+            json.dumps(
+                {
+                    "transaction_id": transaction_id,
+                    "journal_path": str(journal_path),
+                    "dry_run": False,
+                    "filesystem_artifact_mutated": True,
+                    "backend_manifest_mutated": True,
+                    "backend_manifest_recovered": False,
+                    "cross_run_transaction_committed": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return source_manifest
+
+    def _write_approval(self, workspace_root: Path, transaction_id: str, action: str) -> dict[str, object]:
+        return ReviewApprovalLedgerWriter(
+            ReviewApprovalConfig(
+                review_root=workspace_root,
+                subject_id=transaction_id,
+                action=action,
+                decision="approved",
+                reviewer="alice",
+                reason="Approved resume runner action.",
+                mode="apply",
+                approve_decision_record=True,
+            )
+        ).execute().to_dict()
+
+    def test_resume_runner_dry_run_plans_without_approval_or_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "delivery"
+            manifest = self._write_mutated_manifest_transaction(root, "tx-resume-run")
+            runner = DeliveryResumeRunner(
+                DeliveryResumeRunnerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-resume-run",
+                    action="preflight_backend_manifest_recovery",
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-resume-run",
+                )
+            )
+
+            payload = runner.execute().to_dict()
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertTrue(payload["dry_run"])
+            self.assertIsNone(payload["execution_record_path"])
+            self.assertFalse((root / "delivery-resume-execution.json").exists())
+            self.assertFalse(payload["approval"]["matched"])
+            self.assertFalse(payload["side_effect_policy"]["writes_resume_execution_record"])
+            self.assertFalse(payload["side_effect_policy"]["manifest_recovered"])
+
+    def test_resume_runner_apply_blocks_without_review_approval_ledger_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "delivery"
+            manifest = self._write_mutated_manifest_transaction(root, "tx-resume-block")
+
+            payload = DeliveryResumeRunner(
+                DeliveryResumeRunnerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-resume-block",
+                    action="preflight_backend_manifest_recovery",
+                    mode=DeliveryExecutionMode.APPLY,
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-resume-block",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("apply_requires_review_approval_ledger_entry", payload["blocking_reasons"])
+            self.assertFalse((root / "delivery-resume-execution.json").exists())
+            self.assertFalse((root / "backend-artifact-manifest-recovery-preflight.json").exists())
+
+    def test_resume_runner_apply_executes_approved_recovery_preflight_and_writes_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_mutated_manifest_transaction(root, "tx-resume-preflight")
+            approval = self._write_approval(workspace, "tx-resume-preflight", "resume_preflight_backend_manifest_recovery")
+
+            payload = DeliveryResumeRunner(
+                DeliveryResumeRunnerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-resume-preflight",
+                    action="preflight_backend_manifest_recovery",
+                    mode=DeliveryExecutionMode.APPLY,
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-resume-preflight",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    approval_id=str(approval["approval_id"]),
+                )
+            ).execute().to_dict()
+
+            record_path = root / "delivery-resume-execution.json"
+            self.assertEqual(payload["status"], "preflighted")
+            self.assertTrue(payload["approval"]["matched"])
+            self.assertEqual(payload["transition_execution"]["status"], "executed")
+            self.assertTrue(record_path.exists())
+            persisted = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["transaction_id"], "tx-resume-preflight")
+            self.assertTrue((root / "backend-artifact-manifest-recovery-preflight.json").exists())
+            self.assertTrue(payload["side_effect_policy"]["writes_resume_execution_record"])
+            self.assertFalse(payload["side_effect_policy"]["external_delivery_performed"])
+            self.assertFalse(payload["side_effect_policy"]["physical_rollback_executed"])
+
+    def test_resume_runner_tool_can_execute_with_matching_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_mutated_manifest_transaction(root, "tx-resume-tool")
+            self._write_approval(workspace, "tx-resume-tool", "resume_preflight_backend_manifest_recovery")
+            tool = make_delivery_resume_runner_tool(root)
+
+            payload = tool(
+                transaction_id="tx-resume-tool",
+                action="preflight_backend_manifest_recovery",
+                mode="apply",
+                backend_manifest_path=str(manifest),
+                expected_transaction_id="tx-resume-tool",
+                approval_ledger_path=str(workspace / "review-approval-ledger.json"),
+                metadata_json=json.dumps({"tool": True}),
+            )
+
+            self.assertEqual(payload["status"], "preflighted")
+            self.assertTrue(payload["metadata"]["tool"])
+            self.assertTrue((root / "delivery-resume-execution.json").exists())
 
 
 if __name__ == "__main__":

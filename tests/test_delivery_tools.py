@@ -717,6 +717,7 @@ class DeliverySubagentToolTests(TestCase):
                 [
                     "execute_local_delivery",
                     "plan_delivery_resume",
+                    "execute_delivery_resume",
                     "execute_delivery_transition",
                     "execute_delivery_recovery",
                     "write_delivery_rollback_state",
