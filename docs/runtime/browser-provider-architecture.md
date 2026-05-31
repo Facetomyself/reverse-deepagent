@@ -206,19 +206,25 @@ This subagent does not perform Web recon, source search, network sampling, hook 
 
 The debugger tool summarizes paused-session status, continuation preflight source / status / requested action, callframe counts, top callframes, callframe evaluations, mutation audit records, debugger actions, and timeline event counts. It detects action-blocked durable snapshots, missing artifacts, unavailable paused sessions, debugger failures, and paused sessions without callframes. It does not connect CDP, resume, step, evaluate callframes, install breakpoints or hooks, write debugger artifacts, mutate runtime state, or trigger delivery.
 
-## 5.4 Timeline Subagent baseline
+## 5.4 Hook Subagent baseline
+
+`hook` is now an implemented DeepAgents subagent boundary for hook artifact review. It exposes `review_hook_artifacts`, a read-only tool that consumes existing function hook, module hook, generic hook timeline, source-logpoint, and hook candidate artifacts such as `function-hooks.json`, `function-hook-timeline.json`, `module-hooks.json`, `module-hook-timeline.json`, `hook-timeline.json`, and `source-logpoints.json`.
+
+The hook tool summarizes installed function / module hooks, source-logpoint counts, missing targets, candidates, timeline event counts, event type counts, and installed target paths. It detects hook failures, missing hook targets, installed hooks without captured events, and candidates that have not yet been installed. It does not execute Web recon, install hooks, install breakpoints or logpoints, evaluate JavaScript, invoke target functions, write hook artifacts, mutate runtime state, or trigger delivery.
+
+## 5.5 Timeline Subagent baseline
 
 `timeline` is now an implemented DeepAgents subagent boundary for flow-timeline review. It exposes `review_flow_timeline`, a read-only tool that consumes an existing `flow-timeline.json` payload and summarizes entries, source counts, correlation group readiness, stitch candidates, stitch proposals, auto-stitch dry-runs, conflict resolutions, policy decisions, materialization plans / results, and rollback plan / result counts.
 
 The timeline tool detects pending stitch proposals, blocked policy decisions, unresolved conflicts, and materialization requests without approval. It returns `status`, `blockers`, `warnings`, `review_required_items`, `next_action`, and an explicit side-effect policy. It does not run recon, install hooks, set breakpoints, write timeline artifacts, generate `stitched-flow.json`, record review decisions, execute rollback, or trigger delivery.
 
-## 5.5 Review Subagent baseline
+## 5.6 Review Subagent baseline
 
 `review` is now an implemented DeepAgents subagent boundary for delivery-readiness review. It exposes `evaluate_delivery_review_gate`, a read-only tool that consumes `RebuildResult` JSON plus optional `EvidencePromotionResult` JSON, delegates to `evaluate_review_gate(...)`, and returns the normalized gate result with an explicit side-effect policy. The tool does not write artifacts, mutate files, execute local delivery, call external delivery providers, or record approval decisions.
 
 This subagent owns risk / warning review hints, evidence-level review requirements, and delivery gate next-action summaries. Pending stitch proposals remain blocked with `next_action=review_stitch_proposals_before_delivery` until explicit reviewer-approved materialization data exists; the subagent cannot approve proposals, rollback plans, materialization plans, or delivery by itself.
 
-## 5.6 BrowserProvider plugin package template
+## 5.7 BrowserProvider plugin package template
 
 `packages/reverse-deepagent-browser-provider-template/` is the copy-and-replace package template for external BrowserProvider integrations. It declares the `reverse_deepagent.browser_providers` entry point and returns a `BrowserProviderRegistration` for `template-browser` without calling the provider factory. The template provider is intentionally runtime-unavailable: `start()` and `connect()` raise `BrowserProviderUnavailableError` until an integrator replaces them with real launch / attach code.
 
