@@ -127,7 +127,7 @@ class ReviewSubagentTests(unittest.TestCase):
         names = [item["name"] for item in captured["subagents"]]
         self.assertIn("review", names)
         self.assertLess(names.index("router"), names.index("review"))
-        self.assertLess(names.index("review"), names.index("rebuild_delivery"))
+        self.assertLess(names.index("review"), names.index("rebuild"))
 
 
 if __name__ == "__main__":

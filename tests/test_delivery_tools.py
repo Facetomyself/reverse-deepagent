@@ -388,11 +388,11 @@ class DeliveryToolTests(TestCase):
 
 
 class DeliverySubagentToolTests(TestCase):
-    def test_delivery_subagent_exposes_rebuild_and_local_delivery_tools(self) -> None:
+    def test_delivery_subagent_exposes_local_delivery_tool_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             subagent = build_delivery_subagent(Path(tmp) / "artifacts")
             tool_names = [tool.__name__ for tool in subagent["tools"]]
-            self.assertEqual(tool_names, ["build_rebuild_delivery", "execute_local_delivery"])
+            self.assertEqual(tool_names, ["execute_local_delivery"])
 
 
 def _sha256_file(path: Path) -> str:
