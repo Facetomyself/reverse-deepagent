@@ -242,7 +242,9 @@ The resolver introduces an opt-in dual-write writer seam. `WorkspacePathResolver
 
 `packages/reverse-deepagent-browser-provider-template/` is the copy-and-replace package template for external BrowserProvider integrations. It declares the `reverse_deepagent.browser_providers` entry point and returns a `BrowserProviderRegistration` for `template-browser` without calling the provider factory. The template provider is intentionally runtime-unavailable: `start()` and `connect()` raise `BrowserProviderUnavailableError` until an integrator replaces them with real launch / attach code.
 
-The template is part of the MCP deprecation seam: new browser integrations should land as packages that expose registration metadata and provider factories, not as new `if/else` branches in `NativeWebRuntime` or the coordinator. The hard requirements are the same as the registry contract: metadata loading is side-effect free, capability config is non-secret, optional browser SDK imports are delayed, and real launch / CDP probing only happens behind explicit runtime or doctor smoke paths.
+`packages/reverse-deepagent-browser-provider-fixture/` is a functional external provider package rather than a template. It declares the same entry-point group for `fixture-browser`, keeps metadata loading side-effect free, delays factory invocation until explicit provider creation, and returns an in-memory provider-neutral `BrowserSession` / `BrowserPage` from `start()` and `connect()`. It does not launch a real browser, expose CDP, provide stealth behavior, or replace Playwright / CloakBrowser, but it proves that external BrowserProvider packages can be discovered, compatibility-checked, and launch-smoked without core runtime branches.
+
+Both packages are part of the MCP deprecation seam: new browser integrations should land as packages that expose registration metadata and provider factories, not as new `if/else` branches in `NativeWebRuntime` or the coordinator. The hard requirements are the same as the registry contract: metadata loading is side-effect free, capability config is non-secret, optional browser SDK imports are delayed, and real launch / CDP probing only happens behind explicit runtime or doctor smoke paths.
 
 ## 5.10 ExternalDeliveryProvider plugin package template
 
@@ -438,7 +440,7 @@ These baselines are intentionally review-gated, read-only, or pure-analysis-only
 
 The remaining Web-first work should continue behind provider / runtime / artifact contracts instead of leaking raw CDP or provider details into the coordinator:
 
-- Real third-party BrowserProvider plugin implementations beyond the template package.
+- Production third-party BrowserProvider plugin implementations beyond the functional fixture provider, such as vendor anti-detect browsers or hosted browser services.
 - Compatibility rule evolution for newly added provider capability flags.
 - Cross-process live CDP paused execution continuation.
 - Arbitrary custom loader traversal, async chunk graph analysis, and execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.
