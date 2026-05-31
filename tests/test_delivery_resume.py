@@ -478,12 +478,78 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertEqual(payload["planned_steps"][0]["approval_action"], "resume_acquire_delivery_transaction_lock_provider")
             self.assertEqual(payload["planned_steps"][1]["approval_action"], "resume_renew_delivery_transaction_lock_provider")
             self.assertEqual(payload["planned_steps"][2]["approval_action"], "resume_release_delivery_transaction_lock_provider")
+            self.assertEqual(payload["lock_lifecycle_plan"]["prepend_step_actions"], [])
+            self.assertEqual(payload["lock_lifecycle_plan"]["append_step_actions"], [])
             self.assertTrue(all(step["status"] == "planned" for step in payload["step_results"]))
             self.assertFalse(payload["side_effect_policy"]["distributed_lock_acquired"])
             self.assertFalse(payload["side_effect_policy"]["distributed_lock_renewed"])
             self.assertFalse(payload["side_effect_policy"]["distributed_lock_released"])
             self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
             self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
+
+    def test_resume_workflow_scheduler_dry_run_recommends_lock_acquire_when_provider_lock_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-lock-acquire-plan")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-lock-acquire-plan",
+                    action="plan_workflow",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-lock-acquire-plan",
+                    transaction_lock_owner="agent-a",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["lock_lifecycle_plan"]["status"], "lifecycle_action_recommended")
+            self.assertEqual(payload["lock_lifecycle_plan"]["reason"], "provider_lock_missing_for_reviewed_workflow")
+            self.assertEqual(payload["lock_lifecycle_plan"]["prepend_step_actions"], ["acquire_delivery_transaction_lock_provider"])
+            self.assertEqual(payload["lock_lifecycle_plan"]["requires_review_approval_actions"], ["resume_acquire_delivery_transaction_lock_provider"])
+            self.assertEqual(payload["planned_steps"][0]["action"], "acquire_delivery_transaction_lock_provider")
+            self.assertEqual(payload["planned_steps"][1]["action"], "preflight_backend_manifest_recovery")
+            self.assertFalse(payload["lock_lifecycle_plan"]["automatic_lock_acquire"])
+            self.assertFalse(payload["lock_lifecycle_plan"]["automatic_lock_lifecycle"])
+            self.assertFalse(payload["lock_lifecycle_plan"]["starts_daemon"])
+            self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
+
+    def test_resume_workflow_scheduler_dry_run_recommends_lock_release_for_terminal_provider_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "delivery"
+            root.mkdir(parents=True)
+            (root / "delivery-transaction-journal.json").write_text(
+                json.dumps({"transaction_id": "tx-lock-release-plan", "filesystem_artifact_mutated": True}),
+                encoding="utf-8",
+            )
+            (root / "backend-artifact-manifest-transaction-commit.json").write_text(
+                json.dumps({"source_transaction_id": "tx-lock-release-plan", "committed": True}),
+                encoding="utf-8",
+            )
+            self._write_provider_lock(root, "tx-lock-release-plan", fencing_token="3")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-lock-release-plan",
+                    action="plan_workflow",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    transaction_lock_owner="agent-a",
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["lock_lifecycle_plan"]["status"], "lifecycle_action_recommended")
+            self.assertEqual(payload["lock_lifecycle_plan"]["reason"], "terminal_transaction_has_provider_lock_evidence")
+            self.assertEqual(payload["lock_lifecycle_plan"]["append_step_actions"], ["release_delivery_transaction_lock_provider"])
+            self.assertEqual(payload["lock_lifecycle_plan"]["requires_review_approval_actions"], ["resume_release_delivery_transaction_lock_provider"])
+            self.assertEqual([step["action"] for step in payload["planned_steps"]], ["release_delivery_transaction_lock_provider"])
+            self.assertFalse(payload["lock_lifecycle_plan"]["automatic_lock_release"])
+            self.assertFalse(payload["lock_lifecycle_plan"]["stale_takeover"])
+            self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
 
     def test_resume_workflow_scheduler_dry_run_recommends_lease_renewal_when_projection_expired(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

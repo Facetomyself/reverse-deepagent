@@ -99,6 +99,7 @@ class DeliveryResumeWorkflowExecution:
     planned_steps: list[dict[str, Any]]
     step_results: list[dict[str, Any]]
     existing_journal_summary: dict[str, Any]
+    lock_lifecycle_plan: dict[str, Any]
     lease_renewal_plan: dict[str, Any]
     approval_summary: dict[str, Any]
     checks: list[dict[str, Any]]
@@ -132,6 +133,7 @@ class DeliveryResumeWorkflowExecution:
             "planned_steps": self.planned_steps,
             "step_results": self.step_results,
             "existing_journal_summary": self.existing_journal_summary,
+            "lock_lifecycle_plan": self.lock_lifecycle_plan,
             "lease_renewal_plan": self.lease_renewal_plan,
             "approval_summary": self.approval_summary,
             "checks": self.checks,
@@ -197,10 +199,19 @@ class DeliveryResumeWorkflowScheduler:
             if self.config.lease_renewal_warning_seconds is not None
             else max(1, int(self.config.transaction_lock_lease_seconds) // 3),
         )
+        lock_lifecycle_plan = _lock_lifecycle_plan(
+            delivery_root=delivery_root,
+            existing_entries=existing_entries,
+            resume_plan=resume_plan,
+            transaction_id=str(transaction_id or ""),
+            created_at=created_at,
+            lease_renewal_plan=lease_renewal_plan,
+        )
         planned_steps = self._planned_steps(
             resume_plan=resume_plan,
             completed_actions=set(existing_journal_summary["completed_actions"]),
             lease_renewal_plan=lease_renewal_plan,
+            lock_lifecycle_plan=lock_lifecycle_plan,
         )
         approval_summary = _approval_summary(
             ledger_path=self.config.resolved_approval_ledger_path(),
@@ -249,6 +260,7 @@ class DeliveryResumeWorkflowScheduler:
             planned_steps=planned_steps,
             step_results=step_results,
             existing_journal_summary=existing_journal_summary,
+            lock_lifecycle_plan=lock_lifecycle_plan,
             lease_renewal_plan=lease_renewal_plan,
             approval_summary=approval_summary,
             checks=checks,
@@ -295,8 +307,16 @@ class DeliveryResumeWorkflowScheduler:
         resume_plan: dict[str, Any],
         completed_actions: set[str],
         lease_renewal_plan: dict[str, Any],
+        lock_lifecycle_plan: dict[str, Any],
     ) -> list[dict[str, Any]]:
         actions = list(self.config.step_actions) if self.config.step_actions else _default_step_actions(resume_plan)
+        if not self.config.step_actions:
+            for action in reversed(lock_lifecycle_plan.get("prepend_step_actions", [])):
+                if action in SUPPORTED_DELIVERY_RESUME_WORKFLOW_STEP_ACTIONS and action not in actions and action not in completed_actions:
+                    actions = [str(action), *actions]
+            for action in lock_lifecycle_plan.get("append_step_actions", []):
+                if action in SUPPORTED_DELIVERY_RESUME_WORKFLOW_STEP_ACTIONS and action not in actions and action not in completed_actions:
+                    actions = [*actions, str(action)]
         if (
             not self.config.step_actions
             and lease_renewal_plan.get("recommended_step_action") == DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION
@@ -331,6 +351,7 @@ class DeliveryResumeWorkflowScheduler:
         pending_steps = [step for step in planned_steps if not step.get("already_completed")]
         unsupported_steps = [str(step.get("action")) for step in planned_steps if step.get("action") not in SUPPORTED_DELIVERY_RESUME_WORKFLOW_STEP_ACTIONS]
         missing_approvals = approval_summary.get("missing_step_actions", [])
+        terminal_release_only = bool(planned_steps) and all(str(step.get("action") or "") == DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION for step in planned_steps)
         return [
             {
                 "name": "resume_workflow_action_supported",
@@ -344,8 +365,8 @@ class DeliveryResumeWorkflowScheduler:
             },
             {
                 "name": "terminal_transactions_are_not_scheduled",
-                "passed": resume_plan.get("status") != "terminal",
-                "details": {"resume_plan_status": resume_plan.get("status")},
+                "passed": resume_plan.get("status") != "terminal" or terminal_release_only,
+                "details": {"resume_plan_status": resume_plan.get("status"), "terminal_release_only": terminal_release_only},
             },
             {
                 "name": "workflow_has_supported_steps",
@@ -789,6 +810,98 @@ def _journal_replay_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
         "side_effect_policy": dict(policy),
         "side_effects_replayed": False,
         "readonly_replay_metadata_only": True,
+    }
+
+
+def _lock_lifecycle_plan(
+    *,
+    delivery_root: Path,
+    existing_entries: list[dict[str, Any]],
+    resume_plan: dict[str, Any],
+    transaction_id: str,
+    created_at: str,
+    lease_renewal_plan: dict[str, Any],
+) -> dict[str, Any]:
+    evidence = _lock_lifecycle_evidence(
+        delivery_root=delivery_root,
+        existing_entries=existing_entries,
+        transaction_id=transaction_id,
+        created_at=created_at,
+    )
+    default_actions = _default_step_actions(resume_plan)
+    resume_status = str(resume_plan.get("status") or "")
+    has_runner_work = any(action in SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS and action != "plan_only" for action in default_actions)
+    provider_lock_evidence_present = bool(evidence.get("provider_lock_evidence_present"))
+    terminal_with_lock = resume_status == "terminal" and provider_lock_evidence_present
+    should_acquire = bool(has_runner_work and not provider_lock_evidence_present and resume_status not in {"terminal", "no_transaction", "blocked"})
+    should_release = bool(terminal_with_lock)
+    prepend_step_actions = [DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION] if should_acquire else []
+    append_step_actions = [DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION] if should_release else []
+    if should_acquire:
+        status = "lifecycle_action_recommended"
+        reason = "provider_lock_missing_for_reviewed_workflow"
+    elif should_release:
+        status = "lifecycle_action_recommended"
+        reason = "terminal_transaction_has_provider_lock_evidence"
+    elif evidence.get("active_lock_evidence"):
+        status = "not_required"
+        reason = "provider_lock_evidence_present"
+    else:
+        status = "not_required"
+        reason = "no_lifecycle_action_required"
+    return {
+        "enabled": True,
+        "status": status,
+        "reason": reason,
+        "source": evidence.get("source"),
+        "provider_id": evidence.get("provider_id"),
+        "transaction_id": evidence.get("transaction_id") or None,
+        "owner": evidence.get("owner"),
+        "fencing_token_present": bool(evidence.get("fencing_token")),
+        "lease_expires_at": evidence.get("lease_expires_at"),
+        "lease_stale": evidence.get("lease_stale"),
+        "active_lock_evidence": bool(evidence.get("active_lock_evidence")),
+        "provider_lock_evidence_present": provider_lock_evidence_present,
+        "default_step_actions": default_actions,
+        "prepend_step_actions": prepend_step_actions,
+        "append_step_actions": append_step_actions,
+        "recommended_step_actions": [*prepend_step_actions, *append_step_actions],
+        "requires_review_approval_actions": [
+            RESUME_WORKFLOW_ACTION_TO_APPROVAL_ACTION[action] for action in [*prepend_step_actions, *append_step_actions]
+        ],
+        "lease_renewal_plan_status": lease_renewal_plan.get("status"),
+        "dry_run_plan_only": True,
+        "automatic_lock_acquire": False,
+        "automatic_lock_release": False,
+        "automatic_lock_lifecycle": False,
+        "starts_daemon": False,
+        "stale_takeover": False,
+        "requires_review_approval": bool(prepend_step_actions or append_step_actions),
+    }
+
+
+def _lock_lifecycle_evidence(
+    *,
+    delivery_root: Path,
+    existing_entries: list[dict[str, Any]],
+    transaction_id: str,
+    created_at: str,
+) -> dict[str, Any]:
+    projection = _lease_candidate_from_projection(
+        _read_json_object(delivery_root / "delivery-distributed-transaction-lock.json"),
+        transaction_id=transaction_id,
+    )
+    journal = _lease_candidate_from_journal(existing_entries, transaction_id=transaction_id)
+    candidate = projection if projection.get("lease_expires_at") or projection.get("fencing_token") else journal
+    lease_expires_at = candidate.get("lease_expires_at")
+    lease_stale = _iso_datetime_is_expired(lease_expires_at, now_iso=created_at) if lease_expires_at else False
+    evidence_present = bool(candidate.get("fencing_token") or candidate.get("lease_expires_at"))
+    active = bool(candidate.get("fencing_token")) and not lease_stale
+    return {
+        **candidate,
+        "lease_stale": lease_stale,
+        "provider_lock_evidence_present": evidence_present,
+        "active_lock_evidence": active,
     }
 
 
