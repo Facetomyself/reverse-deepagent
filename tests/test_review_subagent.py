@@ -96,17 +96,19 @@ class ReviewSubagentTests(unittest.TestCase):
         self.assertEqual(payload["next_action"], "delivery_allowed")
         self.assertEqual(payload["info_hint_codes"], ["pure_strategy_detected"])
 
-    def test_build_review_subagent_exposes_read_only_gate_tool(self) -> None:
+    def test_build_review_subagent_exposes_gate_and_approval_tools(self) -> None:
         subagent = build_review_subagent()
 
         self.assertEqual(subagent["name"], REVIEW_SUBAGENT_NAME)
         self.assertEqual(subagent["description"], REVIEW_SUBAGENT_DESCRIPTION)
         self.assertIn("Review Subagent", subagent["system_prompt"])
-        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"evaluate_delivery_review_gate"})
+        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"evaluate_delivery_review_gate", "record_review_approval"})
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/review.txt"
-        self.assertIn("read-only review gate", load_review_prompt(path))
+        prompt = load_review_prompt(path)
+        self.assertIn("read-only review gate", prompt)
+        self.assertIn("record_review_approval", prompt)
 
     def test_default_agent_includes_review_subagent_without_runtime(self) -> None:
         captured = {}

@@ -119,7 +119,7 @@ def build_reverse_agent(
         build_debugger_subagent(),
         build_hook_subagent(),
         build_timeline_subagent(),
-        build_review_subagent(),
+        build_review_subagent(artifact_root=effective_artifact_root),
         build_rebuild_subagent(artifact_root=effective_artifact_root),
         build_delivery_subagent(artifact_root=effective_artifact_root),
     ]
