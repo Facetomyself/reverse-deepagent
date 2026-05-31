@@ -832,3 +832,11 @@ Tests cover default acquire planning, approved acquire / release lifecycle metad
 The same evidence is attached to each `step_dependency_contexts[*].runtime_gate_evidence`, so review / delivery subagents can see which artifacts are currently observed, missing, malformed, stale, or transaction-mismatched for a planned step. The dependency summary also counts steps with missing, malformed, stale, or mismatched runtime-gate evidence.
 
 Boundary: this is artifact observation only. It does not call providers, write workflow / lock artifacts, execute workflow steps, start a daemon, perform automatic acquire / renew / release, or treat observed artifacts as apply-time gate success. Digest, rollback checkpoint, transaction lock, lease, and fencing-token checks remain delegated to the existing apply-time executors. Android / iOS / mini-program full runtime chains remain deferred.
+
+### Step 96 execution record: Roadmap / future-work status cleanup
+
+`ROADMAP.md` is now status-based instead of an early version wish list. It separates shipped baselines, active non-mobile follow-ups, explicitly deferred automation, and validation posture. This prevents already shipped BrowserProvider / native-web / delivery / workflow baselines from being re-read as future work while keeping production hardening gaps visible.
+
+`docs/runtime/browser-provider-architecture.md` now splits the old future-work paragraph into completed hardening, active capability-gated future work, and explicitly deferred automation. Items completed through Step 95, such as fencing propagation, journal replay, lock lifecycle planning, lease renewal planning, workflow readiness, dependency context, runtime-gate evidence projection, and external delivery ledger / retry / overwrite baselines, are no longer presented as future work.
+
+Boundary: this is a docs-only status correction. It does not change runtime behavior, provider behavior, workspace artifact layout, tests, CLI flags, or the deferred Android / iOS / mini-program full runtime chains.

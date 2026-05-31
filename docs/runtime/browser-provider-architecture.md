@@ -416,7 +416,50 @@ Current hook baseline support:
 
 Delivery transaction inspector baseline is available through `reverse_deepagent.delivery.inspector.inspect_delivery_transaction_root(...)` and `reverse-agent-doctor --delivery-transaction-root`. `DeliveryResumePlanner` additionally emits a read-only / write-audit-only `delivery-resume-plan.json` resume plan from existing transaction, rollback, transition, lock, and release artifacts. `DeliveryResumeRunner` can then execute one explicit review-approved recovery / commit transition from that plan and write `delivery-resume-execution.json`; it is a review-gated single-transition runner, not a full durable workflow scheduler. `DeliveryResumeWorkflowScheduler` can chain approved resume runner steps and now also supports `acquire_delivery_transaction_lock_provider`, `renew_delivery_transaction_lock_provider`, and `release_delivery_transaction_lock_provider` as explicit reviewed lock-provider lifecycle steps that call the configured provider's `acquire_lock` / `renew_lock` / `release_lock`, record provider operation / fencing token / lease expiry evidence in the workflow journal, and remain separate from background renewal daemons, automatic lock lifecycle managers, or automatic stale takeover. Within the same reviewed workflow execution, a successful acquire / renew step can propagate its returned fencing token into later runner steps as `expected_transaction_lock_fencing_token`; an explicit configured expected token still takes precedence, release clears the propagated token, and the propagation metadata is recorded in step results and the workflow journal. During resume-of-resume, skipped lock-provider steps can also replay conservative fencing state from successful same-transaction workflow journal entries, ignoring stale or malformed lease evidence and clearing the token after journaled release. Skipped steps now include read-only `journal_replay` context with the previous journal entry status, runner / transition status, lock evidence, and side-effect policy so reviewers can inspect why a step was skipped without re-running it. Planning also emits `lock_lifecycle_plan` and `lease_renewal_plan`, dry-run-only recommendations built from provider projection and workflow journal lock / lease evidence. The lifecycle plan can prepend `acquire_delivery_transaction_lock_provider` for default recovery workflows that lack provider lock evidence, or plan `release_delivery_transaction_lock_provider` for terminal transactions that still have provider lock evidence. The renewal plan can prepend `renew_delivery_transaction_lock_provider` when an existing fenced lease is expired or within the warning window. Execution still requires the normal `resume_acquire_*`, `resume_renew_*`, or `resume_release_*` review approvals. This is reviewed journal-state evidence replay plus lifecycle / renewal planning, not arbitrary side-effect replay, provider contact during planning, background renewal, automatic lock lifecycle management, manifest recovery, external delivery, or global automatic fencing. It reads standard delivery transaction artifacts from a delivery root, including `external-delivery-idempotency-ledger.json`, reports `state_snapshot`, `transition_plan`, artifact load status, missing optional artifacts, load errors, and a read-only side-effect policy. The inspector does not restore manifests, mutate files, commit transactions, call external delivery providers, start browsers, probe CDP, or depend on MCP; it is an audit surface for the existing delivery transaction state machine, not itself a recovery executor. The resume runner delegates to the existing transition executor and requires approval ledger evidence before apply-mode execution; it does not start new delivery, publish external delivery, choose ambiguous rollback-vs-commit paths, automatically release or acquire distributed locks, or execute physical rollback. Explicit recovery execution is handled by `DeliveryTransactionRecoveryExecutor`, which writes `delivery-recovery-execution.json` and can orchestrate reviewed preflight -> apply recovery while still avoiding external delivery and transaction commit.
 
-Real third-party BrowserProvider plugin implementations beyond the template package, compatibility rule evolution for newly added provider capability flags, cross-process live CDP paused execution continuation, arbitrary custom loader traversal / async chunk graph / execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline, automatic wrapper hooks for arbitrary closure-internal functions beyond the current paused-callframe evidence baseline, source-map name resolution / complex URL semantics / complex indexed section semantics, JS heap fine-grained mutation audit, object graph diff, cross-run transaction recovery/idempotency hardening beyond the local commit, workflow-local fencing propagation, conservative journal-state fencing replay / read-only skipped-step context replay / lock-lifecycle and lease-renewal planning, and external delivery ledger baselines, advanced adaptive provider retry policy beyond the current JSON asset upload, explicit existing-release reuse, asset duplicate preflight, overwrite/delete preflight plan, explicit delete + replacement upload, explicit retry, and idempotency ledger baselines, third-party external delivery provider implementations beyond the built-in local archive / webhook / object-storage / GitHub Release upload / existing-release reuse / asset duplicate preflight / overwrite-plan / explicit overwrite / ledger baselines, cross-run physical rollback transaction state machine, and automatic full cross-request timeline materialization remain capability-gated future work; they should not be implemented by leaking raw CDP details into the coordinator.
+### Completed hardening since the initial BrowserProvider migration
+
+The following items used to be listed as broad follow-ups and now have conservative baselines:
+
+- Workflow-local fencing propagation.
+- Conservative journal-state fencing replay.
+- Read-only skipped-step journal context replay.
+- Lock lifecycle planning and lease renewal planning.
+- Workflow readiness planning, step dependency context, and runtime-gate evidence projection.
+- External delivery retry metadata, explicit retry, duplicate / idempotency guard, existing-release reuse, asset duplicate preflight, overwrite / delete preflight, explicit delete + replacement upload, and idempotency ledger baselines.
+- Built-in local archive, webhook, presigned object, and GitHub Release external delivery baselines.
+
+These baselines are intentionally review-gated or read-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, or automatic external publication.
+
+### Active capability-gated future work
+
+The remaining Web-first work should continue behind provider / runtime / artifact contracts instead of leaking raw CDP or provider details into the coordinator:
+
+- Real third-party BrowserProvider plugin implementations beyond the template package.
+- Compatibility rule evolution for newly added provider capability flags.
+- Cross-process live CDP paused execution continuation.
+- Arbitrary custom loader traversal, async chunk graph analysis, and execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.
+- Opt-in wrapper replacement for closure-internal functions beyond the current paused-callframe evidence baseline.
+- Source Map name resolution, complex URL semantics, and complex indexed-section semantics.
+- Scoped JS heap / object-root mutation audit and object graph diff.
+- Broader durable resume scheduler semantics beyond the current readiness / dependency / evidence projection baselines.
+- Broader physical rollback state machine beyond local manifest rollback apply.
+- Real third-party ExternalDeliveryProvider implementations beyond the template and built-in baselines.
+- Advanced adaptive provider retry policy, retry budgets, provider-specific rate-limit behavior, and partial-failure recovery.
+- Additional external distributed lock providers beyond local-file / SQLite / Redis when a deployment actually needs them.
+- More complete cross-request timeline conflict resolution and reviewer UX.
+
+### Explicitly deferred automation
+
+These are not part of the current default runtime path:
+
+- Automatic lease-renewal daemon / polling loop.
+- Automatic lock lifecycle manager.
+- Automatic stale takeover.
+- Redlock quorum consensus.
+- Unreviewed automatic full cross-request timeline materialization.
+- Automatic rollback-vs-commit selection.
+- Automatic external delivery publication without explicit review / apply intent.
+- Android / iOS / mini-program full runtime chains beyond the current minimal metadata / probe / artifact export baselines.
 
 ## 11.3 Native candidate validation status
 
