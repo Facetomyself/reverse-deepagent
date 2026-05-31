@@ -67,6 +67,8 @@ class DeliveryExecutorConfig:
     preflight_backend_manifest_recovery: bool = False
     backend_manifest_recovery_preflight_name: str = "backend-artifact-manifest-recovery-preflight.json"
     expected_recovery_transaction_id: str | None = None
+    apply_backend_manifest_recovery: bool = False
+    backend_manifest_recovery_name: str = "backend-artifact-manifest-recovery.json"
     commit_cross_run_transaction: bool = False
     backend_manifest_transaction_commit_name: str = "backend-artifact-manifest-transaction-commit.json"
     expected_commit_transaction_id: str | None = None
@@ -331,6 +333,66 @@ class BackendManifestRecoveryPreflight:
 
 
 @dataclass(frozen=True)
+class BackendManifestRecovery:
+    transaction_id: str
+    status: str
+    recovery_id: str
+    recovery_path: str | None
+    delivery_root: str
+    source_transaction_id: str | None
+    source_manifest_path: str | None
+    transaction_journal_path: str | None
+    recovery_preflight_path: str | None
+    rollback_path: str | None
+    dry_run: bool
+    recovery_requested: bool
+    recovered: bool
+    backend_manifest_mutated_before_recovery: bool
+    external_delivery_performed: bool
+    cross_run_transaction_committed: bool
+    source_manifest_digest_before_recovery_sha256: str | None
+    rollback_manifest_digest_sha256: str | None
+    post_recovery_manifest_digest_sha256: str | None
+    expected_recovery_transaction_id: str | None
+    recovery_preflight_status: str | None
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    recommended_actions: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "recovery_id": self.recovery_id,
+            "recovery_path": self.recovery_path,
+            "delivery_root": self.delivery_root,
+            "source_transaction_id": self.source_transaction_id,
+            "source_manifest_path": self.source_manifest_path,
+            "transaction_journal_path": self.transaction_journal_path,
+            "recovery_preflight_path": self.recovery_preflight_path,
+            "rollback_path": self.rollback_path,
+            "dry_run": self.dry_run,
+            "recovery_requested": self.recovery_requested,
+            "recovered": self.recovered,
+            "backend_manifest_mutated_before_recovery": self.backend_manifest_mutated_before_recovery,
+            "external_delivery_performed": self.external_delivery_performed,
+            "cross_run_transaction_committed": self.cross_run_transaction_committed,
+            "source_manifest_digest_before_recovery_sha256": self.source_manifest_digest_before_recovery_sha256,
+            "rollback_manifest_digest_sha256": self.rollback_manifest_digest_sha256,
+            "post_recovery_manifest_digest_sha256": self.post_recovery_manifest_digest_sha256,
+            "expected_recovery_transaction_id": self.expected_recovery_transaction_id,
+            "recovery_preflight_status": self.recovery_preflight_status,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class BackendManifestTransactionCommit:
     transaction_id: str
     status: str
@@ -402,12 +464,14 @@ class DeliveryTransactionJournal:
     backend_manifest_in_place_mutation_path: str | None
     backend_manifest_rollback_path: str | None
     backend_manifest_recovery_preflight_path: str | None
+    backend_manifest_recovery_path: str | None
     backend_manifest_transaction_commit_path: str | None
     backend_manifest_patch_written: bool
     backend_manifest_in_place_preflight_passed: bool
     backend_manifest_recovery_preflight_passed: bool
     backend_manifest_rollback_written: bool
     backend_manifest_mutated: bool
+    backend_manifest_recovered: bool
     cross_run_transaction_committed: bool
     entries: list[dict[str, Any]]
     created_at: str
@@ -429,12 +493,14 @@ class DeliveryTransactionJournal:
             "backend_manifest_in_place_mutation_path": self.backend_manifest_in_place_mutation_path,
             "backend_manifest_rollback_path": self.backend_manifest_rollback_path,
             "backend_manifest_recovery_preflight_path": self.backend_manifest_recovery_preflight_path,
+            "backend_manifest_recovery_path": self.backend_manifest_recovery_path,
             "backend_manifest_transaction_commit_path": self.backend_manifest_transaction_commit_path,
             "backend_manifest_patch_written": self.backend_manifest_patch_written,
             "backend_manifest_in_place_preflight_passed": self.backend_manifest_in_place_preflight_passed,
             "backend_manifest_recovery_preflight_passed": self.backend_manifest_recovery_preflight_passed,
             "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
             "backend_manifest_mutated": self.backend_manifest_mutated,
+            "backend_manifest_recovered": self.backend_manifest_recovered,
             "cross_run_transaction_committed": self.cross_run_transaction_committed,
             "entries": self.entries,
             "created_at": self.created_at,
@@ -458,6 +524,7 @@ class DeliveryExecutionResult:
     backend_manifest_recovery_preflight_passed: bool
     backend_manifest_rollback_written: bool
     backend_manifest_mutated: bool
+    backend_manifest_recovered: bool
     receipt: DeliveryReceipt
     transaction_journal: DeliveryTransactionJournal
     manifest_revision: DeliveryManifestRevision | None
@@ -465,6 +532,7 @@ class DeliveryExecutionResult:
     backend_manifest_in_place_preflight: BackendManifestInPlacePreflight | None
     backend_manifest_in_place_mutation: BackendManifestInPlaceMutation | None
     backend_manifest_recovery_preflight: BackendManifestRecoveryPreflight | None
+    backend_manifest_recovery: BackendManifestRecovery | None
     backend_manifest_transaction_commit: BackendManifestTransactionCommit | None
     planned_artifacts: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
@@ -486,6 +554,7 @@ class DeliveryExecutionResult:
             "backend_manifest_recovery_preflight_passed": self.backend_manifest_recovery_preflight_passed,
             "backend_manifest_rollback_written": self.backend_manifest_rollback_written,
             "backend_manifest_mutated": self.backend_manifest_mutated,
+            "backend_manifest_recovered": self.backend_manifest_recovered,
             "receipt": self.receipt.to_dict(),
             "transaction_journal": self.transaction_journal.to_dict(),
             "manifest_revision": self.manifest_revision.to_dict() if self.manifest_revision else None,
@@ -493,6 +562,7 @@ class DeliveryExecutionResult:
             "backend_manifest_in_place_preflight": self.backend_manifest_in_place_preflight.to_dict() if self.backend_manifest_in_place_preflight else None,
             "backend_manifest_in_place_mutation": self.backend_manifest_in_place_mutation.to_dict() if self.backend_manifest_in_place_mutation else None,
             "backend_manifest_recovery_preflight": self.backend_manifest_recovery_preflight.to_dict() if self.backend_manifest_recovery_preflight else None,
+            "backend_manifest_recovery": self.backend_manifest_recovery.to_dict() if self.backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": self.backend_manifest_transaction_commit.to_dict() if self.backend_manifest_transaction_commit else None,
             "planned_artifacts": self.planned_artifacts,
             "errors": self.errors,
@@ -518,6 +588,7 @@ class LocalDeliveryExecutor:
         mode = self.config.mode
         dry_run = mode == DeliveryExecutionMode.DRY_RUN
         recovery_only = self._is_recovery_preflight_only(artifacts)
+        recovery_apply_only = self._is_backend_manifest_recovery_apply_only(artifacts)
         transaction_commit_only = self._is_cross_run_transaction_commit_only(artifacts)
         delivered: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
@@ -532,6 +603,9 @@ class LocalDeliveryExecutor:
         elif recovery_only:
             status = "preflighted"
             next_action = "review_backend_manifest_recovery_preflight"
+        elif recovery_apply_only:
+            status = "recovery_requested"
+            next_action = "review_backend_manifest_recovery"
         elif transaction_commit_only:
             status = "commit_requested"
             next_action = "review_backend_manifest_transaction_commit"
@@ -551,12 +625,12 @@ class LocalDeliveryExecutor:
 
         receipt_path = (
             str(delivery_root / "delivery-receipt.json")
-            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not transaction_commit_only
+            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not recovery_apply_only and not transaction_commit_only
             else None
         )
         journal_path = (
             str(delivery_root / "delivery-transaction-journal.json")
-            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not transaction_commit_only
+            if self.config.write_receipt and not dry_run and not errors and not recovery_only and not recovery_apply_only and not transaction_commit_only
             else None
         )
         manifest_revision_path = (
@@ -592,6 +666,11 @@ class LocalDeliveryExecutor:
         backend_manifest_recovery_preflight_path = (
             str(delivery_root / self.config.backend_manifest_recovery_preflight_name)
             if self.config.write_receipt and self.config.preflight_backend_manifest_recovery and not dry_run and not errors
+            else None
+        )
+        backend_manifest_recovery_path = (
+            str(delivery_root / self.config.backend_manifest_recovery_name)
+            if self.config.write_receipt and self.config.apply_backend_manifest_recovery and not dry_run and not errors
             else None
         )
         backend_manifest_transaction_commit_path = (
@@ -688,24 +767,50 @@ class LocalDeliveryExecutor:
             dry_run=dry_run,
             created_at=created_at,
         )
+        backend_manifest_recovery = self._apply_backend_manifest_recovery(
+            recovery_path=backend_manifest_recovery_path,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        if recovery_apply_only and backend_manifest_recovery:
+            if backend_manifest_recovery.recovered:
+                status = "recovered"
+                next_action = "review_backend_manifest_recovery_before_transaction_commit"
+                journal_path = backend_manifest_recovery.transaction_journal_path
+            elif backend_manifest_recovery.blocking_reasons:
+                status = "blocked"
+                next_action = "fix_backend_manifest_recovery_blockers"
+            elif dry_run:
+                status = "planned"
+                next_action = "apply_backend_manifest_recovery_after_review"
         previous_journal: dict[str, Any] = {}
         if transaction_commit_only and backend_manifest_transaction_commit and backend_manifest_transaction_commit.transaction_journal_path:
             previous_journal_path = Path(backend_manifest_transaction_commit.transaction_journal_path)
+            if previous_journal_path.exists():
+                previous_journal = _read_json_object(previous_journal_path)
+        if recovery_apply_only and backend_manifest_recovery and backend_manifest_recovery.transaction_journal_path:
+            previous_journal_path = Path(backend_manifest_recovery.transaction_journal_path)
             if previous_journal_path.exists():
                 previous_journal = _read_json_object(previous_journal_path)
         cross_run_transaction_committed = bool(
             (backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed)
             or previous_journal.get("cross_run_transaction_committed")
         )
+        backend_manifest_recovered = bool(
+            (backend_manifest_recovery and backend_manifest_recovery.recovered)
+            or previous_journal.get("backend_manifest_recovered")
+        )
         journal_limitations = [
             "does_not_publish_external_delivery",
             "rollback_is_local_checkpoint_baseline",
-            "cross_run_manifest_recovery_not_implemented",
+            "full_cross_run_manifest_recovery_state_machine_not_implemented",
         ]
         if cross_run_transaction_committed:
             journal_limitations.append("external_delivery_still_requires_separate_executor")
         else:
             journal_limitations.append("does_not_commit_cross_run_transaction")
+        if backend_manifest_recovered:
+            journal_limitations.append("backend_manifest_recovered_from_local_rollback_checkpoint")
         if not backend_manifest_mutated:
             journal_limitations.extend(
                 [
@@ -739,9 +844,18 @@ class LocalDeliveryExecutor:
             backend_manifest_recovery_preflight_path=_journal_str(
                 previous_journal,
                 "backend_manifest_recovery_preflight_path",
+                backend_manifest_recovery.recovery_preflight_path
+                if backend_manifest_recovery and backend_manifest_recovery.recovery_preflight_path
+                else (
                 backend_manifest_transaction_commit.recovery_preflight_path
                 if backend_manifest_transaction_commit and backend_manifest_transaction_commit.recovery_preflight_path
-                else backend_manifest_recovery_preflight_path,
+                else backend_manifest_recovery_preflight_path
+                ),
+            ),
+            backend_manifest_recovery_path=_journal_str(
+                previous_journal,
+                "backend_manifest_recovery_path",
+                backend_manifest_recovery_path if backend_manifest_recovery and backend_manifest_recovery.recovered else None,
             ),
             backend_manifest_transaction_commit_path=_journal_str(
                 previous_journal,
@@ -765,6 +879,7 @@ class LocalDeliveryExecutor:
             ),
             backend_manifest_rollback_written=_journal_bool(previous_journal, "backend_manifest_rollback_written", backend_manifest_rollback_written),
             backend_manifest_mutated=_journal_bool(previous_journal, "backend_manifest_mutated", backend_manifest_mutated),
+            backend_manifest_recovered=backend_manifest_recovered,
             cross_run_transaction_committed=cross_run_transaction_committed,
             entries=_journal_entries(previous_journal)
             or [
@@ -798,11 +913,14 @@ class LocalDeliveryExecutor:
             _write_json(Path(backend_manifest_in_place_mutation_path), backend_manifest_in_place_mutation.to_dict())
         if backend_manifest_recovery_preflight_path and backend_manifest_recovery_preflight:
             _write_json(Path(backend_manifest_recovery_preflight_path), backend_manifest_recovery_preflight.to_dict())
+        if backend_manifest_recovery_path and backend_manifest_recovery:
+            _write_json(Path(backend_manifest_recovery_path), backend_manifest_recovery.to_dict())
         if backend_manifest_transaction_commit_path and backend_manifest_transaction_commit:
             _write_json(Path(backend_manifest_transaction_commit_path), backend_manifest_transaction_commit.to_dict())
         should_write_journal = bool(journal_path) and (
-            not transaction_commit_only
+            (not transaction_commit_only and not recovery_apply_only)
             or bool(backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed)
+            or bool(backend_manifest_recovery and backend_manifest_recovery.recovered)
         )
         if should_write_journal:
             _write_json(Path(journal_path), journal.to_dict())
@@ -833,6 +951,7 @@ class LocalDeliveryExecutor:
             ),
             backend_manifest_rollback_written=backend_manifest_rollback_written,
             backend_manifest_mutated=backend_manifest_mutated,
+            backend_manifest_recovered=backend_manifest_recovered,
             receipt=receipt,
             transaction_journal=journal,
             manifest_revision=manifest_revision,
@@ -840,6 +959,7 @@ class LocalDeliveryExecutor:
             backend_manifest_in_place_preflight=backend_manifest_in_place_preflight,
             backend_manifest_in_place_mutation=backend_manifest_in_place_mutation,
             backend_manifest_recovery_preflight=backend_manifest_recovery_preflight,
+            backend_manifest_recovery=backend_manifest_recovery,
             backend_manifest_transaction_commit=backend_manifest_transaction_commit,
             planned_artifacts=planned,
             errors=errors,
@@ -1580,6 +1700,186 @@ class LocalDeliveryExecutor:
             },
         )
 
+    def _apply_backend_manifest_recovery(
+        self,
+        *,
+        recovery_path: str | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> BackendManifestRecovery | None:
+        if not self.config.apply_backend_manifest_recovery:
+            return None
+        delivery_root = self.config.resolved_delivery_root()
+        source_manifest_path = self.config.resolved_backend_manifest_path()
+        source_manifest_exists = bool(source_manifest_path and source_manifest_path.exists())
+        source_digest_before = _file_sha256(source_manifest_path) if source_manifest_path and source_manifest_exists else None
+        journal_path = delivery_root / "delivery-transaction-journal.json"
+        journal_exists = journal_path.exists()
+        journal = _read_json_object(journal_path) if journal_exists else {}
+        source_transaction_id = str(journal["transaction_id"]) if journal.get("transaction_id") is not None else None
+        expected_transaction_id = self.config.expected_recovery_transaction_id
+        backend_manifest_mutated = bool(journal.get("backend_manifest_mutated"))
+        external_delivery_performed = bool(journal.get("external_delivery_performed"))
+        cross_run_transaction_committed = bool(journal.get("cross_run_transaction_committed"))
+        already_recovered = bool(journal.get("backend_manifest_recovered"))
+        recovery_preflight_path = _resolve_record_path(journal.get("backend_manifest_recovery_preflight_path"), delivery_root)
+        if recovery_preflight_path is None:
+            recovery_preflight_path = (delivery_root / self.config.backend_manifest_recovery_preflight_name).resolve()
+        recovery_preflight_exists = recovery_preflight_path.exists()
+        recovery_preflight = _read_json_object(recovery_preflight_path) if recovery_preflight_exists else {}
+        recovery_preflight_status = (
+            str(recovery_preflight["status"]) if recovery_preflight.get("status") is not None else None
+        )
+        recovery_available = bool(recovery_preflight.get("recovery_available"))
+        recovery_journal_transaction_id = (
+            str(recovery_preflight["journal_transaction_id"])
+            if recovery_preflight.get("journal_transaction_id") is not None
+            else None
+        )
+        recovery_source_digest = (
+            recovery_preflight.get("source_manifest_digest_sha256")
+            if isinstance(recovery_preflight.get("source_manifest_digest_sha256"), str)
+            else None
+        )
+        recovery_rollback_digest = (
+            recovery_preflight.get("rollback_manifest_digest_sha256")
+            if isinstance(recovery_preflight.get("rollback_manifest_digest_sha256"), str)
+            else None
+        )
+        rollback_path = _resolve_record_path(
+            recovery_preflight.get("rollback_path") or journal.get("backend_manifest_rollback_path"),
+            delivery_root,
+        )
+        if backend_manifest_mutated and rollback_path is None:
+            rollback_path = (delivery_root / self.config.backend_manifest_rollback_name).resolve()
+        rollback_exists = bool(rollback_path and rollback_path.exists())
+        rollback_digest = _file_sha256(rollback_path) if rollback_path and rollback_exists else None
+        checks = [
+            {
+                "name": "source_manifest_exists",
+                "passed": source_manifest_exists,
+                "details": {"source_manifest_path": str(source_manifest_path) if source_manifest_path else None},
+            },
+            {
+                "name": "transaction_journal_exists",
+                "passed": journal_exists,
+                "details": {"transaction_journal_path": str(journal_path)},
+            },
+            {
+                "name": "expected_recovery_transaction_matches",
+                "passed": expected_transaction_id is None or expected_transaction_id == source_transaction_id,
+                "details": {"expected": expected_transaction_id, "actual": source_transaction_id},
+            },
+            {
+                "name": "journal_reports_backend_manifest_mutated",
+                "passed": backend_manifest_mutated,
+                "details": {"backend_manifest_mutated": backend_manifest_mutated},
+            },
+            {
+                "name": "journal_reports_no_external_delivery",
+                "passed": not external_delivery_performed,
+                "details": {"external_delivery_performed": external_delivery_performed},
+            },
+            {
+                "name": "journal_reports_no_cross_run_commit",
+                "passed": not cross_run_transaction_committed,
+                "details": {"cross_run_transaction_committed": cross_run_transaction_committed},
+            },
+            {
+                "name": "journal_not_already_recovered",
+                "passed": not already_recovered,
+                "details": {"backend_manifest_recovered": already_recovered},
+            },
+            {
+                "name": "recovery_preflight_exists",
+                "passed": recovery_preflight_exists,
+                "details": {"recovery_preflight_path": str(recovery_preflight_path)},
+            },
+            {
+                "name": "recovery_preflight_ready_for_review",
+                "passed": recovery_preflight_status == "ready_for_review" and recovery_available,
+                "details": {"status": recovery_preflight_status, "recovery_available": recovery_available},
+            },
+            {
+                "name": "recovery_preflight_transaction_matches_journal",
+                "passed": recovery_journal_transaction_id == source_transaction_id,
+                "details": {"recovery_journal_transaction_id": recovery_journal_transaction_id, "journal_transaction_id": source_transaction_id},
+            },
+            {
+                "name": "source_matches_recovery_preflight_digest",
+                "passed": bool(source_digest_before and recovery_source_digest == source_digest_before),
+                "details": {"expected": recovery_source_digest, "actual": source_digest_before},
+            },
+            {
+                "name": "rollback_checkpoint_exists",
+                "passed": rollback_exists,
+                "details": {"rollback_path": str(rollback_path) if rollback_path else None},
+            },
+            {
+                "name": "rollback_digest_matches_recovery_preflight",
+                "passed": bool(rollback_digest and recovery_rollback_digest == rollback_digest),
+                "details": {"expected": recovery_rollback_digest, "actual": rollback_digest},
+            },
+        ]
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        recovered = False
+        post_recovery_digest = None
+        if dry_run:
+            status = "planned"
+            recommended_actions = ["run_apply_backend_manifest_recovery_after_review"]
+        elif blocking_reasons:
+            status = "blocked"
+            recommended_actions = ["inspect_recovery_preflight_and_rollback_checkpoint_before_restore"]
+        else:
+            if source_manifest_path is None or rollback_path is None:
+                raise ValueError("backend manifest recovery requires source manifest and rollback path")
+            source_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(rollback_path, source_manifest_path)
+            recovered = True
+            post_recovery_digest = _file_sha256(source_manifest_path)
+            status = "recovered"
+            recommended_actions = ["review_recovered_manifest_before_new_delivery_or_commit"]
+        return BackendManifestRecovery(
+            transaction_id=self.config.transaction_id,
+            status=status,
+            recovery_id=f"backend-manifest-recovery-{self.config.transaction_id}",
+            recovery_path=recovery_path,
+            delivery_root=str(delivery_root),
+            source_transaction_id=source_transaction_id,
+            source_manifest_path=str(source_manifest_path) if source_manifest_path else None,
+            transaction_journal_path=str(journal_path),
+            recovery_preflight_path=str(recovery_preflight_path),
+            rollback_path=str(rollback_path) if rollback_path else None,
+            dry_run=dry_run,
+            recovery_requested=True,
+            recovered=recovered,
+            backend_manifest_mutated_before_recovery=backend_manifest_mutated,
+            external_delivery_performed=False,
+            cross_run_transaction_committed=False,
+            source_manifest_digest_before_recovery_sha256=source_digest_before,
+            rollback_manifest_digest_sha256=rollback_digest,
+            post_recovery_manifest_digest_sha256=post_recovery_digest,
+            expected_recovery_transaction_id=expected_transaction_id,
+            recovery_preflight_status=recovery_preflight_status,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=recommended_actions,
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "backend-manifest-cross-run-recovery-apply-baseline",
+                "external_delivery_performed": False,
+                "cross_run_transaction_committed": False,
+                "limitations": [
+                    "explicit_review_restore_from_local_rollback_checkpoint",
+                    "does_not_publish_external_delivery",
+                    "does_not_commit_cross_run_transaction",
+                    "cross_run_physical_rollback_transaction_state_machine_not_implemented",
+                ],
+            },
+        )
+
     def _is_recovery_preflight_only(self, artifacts: list[DeliveryArtifact]) -> bool:
         return (
             self.config.preflight_backend_manifest_recovery
@@ -1588,6 +1888,19 @@ class LocalDeliveryExecutor:
             and not self.config.commit_backend_manifest_mutation
             and not self.config.preflight_backend_manifest_in_place_mutation
             and not self.config.approve_backend_manifest_in_place_mutation
+            and not self.config.apply_backend_manifest_recovery
+            and not self.config.commit_cross_run_transaction
+        )
+
+    def _is_backend_manifest_recovery_apply_only(self, artifacts: list[DeliveryArtifact]) -> bool:
+        return (
+            self.config.apply_backend_manifest_recovery
+            and not artifacts
+            and not self.config.commit_manifest_revision
+            and not self.config.commit_backend_manifest_mutation
+            and not self.config.preflight_backend_manifest_in_place_mutation
+            and not self.config.approve_backend_manifest_in_place_mutation
+            and not self.config.preflight_backend_manifest_recovery
             and not self.config.commit_cross_run_transaction
         )
 
@@ -1600,6 +1913,7 @@ class LocalDeliveryExecutor:
             and not self.config.preflight_backend_manifest_in_place_mutation
             and not self.config.approve_backend_manifest_in_place_mutation
             and not self.config.preflight_backend_manifest_recovery
+            and not self.config.apply_backend_manifest_recovery
         )
 
     def _plan_artifacts(self, artifacts: list[DeliveryArtifact], delivery_root: Path) -> tuple[list[dict[str, Any]], list[str]]:

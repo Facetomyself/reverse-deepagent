@@ -759,6 +759,132 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertFalse(journal.get("cross_run_transaction_committed", False))
             self.assertIsNone(journal.get("backend_manifest_transaction_commit_path"))
 
+    def test_backend_manifest_recovery_restores_rollback_after_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": [{"artifact_key": "existing", "path": "workspace/existing.json", "kind": "json"}]}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-restore-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            self.assertNotEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-restore-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-restore-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-restore-apply",
+                    mode=DeliveryExecutionMode.APPLY,
+                    apply_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-restore-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            recovery_path = delivery_root / "backend-artifact-manifest-recovery.json"
+            journal_path = delivery_root / "delivery-transaction-journal.json"
+            self.assertEqual(result.status, "recovered")
+            self.assertTrue(result.backend_manifest_recovered)
+            self.assertIsNotNone(result.backend_manifest_recovery)
+            self.assertEqual(result.backend_manifest_recovery.status, "recovered")
+            self.assertTrue(result.backend_manifest_recovery.recovered)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertTrue(recovery_path.exists())
+            recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(recovery["source_transaction_id"], "tx-recovery-restore-source")
+            self.assertEqual(recovery["post_recovery_manifest_digest_sha256"], recovery["rollback_manifest_digest_sha256"])
+            self.assertTrue(journal["backend_manifest_recovered"])
+            self.assertEqual(journal["backend_manifest_recovery_path"], str(recovery_path.resolve()))
+            self.assertEqual(journal["transaction_id"], "tx-recovery-restore-source")
+            self.assertTrue(journal["backend_manifest_mutated"])
+            self.assertFalse(journal["cross_run_transaction_committed"])
+            self.assertFalse(journal["external_delivery_performed"])
+
+    def test_backend_manifest_recovery_blocks_source_manifest_drift_after_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-drift-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-drift-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-drift-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+            mutated = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            mutated["entries"].append({"artifact_key": "late_drift", "path": "workspace/late.json", "kind": "json"})
+            backend_manifest.write_text(json.dumps(mutated, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-drift-apply",
+                    mode=DeliveryExecutionMode.APPLY,
+                    apply_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-drift-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            recovery_path = delivery_root / "backend-artifact-manifest-recovery.json"
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(result.status, "blocked")
+            self.assertFalse(result.backend_manifest_recovered)
+            self.assertIsNotNone(result.backend_manifest_recovery)
+            self.assertEqual(result.backend_manifest_recovery.status, "blocked")
+            self.assertIn("source_matches_recovery_preflight_digest", result.backend_manifest_recovery.blocking_reasons)
+            self.assertTrue(recovery_path.exists())
+            self.assertFalse(journal.get("backend_manifest_recovered", False))
+            self.assertIsNone(journal.get("backend_manifest_recovery_path"))
+
     def test_missing_required_source_blocks_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

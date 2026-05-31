@@ -3,6 +3,7 @@ from __future__ import annotations
 from .executors import (
     BackendManifestInPlaceMutation,
     BackendManifestInPlacePreflight,
+    BackendManifestRecovery,
     BackendManifestRecoveryPreflight,
     BackendManifestTransactionCommit,
     BackendManifestMutation,
@@ -19,6 +20,7 @@ from .executors import (
 __all__ = [
     "BackendManifestInPlaceMutation",
     "BackendManifestInPlacePreflight",
+    "BackendManifestRecovery",
     "BackendManifestRecoveryPreflight",
     "BackendManifestTransactionCommit",
     "BackendManifestMutation",

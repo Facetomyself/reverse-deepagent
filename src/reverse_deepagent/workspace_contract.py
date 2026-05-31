@@ -300,6 +300,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_backend_artifact_manifest_in_place_mutation", "workspace/backend-artifact-manifest-in-place-mutation.json", "/workspace/delivery/", "backend-artifact-manifest-in-place-mutation.json", "export", ("delivery", "review")),
         ("workspace_backend_artifact_manifest_rollback", "workspace/backend-artifact-manifest.rollback.json", "/workspace/delivery/", "backend-artifact-manifest.rollback.json", "export", ("delivery", "review")),
         ("workspace_backend_artifact_manifest_recovery_preflight", "workspace/backend-artifact-manifest-recovery-preflight.json", "/workspace/delivery/", "backend-artifact-manifest-recovery-preflight.json", "triage", ("delivery", "review")),
+        ("workspace_backend_artifact_manifest_recovery", "workspace/backend-artifact-manifest-recovery.json", "/workspace/delivery/", "backend-artifact-manifest-recovery.json", "export", ("delivery", "review")),
         ("workspace_backend_artifact_manifest_transaction_commit", "workspace/backend-artifact-manifest-transaction-commit.json", "/workspace/delivery/", "backend-artifact-manifest-transaction-commit.json", "export", ("delivery", "review")),
         ("workspace_review_gate", "workspace/review-gate.json", "/workspace/review/", "review-gate.json", "triage", ("review", "delivery")),
         ("workspace_rebuild_plan", "workspace/rebuild-plan.json", "/workspace/rebuild/", "rebuild-plan.json", "rebuild", ("rebuild", "delivery")),
