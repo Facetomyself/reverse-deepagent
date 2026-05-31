@@ -262,6 +262,7 @@ class RecordingGitHubReleaseReuseHandler(http.server.BaseHTTPRequestHandler):
 class RecordingGitHubReleaseAssetPreflightHandler(http.server.BaseHTTPRequestHandler):
     requests: list[dict[str, object]] = []
     existing_assets: list[dict[str, object]] = []
+    delete_status_code: int = 204
 
     def _record_request(self, body: bytes = b"") -> None:
         self.__class__.requests.append(
@@ -323,7 +324,7 @@ class RecordingGitHubReleaseAssetPreflightHandler(http.server.BaseHTTPRequestHan
 
     def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler API
         self._record_request()
-        self.send_response(204)
+        self.send_response(int(self.__class__.delete_status_code))
         self.end_headers()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
@@ -2099,6 +2100,228 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertNotIn("api_secret=hidden", serialized_result)
             self.assertNotIn("download_secret=hidden", serialized_result)
             self.assertNotIn("body-not-recorded", serialized_result)
+
+    def test_github_release_external_delivery_can_delete_existing_asset_then_upload_when_explicitly_approved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.delete_status_code = 204
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                    "browser_download_url": "https://example.invalid/body-not-recorded?download_secret=hidden",
+                }
+            ]
+            server.timeout = 5
+            thread = threading.Thread(
+                target=lambda: [server.handle_request(), server.handle_request(), server.handle_request(), server.handle_request()]
+            )
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-overwrite",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_overwrite_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "approve_existing_asset_delete": True,
+                            "approve_replacement_upload": True,
+                            "expected_existing_asset_id": 7,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 4)
+            release_request, assets_request, delete_request, upload_request = RecordingGitHubReleaseAssetPreflightHandler.requests
+            self.assertEqual(release_request["method"], "POST")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(delete_request["method"], "DELETE")
+            self.assertEqual(delete_request["path"], "/repos/owner/repo/releases/assets/7?api_secret=hidden")
+            self.assertEqual(upload_request["method"], "POST")
+            self.assertEqual(upload_request["path"], "/uploads/duplicate?name=reverse-delivery.json")
+            for request in RecordingGitHubReleaseAssetPreflightHandler.requests:
+                headers = {str(key).lower(): value for key, value in dict(request["headers"]).items()}
+                self.assertEqual(headers["authorization"], "Bearer ghp_asset_overwrite_secret")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["approve_existing_asset_delete"])
+            self.assertTrue(metadata["approve_replacement_upload"])
+            self.assertTrue(metadata["expected_existing_asset_id_configured"])
+            self.assertTrue(metadata["existing_asset_identity_matches"])
+            self.assertTrue(metadata["existing_asset_delete_request_attempted"])
+            self.assertTrue(metadata["existing_asset_delete_succeeded"])
+            self.assertEqual(metadata["existing_asset_delete_status_code"], 204)
+            self.assertTrue(metadata["existing_asset_delete_performed"])
+            self.assertTrue(metadata["existing_asset_overwrite_performed"])
+            self.assertTrue(metadata["upload_request_attempted"])
+            self.assertTrue(metadata["upload_succeeded"])
+            overwrite_plan = metadata["existing_asset_overwrite_plan"]
+            self.assertTrue(overwrite_plan["delete_performed"])
+            self.assertTrue(overwrite_plan["overwrite_performed"])
+            self.assertFalse(overwrite_plan["requires_explicit_approval"])
+            self.assertEqual(overwrite_plan["recommended_transition"], "review_github_release_asset_overwrite_result")
+            self.assertTrue(overwrite_plan["side_effect_policy"]["sends_delete_request"])
+            self.assertTrue(overwrite_plan["side_effect_policy"]["uploads_replacement_asset"])
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            stages = {stage["stage"]: stage for stage in ledger["entries"][0]["attempt_summary"]["stages"]}
+            self.assertEqual(stages["existing_asset_delete"]["attempt_count"], 1)
+            self.assertEqual(stages["existing_asset_delete"]["attempts"][0]["status_code"], 204)
+            self.assertEqual(stages["upload_request"]["attempts"][0]["status_code"], 201)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_overwrite_secret", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+            self.assertNotIn("download_secret=hidden", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+
+    def test_github_release_external_delivery_blocks_overwrite_when_expected_asset_id_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.delete_status_code = 204
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                }
+            ]
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-overwrite-id-mismatch",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_mismatch_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "approve_existing_asset_delete": True,
+                            "approve_replacement_upload": True,
+                            "expected_existing_asset_id": 999,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 2)
+            self.assertFalse(any(request["method"] == "DELETE" for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            self.assertFalse(any(request["method"] == "POST" and str(request["path"]).startswith("/uploads/") for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertFalse(metadata["existing_asset_identity_matches"])
+            self.assertFalse(metadata["existing_asset_delete_request_attempted"])
+            self.assertFalse(metadata["existing_asset_delete_succeeded"])
+            self.assertFalse(metadata["existing_asset_overwrite_performed"])
+            self.assertIn("github_release_existing_asset_delete_approved", result.external_delivery_result.blocking_reasons)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_mismatch_secret", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+
+    def test_github_release_external_delivery_does_not_upload_replacement_when_delete_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.delete_status_code = 500
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                }
+            ]
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-delete-fails",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_delete_fail_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "approve_existing_asset_delete": True,
+                            "approve_replacement_upload": True,
+                            "expected_existing_asset_id": 7,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 3)
+            self.assertEqual(RecordingGitHubReleaseAssetPreflightHandler.requests[2]["method"], "DELETE")
+            self.assertFalse(any(request["method"] == "POST" and str(request["path"]).startswith("/uploads/") for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["existing_asset_identity_matches"])
+            self.assertTrue(metadata["existing_asset_delete_request_attempted"])
+            self.assertFalse(metadata["existing_asset_delete_succeeded"])
+            self.assertEqual(metadata["existing_asset_delete_status_code"], 500)
+            self.assertFalse(metadata["upload_request_attempted"])
+            self.assertFalse(metadata["upload_succeeded"])
+            self.assertFalse(metadata["existing_asset_overwrite_performed"])
+            self.assertIn("github_release_existing_asset_delete_successful", result.external_delivery_result.blocking_reasons)
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            stages = {stage["stage"]: stage for stage in ledger["entries"][0]["attempt_summary"]["stages"]}
+            self.assertEqual(stages["existing_asset_delete"]["attempt_count"], 1)
+            self.assertEqual(stages["existing_asset_delete"]["attempts"][0]["status_code"], 500)
+            self.assertEqual(stages["upload_request"]["attempt_count"], 0)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_delete_fail_secret", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
 
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
