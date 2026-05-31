@@ -12,6 +12,11 @@ from .rollback_state import (
     DeliveryRollbackTransition,
     evaluate_delivery_rollback_state,
 )
+from .rollback_writer import (
+    DeliveryRollbackStateArtifactWriter,
+    DeliveryRollbackStateWrite,
+    DeliveryRollbackStateWriterConfig,
+)
 from .inspector import (
     DELIVERY_TRANSACTION_ARTIFACT_NAMES,
     DELIVERY_TRANSACTION_INSPECTOR_VERSION,
@@ -85,6 +90,9 @@ __all__ = [
     "DeliveryRollbackState",
     "DeliveryRollbackTransition",
     "evaluate_delivery_rollback_state",
+    "DeliveryRollbackStateArtifactWriter",
+    "DeliveryRollbackStateWrite",
+    "DeliveryRollbackStateWriterConfig",
     "SUPPORTED_DELIVERY_TRANSITIONS",
     "DeliveryTransactionTransitionExecutor",
     "DeliveryTransitionExecution",

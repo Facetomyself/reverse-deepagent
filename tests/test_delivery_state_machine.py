@@ -11,8 +11,10 @@ from reverse_deepagent.delivery import (
     DeliveryExecutionMode,
     DeliveryExecutorConfig,
     DeliveryRecoveryExecutorConfig,
+    DeliveryRollbackStateArtifactWriter,
     DeliveryTransactionRecoveryExecutor,
     DeliveryRollbackPhase,
+    DeliveryRollbackStateWriterConfig,
     DeliveryTransactionTransitionExecutor,
     DeliveryTransactionState,
     DeliveryTransitionExecutorConfig,
@@ -372,6 +374,81 @@ class DeliveryTransactionStateMachineTests(TestCase):
             self.assertTrue(rollback_state["terminal"])
             self.assertTrue(rollback_state["blocked"])
             self.assertEqual(rollback_state["recommended_action"], "inspect_existing_terminal_transaction_artifact")
+
+    def test_rollback_state_writer_dry_run_does_not_write_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-writer-plan-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            execution = DeliveryRollbackStateArtifactWriter(
+                DeliveryRollbackStateWriterConfig(delivery_root=delivery_root)
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "planned")
+            self.assertTrue(payload["dry_run"])
+            self.assertIsNone(payload["state_record_path"])
+            self.assertEqual(payload["rollback_state"]["phase"], DeliveryRollbackPhase.ROLLBACK_PREFLIGHT_REQUIRED.value)
+            self.assertFalse(payload["side_effect_policy"]["writes_rollback_state_artifact"])
+            self.assertFalse(payload["side_effect_policy"]["manifest_mutated"])
+            self.assertFalse(payload["side_effect_policy"]["transaction_committed"])
+            self.assertFalse((delivery_root / "delivery-rollback-state.json").exists())
+
+    def test_rollback_state_writer_apply_writes_durable_state_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-writer-apply-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            execution = DeliveryRollbackStateArtifactWriter(
+                DeliveryRollbackStateWriterConfig(
+                    delivery_root=delivery_root,
+                    mode=DeliveryExecutionMode.APPLY,
+                    metadata={"source": "state-machine-test"},
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            state_path = delivery_root / "delivery-rollback-state.json"
+            self.assertEqual(payload["status"], "written")
+            self.assertFalse(payload["dry_run"])
+            self.assertEqual(payload["state_record_path"], str(state_path.resolve()))
+            self.assertEqual(payload["rollback_state"]["phase"], DeliveryRollbackPhase.ROLLBACK_PREFLIGHT_REQUIRED.value)
+            self.assertTrue(payload["side_effect_policy"]["writes_rollback_state_artifact"])
+            self.assertFalse(payload["side_effect_policy"]["manifest_recovered"])
+            self.assertFalse(payload["side_effect_policy"]["transaction_committed"])
+            self.assertFalse(payload["side_effect_policy"]["external_delivery_performed"])
+            self.assertTrue(state_path.exists())
+            written = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(written["rollback_state"]["phase"], DeliveryRollbackPhase.ROLLBACK_PREFLIGHT_REQUIRED.value)
+            self.assertEqual(written["metadata"]["source"], "state-machine-test")
 
     def test_transition_executor_plans_supported_transition_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -9,6 +9,7 @@ from unittest import TestCase
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.tools.delivery_tools import (
     make_delivery_recovery_executor_tool,
+    make_delivery_rollback_state_writer_tool,
     make_delivery_transition_executor_tool,
     make_local_delivery_executor_tool,
 )
@@ -373,6 +374,42 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
             self.assertTrue((root / "delivery" / "delivery-recovery-execution.json").exists())
 
+    def test_delivery_rollback_state_tool_can_write_state_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            rollback_state_tool = make_delivery_rollback_state_writer_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-rollback-state-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = rollback_state_tool(
+                transaction_id="tx-tool-rollback-state",
+                mode="apply",
+                metadata_json=json.dumps({"source": "tool-test"}),
+            )
+
+            state_path = root / "delivery" / "delivery-rollback-state.json"
+            self.assertEqual(result["status"], "written")
+            self.assertEqual(result["state_record_path"], str(state_path.resolve()))
+            self.assertEqual(result["rollback_state"]["phase"], "rollback_preflight_required")
+            self.assertTrue(result["side_effect_policy"]["writes_rollback_state_artifact"])
+            self.assertFalse(result["side_effect_policy"]["manifest_mutated"])
+            self.assertFalse(result["side_effect_policy"]["transaction_committed"])
+            self.assertTrue(state_path.exists())
 
     def test_local_delivery_tool_can_request_external_delivery_review_only_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -517,7 +554,15 @@ class DeliverySubagentToolTests(TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             subagent = build_delivery_subagent(Path(tmp) / "artifacts")
             tool_names = [tool.__name__ for tool in subagent["tools"]]
-            self.assertEqual(tool_names, ["execute_local_delivery", "execute_delivery_transition", "execute_delivery_recovery"])
+            self.assertEqual(
+                tool_names,
+                [
+                    "execute_local_delivery",
+                    "execute_delivery_transition",
+                    "execute_delivery_recovery",
+                    "write_delivery_rollback_state",
+                ],
+            )
 
 
 def _sha256_file(path: Path) -> str:

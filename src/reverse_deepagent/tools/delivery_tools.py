@@ -9,6 +9,8 @@ from reverse_deepagent.delivery import (
     DeliveryExecutionMode,
     DeliveryExecutorConfig,
     DeliveryRecoveryExecutorConfig,
+    DeliveryRollbackStateArtifactWriter,
+    DeliveryRollbackStateWriterConfig,
     DeliveryTransactionRecoveryExecutor,
     DeliveryTransactionTransitionExecutor,
     DeliveryTransitionExecutorConfig,
@@ -191,6 +193,45 @@ def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> D
         "The tool writes delivery-recovery-execution.json only for successful explicit apply-mode recovery workflows and never publishes external delivery or commits cross-run transactions."
     )
     return execute_delivery_recovery
+
+
+def make_delivery_rollback_state_writer_tool(default_delivery_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for writing rollback-state audit artifacts."""
+
+    root = Path(default_delivery_root)
+
+    def write_delivery_rollback_state(
+        delivery_root: str | None = None,
+        transaction_id: str | None = None,
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        write_state_record: bool = True,
+        state_record_name: str = "delivery-rollback-state.json",
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan or explicitly write delivery-rollback-state.json from existing transaction artifacts."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        target_root = Path(delivery_root) if delivery_root else root
+        config = DeliveryRollbackStateWriterConfig(
+            delivery_root=target_root,
+            transaction_id=transaction_id,
+            mode=DeliveryExecutionMode(mode),
+            write_state_record=write_state_record,
+            state_record_name=state_record_name,
+            metadata=metadata,
+        )
+        return DeliveryRollbackStateArtifactWriter(config).execute().to_dict()
+
+    write_delivery_rollback_state.__name__ = "write_delivery_rollback_state"
+    write_delivery_rollback_state.__doc__ = (
+        "Plan or explicitly write delivery-rollback-state.json from existing delivery transaction artifacts. "
+        "mode defaults to dry-run and is read-only. apply mode writes only the rollback-state audit artifact, "
+        "does not restore manifests, does not commit transactions, does not call external delivery providers, "
+        "does not acquire distributed locks, and does not execute physical rollback."
+    )
+    return write_delivery_rollback_state
 
 
 def _artifact_from_payload(payload: Any) -> DeliveryArtifact:
