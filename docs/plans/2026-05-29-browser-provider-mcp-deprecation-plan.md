@@ -761,6 +761,18 @@ Status: implemented as conservative resume-of-resume fencing-token replay from w
 
 Skipped step results include `fencing_token_replay` metadata so reviewers can see whether the token came from `workflow_journal:<action>`, whether the replay was skipped because evidence was stale, or whether release cleared the state. Later runner steps still record the normal `fencing_token_propagation` metadata and still delegate enforcement to the existing `LocalDeliveryExecutor` fencing gate.
 
-Boundary: this replay only reconstructs minimal fencing-token state needed by later reviewed runner steps. It does not re-run provider actions, replay arbitrary side effects, restore manifests, commit transactions, publish external delivery, renew leases automatically, take over stale locks, implement Redlock quorum consensus, or make fencing globally automatic. Broader durable workflow context replay, automatic lease renewal, automatic lock lifecycle management, distributed orchestration, broader physical rollback, advanced adaptive retry, and real third-party delivery providers remain follow-up work. Android / iOS / mini-program full runtime chains remain deferred.
+Boundary: this replay only reconstructs minimal fencing-token state needed by later reviewed runner steps. It does not re-run provider actions, replay arbitrary side effects, restore manifests, commit transactions, publish external delivery, renew leases automatically, take over stale locks, implement Redlock quorum consensus, or make fencing globally automatic. Step 90 adds read-only skipped-step journal context replay for broader durable workflow audit; automatic lease renewal, automatic lock lifecycle management, distributed orchestration, broader physical rollback, advanced adaptive retry, and real third-party delivery providers remain follow-up work. Android / iOS / mini-program full runtime chains remain deferred.
 
 Tests cover replaying a journaled acquire token into a later apply recovery step, release clearing replayed fencing state, downstream fencing enforcement after replay, stale / malformed lease conservatism through helper behavior, and existing resume-of-resume regressions.
+
+### Step 90 execution record: Skipped-step journal context replay baseline
+
+Status: implemented as read-only journal context replay for skipped completed workflow steps, not side-effect replay.
+
+`DeliveryResumeWorkflowScheduler` now builds a same-transaction journal replay index from existing workflow journal entries. When a step is skipped because the action was already completed in the journal, the skipped step result includes `journal_replay` metadata summarizing the previous entry status, runner status, transition status, lock provider id, fencing token, lease expiry, created-at timestamp, and side-effect policy.
+
+The replay index is scoped to the current transaction id, so stale entries from a different transaction no longer mark actions as completed for the current workflow. The metadata is intentionally sanitized and read-only: it does not include full runner payloads, does not write artifacts, and does not re-run transitions.
+
+Boundary: this is an audit / dependency context baseline for durable workflow resume. It does not restore manifests, commit transactions, publish external delivery, replay provider actions, mutate files, automatically choose rollback-vs-commit, renew leases, or manage lock lifecycle. Automatic lease renewal, automatic lock lifecycle management, distributed orchestration, broader physical rollback, advanced adaptive retry, and real third-party delivery providers remain follow-up work. Android / iOS / mini-program full runtime chains remain deferred.
+
+Tests cover skipped preflight journal context replay, runner / transition status visibility, read-only side-effect metadata, and rejection of completed actions from other transaction ids.

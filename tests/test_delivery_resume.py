@@ -1009,8 +1009,67 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertEqual(second["status"], "completed")
             self.assertEqual(second["step_results"][0]["status"], "skipped_completed")
             self.assertEqual(second["step_results"][1]["status"], "recovered")
+            self.assertEqual(second["step_results"][0]["journal_replay"]["entry_status"], "preflighted")
+            self.assertEqual(second["step_results"][0]["journal_replay"]["runner_status"], "preflighted")
+            self.assertEqual(second["step_results"][0]["journal_replay"]["transition_status"], "executed")
+            self.assertTrue(second["step_results"][0]["journal_replay"]["readonly_replay_metadata_only"])
+            self.assertFalse(second["step_results"][0]["journal_replay"]["side_effects_replayed"])
             self.assertEqual(journal["entry_count"], 2)
             self.assertEqual([entry["action"] for entry in journal["entries"]], ["preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"])
+
+    def test_resume_workflow_scheduler_does_not_skip_steps_from_other_transaction_journal_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-workflow-no-cross-replay")
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "delivery-resume-workflow-journal.json").write_text(
+                json.dumps(
+                    {
+                        "version": "2026-06-01.delivery-resume-workflow-journal-v1",
+                        "workflow_id": "previous-workflow",
+                        "entries": [
+                            {
+                                "workflow_id": "previous-workflow",
+                                "order": 1,
+                                "action": "preflight_backend_manifest_recovery",
+                                "approval_action": "resume_preflight_backend_manifest_recovery",
+                                "status": "preflighted",
+                                "transaction_id": "tx-other",
+                                "runner_status": "preflighted",
+                                "transition_status": "preflighted",
+                                "created_at": "2026-06-01T00:00:00+00:00",
+                                "side_effect_policy": {"manifest_recovered": False},
+                            }
+                        ],
+                        "entry_count": 1,
+                        "updated_at": "2026-06-01T00:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self._write_approval(workspace, "tx-workflow-no-cross-replay", "resume_preflight_backend_manifest_recovery")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-workflow-no-cross-replay",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("preflight_backend_manifest_recovery",),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-workflow-no-cross-replay",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                )
+            ).execute().to_dict()
+
+            journal = json.loads((root / "delivery-resume-workflow-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "completed")
+            self.assertEqual(payload["step_results"][0]["status"], "preflighted")
+            self.assertNotIn("journal_replay", payload["step_results"][0])
+            self.assertEqual(journal["entry_count"], 2)
+            self.assertEqual([entry["transaction_id"] for entry in journal["entries"]], ["tx-other", "tx-workflow-no-cross-replay"])
 
     def test_resume_workflow_scheduler_records_noop_when_all_steps_are_journaled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -184,7 +184,7 @@ class DeliveryResumeWorkflowScheduler:
         ).execute().to_dict()
         transaction_id = self.config.transaction_id or _first_str(resume_plan.get("transaction_id"))
         existing_entries = _read_workflow_journal_entries(delivery_root / self.config.workflow_journal_name)
-        existing_journal_summary = _journal_summary(existing_entries)
+        existing_journal_summary = _journal_summary(existing_entries, transaction_id=str(transaction_id or ""))
         planned_steps = self._planned_steps(resume_plan=resume_plan, completed_actions=set(existing_journal_summary["completed_actions"]))
         approval_summary = _approval_summary(
             ledger_path=self.config.resolved_approval_ledger_path(),
@@ -367,10 +367,12 @@ class DeliveryResumeWorkflowScheduler:
             transaction_id=transaction_id,
             created_at=created_at,
         )
+        journal_replay_state = _journal_replay_state(entries=existing_entries, transaction_id=transaction_id)
         for step in planned_steps:
             action = str(step.get("action") or "")
             if step.get("already_completed"):
                 replay = _journal_fencing_replay_for_skipped_step(journal_fencing_state, action=action)
+                journal_replay = _journal_replay_for_skipped_step(journal_replay_state, action=action)
                 if replay.get("clear_token"):
                     propagated_fencing_token = None
                     propagated_fencing_source = None
@@ -386,6 +388,7 @@ class DeliveryResumeWorkflowScheduler:
                         "created_at": created_at,
                         "runner_execution": None,
                         "fencing_token_replay": replay,
+                        "journal_replay": journal_replay,
                         "journal_recordable": False,
                     }
                 )
@@ -712,6 +715,51 @@ def _journal_fencing_replay_for_skipped_step(state: dict[str, dict[str, Any]], *
     return dict(current) if isinstance(current, dict) else {}
 
 
+def _journal_replay_state(*, entries: list[dict[str, Any]], transaction_id: str) -> dict[str, dict[str, Any]]:
+    state: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        action = str(entry.get("action") or "")
+        status = str(entry.get("status") or "")
+        if action not in SUPPORTED_DELIVERY_RESUME_WORKFLOW_STEP_ACTIONS or status not in _DELIVERY_RESUME_WORKFLOW_SUCCESS_STATUSES:
+            continue
+        entry_transaction_id = str(entry.get("transaction_id") or "").strip()
+        if transaction_id and entry_transaction_id and entry_transaction_id != transaction_id:
+            continue
+        state[action] = _journal_replay_entry_summary(entry)
+    return state
+
+
+def _journal_replay_for_skipped_step(state: dict[str, dict[str, Any]], *, action: str) -> dict[str, Any]:
+    replay = state.get(action)
+    return dict(replay) if isinstance(replay, dict) else {}
+
+
+def _journal_replay_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
+    policy = entry.get("side_effect_policy") if isinstance(entry.get("side_effect_policy"), dict) else {}
+    return {
+        "status": "replayed",
+        "source": "workflow_journal",
+        "workflow_id": entry.get("workflow_id"),
+        "order": entry.get("order"),
+        "action": entry.get("action"),
+        "approval_action": entry.get("approval_action"),
+        "entry_status": entry.get("status"),
+        "transaction_id": entry.get("transaction_id"),
+        "runner_status": entry.get("runner_status"),
+        "lock_status": entry.get("lock_status"),
+        "lock_provider_id": entry.get("lock_provider_id"),
+        "lock_fencing_token": entry.get("lock_fencing_token"),
+        "lock_lease_expires_at": entry.get("lock_lease_expires_at"),
+        "transition_status": entry.get("transition_status"),
+        "created_at": entry.get("created_at"),
+        "side_effect_policy": dict(policy),
+        "side_effects_replayed": False,
+        "readonly_replay_metadata_only": True,
+    }
+
+
 def _iso_datetime_is_expired(value: Any, *, now_iso: str) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -821,11 +869,14 @@ def _read_workflow_journal_entries(path: Path) -> list[dict[str, Any]]:
     return [item for item in entries if isinstance(item, dict)] if isinstance(entries, list) else []
 
 
-def _journal_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
+def _journal_summary(entries: list[dict[str, Any]], *, transaction_id: str = "") -> dict[str, Any]:
     completed_actions = []
     for entry in entries:
         action = str(entry.get("action") or "")
         status = str(entry.get("status") or "")
+        entry_transaction_id = str(entry.get("transaction_id") or "").strip()
+        if transaction_id and entry_transaction_id and entry_transaction_id != transaction_id:
+            continue
         if action and status in _DELIVERY_RESUME_WORKFLOW_SUCCESS_STATUSES and action not in completed_actions:
             completed_actions.append(action)
     return {
