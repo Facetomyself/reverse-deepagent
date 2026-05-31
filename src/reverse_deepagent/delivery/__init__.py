@@ -20,8 +20,24 @@ from .executors import (
     LocalDeliveryExecutor,
     ReviewOnlyExternalDeliveryProvider,
 )
+from .registry import (
+    EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP,
+    ExternalDeliveryProviderCapabilities,
+    ExternalDeliveryProviderFactory,
+    ExternalDeliveryProviderRegistration,
+    ExternalDeliveryProviderRegistry,
+    build_default_external_delivery_provider_registry,
+    review_only_external_delivery_provider_registration,
+)
 
 __all__ = [
+    "EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP",
+    "ExternalDeliveryProviderCapabilities",
+    "ExternalDeliveryProviderFactory",
+    "ExternalDeliveryProviderRegistration",
+    "ExternalDeliveryProviderRegistry",
+    "build_default_external_delivery_provider_registry",
+    "review_only_external_delivery_provider_registration",
     "BackendManifestInPlaceMutation",
     "BackendManifestInPlacePreflight",
     "BackendManifestRecovery",

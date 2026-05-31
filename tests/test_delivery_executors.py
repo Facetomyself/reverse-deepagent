@@ -921,6 +921,29 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertFalse(journal.get("backend_manifest_recovered", False))
             self.assertIsNone(journal.get("backend_manifest_recovery_path"))
 
+
+    def test_external_delivery_request_can_use_default_registry_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-alias",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider_id="manual-handoff",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertIsNotNone(result.external_delivery_result)
+            self.assertEqual(result.external_delivery_result.provider_id, "review-only")
+
     def test_missing_required_source_blocks_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

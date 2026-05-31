@@ -76,6 +76,7 @@ class DeliveryExecutorConfig:
     external_delivery_result_name: str = "external-delivery-result.json"
     external_delivery_provider_id: str = "review-only"
     external_delivery_provider: ExternalDeliveryProvider | None = None
+    external_delivery_provider_registry: Any | None = None
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -1178,9 +1179,14 @@ class LocalDeliveryExecutor:
     ) -> ExternalDeliveryResult | None:
         if not self.config.request_external_delivery:
             return None
-        provider = self.config.external_delivery_provider or ReviewOnlyExternalDeliveryProvider(
-            provider_id=self.config.external_delivery_provider_id
-        )
+        provider = self.config.external_delivery_provider
+        if provider is None:
+            registry = self.config.external_delivery_provider_registry
+            if registry is None:
+                from reverse_deepagent.delivery.registry import build_default_external_delivery_provider_registry
+
+                registry = build_default_external_delivery_provider_registry()
+            provider = registry.create(self.config.external_delivery_provider_id)
         package = ExternalDeliveryPackage(
             transaction_id=self.config.transaction_id,
             status=status,
