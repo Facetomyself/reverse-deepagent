@@ -13,6 +13,7 @@ from reverse_deepagent.subagents.debugger import build_debugger_subagent
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.subagents.hook import build_hook_subagent
 from reverse_deepagent.subagents.protector import build_protector_subagent
+from reverse_deepagent.subagents.rebuild import build_rebuild_subagent
 from reverse_deepagent.subagents.review import build_review_subagent
 from reverse_deepagent.subagents.router import build_router_subagent
 from reverse_deepagent.subagents.timeline import build_timeline_subagent
@@ -119,6 +120,7 @@ def build_reverse_agent(
         build_hook_subagent(),
         build_timeline_subagent(),
         build_review_subagent(),
+        build_rebuild_subagent(artifact_root=effective_artifact_root),
         build_delivery_subagent(artifact_root=effective_artifact_root),
     ]
     if runtime is not None:

@@ -221,7 +221,7 @@ agent = build_reverse_agent(
 - 新增或调整 subagent、middleware、runtime artifact、hook artifact 时，必须同步 `workspace-contract.json` 的生成逻辑、manifest alias metadata 和测试。
 - 不得在没有 compatibility alias、manifest 覆盖和回归测试的情况下直接移动现有 artifact 路径。
 
-当前 contract 覆盖的虚拟协作区包括 `/workspace/recon/`、`/workspace/browser/`、`/workspace/debugger/`、`/workspace/hooks/`、`/workspace/timeline/`、`/workspace/rebuild/`、`/workspace/review/`、`/workspace/delivery/`、`/workspace/runtime/` 和 `/workspace/evidence/`。它把已实现角色 `coordinator`、`router`、`browser_runtime`、`web_recon`、`protector`、`delivery`、`debugger`、`hook`、`timeline`、`review` 与规划角色 `rebuild` 放在同一张表里。`browser_runtime` 负责 BrowserProvider metadata / capability matrix / session readiness 边界，默认 metadata-only 工具不会启动浏览器、探测 CDP、调用外部 provider factory 或依赖 MCP；`debugger` 负责 read-only debugger artifact review、paused-session continuation preflight、callframe 和 debugger timeline 摘要，不 resume / step / evaluate，不发送 CDP 命令、不写 artifact；`hook` 负责 read-only hook artifact review、function / module hook inventory、hook timeline 和 source-logpoint 摘要，不安装 hook / breakpoint / logpoint、不 evaluate JavaScript、不触发目标函数；`timeline` 负责 read-only flow timeline review、correlation group / stitch proposal / auto-stitch gate 摘要，不生成 `stitched-flow.json`、不写 artifact、不记录审批；`review` 负责 read-only review gate 评估、risk / warning hints 与 evidence review requirements 汇总，不执行交付、不写 artifact、不记录人工审批；实际 Web recon、源码搜索、网络采样和 protection 仍由 `web_recon` / `protector` 负责。
+当前 contract 覆盖的虚拟协作区包括 `/workspace/recon/`、`/workspace/browser/`、`/workspace/debugger/`、`/workspace/hooks/`、`/workspace/timeline/`、`/workspace/rebuild/`、`/workspace/review/`、`/workspace/delivery/`、`/workspace/runtime/` 和 `/workspace/evidence/`。它把已实现角色 `coordinator`、`router`、`browser_runtime`、`web_recon`、`protector`、`delivery`、`debugger`、`hook`、`timeline`、`rebuild`、`review` 放在同一张表里，当前无剩余 planned-contract 子智能体。`browser_runtime` 负责 BrowserProvider metadata / capability matrix / session readiness 边界，默认 metadata-only 工具不会启动浏览器、探测 CDP、调用外部 provider factory 或依赖 MCP；`debugger` 负责 read-only debugger artifact review、paused-session continuation preflight、callframe 和 debugger timeline 摘要，不 resume / step / evaluate，不发送 CDP 命令、不写 artifact；`hook` 负责 read-only hook artifact review、function / module hook inventory、hook timeline 和 source-logpoint 摘要，不安装 hook / breakpoint / logpoint、不 evaluate JavaScript、不触发目标函数；`timeline` 负责 read-only flow timeline review、correlation group / stitch proposal / auto-stitch gate 摘要，不生成 `stitched-flow.json`、不写 artifact、不记录审批；`review` 负责 read-only review gate 评估、risk / warning hints 与 evidence review requirements 汇总，不执行交付、不写 artifact、不记录人工审批；`rebuild` 负责 rebuild-plan / pure or context-aware replay / Scrapy project 生成和 read-only rebuild artifact review，真实 local / external delivery transaction 由 `delivery` 负责；实际 Web recon、源码搜索、网络采样和 protection 仍由 `web_recon` / `protector` 负责。
 
 纯 Python 冒烟测试：
 
@@ -537,7 +537,7 @@ PYTHONPATH="<repo-root>/src" \
 
 ### 重建交付冒烟测试
 
-如果你想验证 deepagents 主 Agent 的 rebuild delivery 工具链路，可以跑：
+如果你想验证 deepagents 主 Agent 的 rebuild 生成链路，可以跑：
 
 ```bash
 cd "<repo-root>"
@@ -550,18 +550,21 @@ PYTHONPATH="<repo-root>/src" \
 这条冒烟测试会验证：
 
 - 先用 mock 运行时准备一份已验证 `FinalResult`
-- 主 Agent 调用 `build_rebuild_delivery`
+- `rebuild` 子智能体调用 `build_rebuild_delivery`
 - 生成结构化 `RebuildResult`
 - 产出 `workspace/rebuild-plan.json`
 - 产出 `rebuild/sign_rebuild.py`
 - 产出 `rebuild/replay_demo.py`
 - 产出 `rebuild/scrapy_middleware.py`
 - 产出 `rebuild/scrapy_project/` 与 `rebuild/scrapy_export_manifest.json`
+- `delivery` 子智能体保留为后续 local / external delivery transaction 执行边界
 
 对应 deepagents 能力已接入：
 
-- tool：`build_rebuild_delivery`
-- subagent：`rebuild_delivery`
+- rebuild tool：`build_rebuild_delivery`
+- rebuild subagent：`rebuild`
+- delivery tool：`execute_local_delivery`
+- delivery subagent：`delivery`
 - schema：`RebuildResult`
 
 ## 本地 sign fixture 样例

@@ -224,7 +224,13 @@ The timeline tool detects pending stitch proposals, blocked policy decisions, un
 
 This subagent owns risk / warning review hints, evidence-level review requirements, and delivery gate next-action summaries. Pending stitch proposals remain blocked with `next_action=review_stitch_proposals_before_delivery` until explicit reviewer-approved materialization data exists; the subagent cannot approve proposals, rollback plans, materialization plans, or delivery by itself.
 
-## 5.7 BrowserProvider plugin package template
+## 5.7 Rebuild Subagent baseline
+
+`rebuild` is now an implemented DeepAgents subagent boundary for rebuild generation and rebuild artifact review. It owns `build_rebuild_delivery` plus `review_rebuild_artifacts`; the former writes `workspace/rebuild-plan.json` and generated rebuild files under the configured artifact root, while the latter is read-only and summarizes RebuildResult / rebuild-plan readiness, generated files, review hints, runtime-assisted recommendations, declared outputs, and next actions.
+
+This split leaves the `delivery` subagent focused on local delivery, backend manifest mutation, recovery, transaction commit, and external delivery provider requests. Rebuild can generate and review pure / context-aware / Scrapy replay artifacts, but it does not execute local delivery, mutate manifests, publish external releases, or bypass review gates.
+
+## 5.8 BrowserProvider plugin package template
 
 `packages/reverse-deepagent-browser-provider-template/` is the copy-and-replace package template for external BrowserProvider integrations. It declares the `reverse_deepagent.browser_providers` entry point and returns a `BrowserProviderRegistration` for `template-browser` without calling the provider factory. The template provider is intentionally runtime-unavailable: `start()` and `connect()` raise `BrowserProviderUnavailableError` until an integrator replaces them with real launch / attach code.
 

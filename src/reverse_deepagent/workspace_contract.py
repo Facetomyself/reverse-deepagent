@@ -188,8 +188,8 @@ def default_subagent_roles() -> tuple[SubagentRoleContract, ...]:
         ),
         SubagentRoleContract(
             role="rebuild",
-            responsibility="Owns pure extraction, replay validation packaging, and generated Scrapy/rebuild project outputs.",
-            current_status="planned-contract",
+            responsibility="Owns rebuild generation and read-only rebuild artifact review for pure extraction, context-aware replay, generated Scrapy projects, and rebuild readiness boundaries.",
+            current_status="implemented",
             workspace_folders=("/workspace/rebuild/",),
         ),
         SubagentRoleContract(

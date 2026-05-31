@@ -112,7 +112,7 @@ class TimelineSubagentTests(unittest.TestCase):
         self.assertIn("timeline", names)
         self.assertLess(names.index("router"), names.index("timeline"))
         self.assertLess(names.index("timeline"), names.index("review"))
-        self.assertLess(names.index("review"), names.index("rebuild_delivery"))
+        self.assertLess(names.index("review"), names.index("rebuild"))
 
 
 if __name__ == "__main__":
