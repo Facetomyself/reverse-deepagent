@@ -51,7 +51,7 @@ from reverse_deepagent.schemas import (
     TaskCard,
 )
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
-from reverse_deepagent.workspace_contract import workspace_contract_payload, workspace_manifest_alias_metadata
+from reverse_deepagent.workspace_contract import WorkspacePathResolver, workspace_contract_payload, workspace_manifest_alias_metadata
 
 class ReversePipelineOutput(SchemaBaseModel):
     """Complete result returned by the deterministic coordinator pipeline."""
@@ -773,6 +773,7 @@ def write_outputs(
     final_result: FinalResult,
     export_bundle: dict[str, Any],
     runtime_capabilities: RuntimeBackendCapabilities | None = None,
+    enable_workspace_dual_write: bool = False,
 ) -> dict[str, str]:
     """Persist the standard workspace/report/export artifact set."""
 
@@ -783,28 +784,24 @@ def write_outputs(
     reports_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    task_card_path = workspace_dir / "task-card.json"
-    route_path = workspace_dir / "route-decision.json"
-    recon_path = workspace_dir / "recon-result.json"
-    final_workspace_path = workspace_dir / "final-result.json"
-    workspace_contract_path = workspace_dir / "workspace-contract.json"
+    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write)
+    workspace_write_records: list[dict[str, Any]] = []
     report_json_path = reports_dir / "demo-final-result.json"
     report_md_path = reports_dir / "demo-final-report.md"
-    manifest_path = workspace_dir / "backend-artifact-manifest.json"
     index_path = exports_dir / "artifact-index.json"
-    workspace_artifact_paths = _write_workspace_artifacts(workspace_dir, final_result)
+    workspace_artifact_paths = _write_workspace_artifacts(base_dir, workspace_dir, final_result, workspace_resolver, workspace_write_records)
     rebuild_result = write_rebuild_bundle(base_dir, task_card, final_result)
     rebuild_artifact_paths = _rebuild_paths_from_result(rebuild_result)
 
-    _write_json(task_card_path, task_card.model_dump(mode="json"))
-    _write_json(route_path, route_result.model_dump(mode="json"))
-    _write_json(recon_path, recon_result.model_dump(mode="json"))
-    _write_json(final_workspace_path, final_result.model_dump(mode="json"))
-    _write_json(workspace_contract_path, workspace_contract_payload())
+    task_card_path = _write_workspace_json(base_dir, "workspace_task_card", task_card.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    route_path = _write_workspace_json(base_dir, "workspace_route", route_result.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    recon_path = _write_workspace_json(base_dir, "workspace_recon", recon_result.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    final_workspace_path = _write_workspace_json(base_dir, "workspace_final", final_result.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    workspace_contract_path = _write_workspace_json(base_dir, "workspace_workspace_contract", workspace_contract_payload(), workspace_resolver, workspace_write_records)
     evidence_promotion = promote_evidence(final_result.evidence, final_result.artifacts)
-    evidence_artifact_paths = _write_evidence_promotion_artifacts(workspace_dir, evidence_promotion)
+    evidence_artifact_paths = _write_evidence_promotion_artifacts(base_dir, workspace_dir, evidence_promotion, workspace_resolver, workspace_write_records)
     review_gate = evaluate_review_gate(rebuild_result, evidence_promotion)
-    review_gate_path = _write_review_gate_artifact(workspace_dir, review_gate)
+    review_gate_path = _write_review_gate_artifact(base_dir, workspace_dir, review_gate, workspace_resolver, workspace_write_records)
     _write_json(report_json_path, final_result.model_dump(mode="json"))
     report_md_path.write_text(build_markdown_report(final_result), encoding="utf-8")
 
@@ -824,12 +821,16 @@ def write_outputs(
     output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
     if "rebuild_plan" in rebuild_artifact_paths:
         output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
+    if enable_workspace_dual_write:
+        dual_write_plan_path = base_dir / "workspace" / "workspace-dual-write-plan.json"
+        output_paths["workspace_dual_write_plan"] = str(dual_write_plan_path)
+    manifest_path = base_dir / "workspace" / "backend-artifact-manifest.json"
     output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
     capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
     runtime_artifacts = export_bundle.get("artifacts", []) if isinstance(export_bundle, dict) else []
     backend_artifact_manifest = _build_backend_artifact_manifest(capabilities, output_paths, extra_artifacts=runtime_artifacts)
-    _write_json(manifest_path, backend_artifact_manifest.model_dump(mode="json"))
+    manifest_path = _write_workspace_json(base_dir, "workspace_backend_artifact_manifest", backend_artifact_manifest.model_dump(mode="json"), workspace_resolver, workspace_write_records)
 
     artifact_index = {
         "workspace": {
@@ -853,6 +854,11 @@ def write_outputs(
         "backend_artifact_manifest": str(manifest_path),
         "rebuild_result": rebuild_result.model_dump(mode="json"),
     }
+    if enable_workspace_dual_write:
+        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
+        dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
+        artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
+        artifact_index["workspace_dual_write"] = dual_write_plan
     _write_json(index_path, artifact_index)
     return output_paths
 
@@ -1106,6 +1112,7 @@ def run_platform_pipeline(
     artifact_root: Path,
     runtime_kind: str = "android-adb",
     runtime: ReverseRuntime | None = None,
+    enable_workspace_dual_write: bool = False,
     **runtime_kwargs: Any,
 ) -> PlatformPipelineOutput:
     """Run a platform-neutral runtime pipeline without assuming browser/Web recon semantics.
@@ -1130,6 +1137,7 @@ def run_platform_pipeline(
         final_result,
         capabilities,
         export_bundle,
+        enable_workspace_dual_write=enable_workspace_dual_write,
     )
     return PlatformPipelineOutput(
         final_result=final_result,
@@ -1146,6 +1154,7 @@ def write_platform_outputs(
     final_result: FinalResult,
     runtime_capabilities: RuntimeBackendCapabilities,
     export_bundle: RuntimeExportBundle,
+    enable_workspace_dual_write: bool = False,
 ) -> dict[str, str]:
     """Persist the platform-neutral workspace/report/export artifact set."""
 
@@ -1156,26 +1165,21 @@ def write_platform_outputs(
     reports_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    task_card_path = workspace_dir / "task-card.json"
-    route_path = workspace_dir / "route-decision.json"
-    capabilities_path = workspace_dir / "runtime-capabilities.json"
-    export_bundle_path = workspace_dir / "runtime-export-bundle.json"
-    final_workspace_path = workspace_dir / "final-result.json"
-    workspace_contract_path = workspace_dir / "workspace-contract.json"
-    manifest_path = workspace_dir / "backend-artifact-manifest.json"
+    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write)
+    workspace_write_records: list[dict[str, Any]] = []
     report_json_path = reports_dir / "platform-pipeline-result.json"
     report_md_path = reports_dir / "platform-pipeline-report.md"
     index_path = exports_dir / "artifact-index.json"
 
     export_payload = export_bundle.model_dump(mode="json")
-    _write_json(task_card_path, task_card.model_dump(mode="json"))
-    _write_json(route_path, route_result.model_dump(mode="json"))
-    _write_json(capabilities_path, runtime_capabilities.model_dump(mode="json"))
-    _write_json(export_bundle_path, export_payload)
-    _write_json(final_workspace_path, final_result.model_dump(mode="json"))
-    _write_json(workspace_contract_path, workspace_contract_payload())
+    task_card_path = _write_workspace_json(base_dir, "workspace_task_card", task_card.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    route_path = _write_workspace_json(base_dir, "workspace_route", route_result.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    capabilities_path = _write_workspace_json(base_dir, "workspace_runtime_capabilities", runtime_capabilities.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    export_bundle_path = _write_workspace_json(base_dir, "workspace_runtime_export_bundle", export_payload, workspace_resolver, workspace_write_records)
+    final_workspace_path = _write_workspace_json(base_dir, "workspace_final", final_result.model_dump(mode="json"), workspace_resolver, workspace_write_records)
+    workspace_contract_path = _write_workspace_json(base_dir, "workspace_workspace_contract", workspace_contract_payload(), workspace_resolver, workspace_write_records)
     evidence_promotion = promote_evidence(final_result.evidence, final_result.artifacts)
-    evidence_artifact_paths = _write_evidence_promotion_artifacts(workspace_dir, evidence_promotion)
+    evidence_artifact_paths = _write_evidence_promotion_artifacts(base_dir, workspace_dir, evidence_promotion, workspace_resolver, workspace_write_records)
     _write_json(report_json_path, final_result.model_dump(mode="json"))
     report_md_path.write_text(build_platform_markdown_report(final_result, runtime_capabilities), encoding="utf-8")
 
@@ -1189,19 +1193,22 @@ def write_platform_outputs(
         "json": str(report_json_path),
         "markdown": str(report_md_path),
         "index": str(index_path),
-        "workspace_backend_artifact_manifest": str(manifest_path),
     }
     output_paths.update({f"workspace_{key}": value for key, value in evidence_artifact_paths.items()})
-    platform_probe_path = _write_platform_tool_probe_if_present(workspace_dir, export_bundle)
+    platform_probe_path = _write_platform_tool_probe_if_present(base_dir, workspace_dir, export_bundle, workspace_resolver, workspace_write_records)
     if platform_probe_path is not None:
         output_paths["workspace_platform_tool_probe"] = str(platform_probe_path)
+    if enable_workspace_dual_write:
+        output_paths["workspace_dual_write_plan"] = str(base_dir / "workspace" / "workspace-dual-write-plan.json")
+    manifest_path = base_dir / "workspace" / "backend-artifact-manifest.json"
+    output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
     manifest = _build_backend_artifact_manifest(
         runtime_capabilities,
         output_paths,
         extra_artifacts=export_payload.get("artifacts", []),
     )
-    _write_json(manifest_path, manifest.model_dump(mode="json"))
+    manifest_path = _write_workspace_json(base_dir, "workspace_backend_artifact_manifest", manifest.model_dump(mode="json"), workspace_resolver, workspace_write_records)
     artifact_index = {
         "workspace": {
             "task_card": str(task_card_path),
@@ -1221,19 +1228,28 @@ def write_platform_outputs(
         "evidence_artifacts": evidence_artifact_paths,
         "backend_artifact_manifest": str(manifest_path),
     }
+    if enable_workspace_dual_write:
+        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
+        dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
+        artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
+        artifact_index["workspace_dual_write"] = dual_write_plan
     _write_json(index_path, artifact_index)
     return output_paths
 
 
-def _write_platform_tool_probe_if_present(workspace_dir: Path, export_bundle: RuntimeExportBundle) -> Path | None:
+def _write_platform_tool_probe_if_present(
+    base_dir: Path,
+    workspace_dir: Path,
+    export_bundle: RuntimeExportBundle,
+    resolver: WorkspacePathResolver,
+    write_records: list[dict[str, Any]],
+) -> Path | None:
     for item in export_bundle.exports:
         if not isinstance(item, dict):
             continue
         if item.get("tool") != "platform_tool_probe":
             continue
-        path = workspace_dir / "platform-tool-probe.json"
-        _write_json(path, item.get("payload", {}))
-        return path
+        return _write_workspace_json(base_dir, "workspace_platform_tool_probe", item.get("payload", {}), resolver, write_records)
     return None
 
 
@@ -1359,6 +1375,7 @@ def run_reverse_pipeline(
     keep_chrome: bool = False,
     mcp_command: str | None = None,
     runtime: WebReverseRuntime | None = None,
+    enable_workspace_dual_write: bool = False,
     **runtime_kwargs: Any,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
@@ -1415,6 +1432,7 @@ def run_reverse_pipeline(
         final_result,
         export_bundle,
         runtime_capabilities=runtime_capabilities,
+        enable_workspace_dual_write=enable_workspace_dual_write,
     )
     return ReversePipelineOutput(
         final_result=final_result,
@@ -1429,30 +1447,110 @@ def _is_legacy_mcp_runtime_kind(runtime_kind: str) -> bool:
 
 
 def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _write_evidence_promotion_artifacts(workspace_dir: Path, evidence_promotion: Any) -> dict[str, str]:
+def _write_workspace_json(
+    base_dir: Path,
+    artifact_key: str,
+    payload: Any,
+    resolver: WorkspacePathResolver,
+    write_records: list[dict[str, Any]],
+) -> Path:
+    resolution = resolver.resolve_artifact_key(artifact_key)
+    if resolution is None:
+        fallback_path = base_dir / "workspace" / f"{artifact_key.removeprefix('workspace_').replace('_', '-')}.json"
+        _write_json(fallback_path, payload)
+        return fallback_path
+
+    canonical_path = base_dir / resolution.legacy_path
+    written_paths: list[str] = []
+    for write_path in resolution.write_paths:
+        target_path = _workspace_filesystem_path(base_dir, write_path)
+        _write_json(target_path, payload)
+        written_paths.append(str(target_path))
+    write_records.append(
+        {
+            "artifact_key": artifact_key,
+            "canonical_path": str(canonical_path),
+            "future_path": str(_workspace_filesystem_path(base_dir, resolution.future_path)),
+            "virtual_uri": resolution.virtual_uri,
+            "write_paths": written_paths,
+            "dual_write_enabled": resolution.dual_write_enabled,
+            "physical_migration_enabled": resolution.physical_migration_enabled,
+            "canonical_path_remains_authoritative": resolution.canonical_path_remains_authoritative,
+            "migration_status": resolution.migration_status,
+        }
+    )
+    return canonical_path
+
+
+def _workspace_filesystem_path(base_dir: Path, workspace_path: str) -> Path:
+    if workspace_path.startswith("virtual://workspace/"):
+        return base_dir / workspace_path.removeprefix("virtual://")
+    if workspace_path.startswith("/workspace/"):
+        return base_dir / workspace_path.lstrip("/")
+    if workspace_path.startswith("workspace/"):
+        return base_dir / workspace_path
+    return base_dir / "workspace" / workspace_path
+
+
+def _workspace_dual_write_plan_payload(write_records: list[dict[str, Any]]) -> dict[str, Any]:
+    dual_written = [record for record in write_records if record.get("dual_write_enabled")]
+    return {
+        "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
+        "status": "applied" if dual_written else "not-enabled",
+        "mode": "opt-in-dual-write",
+        "canonical_path_remains_authoritative": True,
+        "physical_migration_enabled": False,
+        "record_count": len(write_records),
+        "dual_written_count": len(dual_written),
+        "records": write_records,
+    }
+
+
+def _workspace_artifact_key_from_filename(filename: str) -> str:
+    return f"workspace_{filename.removesuffix('.json').replace('-', '_').replace('.', '_')}"
+
+
+def _write_evidence_promotion_artifacts(
+    base_dir: Path,
+    workspace_dir: Path,
+    evidence_promotion: Any,
+    resolver: WorkspacePathResolver,
+    write_records: list[dict[str, Any]],
+) -> dict[str, str]:
     paths: dict[str, str] = {}
     for filename, payload in promotion_workspace_payloads(evidence_promotion).items():
-        path = workspace_dir / filename
-        _write_json(path, payload)
+        artifact_key = _workspace_artifact_key_from_filename(filename)
+        path = _write_workspace_json(base_dir, artifact_key, payload, resolver, write_records)
         paths[filename.removesuffix(".json").replace("-", "_")] = str(path)
     return paths
 
 
-def _write_review_gate_artifact(workspace_dir: Path, review_gate: Any) -> Path:
-    path = workspace_dir / "review-gate.json"
-    _write_json(path, review_gate_workspace_payload(review_gate))
-    return path
+def _write_review_gate_artifact(
+    base_dir: Path,
+    workspace_dir: Path,
+    review_gate: Any,
+    resolver: WorkspacePathResolver,
+    write_records: list[dict[str, Any]],
+) -> Path:
+    return _write_workspace_json(base_dir, "workspace_review_gate", review_gate_workspace_payload(review_gate), resolver, write_records)
 
 
-def _write_workspace_artifacts(workspace_dir: Path, final_result: FinalResult) -> dict[str, str]:
+def _write_workspace_artifacts(
+    base_dir: Path,
+    workspace_dir: Path,
+    final_result: FinalResult,
+    resolver: WorkspacePathResolver,
+    write_records: list[dict[str, Any]],
+) -> dict[str, str]:
     payloads = _extract_workspace_artifact_payloads(final_result)
     paths: dict[str, str] = {}
     for filename, payload in payloads.items():
-        path = workspace_dir / filename
-        _write_json(path, payload)
+        artifact_key = _workspace_artifact_key_from_filename(filename)
+        path = _write_workspace_json(base_dir, artifact_key, payload, resolver, write_records)
         paths[filename.removesuffix(".json").replace("-", "_")] = str(path)
     return paths
 

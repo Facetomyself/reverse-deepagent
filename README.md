@@ -218,7 +218,7 @@ agent = build_reverse_agent(
 - 现有 `workspace/*.json` 扁平 artifact 路径仍是 canonical path，不会被自动迁移。
 - `artifact_routes[].virtual_folder` 和 `artifact_routes[].future_path` 表示虚拟文件夹组织目标。
 - manifest entry 的 `metadata.workspace_alias` 会记录 `canonical_path`、`canonical_uri`、`virtual_folder`、`future_path`、`virtual_uri`、`producer_roles`、`migration_status=manifest-alias-only` 和 `resolver_migration_status=resolver-only`，让消费者可以先读取 `/workspace/<area>/...` 语义而不要求物理迁移。
-- `WorkspacePathResolver` 可以按 artifact key、legacy path、future path 或 `virtual://workspace/...` URI 解析同一 artifact；默认 `write_paths` 只包含 legacy canonical path，显式 `enable_dual_write=True` 时只返回 legacy + future path 的 plan-only 写入列表，不创建目录、不移动文件、不改变 authoritative path。
+- `WorkspacePathResolver` 可以按 artifact key、legacy path、future path 或 `virtual://workspace/...` URI 解析同一 artifact；默认 `write_paths` 只包含 legacy canonical path；pipeline 显式 `enable_workspace_dual_write=True` 时会同时写 legacy path 与 `artifact_root/workspace/<area>/...` foldered future path，并输出 `workspace/workspace-dual-write-plan.json` 审计记录，但仍不移动旧文件、不改变 authoritative path。
 - 新增或调整 subagent、middleware、runtime artifact、hook artifact 时，必须同步 `workspace-contract.json` 的生成逻辑、manifest alias metadata、resolver 行为和测试。
 - 不得在没有 compatibility alias、manifest 覆盖和回归测试的情况下直接移动现有 artifact 路径。
 
