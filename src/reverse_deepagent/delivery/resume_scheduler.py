@@ -16,15 +16,24 @@ from .resume import DeliveryResumePlanner, DeliveryResumePlannerConfig
 from .resume_runner import DeliveryResumeRunner, DeliveryResumeRunnerConfig, RESUME_ACTION_TO_APPROVAL_ACTION, SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS
 
 SUPPORTED_DELIVERY_RESUME_WORKFLOW_ACTIONS: tuple[str, ...] = ("plan_workflow", "execute_workflow")
+DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION = "acquire_delivery_transaction_lock_provider"
 DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION = "renew_delivery_transaction_lock_provider"
+DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION = "release_delivery_transaction_lock_provider"
+DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS: dict[str, tuple[str, str]] = {
+    DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION: ("acquire_lock", "acquired"),
+    DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION: ("renew_lock", "renewed"),
+    DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION: ("release_lock", "released"),
+}
 SUPPORTED_DELIVERY_RESUME_WORKFLOW_STEP_ACTIONS: tuple[str, ...] = tuple(
     action for action in SUPPORTED_DELIVERY_RESUME_RUNNER_ACTIONS if action != "plan_only"
-) + (DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION,)
+) + tuple(DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS)
 RESUME_WORKFLOW_ACTION_TO_APPROVAL_ACTION: dict[str, str] = {
     **RESUME_ACTION_TO_APPROVAL_ACTION,
+    DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION: "resume_acquire_delivery_transaction_lock_provider",
     DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION: "resume_renew_delivery_transaction_lock_provider",
+    DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION: "resume_release_delivery_transaction_lock_provider",
 }
-_DELIVERY_RESUME_WORKFLOW_SUCCESS_STATUSES = {"preflighted", "recovered", "committed", "executed", "renewed"}
+_DELIVERY_RESUME_WORKFLOW_SUCCESS_STATUSES = {"preflighted", "recovered", "committed", "executed", "acquired", "renewed", "released"}
 
 
 @dataclass(frozen=True)
@@ -104,7 +113,9 @@ class DeliveryResumeWorkflowExecution:
         files_mutated = any(bool(_runner_policy(step).get("files_mutated")) for step in self.step_results)
         workflow_record_written = bool(self.workflow_record_path) and not self.dry_run and self.status in {"completed", "partially_completed", "recorded"}
         journal_written = bool(self.workflow_journal_path) and not self.dry_run and bool(self.step_results) and self.status != "planned"
+        distributed_lock_acquired = any(_step_managed_distributed_lock(step, flag="lock_acquired", status="acquired") for step in self.step_results)
         distributed_lock_renewed = any(_step_renewed_distributed_lock(step) for step in self.step_results)
+        distributed_lock_released = any(_step_managed_distributed_lock(step, flag="lock_released", status="released") for step in self.step_results)
         return {
             "workflow_id": self.workflow_id,
             "transaction_id": self.transaction_id,
@@ -141,9 +152,9 @@ class DeliveryResumeWorkflowExecution:
                 "publishes_externally": False,
                 "starts_new_local_delivery": False,
                 "automatic_resume_without_review": False,
-                "distributed_lock_acquired": False,
+                "distributed_lock_acquired": distributed_lock_acquired,
                 "distributed_lock_renewed": distributed_lock_renewed,
-                "distributed_lock_released": False,
+                "distributed_lock_released": distributed_lock_released,
                 "physical_rollback_executed": False,
             },
         }
@@ -242,8 +253,8 @@ class DeliveryResumeWorkflowScheduler:
                     "journal_skips_completed_steps_but_does_not_replay_arbitrary_side_effects",
                     "does_not_start_new_local_delivery",
                     "does_not_publish_external_delivery",
-                    "does_not_release_or_acquire_distributed_locks",
-                    "lock_provider_renewal_is_explicit_step_only",
+                    "lock_provider_acquire_renew_release_are_explicit_steps_only",
+                    "does_not_automatically_acquire_renew_or_release_distributed_locks",
                     "does_not_execute_physical_rollback",
                 ],
             },
@@ -270,7 +281,7 @@ class DeliveryResumeWorkflowScheduler:
                     "action": str(action),
                     "approval_action": RESUME_WORKFLOW_ACTION_TO_APPROVAL_ACTION.get(str(action)),
                     "already_completed": str(action) in completed_actions,
-                    "executor": "DeliveryTransactionLockProvider" if str(action) == DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION else "DeliveryResumeRunner",
+                    "executor": "DeliveryTransactionLockProvider" if str(action) in DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS else "DeliveryResumeRunner",
                     "side_effect": True,
                 }
             )
@@ -375,8 +386,8 @@ class DeliveryResumeWorkflowScheduler:
                     }
                 )
                 continue
-            if action == DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION:
-                lock_result = self._renew_lock_provider(
+            if action in DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS:
+                lock_result = self._run_lock_provider_step(
                     delivery_root=delivery_root,
                     transaction_id=transaction_id,
                     workflow_id=workflow_id,
@@ -429,7 +440,7 @@ class DeliveryResumeWorkflowScheduler:
                 break
         return results
 
-    def _renew_lock_provider(
+    def _run_lock_provider_step(
         self,
         *,
         delivery_root: Path,
@@ -438,6 +449,8 @@ class DeliveryResumeWorkflowScheduler:
         step: dict[str, Any],
         created_at: str,
     ) -> dict[str, Any]:
+        workflow_action = str(step.get("action") or "")
+        provider_action, success_status = DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS[workflow_action]
         owner = str(self.config.transaction_lock_owner or transaction_id).strip() or transaction_id
         registry = build_default_delivery_transaction_lock_provider_registry()
         provider = registry.create(self.config.transaction_lock_provider_id)
@@ -445,11 +458,12 @@ class DeliveryResumeWorkflowScheduler:
             lock_root=delivery_root,
             transaction_id=transaction_id,
             owner=owner,
-            action="renew_lock",
+            action=provider_action,
             mode=self.config.mode,
             lease_seconds=self.config.transaction_lock_lease_seconds,
-            expected_owner=owner,
+            expected_owner=owner if provider_action in {"renew_lock", "release_lock"} else None,
             expected_fencing_token=self.config.expected_transaction_lock_fencing_token,
+            approve_release=provider_action == "release_lock",
             metadata={
                 **self.config.transaction_lock_provider_metadata,
                 **self.config.metadata,
@@ -468,7 +482,7 @@ class DeliveryResumeWorkflowScheduler:
             "created_at": created_at,
             "lock_operation": operation,
             "runner_execution": None,
-            "journal_recordable": operation.get("status") == "renewed",
+            "journal_recordable": operation.get("status") == success_status,
         }
 
     @staticmethod
@@ -524,11 +538,15 @@ def _lock_policy(step: dict[str, Any]) -> dict[str, Any]:
 
 
 def _step_renewed_distributed_lock(step: dict[str, Any]) -> bool:
+    return _step_managed_distributed_lock(step, flag="lock_renewed", status="renewed")
+
+
+def _step_managed_distributed_lock(step: dict[str, Any], *, flag: str, status: str) -> bool:
     operation = step.get("lock_operation") if isinstance(step.get("lock_operation"), dict) else {}
     return (
-        step.get("action") == DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION
-        and step.get("status") == "renewed"
-        and bool(operation.get("lock_renewed"))
+        step.get("action") in DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS
+        and step.get("status") == status
+        and bool(operation.get(flag))
     )
 
 

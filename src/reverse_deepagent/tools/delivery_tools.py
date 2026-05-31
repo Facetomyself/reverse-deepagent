@@ -373,10 +373,10 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
         "Dry-run is read-only. apply mode with action=execute_workflow requires review-approval-ledger entries for every pending step action, "
         "then delegates resume steps to DeliveryResumeRunner and appends delivery-resume-workflow-journal.json. "
         "step_actions_json should be a JSON list such as [\"preflight_backend_manifest_recovery\", \"apply_backend_manifest_recovery\"] "
-        "or [\"renew_delivery_transaction_lock_provider\"] for an explicit reviewed lease-renewal step. "
-        "transaction_lock_provider_id and transaction_lock_provider_metadata_json configure that renewal step; it calls the provider's renew_lock action and is not a background daemon or auto-renew loop. "
+        "or explicit lock-provider steps such as [\"acquire_delivery_transaction_lock_provider\", \"renew_delivery_transaction_lock_provider\", \"release_delivery_transaction_lock_provider\"]. "
+        "transaction_lock_provider_id and transaction_lock_provider_metadata_json configure those lock-provider steps; they call acquire_lock / renew_lock / release_lock only when explicitly reviewed and are not a background daemon or auto-renew loop. "
         "The scheduler skips already completed journaled steps, writes delivery-resume-workflow.json for completed apply workflows, "
-        "and never starts new delivery, publishes external delivery, acquires/releases distributed locks, or executes physical rollback."
+        "and never starts new delivery, publishes external delivery, automatically acquires/renews/releases distributed locks, or executes physical rollback."
     )
     return execute_delivery_resume_workflow
 
