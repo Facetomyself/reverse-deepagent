@@ -11,6 +11,7 @@ from reverse_deepagent.delivery import (
     DeliveryExecutionMode,
     DeliveryTransactionLockProviderConfig,
     LocalFileDeliveryTransactionLockProvider,
+    RedisDeliveryTransactionLockProvider,
     SQLiteDeliveryTransactionLockProvider,
     build_default_delivery_transaction_lock_provider_registry,
     manage_delivery_transaction_lock,
@@ -25,10 +26,11 @@ class DeliveryTransactionLockProviderTests(TestCase):
         metadata = registry.list_registration_metadata()
 
         self.assertEqual(DELIVERY_LOCK_PROVIDER_ENTRY_POINT_GROUP, "reverse_deepagent.delivery_lock_providers")
-        self.assertEqual(len(metadata), 2)
+        self.assertEqual(len(metadata), 3)
         by_provider = {item["provider_id"]: item for item in metadata}
         self.assertIn("local-file-lock", by_provider)
         self.assertIn("sqlite-lock", by_provider)
+        self.assertIn("redis-lock", by_provider)
         self.assertIn("filesystem-lock", by_provider["local-file-lock"]["aliases"])
         self.assertIn("local-distributed-lock", by_provider["local-file-lock"]["aliases"])
         self.assertTrue(by_provider["local-file-lock"]["supports_fencing_token"])
@@ -39,8 +41,15 @@ class DeliveryTransactionLockProviderTests(TestCase):
         self.assertEqual(by_provider["sqlite-lock"]["coordination_scope"], "local-sqlite-transaction")
         self.assertTrue(by_provider["sqlite-lock"]["metadata"]["writes_sqlite_database"])
         self.assertFalse(by_provider["sqlite-lock"]["supports_distributed_consensus"])
+        self.assertIn("redis", by_provider["redis-lock"]["aliases"])
+        self.assertEqual(by_provider["redis-lock"]["transport"], "redis")
+        self.assertEqual(by_provider["redis-lock"]["coordination_scope"], "external-redis-lease")
+        self.assertTrue(by_provider["redis-lock"]["metadata"]["external_service_required"])
+        self.assertTrue(by_provider["redis-lock"]["metadata"]["redis_authoritative_store"])
+        self.assertFalse(by_provider["redis-lock"]["supports_distributed_consensus"])
         self.assertIsInstance(registry.create("filesystem-lock"), LocalFileDeliveryTransactionLockProvider)
         self.assertIsInstance(registry.create("db-lock"), SQLiteDeliveryTransactionLockProvider)
+        self.assertIsInstance(registry.create("redis"), RedisDeliveryTransactionLockProvider)
 
     def test_dry_run_acquire_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -328,3 +337,173 @@ class DeliveryTransactionLockProviderTests(TestCase):
             self.assertTrue((root / "delivery" / "delivery-distributed-transaction-lock.sqlite3").exists())
             self.assertTrue((root / "delivery" / "delivery-distributed-transaction-lock.json").exists())
             self.assertEqual(result["metadata"]["source"], "tool-sqlite-test")
+
+
+    def test_redis_provider_dry_run_is_read_only_without_client(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            provider = RedisDeliveryTransactionLockProvider(client=FakeRedisClient())
+            config = DeliveryTransactionLockProviderConfig(
+                lock_root=root,
+                transaction_id="tx-redis-dry-run",
+                owner="agent-a",
+                action="acquire_lock",
+                mode=DeliveryExecutionMode.DRY_RUN,
+                metadata={"redis_url": "redis://:secret@example.test:6379/0"},
+            )
+
+            result = manage_delivery_transaction_lock(config, provider=provider).to_dict()
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["side_effect_policy"]["external_service_contacted"])
+            self.assertFalse(result["side_effect_policy"]["writes_lock_record"])
+            self.assertFalse((root / "delivery-distributed-transaction-lock.json").exists())
+            self.assertEqual(provider.client.calls, [])
+            self.assertNotIn("secret", json.dumps(result, sort_keys=True))
+
+    def test_redis_provider_apply_writes_external_store_projection_and_operation_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = FakeRedisClient()
+            provider = RedisDeliveryTransactionLockProvider(client=fake)
+            config = DeliveryTransactionLockProviderConfig(
+                lock_root=root,
+                transaction_id="tx-redis",
+                owner="agent-a",
+                action="acquire_lock",
+                mode=DeliveryExecutionMode.APPLY,
+                metadata={"source": "redis-test", "redis_lock_key": "locks:delivery"},
+            )
+
+            result = manage_delivery_transaction_lock(config, provider=provider).to_dict()
+
+            lock_path = root / "delivery-distributed-transaction-lock.json"
+            operation_path = root / "delivery-distributed-transaction-lock-operation.json"
+            self.assertEqual(result["provider_id"], "redis-lock")
+            self.assertEqual(result["status"], "acquired")
+            self.assertTrue(result["lock_acquired"])
+            self.assertTrue(result["side_effect_policy"]["external_service_contacted"])
+            self.assertTrue(lock_path.exists())
+            self.assertTrue(operation_path.exists())
+            self.assertIn("locks:delivery", fake.store)
+            lock = json.loads(fake.store["locks:delivery"])
+            self.assertEqual(lock["transaction_id"], "tx-redis")
+            self.assertEqual(lock["owner"], "agent-a")
+            self.assertEqual(lock["fencing_token"], "1")
+            self.assertEqual(fake.ttl["locks:delivery"], 900)
+
+    def test_redis_provider_renew_and_release_update_external_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = FakeRedisClient()
+            provider = RedisDeliveryTransactionLockProvider(client=fake)
+            manage_delivery_transaction_lock(
+                DeliveryTransactionLockProviderConfig(
+                    lock_root=root,
+                    transaction_id="tx-redis-renew",
+                    owner="agent-a",
+                    action="acquire_lock",
+                    mode=DeliveryExecutionMode.APPLY,
+                    metadata={"redis_lock_key": "locks:renew"},
+                ),
+                provider=provider,
+            )
+
+            renewed = manage_delivery_transaction_lock(
+                DeliveryTransactionLockProviderConfig(
+                    lock_root=root,
+                    transaction_id="tx-redis-renew",
+                    owner="agent-a",
+                    action="renew_lock",
+                    mode=DeliveryExecutionMode.APPLY,
+                    expected_owner="agent-a",
+                    expected_fencing_token="1",
+                    metadata={"redis_lock_key": "locks:renew"},
+                ),
+                provider=provider,
+            ).to_dict()
+            released = manage_delivery_transaction_lock(
+                DeliveryTransactionLockProviderConfig(
+                    lock_root=root,
+                    transaction_id="tx-redis-renew",
+                    owner="agent-a",
+                    action="release_lock",
+                    mode=DeliveryExecutionMode.APPLY,
+                    expected_owner="agent-a",
+                    expected_fencing_token="2",
+                    approve_release=True,
+                    metadata={"redis_lock_key": "locks:renew"},
+                ),
+                provider=provider,
+            ).to_dict()
+
+            self.assertEqual(renewed["status"], "renewed")
+            self.assertEqual(renewed["fencing_token"], "2")
+            self.assertEqual(released["status"], "released")
+            self.assertNotIn("locks:renew", fake.store)
+            self.assertFalse((root / "delivery-distributed-transaction-lock.json").exists())
+
+    def test_redis_provider_missing_url_blocks_without_projection_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            provider = RedisDeliveryTransactionLockProvider()
+            config = DeliveryTransactionLockProviderConfig(
+                lock_root=root,
+                transaction_id="tx-redis-missing-url",
+                owner="agent-a",
+                action="acquire_lock",
+                mode=DeliveryExecutionMode.APPLY,
+            )
+
+            result = manage_delivery_transaction_lock(config, provider=provider).to_dict()
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("lock_record_is_valid", result["blocking_reasons"])
+            self.assertFalse(result["side_effect_policy"]["external_service_contacted"])
+            self.assertFalse((root / "delivery-distributed-transaction-lock.json").exists())
+
+    def test_tool_can_use_redis_lock_provider_alias_with_safe_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool = make_delivery_transaction_lock_provider_tool(root / "delivery")
+
+            result = tool(
+                transaction_id="tx-tool-redis-lock",
+                owner="agent-a",
+                action="acquire_lock",
+                mode="dry-run",
+                provider_id="redis",
+                metadata_json=json.dumps({"redis_url": "redis://:secret@example.test:6379/0"}),
+            )
+
+            self.assertEqual(result["provider_id"], "redis-lock")
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["side_effect_policy"]["external_service_contacted"])
+            self.assertNotIn("secret", json.dumps(result, sort_keys=True))
+
+
+class FakeRedisClient:
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.ttl: dict[str, int] = {}
+        self.calls: list[tuple[str, str]] = []
+
+    def get(self, key: str) -> str | None:
+        self.calls.append(("get", key))
+        return self.store.get(key)
+
+    def set(self, key: str, value: str, *, ex: int | None = None, nx: bool = False) -> bool:
+        self.calls.append(("set", key))
+        if nx and key in self.store:
+            return False
+        self.store[key] = value
+        if ex is not None:
+            self.ttl[key] = int(ex)
+        return True
+
+    def delete(self, key: str) -> int:
+        self.calls.append(("delete", key))
+        existed = key in self.store
+        self.store.pop(key, None)
+        self.ttl.pop(key, None)
+        return 1 if existed else 0

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any, Callable, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 from .executors import EXTERNAL_DELIVERY_SECRET_KEYWORDS, DeliveryExecutionMode, _write_json
 
@@ -100,6 +101,7 @@ class DeliveryTransactionLockOperation:
     recommended_actions: list[str]
     created_at: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    external_service_contacted: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         wrote_record = bool(self.operation_record_path) and not self.dry_run and self.status in {
@@ -141,7 +143,7 @@ class DeliveryTransactionLockOperation:
                 "removes_lock_record": bool(self.lock_released and not self.dry_run),
                 "writes_operation_record": wrote_record,
                 "distributed_lock_contract": True,
-                "external_service_contacted": False,
+                "external_service_contacted": self.external_service_contacted,
                 "delivery_executed": False,
                 "external_delivery_performed": False,
                 "manifest_mutated": False,
@@ -553,6 +555,317 @@ class SQLiteDeliveryTransactionLockProvider:
         }
 
 
+_REDIS_COMPARE_SET_SCRIPT = """
+local current = redis.call("GET", KEYS[1])
+if not current then
+  if ARGV[5] == "1" then
+    redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[2])
+    return 1
+  end
+  return 0
+end
+local decoded = cjson.decode(current)
+if ARGV[3] ~= "" and tostring(decoded["owner"] or "") ~= ARGV[3] then
+  return -1
+end
+if ARGV[4] ~= "" and tostring(decoded["fencing_token"] or "") ~= ARGV[4] then
+  return -2
+end
+redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[2])
+return 1
+"""
+
+_REDIS_COMPARE_DELETE_SCRIPT = """
+local current = redis.call("GET", KEYS[1])
+if not current then
+  return 0
+end
+local decoded = cjson.decode(current)
+if ARGV[1] ~= "" and tostring(decoded["owner"] or "") ~= ARGV[1] then
+  return -1
+end
+if ARGV[2] ~= "" and tostring(decoded["fencing_token"] or "") ~= ARGV[2] then
+  return -2
+end
+redis.call("DEL", KEYS[1])
+return 1
+"""
+
+
+@dataclass(frozen=True)
+class RedisDeliveryTransactionLockProvider:
+    """Redis-backed external transaction lock provider baseline.
+
+    The provider keeps Redis as the authoritative external lock service and
+    writes local JSON projection / operation audit records for workspace
+    compatibility. Metadata listing and dry-runs do not open network sockets.
+    Apply / inspect runs require an injected client or ``redis_url`` supplied via
+    provider construction or ``config.metadata``.
+    """
+
+    client: Any | None = None
+    redis_url: str | None = None
+    key_name: str = "reverse-deepagent:delivery:distributed-transaction-lock"
+    provider_id: str = "redis-lock"
+
+    def manage_lock(
+        self,
+        config: DeliveryTransactionLockProviderConfig,
+        *,
+        created_at: str,
+    ) -> DeliveryTransactionLockOperation:
+        lock_root = config.resolved_lock_root()
+        lock_path = lock_root / config.lock_name
+        operation_record_path = lock_root / config.operation_record_name
+        dry_run = config.mode == DeliveryExecutionMode.DRY_RUN
+        action = str(config.action or "")
+        redis_key = str(config.metadata.get("redis_lock_key") or self.key_name)
+        existing_lock: dict[str, Any] | None = None
+        load_error: str | None = None
+        external_service_contacted = False
+        client: Any | None = None
+        if not dry_run:
+            client, load_error = self._client(config)
+            if client is not None:
+                existing_lock, load_error = self._read_existing(client=client, redis_key=redis_key)
+                external_service_contacted = True
+        stale = bool(existing_lock) and _lease_is_past(str(existing_lock.get("lease_expires_at") or ""), created_at)
+        checks = _base_checks(config=config, existing_lock=existing_lock, load_error=load_error, stale=stale)
+        resulting_lock: dict[str, Any] | None = existing_lock.copy() if existing_lock else None
+        lock_acquired = False
+        lock_renewed = False
+        lock_released = False
+        fencing_token: str | None = str(existing_lock.get("fencing_token")) if existing_lock and existing_lock.get("fencing_token") is not None else None
+        lease_expires_at: str | None = str(existing_lock.get("lease_expires_at")) if existing_lock and existing_lock.get("lease_expires_at") else None
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        if not blocking_reasons and action in {"acquire_lock", "renew_lock"}:
+            fencing_token = _next_fencing_token(existing_lock)
+            lease_expires_at = _lease_expires_at(created_at, config.lease_seconds)
+            resulting_lock = self._lock_record(
+                config=config,
+                created_at=created_at,
+                fencing_token=fencing_token,
+                lease_expires_at=lease_expires_at,
+                action=action,
+                redis_key=redis_key,
+            )
+            if not dry_run and client is not None:
+                ok, reason = self._write_lock(client=client, redis_key=redis_key, lock_record=resulting_lock, existing_lock=existing_lock, stale=stale, config=config, action=action)
+                if ok:
+                    _write_json(lock_path, resulting_lock)
+                    lock_acquired = action == "acquire_lock"
+                    lock_renewed = action == "renew_lock"
+                else:
+                    blocking_reasons.append(reason)
+                    resulting_lock = existing_lock.copy() if existing_lock else None
+        elif not blocking_reasons and action == "release_lock":
+            if not dry_run and client is not None:
+                ok, reason = self._delete_lock(client=client, redis_key=redis_key, existing_lock=existing_lock, config=config)
+                if ok:
+                    if lock_path.exists():
+                        lock_path.unlink()
+                    resulting_lock = None
+                    lock_released = True
+                else:
+                    blocking_reasons.append(reason)
+        status = _status_for(action, dry_run, blocking_reasons, lock_acquired, lock_renewed, lock_released)
+        operation_record = DeliveryTransactionLockOperation(
+            provider_id=self.provider_id,
+            action=action,
+            status=status,
+            mode=config.mode.value,
+            dry_run=dry_run,
+            lock_root=str(lock_root),
+            lock_path=str(lock_path),
+            operation_record_path=str(operation_record_path) if not dry_run and status in {"acquired", "renewed", "released", "inspected"} else None,
+            transaction_id=config.transaction_id,
+            owner=config.owner,
+            expected_owner=config.expected_owner,
+            fencing_token=fencing_token,
+            expected_fencing_token=config.expected_fencing_token,
+            lease_expires_at=lease_expires_at,
+            lock_acquired=lock_acquired,
+            lock_renewed=lock_renewed,
+            lock_released=lock_released,
+            stale_lock_detected=stale,
+            stale_takeover_allowed=config.allow_stale_takeover,
+            existing_lock=existing_lock,
+            resulting_lock=resulting_lock,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=_recommended_actions(status, action, stale),
+            created_at=created_at,
+            metadata={
+                **_safe_lock_provider_runtime_metadata(config.metadata),
+                "provider_id": self.provider_id,
+                "provider_transport": "redis",
+                "redis_key": redis_key,
+                "distributed_lock_contract": True,
+                "coordination_scope": "external-redis-lease",
+                "supports_fencing_token": True,
+                "supports_lease": True,
+                "supports_distributed_consensus": False,
+                "external_service_required": True,
+                "redis_authoritative_store": True,
+                "redis_url_configured": bool(self.redis_url or config.metadata.get("redis_url")),
+                "dry_run_external_service_contacted": False if dry_run else None,
+                "limitations": [
+                    "redis_provider_uses_external_redis_key_with_lease_ttl",
+                    "single_redis_instance_or_cluster_semantics_depend_on_deployment",
+                    "does_not_implement_redlock_quorum_consensus",
+                    "downstream_writers_must_still_enforce_fencing_tokens",
+                ],
+            },
+            external_service_contacted=external_service_contacted,
+        )
+        if operation_record.operation_record_path:
+            _write_json(Path(operation_record.operation_record_path), operation_record.to_dict())
+        return operation_record
+
+    def _client(self, config: DeliveryTransactionLockProviderConfig) -> tuple[Any | None, str | None]:
+        if self.client is not None:
+            return self.client, None
+        redis_url = self.redis_url or config.metadata.get("redis_url")
+        if not redis_url:
+            return None, "redis_url is required for redis-lock apply/inspect operations"
+        try:
+            import redis  # type: ignore[import-not-found]
+        except Exception as exc:  # noqa: BLE001 - optional dependency is reported structurally.
+            return None, f"redis optional dependency is not installed: {exc}"
+        try:
+            return redis.Redis.from_url(str(redis_url)), None
+        except Exception as exc:  # noqa: BLE001
+            return None, str(exc)
+
+    def _read_existing(self, *, client: Any, redis_key: str) -> tuple[dict[str, Any] | None, str | None]:
+        try:
+            raw = client.get(redis_key)
+        except Exception as exc:  # noqa: BLE001
+            return {}, str(exc)
+        if raw is None:
+            return None, None
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        try:
+            value = json.loads(str(raw))
+        except Exception as exc:  # noqa: BLE001
+            return {}, str(exc)
+        if not isinstance(value, dict):
+            return {}, "redis lock record must decode to a JSON object"
+        return value, None
+
+    def _write_lock(
+        self,
+        *,
+        client: Any,
+        redis_key: str,
+        lock_record: dict[str, Any],
+        existing_lock: dict[str, Any] | None,
+        stale: bool,
+        config: DeliveryTransactionLockProviderConfig,
+        action: str,
+    ) -> tuple[bool, str]:
+        payload = json.dumps(lock_record, ensure_ascii=False, sort_keys=True)
+        lease_seconds = max(1, int(config.lease_seconds))
+        if action == "acquire_lock" and not existing_lock:
+            try:
+                written = client.set(redis_key, payload, ex=lease_seconds, nx=True)
+            except TypeError:
+                written = client.set(redis_key, payload, nx=True, ex=lease_seconds)
+            except Exception as exc:  # noqa: BLE001
+                return False, f"redis_set_failed:{exc}"
+            return (True, "") if bool(written) else (False, "redis_lock_changed_during_acquire")
+        expected_owner = str(existing_lock.get("owner") or config.expected_owner or "") if existing_lock else str(config.expected_owner or "")
+        expected_token = str(existing_lock.get("fencing_token") or config.expected_fencing_token or "") if existing_lock else str(config.expected_fencing_token or "")
+        allow_missing = "1" if stale and config.allow_stale_takeover else "0"
+        result = self._eval_compare_set(client, redis_key, payload, lease_seconds, expected_owner, expected_token, allow_missing)
+        return self._redis_script_result_to_status(result, default_reason="redis_compare_set_failed")
+
+    def _delete_lock(
+        self,
+        *,
+        client: Any,
+        redis_key: str,
+        existing_lock: dict[str, Any] | None,
+        config: DeliveryTransactionLockProviderConfig,
+    ) -> tuple[bool, str]:
+        expected_owner = str(existing_lock.get("owner") or config.expected_owner or "") if existing_lock else str(config.expected_owner or "")
+        expected_token = str(existing_lock.get("fencing_token") or config.expected_fencing_token or "") if existing_lock else str(config.expected_fencing_token or "")
+        result = self._eval_compare_delete(client, redis_key, expected_owner, expected_token)
+        return self._redis_script_result_to_status(result, default_reason="redis_compare_delete_failed")
+
+    def _eval_compare_set(self, client: Any, redis_key: str, payload: str, lease_seconds: int, expected_owner: str, expected_token: str, allow_missing: str) -> int:
+        if hasattr(client, "eval"):
+            return int(client.eval(_REDIS_COMPARE_SET_SCRIPT, 1, redis_key, payload, int(lease_seconds), expected_owner, expected_token, allow_missing))
+        current, error = self._read_existing(client=client, redis_key=redis_key)
+        if error:
+            return -3
+        if current is None and allow_missing != "1":
+            return 0
+        if current is not None and expected_owner and str(current.get("owner") or "") != expected_owner:
+            return -1
+        if current is not None and expected_token and str(current.get("fencing_token") or "") != expected_token:
+            return -2
+        try:
+            client.set(redis_key, payload, ex=lease_seconds)
+        except TypeError:
+            client.set(redis_key, payload)
+        return 1
+
+    def _eval_compare_delete(self, client: Any, redis_key: str, expected_owner: str, expected_token: str) -> int:
+        if hasattr(client, "eval"):
+            return int(client.eval(_REDIS_COMPARE_DELETE_SCRIPT, 1, redis_key, expected_owner, expected_token))
+        current, error = self._read_existing(client=client, redis_key=redis_key)
+        if error:
+            return -3
+        if current is None:
+            return 0
+        if expected_owner and str(current.get("owner") or "") != expected_owner:
+            return -1
+        if expected_token and str(current.get("fencing_token") or "") != expected_token:
+            return -2
+        client.delete(redis_key)
+        return 1
+
+    def _redis_script_result_to_status(self, result: int, *, default_reason: str) -> tuple[bool, str]:
+        if result == 1:
+            return True, ""
+        if result == 0:
+            return False, "redis_lock_missing_or_changed"
+        if result == -1:
+            return False, "redis_expected_owner_mismatch"
+        if result == -2:
+            return False, "redis_expected_fencing_token_mismatch"
+        return False, default_reason
+
+    def _lock_record(
+        self,
+        *,
+        config: DeliveryTransactionLockProviderConfig,
+        created_at: str,
+        fencing_token: str,
+        lease_expires_at: str,
+        action: str,
+        redis_key: str,
+    ) -> dict[str, Any]:
+        return {
+            "version": "2026-06-01.delivery-transaction-lock-provider-v1",
+            "provider_id": self.provider_id,
+            "transaction_id": config.transaction_id,
+            "owner": config.owner,
+            "fencing_token": fencing_token,
+            "lease_expires_at": lease_expires_at,
+            "created_at": created_at,
+            "renewed_at": created_at if action == "renew_lock" else None,
+            "metadata": {
+                **_safe_lock_provider_runtime_metadata(config.metadata),
+                "distributed_lock_contract": True,
+                "coordination_scope": "external-redis-lease",
+                "redis_key": redis_key,
+            },
+        }
+
+
 def local_file_delivery_transaction_lock_provider_registration() -> DeliveryTransactionLockProviderRegistration:
     return DeliveryTransactionLockProviderRegistration(
         provider_id="local-file-lock",
@@ -604,10 +917,41 @@ def sqlite_delivery_transaction_lock_provider_registration() -> DeliveryTransact
     )
 
 
+
+def redis_delivery_transaction_lock_provider_registration() -> DeliveryTransactionLockProviderRegistration:
+    return DeliveryTransactionLockProviderRegistration(
+        provider_id="redis-lock",
+        aliases=("redis", "redis-lease-lock", "external-redis-lock"),
+        capabilities=DeliveryTransactionLockProviderCapabilities(
+            provider_id="redis-lock",
+            display_name="Redis transaction lock provider",
+            transport="redis",
+            coordination_scope="external-redis-lease",
+            supports_distributed_consensus=False,
+            metadata={
+                "contract_baseline": True,
+                "writes_lock_record": True,
+                "writes_operation_record": True,
+                "writes_json_projection": True,
+                "external_service_required": True,
+                "redis_authoritative_store": True,
+                "supports_fencing_token": True,
+                "supports_lease": True,
+                "uses_redis_set_nx_for_initial_acquire": True,
+                "uses_lua_compare_set_when_available": True,
+                "redlock_quorum_consensus": False,
+                "recommended_for": "external-redis-lease-lock-integration-tests",
+            },
+        ),
+        factory=lambda **kwargs: RedisDeliveryTransactionLockProvider(**kwargs),
+    )
+
+
 def build_default_delivery_transaction_lock_provider_registry(*, load_entry_points: bool = True) -> DeliveryTransactionLockProviderRegistry:
     registry = DeliveryTransactionLockProviderRegistry()
     registry.register(local_file_delivery_transaction_lock_provider_registration())
     registry.register(sqlite_delivery_transaction_lock_provider_registration())
+    registry.register(redis_delivery_transaction_lock_provider_registration())
     if load_entry_points:
         registry.load_entry_points()
     return registry
@@ -745,6 +1089,32 @@ def _ensure_sqlite_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _safe_lock_provider_runtime_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    for key, value in metadata.items():
+        lowered = str(key).lower()
+        if lowered in {"redis_url", "redis_dsn"} or "url" in lowered or any(keyword in lowered for keyword in EXTERNAL_DELIVERY_SECRET_KEYWORDS):
+            safe[str(key)] = _redact_lock_provider_value(value)
+        else:
+            safe[str(key)] = value
+    return safe
+
+
+def _redact_lock_provider_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return "<redacted>"
+    try:
+        parts = urlsplit(value)
+    except Exception:  # noqa: BLE001
+        return "<redacted>"
+    if not parts.scheme or not parts.netloc:
+        return "<redacted>"
+    host = parts.hostname or ""
+    port = f":{parts.port}" if parts.port else ""
+    username = "<redacted>@" if parts.username or parts.password else ""
+    return urlunsplit((parts.scheme, f"{username}{host}{port}", parts.path, "<redacted>" if parts.query else "", ""))
 
 
 _LOCK_PROVIDER_SAFE_SECRET_KEY_NAMES = {

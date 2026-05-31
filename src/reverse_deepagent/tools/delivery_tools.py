@@ -289,10 +289,10 @@ def make_delivery_transaction_lock_provider_tool(default_lock_root: str | Path) 
     manage_delivery_transaction_lock_provider.__name__ = "manage_delivery_transaction_lock_provider"
     manage_delivery_transaction_lock_provider.__doc__ = (
         "Inspect, acquire, renew, or release a pluggable delivery transaction lock provider record. "
-        "The default tool provider is local-file-lock; the default registry also includes sqlite-lock / db-lock, "
-        "which stores the authoritative lock row in delivery-distributed-transaction-lock.sqlite3 and writes JSON projection / operation records in apply mode. Dry-run is read-only. "
+        "The default tool provider is local-file-lock; the default registry also includes sqlite-lock / db-lock and redis-lock / redis, "
+        "where SQLite stores the authoritative row locally and Redis uses an external key as the authoritative lease store while writing JSON projection / operation records. Dry-run is read-only. "
         "This does not execute delivery, publish external delivery, mutate manifests, commit transactions, replace the existing "
-        "delivery-transaction-lock.json LocalDeliveryExecutor gate, contact external services, or provide distributed consensus by itself. "
+        "delivery-transaction-lock.json LocalDeliveryExecutor gate, provide Redlock quorum consensus, or enforce downstream fencing by itself. "
         "External providers can be discovered through the reverse_deepagent.delivery_lock_providers entry point group."
     )
     return manage_delivery_transaction_lock_provider
