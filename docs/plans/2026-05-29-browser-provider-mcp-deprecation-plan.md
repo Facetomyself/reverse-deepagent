@@ -824,3 +824,11 @@ The evidence model is deliberately conservative. A journaled step can be marked 
 Boundary: this is dependency metadata only. It does not execute workflow steps, call providers, write lock-operation artifacts, replay side effects, bypass LocalDeliveryExecutor checks, start a daemon, perform automatic acquire / renew / release, decide rollback versus commit, or publish external delivery. Android / iOS / mini-program full runtime chains remain deferred.
 
 Tests cover default acquire planning, approved acquire / release lifecycle metadata, planned release clearing later lock / fencing dependency state, and resume-of-resume journal replay dependency context for a skipped recovery-preflight step.
+
+### Step 95 execution record: Workflow runtime-gate evidence projection baseline
+
+`DeliveryResumeWorkflowScheduler` now emits `workflow_readiness_plan.runtime_gate_evidence_projection` as read-only review metadata. The projection inspects the delivery root for transaction journal, rollback checkpoint, recovery preflight, provider lock projection, local transaction lock, terminal commit record, and the configured backend manifest. Each artifact is classified as `observed`, `missing`, `malformed`, or `stale`, includes digest / transaction-match / lease-stale metadata where applicable, and exposes only presence booleans for sensitive lock token fields.
+
+The same evidence is attached to each `step_dependency_contexts[*].runtime_gate_evidence`, so review / delivery subagents can see which artifacts are currently observed, missing, malformed, stale, or transaction-mismatched for a planned step. The dependency summary also counts steps with missing, malformed, stale, or mismatched runtime-gate evidence.
+
+Boundary: this is artifact observation only. It does not call providers, write workflow / lock artifacts, execute workflow steps, start a daemon, perform automatic acquire / renew / release, or treat observed artifacts as apply-time gate success. Digest, rollback checkpoint, transaction lock, lease, and fencing-token checks remain delegated to the existing apply-time executors. Android / iOS / mini-program full runtime chains remain deferred.

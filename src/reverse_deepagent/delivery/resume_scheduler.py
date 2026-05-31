@@ -221,6 +221,15 @@ class DeliveryResumeWorkflowScheduler:
             step_actions=[str(step["action"]) for step in planned_steps if not step.get("already_completed")],
             expected_decision=self.config.approval_decision,
         )
+        runtime_gate_evidence_projection = _runtime_gate_evidence_projection(
+            delivery_root=delivery_root,
+            backend_manifest_path=self.config.resolved_backend_manifest_path(),
+            transaction_id=str(transaction_id or ""),
+            planned_steps=planned_steps,
+            created_at=created_at,
+            require_transaction_lock=self.config.require_transaction_lock,
+            explicit_expected_fencing_token_configured=bool(self.config.expected_transaction_lock_fencing_token),
+        )
         checks = self._checks(
             resume_plan=resume_plan,
             planned_steps=planned_steps,
@@ -241,6 +250,7 @@ class DeliveryResumeWorkflowScheduler:
             lease_renewal_plan=lease_renewal_plan,
             require_transaction_lock=self.config.require_transaction_lock,
             explicit_expected_fencing_token_configured=bool(self.config.expected_transaction_lock_fencing_token),
+            runtime_gate_evidence_projection=runtime_gate_evidence_projection,
         )
         step_results: list[dict[str, Any]] = []
         if not blocking_reasons:
@@ -645,6 +655,7 @@ def _workflow_readiness_plan(
     lease_renewal_plan: dict[str, Any],
     require_transaction_lock: bool,
     explicit_expected_fencing_token_configured: bool,
+    runtime_gate_evidence_projection: dict[str, Any],
 ) -> dict[str, Any]:
     """Build a side-effect-free readiness summary for review/subagent routing."""
 
@@ -670,6 +681,7 @@ def _workflow_readiness_plan(
         lease_renewal_plan=lease_renewal_plan,
         require_transaction_lock=require_transaction_lock,
         explicit_expected_fencing_token_configured=explicit_expected_fencing_token_configured,
+        runtime_gate_evidence_projection=runtime_gate_evidence_projection,
     )
     dependency_summary = _workflow_step_dependency_summary(step_dependency_contexts)
 
@@ -718,6 +730,7 @@ def _workflow_readiness_plan(
         ),
         "uses_journal_replay_context": uses_journal_replay_context,
         "journal_completed_actions": list(existing_journal_summary.get("completed_actions", [])),
+        "runtime_gate_evidence_projection": runtime_gate_evidence_projection,
         "step_dependency_contexts": step_dependency_contexts,
         "dependency_summary": dependency_summary,
         "next_review_actions": next_review_actions,
@@ -740,6 +753,7 @@ def _workflow_step_dependency_contexts(
     lease_renewal_plan: dict[str, Any],
     require_transaction_lock: bool,
     explicit_expected_fencing_token_configured: bool,
+    runtime_gate_evidence_projection: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Describe conservative step dependencies without claiming gate success."""
 
@@ -796,6 +810,11 @@ def _workflow_step_dependency_contexts(
         else:
             readiness = "ready_for_ordered_execution_review"
         runtime_gate_checks = _runtime_gate_checks_for_step(action)
+        runtime_gate_evidence = _runtime_gate_evidence_for_step(
+            action=action,
+            runtime_gate_checks=runtime_gate_checks,
+            projection=runtime_gate_evidence_projection,
+        )
         contexts.append(
             {
                 "order": step.get("order"),
@@ -821,6 +840,7 @@ def _workflow_step_dependency_contexts(
                 "recovery_preflight_dependency": recovery_preflight_dependency,
                 "runtime_gate_checks": runtime_gate_checks,
                 "runtime_gate_review_required": bool(runtime_gate_checks),
+                "runtime_gate_evidence": runtime_gate_evidence,
                 "side_effects_performed": False,
                 "readonly_dependency_metadata_only": True,
             }
@@ -959,9 +979,278 @@ def _workflow_step_dependency_summary(contexts: list[dict[str, Any]]) -> dict[st
         "fencing_review_step_count": sum(1 for item in contexts if item.get("fencing_dependency", {}).get("required")),
         "recovery_preflight_review_step_count": sum(1 for item in contexts if item.get("recovery_preflight_dependency", {}).get("required")),
         "runtime_gate_review_step_count": sum(1 for item in contexts if item.get("runtime_gate_review_required")),
+        "runtime_gate_evidence_missing_step_count": sum(
+            1 for item in contexts if item.get("runtime_gate_evidence", {}).get("missing_artifact_keys")
+        ),
+        "runtime_gate_evidence_malformed_step_count": sum(
+            1 for item in contexts if item.get("runtime_gate_evidence", {}).get("malformed_artifact_keys")
+        ),
+        "runtime_gate_evidence_stale_step_count": sum(
+            1 for item in contexts if item.get("runtime_gate_evidence", {}).get("stale_artifact_keys")
+        ),
+        "runtime_gate_evidence_transaction_mismatch_step_count": sum(
+            1 for item in contexts if item.get("runtime_gate_evidence", {}).get("transaction_mismatch_artifact_keys")
+        ),
         "side_effects_performed": False,
         "readonly_dependency_metadata_only": True,
     }
+
+
+def _runtime_gate_evidence_projection(
+    *,
+    delivery_root: Path,
+    backend_manifest_path: Path | None,
+    transaction_id: str,
+    planned_steps: list[dict[str, Any]],
+    created_at: str,
+    require_transaction_lock: bool,
+    explicit_expected_fencing_token_configured: bool,
+) -> dict[str, Any]:
+    """Project existing gate artifacts without claiming apply-time validation."""
+
+    planned_actions = {str(step.get("action") or "") for step in planned_steps}
+    runner_actions = {"preflight_backend_manifest_recovery", "apply_backend_manifest_recovery", "commit_cross_run_transaction"}
+    lock_provider_actions = set(DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS)
+    artifacts = [
+        _runtime_gate_json_artifact_projection(
+            artifact_key="transaction_journal",
+            path=delivery_root / "delivery-transaction-journal.json",
+            transaction_id=transaction_id,
+            transaction_id_fields=("transaction_id",),
+            relevant_step_actions=runner_actions,
+            planned_actions=planned_actions,
+            created_at=created_at,
+            summary_fields=(
+                "backend_manifest_mutated",
+                "backend_manifest_recovered",
+                "backend_manifest_rollback_written",
+                "cross_run_transaction_committed",
+                "external_delivery_performed",
+            ),
+        ),
+        _runtime_gate_file_artifact_projection(
+            artifact_key="rollback_checkpoint",
+            path=delivery_root / "backend-artifact-manifest.rollback.json",
+            relevant_step_actions={"preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"},
+            planned_actions=planned_actions,
+        ),
+        _runtime_gate_json_artifact_projection(
+            artifact_key="recovery_preflight",
+            path=delivery_root / "backend-artifact-manifest-recovery-preflight.json",
+            transaction_id=transaction_id,
+            transaction_id_fields=("journal_transaction_id", "expected_recovery_transaction_id"),
+            relevant_step_actions={"apply_backend_manifest_recovery", "commit_cross_run_transaction"},
+            planned_actions=planned_actions,
+            created_at=created_at,
+            summary_fields=("status", "recovery_available", "backend_manifest_mutated", "backend_manifest_rollback_written"),
+        ),
+        _runtime_gate_json_artifact_projection(
+            artifact_key="provider_lock_projection",
+            path=delivery_root / "delivery-distributed-transaction-lock.json",
+            transaction_id=transaction_id,
+            transaction_id_fields=("transaction_id",),
+            relevant_step_actions=lock_provider_actions | runner_actions,
+            planned_actions=planned_actions,
+            created_at=created_at,
+            lease_field="lease_expires_at",
+            summary_fields=("provider_id", "owner", "fencing_token", "lease_expires_at"),
+            summary_presence_only_fields=("owner", "fencing_token"),
+            required_for_current_plan=bool(
+                planned_actions & {DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION, DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION}
+                or (planned_actions & runner_actions and (require_transaction_lock or explicit_expected_fencing_token_configured))
+            ),
+        ),
+        _runtime_gate_json_artifact_projection(
+            artifact_key="local_transaction_lock",
+            path=delivery_root / "delivery-transaction-lock.json",
+            transaction_id=transaction_id,
+            transaction_id_fields=("transaction_id",),
+            relevant_step_actions=runner_actions,
+            planned_actions=planned_actions,
+            created_at=created_at,
+            lease_field="lease_expires_at",
+            summary_fields=("owner", "resume_token", "lease_expires_at"),
+            summary_presence_only_fields=("owner", "resume_token"),
+            required_for_current_plan=bool(require_transaction_lock and planned_actions & runner_actions),
+        ),
+        _runtime_gate_json_artifact_projection(
+            artifact_key="terminal_commit_record",
+            path=delivery_root / "backend-artifact-manifest-transaction-commit.json",
+            transaction_id=transaction_id,
+            transaction_id_fields=("source_transaction_id", "expected_commit_transaction_id"),
+            relevant_step_actions={"commit_cross_run_transaction"},
+            planned_actions=planned_actions,
+            created_at=created_at,
+            summary_fields=("status", "committed", "cross_run_transaction_committed", "external_delivery_performed"),
+            required_for_current_plan=False,
+        ),
+        _runtime_gate_file_artifact_projection(
+            artifact_key="backend_manifest",
+            path=backend_manifest_path,
+            relevant_step_actions=runner_actions,
+            planned_actions=planned_actions,
+        ),
+    ]
+    status_counts = {
+        status: sum(1 for artifact in artifacts if artifact.get("status") == status)
+        for status in ("observed", "missing", "malformed", "stale")
+    }
+    mismatch_count = sum(1 for artifact in artifacts if artifact.get("transaction_match") is False)
+    missing_required = [
+        str(artifact.get("artifact_key"))
+        for artifact in artifacts
+        if artifact.get("required_for_current_plan") and artifact.get("status") == "missing"
+    ]
+    if status_counts["malformed"] or status_counts["stale"] or mismatch_count:
+        status = "review_required"
+    elif status_counts["observed"]:
+        status = "evidence_observed"
+    else:
+        status = "no_artifacts_observed"
+    return {
+        "enabled": True,
+        "status": status,
+        "delivery_root": str(delivery_root),
+        "transaction_id": transaction_id or None,
+        "artifacts": artifacts,
+        "summary": {
+            "artifact_count": len(artifacts),
+            "observed_count": status_counts["observed"],
+            "missing_count": status_counts["missing"],
+            "malformed_count": status_counts["malformed"],
+            "stale_count": status_counts["stale"],
+            "transaction_mismatch_count": mismatch_count,
+            "missing_required_review_artifact_keys": missing_required,
+        },
+        "runtime_gate_must_revalidate": True,
+        "readonly_artifact_projection_only": True,
+        "side_effects_performed": False,
+        "provider_contacted": False,
+        "artifacts_written": False,
+    }
+
+
+def _runtime_gate_json_artifact_projection(
+    *,
+    artifact_key: str,
+    path: Path,
+    transaction_id: str,
+    transaction_id_fields: tuple[str, ...],
+    relevant_step_actions: set[str],
+    planned_actions: set[str],
+    created_at: str,
+    summary_fields: tuple[str, ...],
+    summary_presence_only_fields: tuple[str, ...] = (),
+    lease_field: str | None = None,
+    required_for_current_plan: bool | None = None,
+) -> dict[str, Any]:
+    projection = _runtime_gate_file_artifact_projection(
+        artifact_key=artifact_key,
+        path=path,
+        relevant_step_actions=relevant_step_actions,
+        planned_actions=planned_actions,
+        required_for_current_plan=required_for_current_plan,
+    )
+    if not projection["exists"]:
+        return projection
+    payload, load_error = _read_json_object_with_status(path)
+    if load_error:
+        return {**projection, "status": "malformed", "load_error": load_error}
+    transaction_values = [
+        str(payload.get(field) or "").strip()
+        for field in transaction_id_fields
+        if str(payload.get(field) or "").strip()
+    ]
+    transaction_match = None if not transaction_id or not transaction_values else all(value == transaction_id for value in transaction_values)
+    summary: dict[str, Any] = {}
+    for field in summary_fields:
+        value = payload.get(field)
+        summary[field] = bool(value) if field in summary_presence_only_fields else value
+    stale = bool(lease_field and payload.get(lease_field) and _iso_datetime_is_expired(payload.get(lease_field), now_iso=created_at))
+    return {
+        **projection,
+        "status": "stale" if stale else "observed",
+        "transaction_match": transaction_match,
+        "transaction_id_fields_checked": list(transaction_id_fields),
+        "lease_stale": stale if lease_field else None,
+        "summary": summary,
+    }
+
+
+def _runtime_gate_file_artifact_projection(
+    *,
+    artifact_key: str,
+    path: Path | None,
+    relevant_step_actions: set[str],
+    planned_actions: set[str],
+    required_for_current_plan: bool | None = None,
+) -> dict[str, Any]:
+    exists = bool(path and path.exists())
+    relevant_actions = sorted(relevant_step_actions)
+    required = bool(planned_actions & relevant_step_actions) if required_for_current_plan is None else bool(required_for_current_plan)
+    return {
+        "artifact_key": artifact_key,
+        "path": str(path) if path else None,
+        "exists": exists,
+        "status": "observed" if exists else "missing",
+        "digest_sha256": _file_sha256(path) if path and exists else None,
+        "relevant_step_actions": relevant_actions,
+        "required_for_current_plan": required,
+        "runtime_gate_must_revalidate": True,
+        "readonly_artifact_projection_only": True,
+    }
+
+
+def _runtime_gate_evidence_for_step(
+    *,
+    action: str,
+    runtime_gate_checks: list[str],
+    projection: dict[str, Any],
+) -> dict[str, Any]:
+    artifacts = [
+        artifact
+        for artifact in projection.get("artifacts", [])
+        if action in artifact.get("relevant_step_actions", [])
+    ]
+    return {
+        "artifact_refs": [
+            {
+                "artifact_key": artifact.get("artifact_key"),
+                "path": artifact.get("path"),
+                "status": artifact.get("status"),
+                "exists": artifact.get("exists"),
+                "transaction_match": artifact.get("transaction_match"),
+                "lease_stale": artifact.get("lease_stale"),
+                "runtime_gate_must_revalidate": True,
+            }
+            for artifact in artifacts
+        ],
+        "observed_artifact_keys": [str(artifact.get("artifact_key")) for artifact in artifacts if artifact.get("status") == "observed"],
+        "missing_artifact_keys": [str(artifact.get("artifact_key")) for artifact in artifacts if artifact.get("status") == "missing"],
+        "malformed_artifact_keys": [str(artifact.get("artifact_key")) for artifact in artifacts if artifact.get("status") == "malformed"],
+        "stale_artifact_keys": [str(artifact.get("artifact_key")) for artifact in artifacts if artifact.get("status") == "stale"],
+        "transaction_mismatch_artifact_keys": [
+            str(artifact.get("artifact_key")) for artifact in artifacts if artifact.get("transaction_match") is False
+        ],
+        "runtime_gate_checks": list(runtime_gate_checks),
+        "runtime_gate_must_revalidate": bool(runtime_gate_checks),
+        "readonly_artifact_projection_only": True,
+        "side_effects_performed": False,
+    }
+
+
+def _read_json_object_with_status(path: Path) -> tuple[dict[str, Any], str | None]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - review metadata must report malformed JSON conservatively.
+        return {}, "invalid_json"
+    if not isinstance(payload, dict):
+        return {}, "json_root_is_not_object"
+    return payload, None
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _approval_actions_for_step_actions(step_actions: list[str]) -> list[str]:

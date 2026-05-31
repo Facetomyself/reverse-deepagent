@@ -448,6 +448,102 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertFalse(payload["side_effect_policy"]["writes_workflow_record"])
             self.assertFalse(payload["side_effect_policy"]["writes_workflow_journal"])
 
+    def test_resume_workflow_scheduler_projects_runtime_gate_artifacts_without_claiming_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-runtime-gate-observed")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-runtime-gate-observed",
+                    step_actions=("preflight_backend_manifest_recovery", "apply_backend_manifest_recovery"),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-runtime-gate-observed",
+                )
+            ).execute().to_dict()
+
+            projection = payload["workflow_readiness_plan"]["runtime_gate_evidence_projection"]
+            artifacts = {item["artifact_key"]: item for item in projection["artifacts"]}
+            dependencies = payload["workflow_readiness_plan"]["step_dependency_contexts"]
+            self.assertEqual(projection["status"], "evidence_observed")
+            self.assertEqual(artifacts["transaction_journal"]["status"], "observed")
+            self.assertEqual(artifacts["rollback_checkpoint"]["status"], "observed")
+            self.assertEqual(artifacts["backend_manifest"]["status"], "observed")
+            self.assertEqual(artifacts["provider_lock_projection"]["status"], "missing")
+            self.assertTrue(artifacts["transaction_journal"]["transaction_match"])
+            self.assertTrue(artifacts["rollback_checkpoint"]["digest_sha256"])
+            self.assertTrue(artifacts["backend_manifest"]["digest_sha256"])
+            self.assertTrue(projection["runtime_gate_must_revalidate"])
+            self.assertTrue(projection["readonly_artifact_projection_only"])
+            self.assertFalse(projection["provider_contacted"])
+            self.assertFalse(projection["artifacts_written"])
+            self.assertIn("transaction_journal", dependencies[0]["runtime_gate_evidence"]["observed_artifact_keys"])
+            self.assertIn("rollback_checkpoint", dependencies[1]["runtime_gate_evidence"]["observed_artifact_keys"])
+            self.assertTrue(dependencies[1]["runtime_gate_evidence"]["runtime_gate_must_revalidate"])
+            self.assertFalse((root / "delivery-resume-workflow.json").exists())
+            self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
+
+    def test_resume_workflow_scheduler_projects_malformed_recovery_preflight_for_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-runtime-gate-malformed")
+            (root / "backend-artifact-manifest-recovery-preflight.json").write_text("{", encoding="utf-8")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-runtime-gate-malformed",
+                    step_actions=("apply_backend_manifest_recovery",),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-runtime-gate-malformed",
+                )
+            ).execute().to_dict()
+
+            projection = payload["workflow_readiness_plan"]["runtime_gate_evidence_projection"]
+            artifacts = {item["artifact_key"]: item for item in projection["artifacts"]}
+            dependency = payload["workflow_readiness_plan"]["step_dependency_contexts"][0]
+            self.assertEqual(projection["status"], "review_required")
+            self.assertEqual(projection["summary"]["malformed_count"], 1)
+            self.assertEqual(artifacts["recovery_preflight"]["status"], "malformed")
+            self.assertEqual(artifacts["recovery_preflight"]["load_error"], "invalid_json")
+            self.assertIn("recovery_preflight", dependency["runtime_gate_evidence"]["malformed_artifact_keys"])
+            self.assertEqual(payload["workflow_readiness_plan"]["dependency_summary"]["runtime_gate_evidence_malformed_step_count"], 1)
+
+    def test_resume_workflow_scheduler_projects_stale_provider_lock_without_contacting_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "delivery"
+            self._write_provider_lock(root, "tx-runtime-gate-stale")
+            lock_path = root / "delivery-distributed-transaction-lock.json"
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-runtime-gate-stale",
+                    step_actions=("renew_delivery_transaction_lock_provider",),
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="1",
+                )
+            ).execute().to_dict()
+
+            projection = payload["workflow_readiness_plan"]["runtime_gate_evidence_projection"]
+            artifacts = {item["artifact_key"]: item for item in projection["artifacts"]}
+            dependency = payload["workflow_readiness_plan"]["step_dependency_contexts"][0]
+            self.assertEqual(projection["status"], "review_required")
+            self.assertEqual(projection["summary"]["stale_count"], 1)
+            self.assertEqual(artifacts["provider_lock_projection"]["status"], "stale")
+            self.assertTrue(artifacts["provider_lock_projection"]["lease_stale"])
+            self.assertTrue(artifacts["provider_lock_projection"]["summary"]["fencing_token"])
+            self.assertNotEqual(artifacts["provider_lock_projection"]["summary"]["fencing_token"], "1")
+            self.assertIn("provider_lock_projection", dependency["runtime_gate_evidence"]["stale_artifact_keys"])
+            self.assertFalse(projection["provider_contacted"])
+            self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
+
     def test_resume_workflow_scheduler_dry_run_plans_lock_provider_steps_without_provider_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "delivery"
