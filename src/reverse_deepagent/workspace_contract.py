@@ -170,8 +170,8 @@ def default_subagent_roles() -> tuple[SubagentRoleContract, ...]:
         ),
         SubagentRoleContract(
             role="debugger",
-            responsibility="Owns CDP/debugger session evidence and paused-session continuation boundaries.",
-            current_status="planned-contract",
+            responsibility="Owns read-only debugger artifact review, paused-session continuation preflight summaries, callframe evidence, and debugger timeline decision boundaries.",
+            current_status="implemented",
             workspace_folders=("/workspace/debugger/",),
         ),
         SubagentRoleContract(
