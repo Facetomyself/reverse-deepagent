@@ -108,20 +108,25 @@ class RecordingObjectHandler(http.server.BaseHTTPRequestHandler):
 class RecordingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
     requests: list[dict[str, object]] = []
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
-        length = int(self.headers.get("Content-Length", "0"))
-        body = self.rfile.read(length)
+    def _record_request(self, body: bytes = b"") -> None:
         self.__class__.requests.append(
             {
+                "method": self.command,
                 "path": self.path,
                 "headers": dict(self.headers),
                 "body": body,
             }
         )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
         if self.path == "/repos/owner/repo/releases":
             response = json.dumps(
                 {
                     "id": 1,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/1/assets?asset_query=hidden",
                     "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/assets{{?name,label}}",
                 },
                 ensure_ascii=False,
@@ -136,6 +141,19 @@ class RecordingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/uploads/assets?name="):
             response = b'{"id":2}'
             self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path.startswith("/repos/owner/repo/releases/1/assets"):
+            response = b"[]"
+            self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(response)))
             self.end_headers()
@@ -190,8 +208,83 @@ class RecordingGitHubReleaseReuseHandler(http.server.BaseHTTPRequestHandler):
             response = json.dumps(
                 {
                     "id": 2,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/2/assets?asset_query=hidden",
                     "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/existing{{?name,label}}",
                 },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/repos/owner/repo/releases/2/assets"):
+            response = b"[]"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
+class RecordingGitHubReleaseAssetPreflightHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+    existing_assets: list[dict[str, object]] = []
+
+    def _record_request(self, body: bytes = b"") -> None:
+        self.__class__.requests.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
+        if self.path == "/repos/owner/repo/releases":
+            response = json.dumps(
+                {
+                    "id": 7,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/7/assets?asset_query=hidden",
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/duplicate{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/duplicate?name="):
+            response = b'{"id":8,"secret":"upload-response-not-recorded"}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path.startswith("/repos/owner/repo/releases/7/assets"):
+            response = json.dumps(
+                self.__class__.existing_assets,
                 ensure_ascii=False,
                 sort_keys=True,
             ).encode("utf-8")
@@ -1550,7 +1643,7 @@ class LocalDeliveryExecutorTests(TestCase):
             RecordingGitHubReleaseHandler.requests = []
             server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseHandler)
             server.timeout = 5
-            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()])
             thread.daemon = True
             thread.start()
             try:
@@ -1578,13 +1671,22 @@ class LocalDeliveryExecutorTests(TestCase):
 
             self.assertEqual(result.status, "external_delivered")
             self.assertTrue(result.external_delivery_performed)
-            self.assertEqual(len(RecordingGitHubReleaseHandler.requests), 2)
-            release_request, upload_request = RecordingGitHubReleaseHandler.requests
+            self.assertEqual(len(RecordingGitHubReleaseHandler.requests), 3)
+            release_request, assets_request, upload_request = RecordingGitHubReleaseHandler.requests
+            self.assertEqual(release_request["method"], "POST")
             self.assertEqual(release_request["path"], "/repos/owner/repo/releases")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(
+                assets_request["path"],
+                "/repos/owner/repo/releases/1/assets?asset_query=hidden",
+            )
+            self.assertEqual(upload_request["method"], "POST")
             self.assertEqual(upload_request["path"], "/uploads/assets?name=reverse-delivery.json")
             release_headers = {str(key).lower(): value for key, value in dict(release_request["headers"]).items()}
+            assets_headers = {str(key).lower(): value for key, value in dict(assets_request["headers"]).items()}
             upload_headers = {str(key).lower(): value for key, value in dict(upload_request["headers"]).items()}
             self.assertEqual(release_headers["authorization"], "Bearer ghp_local_secret")
+            self.assertEqual(assets_headers["authorization"], "Bearer ghp_local_secret")
             self.assertEqual(upload_headers["authorization"], "Bearer ghp_local_secret")
             release_body = json.loads(bytes(release_request["body"]).decode("utf-8"))
             self.assertEqual(release_body["tag_name"], "v0-test")
@@ -1597,12 +1699,20 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(upload_body["package"]["metadata"]["provider_id"], "github-release")
             metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
             self.assertEqual(metadata["release_api_url"], f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases")
+            self.assertEqual(metadata["assets_url"], f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/1/assets")
             self.assertEqual(metadata["upload_url"], f"http://127.0.0.1:{server.server_port}/uploads/assets")
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertFalse(metadata["allow_existing_asset"])
             self.assertTrue(metadata["release_request_attempted"])
+            self.assertTrue(metadata["asset_lookup_attempted"])
             self.assertTrue(metadata["upload_request_attempted"])
             self.assertTrue(metadata["release_succeeded"])
+            self.assertTrue(metadata["asset_lookup_succeeded"])
+            self.assertFalse(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 0)
             self.assertTrue(metadata["upload_succeeded"])
             self.assertEqual(metadata["release_status_code"], 201)
+            self.assertEqual(metadata["asset_lookup_status_code"], 200)
             self.assertEqual(metadata["upload_status_code"], 201)
             self.assertFalse(metadata["response_body_recorded"])
             self.assertFalse(metadata["response_headers_recorded"])
@@ -1610,6 +1720,7 @@ class LocalDeliveryExecutorTests(TestCase):
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("ghp_local_secret", serialized_result)
             self.assertNotIn("Authorization", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
 
     def test_github_release_external_delivery_apply_can_reuse_existing_release_when_explicit(self) -> None:
@@ -1623,7 +1734,7 @@ class LocalDeliveryExecutorTests(TestCase):
             server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseReuseHandler)
             server.timeout = 5
             thread = threading.Thread(
-                target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()]
+                target=lambda: [server.handle_request(), server.handle_request(), server.handle_request(), server.handle_request()]
             )
             thread.daemon = True
             thread.start()
@@ -1652,15 +1763,20 @@ class LocalDeliveryExecutorTests(TestCase):
 
             self.assertEqual(result.status, "external_delivered")
             self.assertTrue(result.external_delivery_performed)
-            self.assertEqual(len(RecordingGitHubReleaseReuseHandler.requests), 3)
-            create_request, lookup_request, upload_request = RecordingGitHubReleaseReuseHandler.requests
+            self.assertEqual(len(RecordingGitHubReleaseReuseHandler.requests), 4)
+            create_request, lookup_request, assets_request, upload_request = RecordingGitHubReleaseReuseHandler.requests
             self.assertEqual(create_request["method"], "POST")
             self.assertEqual(create_request["path"], "/repos/owner/repo/releases")
             self.assertEqual(lookup_request["method"], "GET")
             self.assertEqual(lookup_request["path"], "/repos/owner/repo/releases/tags/v0-existing")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(
+                assets_request["path"],
+                "/repos/owner/repo/releases/2/assets?asset_query=hidden",
+            )
             self.assertEqual(upload_request["method"], "POST")
             self.assertEqual(upload_request["path"], "/uploads/existing?name=reverse-delivery.json")
-            for request in (create_request, lookup_request, upload_request):
+            for request in (create_request, lookup_request, assets_request, upload_request):
                 headers = {str(key).lower(): value for key, value in dict(request["headers"]).items()}
                 self.assertEqual(headers["authorization"], "Bearer ghp_reuse_secret")
             metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
@@ -1676,6 +1792,14 @@ class LocalDeliveryExecutorTests(TestCase):
                 metadata["existing_release_api_url"],
                 f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/tags/v0-existing",
             )
+            self.assertEqual(metadata["assets_url"], f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/2/assets")
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertFalse(metadata["allow_existing_asset"])
+            self.assertTrue(metadata["asset_lookup_attempted"])
+            self.assertTrue(metadata["asset_lookup_succeeded"])
+            self.assertFalse(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 0)
+            self.assertEqual(metadata["asset_lookup_status_code"], 200)
             self.assertTrue(metadata["release_succeeded"])
             self.assertTrue(metadata["upload_succeeded"])
             self.assertEqual(metadata["upload_status_code"], 201)
@@ -1683,7 +1807,129 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertNotIn("ghp_reuse_secret", serialized_result)
             self.assertNotIn("body-not-recorded", serialized_result)
             self.assertNotIn("upload-response-not-recorded", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_github_release_external_delivery_blocks_existing_asset_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {"id": 7, "name": "reverse-delivery.json", "browser_download_url": "https://example.invalid/body-not-recorded"}
+            ]
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-conflict",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_conflict_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 2)
+            release_request, assets_request = RecordingGitHubReleaseAssetPreflightHandler.requests
+            self.assertEqual(release_request["method"], "POST")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertFalse(any(str(request["path"]).startswith("/uploads/duplicate") for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertFalse(metadata["allow_existing_asset"])
+            self.assertTrue(metadata["release_succeeded"])
+            self.assertTrue(metadata["asset_lookup_attempted"])
+            self.assertTrue(metadata["asset_lookup_succeeded"])
+            self.assertTrue(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 1)
+            self.assertEqual(metadata["asset_lookup_status_code"], 200)
+            self.assertFalse(metadata["upload_request_attempted"])
+            self.assertFalse(metadata["upload_succeeded"])
+            self.assertIn("github_release_asset_not_already_present", result.external_delivery_result.blocking_reasons)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_conflict_secret", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+
+    def test_github_release_external_delivery_can_attempt_upload_when_existing_asset_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {"id": 7, "name": "reverse-delivery.json", "browser_download_url": "https://example.invalid/body-not-recorded"}
+            ]
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-allowed",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_allowed_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "allow_existing_asset": True,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 3)
+            release_request, assets_request, upload_request = RecordingGitHubReleaseAssetPreflightHandler.requests
+            self.assertEqual(release_request["method"], "POST")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(upload_request["method"], "POST")
+            self.assertEqual(upload_request["path"], "/uploads/duplicate?name=reverse-delivery.json")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertTrue(metadata["allow_existing_asset"])
+            self.assertTrue(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 1)
+            self.assertTrue(metadata["upload_request_attempted"])
+            self.assertTrue(metadata["upload_succeeded"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_allowed_secret", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
 
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

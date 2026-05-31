@@ -307,6 +307,9 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(github_release["supports_external_delivery"])
         self.assertEqual(github_release["transport"], "github-release")
         self.assertTrue(github_release["metadata"]["supports_existing_release_reuse"])
+        self.assertTrue(github_release["metadata"]["supports_existing_asset_preflight"])
+        self.assertEqual(github_release["metadata"]["existing_asset_conflict_default"], "block")
+        self.assertFalse(github_release["metadata"]["supports_existing_asset_overwrite"])
         provider = by_provider["review-only"]
         self.assertEqual(provider["aliases"], ["noop", "manual-handoff"])
         self.assertFalse(provider["supports_external_delivery"])

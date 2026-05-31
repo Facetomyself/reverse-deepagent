@@ -787,6 +787,8 @@ class GitHubReleaseExternalDeliveryProvider:
     api_base_url: str = "https://api.github.com"
     timeout_seconds: float = 10.0
     reuse_existing_release: bool = False
+    check_existing_asset: bool = True
+    allow_existing_asset: bool = False
     provider_id: str = "github-release"
 
     def deliver(
@@ -816,6 +818,8 @@ class GitHubReleaseExternalDeliveryProvider:
         token_configured = bool(str(self.token or "").strip())
         api_scheme_supported = _http_scheme_supported(api_base_url)
         reuse_existing_release = bool(self.reuse_existing_release)
+        check_existing_asset = bool(self.check_existing_asset)
+        allow_existing_asset = bool(self.allow_existing_asset)
         checks = [
             {
                 "name": "local_delivery_package_has_no_errors",
@@ -859,16 +863,23 @@ class GitHubReleaseExternalDeliveryProvider:
         release_status_code: int | None = None
         upload_status_code: int | None = None
         existing_release_status_code: int | None = None
+        asset_lookup_status_code: int | None = None
         release_error: str | None = None
         existing_release_error: str | None = None
+        asset_lookup_error: str | None = None
         upload_error: str | None = None
         upload_url_redacted: str | None = None
+        assets_url_redacted: str | None = None
         release_request_attempted = False
         existing_release_lookup_attempted = False
+        asset_lookup_attempted = False
         upload_request_attempted = False
         release_created = False
         existing_release_lookup_succeeded = False
         existing_release_reused = False
+        asset_lookup_succeeded = False
+        existing_asset_found = False
+        existing_asset_count: int | None = None
         release_succeeded = False
         upload_succeeded = False
         if dry_run:
@@ -879,7 +890,7 @@ class GitHubReleaseExternalDeliveryProvider:
             blocking_reasons = preflight_blocking_reasons
         else:
             release_request_attempted = True
-            release_status_code, upload_url, release_error = self._create_release(
+            release_status_code, upload_url, assets_url, release_error = self._create_release(
                 release_api_url,
                 tag_name=tag_name,
                 release_name=release_name,
@@ -888,9 +899,12 @@ class GitHubReleaseExternalDeliveryProvider:
             release_succeeded = release_created
             if not release_created and reuse_existing_release:
                 existing_release_lookup_attempted = True
-                existing_release_status_code, existing_upload_url, existing_release_error = self._get_release_by_tag(
-                    existing_release_api_url
-                )
+                (
+                    existing_release_status_code,
+                    existing_upload_url,
+                    existing_assets_url,
+                    existing_release_error,
+                ) = self._get_release_by_tag(existing_release_api_url)
                 existing_release_lookup_succeeded = bool(
                     existing_release_status_code is not None
                     and 200 <= existing_release_status_code < 300
@@ -898,8 +912,10 @@ class GitHubReleaseExternalDeliveryProvider:
                 )
                 if existing_release_lookup_succeeded and existing_upload_url:
                     upload_url = existing_upload_url
+                    assets_url = existing_assets_url
                     existing_release_reused = True
                     release_succeeded = True
+            assets_url_redacted = _redact_url_for_metadata(assets_url or "")
             checks.append(
                 {
                     "name": "github_release_available",
@@ -919,23 +935,61 @@ class GitHubReleaseExternalDeliveryProvider:
                     },
                 }
             )
-            if release_succeeded and upload_url:
-                upload_request_attempted = True
-                upload_target = _github_upload_url_with_asset_name(upload_url, asset_name)
-                upload_url_redacted = _redact_url_for_metadata(upload_target)
-                upload_status_code, upload_error = self._upload_asset(upload_target, request_body)
-                upload_succeeded = bool(upload_status_code is not None and 200 <= upload_status_code < 300)
+            asset_check_passed = True
+            if release_succeeded and check_existing_asset:
+                if assets_url:
+                    asset_lookup_attempted = True
+                    (
+                        asset_lookup_status_code,
+                        existing_asset_found_value,
+                        existing_asset_count,
+                        asset_lookup_error,
+                    ) = self._asset_exists(assets_url, asset_name)
+                    asset_lookup_succeeded = bool(
+                        asset_lookup_status_code is not None
+                        and 200 <= asset_lookup_status_code < 300
+                        and existing_asset_found_value is not None
+                    )
+                    existing_asset_found = bool(existing_asset_found_value)
+                    asset_check_passed = asset_lookup_succeeded and (allow_existing_asset or not existing_asset_found)
+                else:
+                    asset_check_passed = False
+                    asset_lookup_error = "missing_assets_url"
                 checks.append(
                     {
-                        "name": "github_release_asset_upload_successful",
-                        "passed": upload_succeeded,
+                        "name": "github_release_asset_not_already_present",
+                        "passed": asset_check_passed,
                         "details": {
-                            "status_code": upload_status_code,
-                            "request_error": upload_error,
-                            "target_url": upload_url_redacted,
+                            "asset_name": asset_name,
+                            "asset_lookup_attempted": asset_lookup_attempted,
+                            "asset_lookup_status_code": asset_lookup_status_code,
+                            "asset_lookup_error": asset_lookup_error,
+                            "asset_lookup_url": assets_url_redacted,
+                            "asset_lookup_succeeded": asset_lookup_succeeded,
+                            "existing_asset_found": existing_asset_found,
+                            "existing_asset_count": existing_asset_count,
+                            "allow_existing_asset": allow_existing_asset,
                         },
                     }
                 )
+            if release_succeeded and upload_url:
+                if asset_check_passed:
+                    upload_request_attempted = True
+                    upload_target = _github_upload_url_with_asset_name(upload_url, asset_name)
+                    upload_url_redacted = _redact_url_for_metadata(upload_target)
+                    upload_status_code, upload_error = self._upload_asset(upload_target, request_body)
+                    upload_succeeded = bool(upload_status_code is not None and 200 <= upload_status_code < 300)
+                    checks.append(
+                        {
+                            "name": "github_release_asset_upload_successful",
+                            "passed": upload_succeeded,
+                            "details": {
+                                "status_code": upload_status_code,
+                                "request_error": upload_error,
+                                "target_url": upload_url_redacted,
+                            },
+                        }
+                    )
             blocking_reasons = [check["name"] for check in checks if not check["passed"]]
             status = "delivered" if upload_succeeded else "blocked"
         return ExternalDeliveryResult(
@@ -967,6 +1021,7 @@ class GitHubReleaseExternalDeliveryProvider:
                 "asset_name": asset_name,
                 "release_api_url": redacted_release_api_url,
                 "existing_release_api_url": redacted_existing_release_api_url,
+                "assets_url": assets_url_redacted,
                 "upload_url": upload_url_redacted,
                 "api_query_redacted": _url_has_query(api_base_url),
                 "api_credentials_redacted": _url_has_credentials(api_base_url),
@@ -974,16 +1029,23 @@ class GitHubReleaseExternalDeliveryProvider:
                 "request_body_digest_sha256": request_body_digest,
                 "request_body_bytes": len(request_body),
                 "reuse_existing_release": reuse_existing_release,
+                "check_existing_asset": check_existing_asset,
+                "allow_existing_asset": allow_existing_asset,
                 "release_request_attempted": release_request_attempted,
                 "existing_release_lookup_attempted": existing_release_lookup_attempted,
+                "asset_lookup_attempted": asset_lookup_attempted,
                 "upload_request_attempted": upload_request_attempted,
                 "release_created": release_created,
                 "existing_release_lookup_succeeded": existing_release_lookup_succeeded,
                 "existing_release_reused": existing_release_reused,
+                "asset_lookup_succeeded": asset_lookup_succeeded,
+                "existing_asset_found": existing_asset_found,
+                "existing_asset_count": existing_asset_count,
                 "release_succeeded": release_succeeded,
                 "upload_succeeded": upload_succeeded,
                 "release_status_code": release_status_code,
                 "existing_release_status_code": existing_release_status_code,
+                "asset_lookup_status_code": asset_lookup_status_code,
                 "upload_status_code": upload_status_code,
                 "response_body_recorded": False,
                 "response_headers_recorded": False,
@@ -995,9 +1057,10 @@ class GitHubReleaseExternalDeliveryProvider:
                 "limitations": [
                     "github_release_json_asset_upload_baseline",
                     "existing_release_reuse_requires_explicit_config",
+                    "existing_asset_conflict_blocks_upload_by_default",
                     "does_not_record_response_body_or_headers",
                     "does_not_retry_github_requests",
-                    "does_not_detect_delete_or_overwrite_existing_release_assets",
+                    "does_not_delete_or_overwrite_existing_release_assets",
                     "full_cross_run_transaction_state_machine_not_implemented",
                 ],
             },
@@ -1014,7 +1077,9 @@ class GitHubReleaseExternalDeliveryProvider:
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def _create_release(self, url: str, *, tag_name: str, release_name: str) -> tuple[int | None, str | None, str | None]:
+    def _create_release(
+        self, url: str, *, tag_name: str, release_name: str
+    ) -> tuple[int | None, str | None, str | None, str | None]:
         body = json.dumps(
             {
                 "tag_name": tag_name,
@@ -1030,24 +1095,38 @@ class GitHubReleaseExternalDeliveryProvider:
         try:
             with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
                 response_body = response.read()
-                upload_url = _github_upload_url_from_response_body(response_body)
-                return int(response.status), upload_url, None
+                upload_url, assets_url = _github_release_urls_from_response_body(response_body)
+                return int(response.status), upload_url, assets_url, None
         except urllib.error.HTTPError as exc:
-            return int(exc.code), None, None
+            return int(exc.code), None, None, None
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, None, exc.__class__.__name__
+            return None, None, None, exc.__class__.__name__
 
-    def _get_release_by_tag(self, url: str) -> tuple[int | None, str | None, str | None]:
+    def _get_release_by_tag(self, url: str) -> tuple[int | None, str | None, str | None, str | None]:
         request = urllib.request.Request(url, headers=self._request_headers(), method="GET")
         try:
             with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
                 response_body = response.read()
-                upload_url = _github_upload_url_from_response_body(response_body)
-                return int(response.status), upload_url, None
+                upload_url, assets_url = _github_release_urls_from_response_body(response_body)
+                return int(response.status), upload_url, assets_url, None
         except urllib.error.HTTPError as exc:
-            return int(exc.code), None, None
+            return int(exc.code), None, None, None
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, None, exc.__class__.__name__
+            return None, None, None, exc.__class__.__name__
+
+    def _asset_exists(self, url: str, asset_name: str) -> tuple[int | None, bool | None, int | None, str | None]:
+        request = urllib.request.Request(url, headers=self._request_headers(), method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
+                response_body = response.read()
+                exists, count = _github_asset_exists_from_response_body(response_body, asset_name)
+                if exists is None:
+                    return int(response.status), None, count, "invalid_github_assets_response"
+                return int(response.status), exists, count, None
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), None, None, None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return None, None, None, exc.__class__.__name__
 
     def _upload_asset(self, url: str, body: bytes) -> tuple[int | None, str | None]:
         request = urllib.request.Request(
@@ -3379,12 +3458,37 @@ def _safe_github_asset_name(value: str) -> str:
 
 
 def _github_upload_url_from_response_body(body: bytes) -> str | None:
+    upload_url, _assets_url = _github_release_urls_from_response_body(body)
+    return upload_url
+
+
+def _github_release_urls_from_response_body(body: bytes) -> tuple[str | None, str | None]:
     try:
         payload = json.loads(body.decode("utf-8") or "{}")
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return None
+        return None, None
     upload_url = payload.get("upload_url") if isinstance(payload, dict) else None
-    return str(upload_url).strip() if upload_url else None
+    assets_url = payload.get("assets_url") if isinstance(payload, dict) else None
+    return (
+        str(upload_url).strip() if upload_url else None,
+        str(assets_url).strip() if assets_url else None,
+    )
+
+
+def _github_asset_exists_from_response_body(body: bytes, asset_name: str) -> tuple[bool | None, int | None]:
+    try:
+        payload = json.loads(body.decode("utf-8") or "[]")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, None
+    if not isinstance(payload, list):
+        return None, None
+    normalized_asset_name = str(asset_name or "").strip()
+    names = [
+        str(item.get("name", "")).strip()
+        for item in payload
+        if isinstance(item, dict)
+    ]
+    return normalized_asset_name in names, len(names)
 
 
 def _github_upload_url_with_asset_name(upload_url: str, asset_name: str) -> str:

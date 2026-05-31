@@ -133,6 +133,9 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertFalse(metadata["review_only"])
         self.assertEqual(metadata["transport"], "github-release")
         self.assertTrue(metadata["metadata"]["supports_existing_release_reuse"])
+        self.assertTrue(metadata["metadata"]["supports_existing_asset_preflight"])
+        self.assertEqual(metadata["metadata"]["existing_asset_conflict_default"], "block")
+        self.assertFalse(metadata["metadata"]["supports_existing_asset_overwrite"])
         provider = registry.create(
             "github-release-assets",
             repository="owner/repo",
