@@ -10,6 +10,7 @@ from reverse_deepagent.delivery import (
     ExternalDeliveryProviderRegistration,
     ExternalDeliveryProviderRegistry,
     ExternalDeliveryResult,
+    LocalArchiveExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
     build_default_external_delivery_provider_registry,
 )
@@ -71,11 +72,24 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertEqual(registry.resolve("review-only").provider_id, "review-only")
         self.assertEqual(registry.resolve("manual-handoff").provider_id, "review-only")
         self.assertIn("noop", registry.provider_ids())
-        metadata = registry.list_metadata()[0]
-        self.assertEqual(metadata["provider_id"], "review-only")
+        by_provider = {metadata["provider_id"]: metadata for metadata in registry.list_metadata()}
+        metadata = by_provider["review-only"]
         self.assertFalse(metadata["supports_external_delivery"])
         self.assertTrue(metadata["review_only"])
         self.assertIsInstance(registry.create("noop"), ReviewOnlyExternalDeliveryProvider)
+
+    def test_default_registry_exposes_local_archive_provider_and_aliases(self) -> None:
+        registry = build_default_external_delivery_provider_registry(load_entry_points=False)
+
+        self.assertEqual(registry.resolve("filesystem-release").provider_id, "local-archive")
+        self.assertIn("archive", registry.provider_ids())
+        by_provider = {metadata["provider_id"]: metadata for metadata in registry.list_metadata()}
+        metadata = by_provider["local-archive"]
+        self.assertTrue(metadata["supports_external_delivery"])
+        self.assertFalse(metadata["review_only"])
+        self.assertEqual(metadata["transport"], "filesystem")
+        provider = registry.create("filesystem-release", archive_root="/tmp/reverse-agent-archive")
+        self.assertIsInstance(provider, LocalArchiveExternalDeliveryProvider)
 
     def test_registry_rejects_duplicate_keys(self) -> None:
         registry = ExternalDeliveryProviderRegistry()

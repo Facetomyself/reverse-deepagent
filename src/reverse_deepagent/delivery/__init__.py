@@ -17,6 +17,7 @@ from .executors import (
     ExternalDeliveryPackage,
     ExternalDeliveryProvider,
     ExternalDeliveryResult,
+    LocalArchiveExternalDeliveryProvider,
     LocalDeliveryExecutor,
     ReviewOnlyExternalDeliveryProvider,
 )
@@ -27,6 +28,7 @@ from .registry import (
     ExternalDeliveryProviderRegistration,
     ExternalDeliveryProviderRegistry,
     build_default_external_delivery_provider_registry,
+    local_archive_external_delivery_provider_registration,
     review_only_external_delivery_provider_registration,
 )
 
@@ -37,6 +39,7 @@ __all__ = [
     "ExternalDeliveryProviderRegistration",
     "ExternalDeliveryProviderRegistry",
     "build_default_external_delivery_provider_registry",
+    "local_archive_external_delivery_provider_registration",
     "review_only_external_delivery_provider_registration",
     "BackendManifestInPlaceMutation",
     "BackendManifestInPlacePreflight",
@@ -54,6 +57,7 @@ __all__ = [
     "ExternalDeliveryPackage",
     "ExternalDeliveryProvider",
     "ExternalDeliveryResult",
+    "LocalArchiveExternalDeliveryProvider",
     "LocalDeliveryExecutor",
     "ReviewOnlyExternalDeliveryProvider",
 ]

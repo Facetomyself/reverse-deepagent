@@ -316,6 +316,42 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(json.loads(journal_path.read_text(encoding="utf-8"))["external_delivery_idempotency_key"], "tool-delivery-key")
             self.assertTrue(external_result_path.exists())
 
+    def test_local_delivery_tool_can_pass_local_archive_provider_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            archive_root = root / "release-archive"
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps(
+                    [
+                        {
+                            "source_path": str(source),
+                            "artifact_key": "workspace_final",
+                            "destination_name": "final-result.json",
+                        }
+                    ]
+                ),
+                transaction_id="tx-tool-local-archive",
+                mode="apply",
+                request_external_delivery=True,
+                external_delivery_provider_id="local-archive",
+                external_delivery_provider_config_json=json.dumps({"archive_root": str(archive_root)}),
+            )
+
+            release_dir = archive_root / "tx-tool-local-archive"
+            archived = release_dir / "final-result.json"
+            self.assertEqual(result["status"], "external_delivered")
+            self.assertTrue(result["external_delivery_performed"])
+            self.assertEqual(result["external_delivery_result"]["provider_id"], "local-archive")
+            self.assertEqual(result["external_delivery_result"]["metadata"]["archive_root"], str(archive_root.resolve()))
+            self.assertTrue(archived.exists())
+            self.assertTrue((release_dir / "local-archive-manifest.json").exists())
+            self.assertTrue((release_dir / "local-archive-checksums.json").exists())
+
 
 class DeliverySubagentToolTests(TestCase):
     def test_delivery_subagent_exposes_rebuild_and_local_delivery_tools(self) -> None:

@@ -77,6 +77,7 @@ class DeliveryExecutorConfig:
     external_delivery_provider_id: str = "review-only"
     external_delivery_provider: ExternalDeliveryProvider | None = None
     external_delivery_provider_registry: Any | None = None
+    external_delivery_provider_config: dict[str, Any] = field(default_factory=dict)
     external_delivery_idempotency_key: str | None = None
     allow_duplicate_external_delivery: bool = False
     external_delivery_duplicate_guard_name: str = "external-delivery-duplicate-guard.json"
@@ -265,6 +266,182 @@ class ReviewOnlyExternalDeliveryProvider:
                 ],
             },
         )
+
+
+@dataclass(frozen=True)
+class LocalArchiveExternalDeliveryProvider:
+    """Filesystem-backed external delivery provider used for controlled releases.
+
+    The provider treats the local archive directory as the external handoff
+    boundary.  Dry-run remains side-effect free; apply mode copies already
+    delivered local artifacts into a deterministic transaction release
+    directory and writes a manifest plus checksum file there.
+    """
+
+    archive_root: str | Path | None = None
+    provider_id: str = "local-archive"
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        package_digest = _json_payload_sha256(package.to_dict())
+        archive_root = self._resolved_archive_root(package)
+        release_dir = archive_root / _safe_archive_component(package.transaction_id)
+        manifest_path = release_dir / "local-archive-manifest.json"
+        checksums_path = release_dir / "local-archive-checksums.json"
+        source_items = package.planned_artifacts if dry_run else package.delivered_artifacts
+        source_preflight = self._preflight_sources(source_items, dry_run=dry_run)
+        local_ready = not package.local_errors
+        has_artifacts = bool(source_items)
+        checks = [
+            {
+                "name": "local_delivery_package_has_no_errors",
+                "passed": local_ready,
+                "details": {"local_errors": package.local_errors},
+            },
+            {
+                "name": "local_archive_has_artifacts_to_archive",
+                "passed": has_artifacts,
+                "details": {"artifact_count": len(source_items), "dry_run": dry_run},
+            },
+            {
+                "name": "local_archive_sources_available",
+                "passed": source_preflight["ok"],
+                "details": source_preflight,
+            },
+        ]
+        blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        archived_artifacts: list[dict[str, Any]] = []
+        if dry_run:
+            status = "planned" if not blocking_reasons else "blocked"
+            external_delivery_performed = False
+        elif blocking_reasons:
+            status = "blocked"
+            external_delivery_performed = False
+        else:
+            release_dir.mkdir(parents=True, exist_ok=True)
+            for item in package.delivered_artifacts:
+                archived_artifacts.append(self._copy_archive_artifact(item, release_dir))
+            checksums_payload = {
+                "transaction_id": package.transaction_id,
+                "provider_id": self.provider_id,
+                "algorithm": "sha256",
+                "created_at": created_at,
+                "artifacts": [
+                    {
+                        "artifact_key": item.get("artifact_key"),
+                        "archive_path": item.get("archive_path"),
+                        "digest_sha256": item.get("digest_sha256"),
+                    }
+                    for item in archived_artifacts
+                ],
+            }
+            manifest_payload = {
+                "transaction_id": package.transaction_id,
+                "provider_id": self.provider_id,
+                "status": "delivered",
+                "created_at": created_at,
+                "dry_run": False,
+                "archive_root": str(archive_root),
+                "archive_release_dir": str(release_dir),
+                "package_digest_sha256": package_digest,
+                "external_delivery_result_path": result_path,
+                "receipt_path": package.receipt_path,
+                "transaction_journal_path": package.transaction_journal_path,
+                "checksums_path": str(checksums_path),
+                "archived_artifacts": archived_artifacts,
+                "package_metadata": package.metadata,
+            }
+            _write_json(checksums_path, checksums_payload)
+            _write_json(manifest_path, manifest_payload)
+            status = "delivered"
+            external_delivery_performed = True
+        return ExternalDeliveryResult(
+            transaction_id=package.transaction_id,
+            status=status,
+            provider_id=self.provider_id,
+            result_path=result_path,
+            delivery_root=package.delivery_root,
+            dry_run=dry_run,
+            external_delivery_requested=True,
+            external_delivery_performed=external_delivery_performed,
+            package_digest_sha256=package_digest,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=(
+                ["review_local_archive_external_delivery_result"]
+                if external_delivery_performed
+                else ["apply_local_delivery_before_local_archive_publish"]
+                if dry_run and not blocking_reasons
+                else ["fix_local_archive_external_delivery_blockers"]
+            ),
+            created_at=created_at,
+            metadata={
+                **package.metadata,
+                "scope": "local-archive-external-delivery-provider-baseline",
+                "archive_root": str(archive_root),
+                "archive_release_dir": str(release_dir),
+                "archive_manifest_path": str(manifest_path),
+                "archive_checksums_path": str(checksums_path),
+                "archived_artifacts": archived_artifacts,
+                "archived_artifact_count": len(archived_artifacts),
+                "automatic_delivery": False,
+                "publishes_externally": True,
+                "transport": "filesystem",
+                "limitations": [
+                    "filesystem_archive_provider_only",
+                    "does_not_upload_to_network_service",
+                    "does_not_create_github_release",
+                    "full_cross_run_transaction_state_machine_not_implemented",
+                ],
+            },
+        )
+
+    def _resolved_archive_root(self, package: ExternalDeliveryPackage) -> Path:
+        root = Path(self.archive_root) if self.archive_root is not None else Path(package.delivery_root) / "local-archive"
+        return root.expanduser().resolve()
+
+    def _preflight_sources(self, items: list[dict[str, Any]], *, dry_run: bool) -> dict[str, Any]:
+        missing: list[str] = []
+        non_files: list[str] = []
+        for item in items:
+            path_value = item.get("destination_path")
+            if not path_value:
+                missing.append("<missing-destination-path>")
+                continue
+            path = Path(str(path_value)).expanduser()
+            if dry_run:
+                continue
+            if not path.exists():
+                missing.append(str(path))
+            elif not path.is_file():
+                non_files.append(str(path))
+        return {
+            "ok": not missing and not non_files,
+            "missing_paths": missing,
+            "non_file_paths": non_files,
+            "dry_run": dry_run,
+        }
+
+    def _copy_archive_artifact(self, item: dict[str, Any], release_dir: Path) -> dict[str, Any]:
+        source_path = Path(str(item["destination_path"])).expanduser().resolve()
+        destination_name = _safe_archive_component(source_path.name)
+        archive_path = release_dir / destination_name
+        shutil.copy2(source_path, archive_path)
+        digest = _file_sha256(archive_path)
+        return {
+            "artifact_key": item.get("artifact_key"),
+            "source_delivery_path": str(source_path),
+            "archive_path": str(archive_path),
+            "size_bytes": archive_path.stat().st_size,
+            "digest_sha256": digest,
+            "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+        }
 
 
 @dataclass(frozen=True)
@@ -1220,7 +1397,10 @@ class LocalDeliveryExecutor:
                 from reverse_deepagent.delivery.registry import build_default_external_delivery_provider_registry
 
                 registry = build_default_external_delivery_provider_registry()
-            provider = registry.create(self.config.external_delivery_provider_id)
+            provider = registry.create(
+                self.config.external_delivery_provider_id,
+                **self.config.external_delivery_provider_config,
+            )
         package = ExternalDeliveryPackage(
             transaction_id=self.config.transaction_id,
             status=status,
@@ -2381,6 +2561,15 @@ def _resolve_record_path(value: Any, base_dir: Path) -> Path | None:
     if not path.is_absolute():
         path = base_dir / path
     return path.resolve()
+
+
+def _safe_archive_component(value: Any) -> str:
+    raw = str(value).replace("\\", "/").split("/")[-1].strip()
+    safe = "".join(character if character.isalnum() or character in {"-", "_", "."} else "-" for character in raw)
+    safe = safe.strip(".")
+    if not safe or safe in {".", ".."}:
+        raise ValueError(f"Invalid archive path component: {value!r}")
+    return safe
 
 
 def _journal_bool(journal: dict[str, Any], key: str, default: bool) -> bool:

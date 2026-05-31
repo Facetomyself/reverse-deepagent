@@ -1039,6 +1039,86 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["external_delivery_performed"])
             self.assertTrue(external_result["external_delivery_performed"])
 
+    def test_local_archive_external_delivery_dry_run_is_side_effect_free(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            archive_root = root / "archive"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-local-archive-dry-run",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    request_external_delivery=True,
+                    external_delivery_provider_id="local-archive",
+                    external_delivery_provider_config={"archive_root": str(archive_root)},
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "planned")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.external_delivery_result)
+            self.assertEqual(result.external_delivery_result.status, "planned")
+            self.assertEqual(result.external_delivery_result.provider_id, "local-archive")
+            self.assertFalse(delivery_root.exists())
+            self.assertFalse(archive_root.exists())
+            self.assertFalse(result.external_delivery_result.metadata["archived_artifacts"])
+
+    def test_local_archive_external_delivery_apply_copies_delivered_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            archive_root = root / "archive"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-local-archive-apply",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider_id="filesystem-release",
+                    external_delivery_provider_config={"archive_root": str(archive_root)},
+                )
+            ).execute(
+                [
+                    DeliveryArtifact(
+                        source_path=source,
+                        artifact_key="workspace_final",
+                        destination_name="final-result.json",
+                    )
+                ]
+            )
+
+            release_dir = archive_root / "tx-local-archive-apply"
+            archived = release_dir / "final-result.json"
+            manifest_path = release_dir / "local-archive-manifest.json"
+            checksums_path = release_dir / "local-archive-checksums.json"
+            external_result_path = delivery_root / "external-delivery-result.json"
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            external_result = json.loads(external_result_path.read_text(encoding="utf-8"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            checksums = json.loads(checksums_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertTrue(result.delivery_allowed)
+            self.assertTrue(archived.exists())
+            self.assertEqual(archived.read_text(encoding="utf-8"), source.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["provider_id"], "local-archive")
+            self.assertEqual(manifest["archive_release_dir"], str(release_dir.resolve()))
+            self.assertEqual(checksums["artifacts"][0]["digest_sha256"], _sha256_file(archived))
+            self.assertEqual(external_result["metadata"]["archive_manifest_path"], str(manifest_path.resolve()))
+            self.assertTrue(external_result["external_delivery_performed"])
+            self.assertTrue(journal["external_delivery_performed"])
+            self.assertEqual(Path(journal["external_delivery_result_path"]).resolve(), external_result_path.resolve())
+
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

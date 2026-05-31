@@ -261,14 +261,19 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(payload["port_before"]["skipped"])
         self.assertTrue(payload["port_after_launch"]["skipped"])
         self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.external_delivery_providers")
-        self.assertEqual(matrix["summary"]["provider_count"], 1)
+        self.assertEqual(matrix["summary"]["provider_count"], 2)
         self.assertEqual(matrix["summary"]["review_only_count"], 1)
-        self.assertEqual(matrix["summary"]["external_delivery_capable_count"], 0)
+        self.assertEqual(matrix["summary"]["external_delivery_capable_count"], 1)
         self.assertIn("manual-handoff", matrix["provider_ids"])
-        provider = matrix["providers"][0]
-        self.assertEqual(provider["provider_id"], "review-only")
+        self.assertIn("filesystem-release", matrix["provider_ids"])
+        by_provider = {provider["provider_id"]: provider for provider in matrix["providers"]}
+        provider = by_provider["review-only"]
         self.assertEqual(provider["aliases"], ["noop", "manual-handoff"])
         self.assertFalse(provider["supports_external_delivery"])
+        local_archive = by_provider["local-archive"]
+        self.assertEqual(local_archive["aliases"], ["filesystem-release", "archive"])
+        self.assertTrue(local_archive["supports_external_delivery"])
+        self.assertEqual(local_archive["transport"], "filesystem")
         self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
         self.assertFalse(matrix["side_effect_policy"]["external_delivery_performed"])
 

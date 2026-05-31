@@ -5,7 +5,11 @@ from dataclasses import dataclass, field
 from importlib import metadata as importlib_metadata
 from typing import Any, Callable
 
-from reverse_deepagent.delivery.executors import ExternalDeliveryProvider, ReviewOnlyExternalDeliveryProvider
+from reverse_deepagent.delivery.executors import (
+    ExternalDeliveryProvider,
+    LocalArchiveExternalDeliveryProvider,
+    ReviewOnlyExternalDeliveryProvider,
+)
 
 ExternalDeliveryProviderFactory = Callable[..., ExternalDeliveryProvider]
 EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP = "reverse_deepagent.external_delivery_providers"
@@ -151,8 +155,32 @@ def review_only_external_delivery_provider_registration() -> ExternalDeliveryPro
     )
 
 
+def local_archive_external_delivery_provider_registration() -> ExternalDeliveryProviderRegistration:
+    return ExternalDeliveryProviderRegistration(
+        provider_id="local-archive",
+        aliases=("filesystem-release", "archive"),
+        capabilities=ExternalDeliveryProviderCapabilities(
+            provider_id="local-archive",
+            display_name="Local archive external delivery",
+            transport="filesystem",
+            supports_external_delivery=True,
+            review_only=False,
+            metadata={
+                "side_effect_free": False,
+                "dry_run_side_effect_free": True,
+                "writes_external_delivery_result": True,
+                "publishes_externally": True,
+                "external_boundary": "local-filesystem-archive",
+                "network_required": False,
+            },
+        ),
+        factory=lambda **kwargs: LocalArchiveExternalDeliveryProvider(**kwargs),
+    )
+
+
 def build_default_external_delivery_provider_registry(*, load_entry_points: bool = True) -> ExternalDeliveryProviderRegistry:
     registry = ExternalDeliveryProviderRegistry()
+    registry.register(local_archive_external_delivery_provider_registration())
     registry.register(review_only_external_delivery_provider_registration())
     if load_entry_points:
         registry.load_entry_points()
