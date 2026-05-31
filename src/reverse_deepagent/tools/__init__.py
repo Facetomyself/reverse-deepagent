@@ -5,6 +5,7 @@ from .browser_tools import (
     make_ensure_browser_session_tool,
 )
 from .debugger_tools import make_review_debugger_artifacts_tool
+from .hook_tools import make_review_hook_artifacts_tool
 from .delivery_tools import make_local_delivery_executor_tool
 from .protection_tools import make_apply_minimal_protection_tool
 from .rebuild_tools import make_build_rebuild_delivery_tool
@@ -19,6 +20,7 @@ __all__ = [
     "make_browser_provider_matrix_tool",
     "make_describe_browser_provider_tool",
     "make_review_debugger_artifacts_tool",
+    "make_review_hook_artifacts_tool",
     "make_ensure_browser_session_tool",
     "make_export_reverse_artifacts_tool",
     "make_evaluate_review_gate_tool",

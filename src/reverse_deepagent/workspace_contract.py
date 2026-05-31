@@ -176,8 +176,8 @@ def default_subagent_roles() -> tuple[SubagentRoleContract, ...]:
         ),
         SubagentRoleContract(
             role="hook",
-            responsibility="Owns runtime hook installation/capture contracts for global functions, module exports, and explicit hook timelines.",
-            current_status="planned-contract",
+            responsibility="Owns read-only hook artifact review, function/module hook inventory summaries, hook timeline capture readiness, and source-logpoint audit boundaries.",
+            current_status="implemented",
             workspace_folders=("/workspace/hooks/",),
         ),
         SubagentRoleContract(
