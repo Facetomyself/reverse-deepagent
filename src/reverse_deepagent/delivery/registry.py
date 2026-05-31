@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from reverse_deepagent.delivery.executors import (
     ExternalDeliveryProvider,
+    GitHubReleaseExternalDeliveryProvider,
     LocalArchiveExternalDeliveryProvider,
     PresignedObjectExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
@@ -236,8 +237,35 @@ def webhook_external_delivery_provider_registration() -> ExternalDeliveryProvide
     )
 
 
+def github_release_external_delivery_provider_registration() -> ExternalDeliveryProviderRegistration:
+    return ExternalDeliveryProviderRegistration(
+        provider_id="github-release",
+        aliases=("gh-release", "github-release-assets"),
+        capabilities=ExternalDeliveryProviderCapabilities(
+            provider_id="github-release",
+            display_name="GitHub Release asset external delivery",
+            transport="github-release",
+            supports_external_delivery=True,
+            review_only=False,
+            metadata={
+                "side_effect_free": False,
+                "dry_run_side_effect_free": True,
+                "writes_external_delivery_result": True,
+                "publishes_externally": True,
+                "external_boundary": "github-release-asset",
+                "sends_http_post": True,
+                "records_response_body": False,
+                "records_response_headers": False,
+                "github_sdk_required": False,
+            },
+        ),
+        factory=lambda **kwargs: GitHubReleaseExternalDeliveryProvider(**kwargs),
+    )
+
+
 def build_default_external_delivery_provider_registry(*, load_entry_points: bool = True) -> ExternalDeliveryProviderRegistry:
     registry = ExternalDeliveryProviderRegistry()
+    registry.register(github_release_external_delivery_provider_registration())
     registry.register(local_archive_external_delivery_provider_registration())
     registry.register(presigned_object_external_delivery_provider_registration())
     registry.register(review_only_external_delivery_provider_registration())

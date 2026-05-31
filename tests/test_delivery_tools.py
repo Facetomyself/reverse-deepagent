@@ -386,6 +386,47 @@ class DeliveryToolTests(TestCase):
             self.assertNotIn("Token hidden", serialized_result)
             self.assertFalse((root / "delivery").exists())
 
+    def test_local_delivery_tool_can_plan_github_release_provider_config_without_exporting_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-github-release-plan",
+                request_external_delivery=True,
+                external_delivery_provider_id="gh-release",
+                external_delivery_provider_config_json=json.dumps(
+                    {
+                        "repository": "owner/repo",
+                        "tag_name": "v0-test",
+                        "asset_name": "reverse-delivery.json",
+                        "token": "ghp_tool_secret",
+                        "api_base_url": "https://user:pass@api.github.invalid?api_token=hidden",
+                    }
+                ),
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["external_delivery_performed"])
+            self.assertEqual(result["external_delivery_result"]["provider_id"], "github-release")
+            metadata = result["external_delivery_result"]["metadata"]
+            self.assertEqual(metadata["repository"], "owner/repo")
+            self.assertEqual(metadata["tag_name"], "v0-test")
+            self.assertEqual(metadata["asset_name"], "reverse-delivery.json")
+            self.assertEqual(metadata["release_api_url"], "https://api.github.invalid")
+            self.assertTrue(metadata["api_query_redacted"])
+            self.assertTrue(metadata["api_credentials_redacted"])
+            self.assertFalse(metadata["release_request_attempted"])
+            serialized_result = json.dumps(result, ensure_ascii=False)
+            self.assertNotIn("ghp_tool_secret", serialized_result)
+            self.assertNotIn("api_token=hidden", serialized_result)
+            self.assertNotIn("user:pass", serialized_result)
+            self.assertFalse((root / "delivery").exists())
+
 
 class DeliverySubagentToolTests(TestCase):
     def test_delivery_subagent_exposes_local_delivery_tool_only(self) -> None:

@@ -105,6 +105,49 @@ class RecordingObjectHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
+class RecordingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self.__class__.requests.append(
+            {
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+        if self.path == "/repos/owner/repo/releases":
+            response = json.dumps(
+                {
+                    "id": 1,
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/assets{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/assets?name="):
+            response = b'{"id":2}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
 class LocalDeliveryExecutorTests(TestCase):
     def test_dry_run_plans_local_delivery_without_writing_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1388,6 +1431,125 @@ class LocalDeliveryExecutorTests(TestCase):
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("approved-local-test-secret", serialized_result)
             self.assertNotIn("upload_secret=redacted", serialized_result)
+            self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_github_release_external_delivery_dry_run_redacts_config_without_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=root / "delivery",
+                    transaction_id="tx-github-release-dry-run",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    request_external_delivery=True,
+                    external_delivery_provider_id="gh-release",
+                    external_delivery_provider_config={
+                        "repository": "https://github.com/owner/repo.git",
+                        "tag_name": "v0-test",
+                        "asset_name": "reverse-delivery.json",
+                        "token": "ghp_secret_token",
+                        "api_base_url": "https://user:pass@api.github.invalid?api_token=secret",
+                    },
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "planned")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.external_delivery_result)
+            self.assertEqual(result.external_delivery_result.provider_id, "github-release")
+            metadata = result.external_delivery_result.metadata
+            self.assertEqual(metadata["repository"], "owner/repo")
+            self.assertEqual(metadata["tag_name"], "v0-test")
+            self.assertEqual(metadata["asset_name"], "reverse-delivery.json")
+            self.assertEqual(metadata["release_api_url"], "https://api.github.invalid")
+            self.assertTrue(metadata["api_query_redacted"])
+            self.assertTrue(metadata["api_credentials_redacted"])
+            self.assertFalse(metadata["release_request_attempted"])
+            self.assertFalse(metadata["upload_request_attempted"])
+            self.assertFalse(metadata["response_body_recorded"])
+            self.assertFalse(metadata["response_headers_recorded"])
+            self.assertFalse(metadata["request_headers_recorded"])
+            self.assertEqual(metadata["external_delivery_provider_config_summary"]["secret_like_key_count"], 1)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_secret_token", serialized_result)
+            self.assertNotIn("api_token=secret", serialized_result)
+            self.assertNotIn("user:pass", serialized_result)
+            self.assertFalse((root / "delivery").exists())
+
+    def test_github_release_external_delivery_apply_posts_release_and_asset_without_recording_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-apply",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release-assets",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-test",
+                            "release_name": "Reverse DeepAgent v0 test",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_local_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseHandler.requests), 2)
+            release_request, upload_request = RecordingGitHubReleaseHandler.requests
+            self.assertEqual(release_request["path"], "/repos/owner/repo/releases")
+            self.assertEqual(upload_request["path"], "/uploads/assets?name=reverse-delivery.json")
+            release_headers = {str(key).lower(): value for key, value in dict(release_request["headers"]).items()}
+            upload_headers = {str(key).lower(): value for key, value in dict(upload_request["headers"]).items()}
+            self.assertEqual(release_headers["authorization"], "Bearer ghp_local_secret")
+            self.assertEqual(upload_headers["authorization"], "Bearer ghp_local_secret")
+            release_body = json.loads(bytes(release_request["body"]).decode("utf-8"))
+            self.assertEqual(release_body["tag_name"], "v0-test")
+            self.assertEqual(release_body["name"], "Reverse DeepAgent v0 test")
+            upload_body = json.loads(bytes(upload_request["body"]).decode("utf-8"))
+            self.assertEqual(upload_body["provider_id"], "github-release")
+            self.assertEqual(upload_body["transaction_id"], "tx-github-release-apply")
+            self.assertEqual(upload_body["repository"], "owner/repo")
+            self.assertEqual(upload_body["asset_name"], "reverse-delivery.json")
+            self.assertEqual(upload_body["package"]["metadata"]["provider_id"], "github-release")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertEqual(metadata["release_api_url"], f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases")
+            self.assertEqual(metadata["upload_url"], f"http://127.0.0.1:{server.server_port}/uploads/assets")
+            self.assertTrue(metadata["release_request_attempted"])
+            self.assertTrue(metadata["upload_request_attempted"])
+            self.assertTrue(metadata["release_succeeded"])
+            self.assertTrue(metadata["upload_succeeded"])
+            self.assertEqual(metadata["release_status_code"], 201)
+            self.assertEqual(metadata["upload_status_code"], 201)
+            self.assertFalse(metadata["response_body_recorded"])
+            self.assertFalse(metadata["response_headers_recorded"])
+            self.assertFalse(metadata["request_headers_recorded"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_local_secret", serialized_result)
+            self.assertNotIn("Authorization", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
 
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:

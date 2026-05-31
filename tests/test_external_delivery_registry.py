@@ -10,6 +10,7 @@ from reverse_deepagent.delivery import (
     ExternalDeliveryProviderRegistration,
     ExternalDeliveryProviderRegistry,
     ExternalDeliveryResult,
+    GitHubReleaseExternalDeliveryProvider,
     LocalArchiveExternalDeliveryProvider,
     PresignedObjectExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
@@ -120,6 +121,24 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertEqual(metadata["transport"], "object-storage")
         provider = registry.create("s3-presigned", presigned_url="https://example.invalid/object")
         self.assertIsInstance(provider, PresignedObjectExternalDeliveryProvider)
+
+    def test_default_registry_exposes_github_release_provider_and_aliases(self) -> None:
+        registry = build_default_external_delivery_provider_registry(load_entry_points=False)
+
+        self.assertEqual(registry.resolve("gh-release").provider_id, "github-release")
+        self.assertIn("github-release-assets", registry.provider_ids())
+        by_provider = {metadata["provider_id"]: metadata for metadata in registry.list_metadata()}
+        metadata = by_provider["github-release"]
+        self.assertTrue(metadata["supports_external_delivery"])
+        self.assertFalse(metadata["review_only"])
+        self.assertEqual(metadata["transport"], "github-release")
+        provider = registry.create(
+            "github-release-assets",
+            repository="owner/repo",
+            tag_name="v1",
+            token="not-serialized",
+        )
+        self.assertIsInstance(provider, GitHubReleaseExternalDeliveryProvider)
 
     def test_registry_rejects_duplicate_keys(self) -> None:
         registry = ExternalDeliveryProviderRegistry()

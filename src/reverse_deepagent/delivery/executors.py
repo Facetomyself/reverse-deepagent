@@ -770,6 +770,247 @@ class PresignedObjectExternalDeliveryProvider:
 
 
 @dataclass(frozen=True)
+class GitHubReleaseExternalDeliveryProvider:
+    """GitHub Release asset external delivery provider.
+
+    Dry-run is side-effect free.  Apply mode creates a release for the configured
+    repository/tag through the GitHub REST API and uploads the provider-neutral
+    delivery package as a JSON release asset.  Runtime secrets such as tokens are
+    used only for request headers and are never serialized into result metadata.
+    """
+
+    repository: str | None = None
+    tag_name: str | None = None
+    release_name: str | None = None
+    asset_name: str | None = None
+    token: str | None = None
+    api_base_url: str = "https://api.github.com"
+    timeout_seconds: float = 10.0
+    provider_id: str = "github-release"
+
+    def deliver(
+        self,
+        package: ExternalDeliveryPackage,
+        *,
+        dry_run: bool,
+        result_path: str | None,
+        created_at: str,
+    ) -> ExternalDeliveryResult:
+        package_digest = _json_payload_sha256(package.to_dict())
+        repository = _normalize_github_repository(self.repository)
+        owner, repo = _split_github_repository(repository)
+        tag_name = str(self.tag_name or "").strip()
+        release_name = str(self.release_name or tag_name or "").strip()
+        asset_name = _safe_github_asset_name(self.asset_name or f"reverse-deepagent-{package.transaction_id}.json")
+        api_base_url = _normalize_external_delivery_url(self.api_base_url).rstrip("/")
+        release_api_url = f"{api_base_url}/repos/{owner}/{repo}/releases" if owner and repo else ""
+        redacted_release_api_url = _redact_url_for_metadata(release_api_url)
+        local_ready = not package.local_errors
+        token_configured = bool(str(self.token or "").strip())
+        api_scheme_supported = _http_scheme_supported(api_base_url)
+        checks = [
+            {
+                "name": "local_delivery_package_has_no_errors",
+                "passed": local_ready,
+                "details": {"local_errors": package.local_errors},
+            },
+            {
+                "name": "github_repository_configured",
+                "passed": bool(owner and repo),
+                "details": {"repository": repository or None},
+            },
+            {
+                "name": "github_release_tag_configured",
+                "passed": bool(tag_name),
+                "details": {"configured": bool(tag_name)},
+            },
+            {
+                "name": "github_token_configured",
+                "passed": token_configured,
+                "details": {"configured": token_configured},
+            },
+            {
+                "name": "github_api_url_scheme_supported",
+                "passed": api_scheme_supported,
+                "details": {"supported_schemes": ["http", "https"], "api_base_url": _redact_url_for_metadata(api_base_url)},
+            },
+        ]
+        preflight_blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        payload = {
+            "provider_id": self.provider_id,
+            "transaction_id": package.transaction_id,
+            "created_at": created_at,
+            "repository": repository,
+            "tag_name": tag_name,
+            "asset_name": asset_name,
+            "package_digest_sha256": package_digest,
+            "package": package.to_dict(),
+        }
+        request_body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        request_body_digest = hashlib.sha256(request_body).hexdigest()
+        release_status_code: int | None = None
+        upload_status_code: int | None = None
+        release_error: str | None = None
+        upload_error: str | None = None
+        upload_url_redacted: str | None = None
+        release_request_attempted = False
+        upload_request_attempted = False
+        release_succeeded = False
+        upload_succeeded = False
+        if dry_run:
+            status = "planned" if not preflight_blocking_reasons else "blocked"
+            blocking_reasons = preflight_blocking_reasons
+        elif preflight_blocking_reasons:
+            status = "blocked"
+            blocking_reasons = preflight_blocking_reasons
+        else:
+            release_request_attempted = True
+            release_status_code, upload_url, release_error = self._create_release(
+                release_api_url,
+                tag_name=tag_name,
+                release_name=release_name,
+            )
+            release_succeeded = bool(release_status_code is not None and 200 <= release_status_code < 300 and upload_url)
+            checks.append(
+                {
+                    "name": "github_release_create_successful",
+                    "passed": release_succeeded,
+                    "details": {
+                        "status_code": release_status_code,
+                        "request_error": release_error,
+                        "target_url": redacted_release_api_url,
+                        "upload_url_present": bool(upload_url),
+                    },
+                }
+            )
+            if release_succeeded and upload_url:
+                upload_request_attempted = True
+                upload_target = _github_upload_url_with_asset_name(upload_url, asset_name)
+                upload_url_redacted = _redact_url_for_metadata(upload_target)
+                upload_status_code, upload_error = self._upload_asset(upload_target, request_body)
+                upload_succeeded = bool(upload_status_code is not None and 200 <= upload_status_code < 300)
+                checks.append(
+                    {
+                        "name": "github_release_asset_upload_successful",
+                        "passed": upload_succeeded,
+                        "details": {
+                            "status_code": upload_status_code,
+                            "request_error": upload_error,
+                            "target_url": upload_url_redacted,
+                        },
+                    }
+                )
+            blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+            status = "delivered" if upload_succeeded else "blocked"
+        return ExternalDeliveryResult(
+            transaction_id=package.transaction_id,
+            status=status,
+            provider_id=self.provider_id,
+            result_path=result_path,
+            delivery_root=package.delivery_root,
+            dry_run=dry_run,
+            external_delivery_requested=True,
+            external_delivery_performed=upload_succeeded,
+            package_digest_sha256=package_digest,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=(
+                ["review_github_release_external_delivery_result"]
+                if upload_succeeded
+                else ["apply_local_delivery_before_github_release_publish"]
+                if dry_run and not blocking_reasons
+                else ["fix_github_release_external_delivery_blockers"]
+            ),
+            created_at=created_at,
+            metadata={
+                **package.metadata,
+                "scope": "github-release-external-delivery-provider-baseline",
+                "repository": repository or None,
+                "tag_name": tag_name or None,
+                "release_name": release_name or None,
+                "asset_name": asset_name,
+                "release_api_url": redacted_release_api_url,
+                "upload_url": upload_url_redacted,
+                "api_query_redacted": _url_has_query(api_base_url),
+                "api_credentials_redacted": _url_has_credentials(api_base_url),
+                "request_method": "POST",
+                "request_body_digest_sha256": request_body_digest,
+                "request_body_bytes": len(request_body),
+                "release_request_attempted": release_request_attempted,
+                "upload_request_attempted": upload_request_attempted,
+                "release_succeeded": release_succeeded,
+                "upload_succeeded": upload_succeeded,
+                "release_status_code": release_status_code,
+                "upload_status_code": upload_status_code,
+                "response_body_recorded": False,
+                "response_headers_recorded": False,
+                "request_headers_recorded": False,
+                "timeout_seconds": self.timeout_seconds,
+                "automatic_delivery": False,
+                "publishes_externally": True,
+                "transport": "github-release",
+                "limitations": [
+                    "github_release_json_asset_upload_baseline",
+                    "does_not_record_response_body_or_headers",
+                    "does_not_retry_github_requests",
+                    "does_not_delete_or_overwrite_existing_release_assets",
+                    "full_cross_run_transaction_state_machine_not_implemented",
+                ],
+            },
+        )
+
+    def _request_headers(self, *, content_type: str = "application/json") -> dict[str, str]:
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Content-Type": content_type,
+            "User-Agent": "reverse-deepagent-github-release-delivery/0",
+        }
+        token = str(self.token or "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def _create_release(self, url: str, *, tag_name: str, release_name: str) -> tuple[int | None, str | None, str | None]:
+        body = json.dumps(
+            {
+                "tag_name": tag_name,
+                "name": release_name or tag_name,
+                "draft": False,
+                "prerelease": False,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = urllib.request.Request(url, data=body, headers=self._request_headers(), method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
+                response_body = response.read()
+                upload_url = _github_upload_url_from_response_body(response_body)
+                return int(response.status), upload_url, None
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), None, None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return None, None, exc.__class__.__name__
+
+    def _upload_asset(self, url: str, body: bytes) -> tuple[int | None, str | None]:
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers=self._request_headers(content_type="application/json"),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
+                response.read(0)
+                return int(response.status), None
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return None, exc.__class__.__name__
+
+
+@dataclass(frozen=True)
 class DeliveryManifestRevision:
     transaction_id: str
     status: str
@@ -3056,6 +3297,45 @@ def _url_has_credentials(value: str) -> bool:
         return False
     parts = urllib.parse.urlsplit(value)
     return bool(parts.username or parts.password)
+
+
+def _normalize_github_repository(value: str | None) -> str:
+    repository = str(value or "").strip().strip("/")
+    if repository.startswith("https://github.com/"):
+        repository = repository.removeprefix("https://github.com/").strip("/")
+    if repository.endswith(".git"):
+        repository = repository[:-4]
+    return repository
+
+
+def _split_github_repository(value: str) -> tuple[str | None, str | None]:
+    parts = [part for part in value.split("/") if part]
+    if len(parts) != 2:
+        return None, None
+    return parts[0], parts[1]
+
+
+def _safe_github_asset_name(value: str) -> str:
+    name = str(value or "").replace("\\", "/").split("/")[-1].strip()
+    if not name or name in {".", ".."}:
+        return "reverse-deepagent-delivery-package.json"
+    return name
+
+
+def _github_upload_url_from_response_body(body: bytes) -> str | None:
+    try:
+        payload = json.loads(body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    upload_url = payload.get("upload_url") if isinstance(payload, dict) else None
+    return str(upload_url).strip() if upload_url else None
+
+
+def _github_upload_url_with_asset_name(upload_url: str, asset_name: str) -> str:
+    base = str(upload_url or "").split("{", 1)[0]
+    parts = urllib.parse.urlsplit(base)
+    query = urllib.parse.urlencode({"name": asset_name})
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
 
 def _journal_bool(journal: dict[str, Any], key: str, default: bool) -> bool:
