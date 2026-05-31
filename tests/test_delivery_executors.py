@@ -85,6 +85,30 @@ class RecordingWebhookHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
+class RetryingWebhookHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self.__class__.requests.append(
+            {
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+        if len(self.__class__.requests) == 1:
+            self.send_response(503)
+            self.end_headers()
+            return
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
 class RecordingObjectHandler(http.server.BaseHTTPRequestHandler):
     requests: list[dict[str, object]] = []
 
@@ -1483,6 +1507,58 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertNotIn("local-test-secret", serialized_result)
             self.assertNotIn("query_secret=redacted", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_webhook_external_delivery_can_retry_retryable_status_when_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RetryingWebhookHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RetryingWebhookHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                webhook_url = f"http://127.0.0.1:{server.server_port}/deliver?query_secret=redacted"
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-webhook-retry",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="webhook",
+                        external_delivery_provider_config={
+                            "webhook_url": webhook_url,
+                            "headers": {"Authorization": "Token retry-secret"},
+                            "timeout_seconds": 5,
+                            "retry_attempts": 1,
+                            "retry_backoff_seconds": 0,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RetryingWebhookHandler.requests), 2)
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["retry_enabled"])
+            self.assertEqual(metadata["retry_attempts_configured"], 1)
+            self.assertEqual(metadata["request_attempt_count"], 2)
+            self.assertEqual(metadata["request_retry_count"], 1)
+            self.assertEqual(metadata["response_status_code"], 204)
+            self.assertEqual(metadata["request_attempts"][0]["status_code"], 503)
+            self.assertTrue(metadata["request_attempts"][0]["will_retry"])
+            self.assertEqual(metadata["request_attempts"][1]["status_code"], 204)
+            self.assertFalse(metadata["request_attempts"][1]["will_retry"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("retry-secret", serialized_result)
+            self.assertNotIn("query_secret=redacted", serialized_result)
 
     def test_presigned_object_external_delivery_dry_run_redacts_target_without_network(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

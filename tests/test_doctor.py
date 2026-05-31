@@ -310,6 +310,9 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(github_release["metadata"]["supports_existing_asset_preflight"])
         self.assertEqual(github_release["metadata"]["existing_asset_conflict_default"], "block")
         self.assertFalse(github_release["metadata"]["supports_existing_asset_overwrite"])
+        self.assertTrue(github_release["metadata"]["supports_explicit_retry"])
+        self.assertEqual(github_release["metadata"]["default_retry_attempts"], 0)
+        self.assertIn(503, github_release["metadata"]["default_retry_status_codes"])
         provider = by_provider["review-only"]
         self.assertEqual(provider["aliases"], ["noop", "manual-handoff"])
         self.assertFalse(provider["supports_external_delivery"])
@@ -321,10 +324,14 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(webhook["aliases"], ["webhook-json", "http-webhook"])
         self.assertTrue(webhook["supports_external_delivery"])
         self.assertEqual(webhook["transport"], "webhook")
+        self.assertTrue(webhook["metadata"]["supports_explicit_retry"])
+        self.assertEqual(webhook["metadata"]["default_retry_attempts"], 0)
         presigned = by_provider["presigned-object"]
         self.assertEqual(presigned["aliases"], ["object-storage", "presigned-url", "s3-presigned"])
         self.assertTrue(presigned["supports_external_delivery"])
         self.assertEqual(presigned["transport"], "object-storage")
+        self.assertTrue(presigned["metadata"]["supports_explicit_retry"])
+        self.assertEqual(presigned["metadata"]["default_retry_attempts"], 0)
         self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
         self.assertFalse(matrix["side_effect_policy"]["external_delivery_performed"])
 

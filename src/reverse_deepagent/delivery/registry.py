@@ -6,6 +6,7 @@ from importlib import metadata as importlib_metadata
 from typing import Any, Callable
 
 from reverse_deepagent.delivery.executors import (
+    DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES,
     ExternalDeliveryProvider,
     GitHubReleaseExternalDeliveryProvider,
     LocalArchiveExternalDeliveryProvider,
@@ -203,6 +204,9 @@ def presigned_object_external_delivery_provider_registration() -> ExternalDelive
                 "publishes_externally": True,
                 "external_boundary": "presigned-object-storage-url",
                 "sends_http_put": True,
+                "supports_explicit_retry": True,
+                "default_retry_attempts": 0,
+                "default_retry_status_codes": list(DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES),
                 "records_response_body": False,
                 "records_response_headers": False,
                 "cloud_sdk_required": False,
@@ -229,6 +233,9 @@ def webhook_external_delivery_provider_registration() -> ExternalDeliveryProvide
                 "publishes_externally": True,
                 "external_boundary": "http-json-webhook",
                 "sends_http_post": True,
+                "supports_explicit_retry": True,
+                "default_retry_attempts": 0,
+                "default_retry_status_codes": list(DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES),
                 "records_response_body": False,
                 "records_response_headers": False,
             },
@@ -254,6 +261,9 @@ def github_release_external_delivery_provider_registration() -> ExternalDelivery
                 "publishes_externally": True,
                 "external_boundary": "github-release-asset",
                 "sends_http_post": True,
+                "supports_explicit_retry": True,
+                "default_retry_attempts": 0,
+                "default_retry_status_codes": list(DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES),
                 "supports_existing_release_reuse": True,
                 "supports_existing_asset_preflight": True,
                 "existing_asset_conflict_default": "block",

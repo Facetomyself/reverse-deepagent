@@ -142,7 +142,7 @@ ExternalDeliveryProvider doctor 示例，默认只读取 provider registration m
 reverse-agent-doctor --external-delivery-providers
 ```
 
-输出里的 `external_delivery_provider_matrix` 会列出 `review-only`、`local-archive`、`webhook`、`presigned-object`、`github-release` 及其 alias，并显示 `reverse_deepagent.external_delivery_providers` entry point group、provider transport、`review_only`、`supports_external_delivery` 和 side-effect policy。当前内置 provider 已覆盖 review-only handoff、本地归档、HTTP JSON webhook、presigned object-storage URL 的 HTTP PUT baseline，以及 GitHub Release JSON asset upload / 显式 existing-release reuse / 同名 asset preflight block baseline；更复杂的 asset 覆盖 / 删除、retry / backoff 和第三方 release provider 仍以后续 provider 演进或插件形式接入。
+输出里的 `external_delivery_provider_matrix` 会列出 `review-only`、`local-archive`、`webhook`、`presigned-object`、`github-release` 及其 alias，并显示 `reverse_deepagent.external_delivery_providers` entry point group、provider transport、`review_only`、`supports_external_delivery` 和 side-effect policy。当前内置 provider 已覆盖 review-only handoff、本地归档、HTTP JSON webhook、presigned object-storage URL 的 HTTP PUT baseline，以及 GitHub Release JSON asset upload / 显式 existing-release reuse / 同名 asset preflight block baseline，并为 webhook、presigned object-storage 与 GitHub Release provider 提供默认关闭的显式 retry baseline；更复杂的 asset 覆盖 / 删除、provider-specific retry / backoff hardening 和第三方 release provider 仍以后续 provider 演进或插件形式接入。
 
 RuntimeBackend doctor 示例，默认只读取 runtime backend registration metadata，不调用 backend factory，不启动 Chrome / MCP / 平台工具：
 

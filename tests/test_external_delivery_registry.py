@@ -105,6 +105,9 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertTrue(metadata["supports_external_delivery"])
         self.assertFalse(metadata["review_only"])
         self.assertEqual(metadata["transport"], "webhook")
+        self.assertTrue(metadata["metadata"]["supports_explicit_retry"])
+        self.assertEqual(metadata["metadata"]["default_retry_attempts"], 0)
+        self.assertIn(503, metadata["metadata"]["default_retry_status_codes"])
         provider = registry.create("webhook-json", webhook_url="https://example.invalid/deliver")
         self.assertIsInstance(provider, WebhookExternalDeliveryProvider)
 
@@ -119,6 +122,9 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertTrue(metadata["supports_external_delivery"])
         self.assertFalse(metadata["review_only"])
         self.assertEqual(metadata["transport"], "object-storage")
+        self.assertTrue(metadata["metadata"]["supports_explicit_retry"])
+        self.assertEqual(metadata["metadata"]["default_retry_attempts"], 0)
+        self.assertIn(503, metadata["metadata"]["default_retry_status_codes"])
         provider = registry.create("s3-presigned", presigned_url="https://example.invalid/object")
         self.assertIsInstance(provider, PresignedObjectExternalDeliveryProvider)
 
@@ -136,6 +142,9 @@ class ExternalDeliveryProviderRegistryTests(unittest.TestCase):
         self.assertTrue(metadata["metadata"]["supports_existing_asset_preflight"])
         self.assertEqual(metadata["metadata"]["existing_asset_conflict_default"], "block")
         self.assertFalse(metadata["metadata"]["supports_existing_asset_overwrite"])
+        self.assertTrue(metadata["metadata"]["supports_explicit_retry"])
+        self.assertEqual(metadata["metadata"]["default_retry_attempts"], 0)
+        self.assertIn(503, metadata["metadata"]["default_retry_status_codes"])
         provider = registry.create(
             "github-release-assets",
             repository="owner/repo",

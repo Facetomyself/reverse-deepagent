@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,6 +14,27 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .state_machine import DeliveryTransactionSnapshot, evaluate_delivery_transaction_state
+
+
+DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES: tuple[int, ...] = (429, 500, 502, 503, 504)
+
+
+@dataclass(frozen=True)
+class ExternalDeliveryHttpRequestResult:
+    """Secret-safe HTTP request attempt summary for external delivery providers."""
+
+    status_code: int | None
+    error: str | None
+    attempts: list[dict[str, Any]]
+    body: bytes = b""
+
+    @property
+    def attempt_count(self) -> int:
+        return len(self.attempts)
+
+    @property
+    def retry_count(self) -> int:
+        return max(0, self.attempt_count - 1)
 
 
 class DeliveryExecutionMode(str, Enum):
@@ -461,6 +483,9 @@ class WebhookExternalDeliveryProvider:
     webhook_url: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
     timeout_seconds: float = 10.0
+    retry_attempts: int = 0
+    retry_backoff_seconds: float = 0.0
+    retry_status_codes: tuple[int, ...] = DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
     provider_id: str = "webhook"
 
     def deliver(
@@ -506,6 +531,7 @@ class WebhookExternalDeliveryProvider:
         request_body_digest = hashlib.sha256(request_body).hexdigest()
         response_status_code: int | None = None
         request_error: str | None = None
+        request_attempts: list[dict[str, Any]] = []
         request_attempted = False
         request_succeeded = False
         if dry_run:
@@ -516,7 +542,10 @@ class WebhookExternalDeliveryProvider:
             blocking_reasons = preflight_blocking_reasons
         else:
             request_attempted = True
-            response_status_code, request_error = self._post_json(normalized_url, request_body)
+            request_result = self._post_json(normalized_url, request_body)
+            response_status_code = request_result.status_code
+            request_error = request_result.error
+            request_attempts = request_result.attempts
             request_succeeded = bool(response_status_code is not None and 200 <= response_status_code < 300)
             checks.append(
                 {
@@ -526,6 +555,8 @@ class WebhookExternalDeliveryProvider:
                         "status_code": response_status_code,
                         "request_error": request_error,
                         "target_url": redacted_url,
+                        "attempt_count": len(request_attempts),
+                        "retry_count": max(0, len(request_attempts) - 1),
                     },
                 }
             )
@@ -561,6 +592,9 @@ class WebhookExternalDeliveryProvider:
                 "request_body_digest_sha256": request_body_digest,
                 "request_body_bytes": len(request_body),
                 "request_attempted": request_attempted,
+                "request_attempt_count": len(request_attempts),
+                "request_retry_count": max(0, len(request_attempts) - 1),
+                "request_attempts": request_attempts,
                 "request_succeeded": request_succeeded,
                 "response_status_code": response_status_code,
                 "response_body_recorded": False,
@@ -568,38 +602,40 @@ class WebhookExternalDeliveryProvider:
                 "request_headers_recorded": False,
                 "configured_header_count": len(self.headers),
                 "timeout_seconds": self.timeout_seconds,
+                "retry_enabled": _coerce_retry_attempts(self.retry_attempts) > 0,
+                "retry_attempts_configured": _coerce_retry_attempts(self.retry_attempts),
+                "retry_backoff_seconds": _coerce_retry_backoff_seconds(self.retry_backoff_seconds),
+                "retry_status_codes": list(_coerce_retry_status_codes(self.retry_status_codes)),
                 "automatic_delivery": False,
                 "publishes_externally": True,
                 "transport": "webhook",
                 "limitations": [
                     "http_json_webhook_only",
                     "does_not_record_response_body_or_headers",
-                    "does_not_retry_webhook_request",
+                    "retry_requires_explicit_config",
                     "full_cross_run_transaction_state_machine_not_implemented",
                 ],
             },
         )
 
-    def _post_json(self, url: str, body: bytes) -> tuple[int | None, str | None]:
+    def _post_json(self, url: str, body: bytes) -> ExternalDeliveryHttpRequestResult:
         request_headers = {
             "Content-Type": "application/json",
             "User-Agent": "reverse-deepagent-webhook-delivery/0",
             **{str(key): str(value) for key, value in self.headers.items()},
         }
-        request = urllib.request.Request(
-            url,
-            data=body,
-            headers=request_headers,
-            method="POST",
+        return _http_request_with_retries(
+            lambda: urllib.request.Request(
+                url,
+                data=body,
+                headers=request_headers,
+                method="POST",
+            ),
+            timeout_seconds=self.timeout_seconds,
+            retry_attempts=self.retry_attempts,
+            retry_status_codes=self.retry_status_codes,
+            retry_backoff_seconds=self.retry_backoff_seconds,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
-                response.read(0)
-                return int(response.status), None
-        except urllib.error.HTTPError as exc:
-            return int(exc.code), None
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, exc.__class__.__name__
 
 
 @dataclass(frozen=True)
@@ -618,6 +654,9 @@ class PresignedObjectExternalDeliveryProvider:
     content_type: str = "application/json"
     headers: dict[str, str] = field(default_factory=dict)
     timeout_seconds: float = 10.0
+    retry_attempts: int = 0
+    retry_backoff_seconds: float = 0.0
+    retry_status_codes: tuple[int, ...] = DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
     provider_id: str = "presigned-object"
 
     def deliver(
@@ -670,6 +709,7 @@ class PresignedObjectExternalDeliveryProvider:
         request_body_digest = hashlib.sha256(request_body).hexdigest()
         response_status_code: int | None = None
         request_error: str | None = None
+        request_attempts: list[dict[str, Any]] = []
         request_attempted = False
         request_succeeded = False
         if dry_run:
@@ -680,7 +720,10 @@ class PresignedObjectExternalDeliveryProvider:
             blocking_reasons = preflight_blocking_reasons
         else:
             request_attempted = True
-            response_status_code, request_error = self._put_json(normalized_url, request_body)
+            request_result = self._put_json(normalized_url, request_body)
+            response_status_code = request_result.status_code
+            request_error = request_result.error
+            request_attempts = request_result.attempts
             request_succeeded = bool(response_status_code is not None and 200 <= response_status_code < 300)
             checks.append(
                 {
@@ -690,6 +733,8 @@ class PresignedObjectExternalDeliveryProvider:
                         "status_code": response_status_code,
                         "request_error": request_error,
                         "target_url": redacted_url,
+                        "attempt_count": len(request_attempts),
+                        "retry_count": max(0, len(request_attempts) - 1),
                     },
                 }
             )
@@ -726,6 +771,9 @@ class PresignedObjectExternalDeliveryProvider:
                 "request_body_digest_sha256": request_body_digest,
                 "request_body_bytes": len(request_body),
                 "request_attempted": request_attempted,
+                "request_attempt_count": len(request_attempts),
+                "request_retry_count": max(0, len(request_attempts) - 1),
+                "request_attempts": request_attempts,
                 "request_succeeded": request_succeeded,
                 "response_status_code": response_status_code,
                 "response_body_recorded": False,
@@ -734,39 +782,41 @@ class PresignedObjectExternalDeliveryProvider:
                 "configured_header_count": len(self.headers),
                 "content_type": str(self.content_type or ""),
                 "timeout_seconds": self.timeout_seconds,
+                "retry_enabled": _coerce_retry_attempts(self.retry_attempts) > 0,
+                "retry_attempts_configured": _coerce_retry_attempts(self.retry_attempts),
+                "retry_backoff_seconds": _coerce_retry_backoff_seconds(self.retry_backoff_seconds),
+                "retry_status_codes": list(_coerce_retry_status_codes(self.retry_status_codes)),
                 "automatic_delivery": False,
                 "publishes_externally": True,
                 "transport": "object-storage",
                 "limitations": [
                     "presigned_url_http_put_only",
                     "does_not_record_response_body_or_headers",
-                    "does_not_retry_object_upload",
+                    "retry_requires_explicit_config",
                     "does_not_manage_cloud_credentials_or_buckets",
                     "full_cross_run_transaction_state_machine_not_implemented",
                 ],
             },
         )
 
-    def _put_json(self, url: str, body: bytes) -> tuple[int | None, str | None]:
+    def _put_json(self, url: str, body: bytes) -> ExternalDeliveryHttpRequestResult:
         request_headers = {
             "Content-Type": str(self.content_type or "application/json"),
             "User-Agent": "reverse-deepagent-presigned-object-delivery/0",
             **{str(key): str(value) for key, value in self.headers.items()},
         }
-        request = urllib.request.Request(
-            url,
-            data=body,
-            headers=request_headers,
-            method="PUT",
+        return _http_request_with_retries(
+            lambda: urllib.request.Request(
+                url,
+                data=body,
+                headers=request_headers,
+                method="PUT",
+            ),
+            timeout_seconds=self.timeout_seconds,
+            retry_attempts=self.retry_attempts,
+            retry_status_codes=self.retry_status_codes,
+            retry_backoff_seconds=self.retry_backoff_seconds,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
-                response.read(0)
-                return int(response.status), None
-        except urllib.error.HTTPError as exc:
-            return int(exc.code), None
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, exc.__class__.__name__
 
 
 @dataclass(frozen=True)
@@ -789,6 +839,9 @@ class GitHubReleaseExternalDeliveryProvider:
     reuse_existing_release: bool = False
     check_existing_asset: bool = True
     allow_existing_asset: bool = False
+    retry_attempts: int = 0
+    retry_backoff_seconds: float = 0.0
+    retry_status_codes: tuple[int, ...] = DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
     provider_id: str = "github-release"
 
     def deliver(
@@ -868,6 +921,10 @@ class GitHubReleaseExternalDeliveryProvider:
         existing_release_error: str | None = None
         asset_lookup_error: str | None = None
         upload_error: str | None = None
+        release_request_attempts: list[dict[str, Any]] = []
+        existing_release_lookup_attempts: list[dict[str, Any]] = []
+        asset_lookup_attempts: list[dict[str, Any]] = []
+        upload_request_attempts: list[dict[str, Any]] = []
         upload_url_redacted: str | None = None
         assets_url_redacted: str | None = None
         release_request_attempted = False
@@ -890,7 +947,7 @@ class GitHubReleaseExternalDeliveryProvider:
             blocking_reasons = preflight_blocking_reasons
         else:
             release_request_attempted = True
-            release_status_code, upload_url, assets_url, release_error = self._create_release(
+            release_status_code, upload_url, assets_url, release_request_attempts, release_error = self._create_release(
                 release_api_url,
                 tag_name=tag_name,
                 release_name=release_name,
@@ -903,6 +960,7 @@ class GitHubReleaseExternalDeliveryProvider:
                     existing_release_status_code,
                     existing_upload_url,
                     existing_assets_url,
+                    existing_release_lookup_attempts,
                     existing_release_error,
                 ) = self._get_release_by_tag(existing_release_api_url)
                 existing_release_lookup_succeeded = bool(
@@ -925,12 +983,16 @@ class GitHubReleaseExternalDeliveryProvider:
                         "request_error": release_error,
                         "target_url": redacted_release_api_url,
                         "upload_url_present": bool(upload_url),
+                        "attempt_count": len(release_request_attempts),
+                        "retry_count": max(0, len(release_request_attempts) - 1),
                         "release_created": release_created,
                         "reuse_existing_release": reuse_existing_release,
                         "existing_release_lookup_attempted": existing_release_lookup_attempted,
                         "existing_release_lookup_status_code": existing_release_status_code,
                         "existing_release_lookup_error": existing_release_error,
                         "existing_release_lookup_url": redacted_existing_release_api_url,
+                        "existing_release_lookup_attempt_count": len(existing_release_lookup_attempts),
+                        "existing_release_lookup_retry_count": max(0, len(existing_release_lookup_attempts) - 1),
                         "existing_release_reused": existing_release_reused,
                     },
                 }
@@ -943,6 +1005,7 @@ class GitHubReleaseExternalDeliveryProvider:
                         asset_lookup_status_code,
                         existing_asset_found_value,
                         existing_asset_count,
+                        asset_lookup_attempts,
                         asset_lookup_error,
                     ) = self._asset_exists(assets_url, asset_name)
                     asset_lookup_succeeded = bool(
@@ -966,6 +1029,8 @@ class GitHubReleaseExternalDeliveryProvider:
                             "asset_lookup_error": asset_lookup_error,
                             "asset_lookup_url": assets_url_redacted,
                             "asset_lookup_succeeded": asset_lookup_succeeded,
+                            "asset_lookup_attempt_count": len(asset_lookup_attempts),
+                            "asset_lookup_retry_count": max(0, len(asset_lookup_attempts) - 1),
                             "existing_asset_found": existing_asset_found,
                             "existing_asset_count": existing_asset_count,
                             "allow_existing_asset": allow_existing_asset,
@@ -977,7 +1042,7 @@ class GitHubReleaseExternalDeliveryProvider:
                     upload_request_attempted = True
                     upload_target = _github_upload_url_with_asset_name(upload_url, asset_name)
                     upload_url_redacted = _redact_url_for_metadata(upload_target)
-                    upload_status_code, upload_error = self._upload_asset(upload_target, request_body)
+                    upload_status_code, upload_request_attempts, upload_error = self._upload_asset(upload_target, request_body)
                     upload_succeeded = bool(upload_status_code is not None and 200 <= upload_status_code < 300)
                     checks.append(
                         {
@@ -987,6 +1052,8 @@ class GitHubReleaseExternalDeliveryProvider:
                                 "status_code": upload_status_code,
                                 "request_error": upload_error,
                                 "target_url": upload_url_redacted,
+                                "attempt_count": len(upload_request_attempts),
+                                "retry_count": max(0, len(upload_request_attempts) - 1),
                             },
                         }
                     )
@@ -1032,9 +1099,21 @@ class GitHubReleaseExternalDeliveryProvider:
                 "check_existing_asset": check_existing_asset,
                 "allow_existing_asset": allow_existing_asset,
                 "release_request_attempted": release_request_attempted,
+                "release_request_attempt_count": len(release_request_attempts),
+                "release_request_retry_count": max(0, len(release_request_attempts) - 1),
+                "release_request_attempts": release_request_attempts,
                 "existing_release_lookup_attempted": existing_release_lookup_attempted,
+                "existing_release_lookup_attempt_count": len(existing_release_lookup_attempts),
+                "existing_release_lookup_retry_count": max(0, len(existing_release_lookup_attempts) - 1),
+                "existing_release_lookup_attempts": existing_release_lookup_attempts,
                 "asset_lookup_attempted": asset_lookup_attempted,
+                "asset_lookup_attempt_count": len(asset_lookup_attempts),
+                "asset_lookup_retry_count": max(0, len(asset_lookup_attempts) - 1),
+                "asset_lookup_attempts": asset_lookup_attempts,
                 "upload_request_attempted": upload_request_attempted,
+                "upload_request_attempt_count": len(upload_request_attempts),
+                "upload_request_retry_count": max(0, len(upload_request_attempts) - 1),
+                "upload_request_attempts": upload_request_attempts,
                 "release_created": release_created,
                 "existing_release_lookup_succeeded": existing_release_lookup_succeeded,
                 "existing_release_reused": existing_release_reused,
@@ -1051,6 +1130,10 @@ class GitHubReleaseExternalDeliveryProvider:
                 "response_headers_recorded": False,
                 "request_headers_recorded": False,
                 "timeout_seconds": self.timeout_seconds,
+                "retry_enabled": _coerce_retry_attempts(self.retry_attempts) > 0,
+                "retry_attempts_configured": _coerce_retry_attempts(self.retry_attempts),
+                "retry_backoff_seconds": _coerce_retry_backoff_seconds(self.retry_backoff_seconds),
+                "retry_status_codes": list(_coerce_retry_status_codes(self.retry_status_codes)),
                 "automatic_delivery": False,
                 "publishes_externally": True,
                 "transport": "github-release",
@@ -1059,7 +1142,7 @@ class GitHubReleaseExternalDeliveryProvider:
                     "existing_release_reuse_requires_explicit_config",
                     "existing_asset_conflict_blocks_upload_by_default",
                     "does_not_record_response_body_or_headers",
-                    "does_not_retry_github_requests",
+                    "retry_requires_explicit_config",
                     "does_not_delete_or_overwrite_existing_release_assets",
                     "full_cross_run_transaction_state_machine_not_implemented",
                 ],
@@ -1079,7 +1162,7 @@ class GitHubReleaseExternalDeliveryProvider:
 
     def _create_release(
         self, url: str, *, tag_name: str, release_name: str
-    ) -> tuple[int | None, str | None, str | None, str | None]:
+    ) -> tuple[int | None, str | None, str | None, list[dict[str, Any]], str | None]:
         body = json.dumps(
             {
                 "tag_name": tag_name,
@@ -1091,58 +1174,59 @@ class GitHubReleaseExternalDeliveryProvider:
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
-        request = urllib.request.Request(url, data=body, headers=self._request_headers(), method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
-                response_body = response.read()
-                upload_url, assets_url = _github_release_urls_from_response_body(response_body)
-                return int(response.status), upload_url, assets_url, None
-        except urllib.error.HTTPError as exc:
-            return int(exc.code), None, None, None
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, None, None, exc.__class__.__name__
-
-    def _get_release_by_tag(self, url: str) -> tuple[int | None, str | None, str | None, str | None]:
-        request = urllib.request.Request(url, headers=self._request_headers(), method="GET")
-        try:
-            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
-                response_body = response.read()
-                upload_url, assets_url = _github_release_urls_from_response_body(response_body)
-                return int(response.status), upload_url, assets_url, None
-        except urllib.error.HTTPError as exc:
-            return int(exc.code), None, None, None
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, None, None, exc.__class__.__name__
-
-    def _asset_exists(self, url: str, asset_name: str) -> tuple[int | None, bool | None, int | None, str | None]:
-        request = urllib.request.Request(url, headers=self._request_headers(), method="GET")
-        try:
-            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
-                response_body = response.read()
-                exists, count = _github_asset_exists_from_response_body(response_body, asset_name)
-                if exists is None:
-                    return int(response.status), None, count, "invalid_github_assets_response"
-                return int(response.status), exists, count, None
-        except urllib.error.HTTPError as exc:
-            return int(exc.code), None, None, None
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, None, None, exc.__class__.__name__
-
-    def _upload_asset(self, url: str, body: bytes) -> tuple[int | None, str | None]:
-        request = urllib.request.Request(
-            url,
-            data=body,
-            headers=self._request_headers(content_type="application/json"),
-            method="POST",
+        result = _http_request_with_retries(
+            lambda: urllib.request.Request(url, data=body, headers=self._request_headers(), method="POST"),
+            timeout_seconds=self.timeout_seconds,
+            retry_attempts=self.retry_attempts,
+            retry_status_codes=self.retry_status_codes,
+            retry_backoff_seconds=self.retry_backoff_seconds,
+            read_response_body=True,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=float(self.timeout_seconds)) as response:
-                response.read(0)
-                return int(response.status), None
-        except urllib.error.HTTPError as exc:
-            return int(exc.code), None
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return None, exc.__class__.__name__
+        upload_url, assets_url = _github_release_urls_from_response_body(result.body)
+        return result.status_code, upload_url, assets_url, result.attempts, result.error
+
+    def _get_release_by_tag(self, url: str) -> tuple[int | None, str | None, str | None, list[dict[str, Any]], str | None]:
+        result = _http_request_with_retries(
+            lambda: urllib.request.Request(url, headers=self._request_headers(), method="GET"),
+            timeout_seconds=self.timeout_seconds,
+            retry_attempts=self.retry_attempts,
+            retry_status_codes=self.retry_status_codes,
+            retry_backoff_seconds=self.retry_backoff_seconds,
+            read_response_body=True,
+        )
+        upload_url, assets_url = _github_release_urls_from_response_body(result.body)
+        return result.status_code, upload_url, assets_url, result.attempts, result.error
+
+    def _asset_exists(
+        self, url: str, asset_name: str
+    ) -> tuple[int | None, bool | None, int | None, list[dict[str, Any]], str | None]:
+        result = _http_request_with_retries(
+            lambda: urllib.request.Request(url, headers=self._request_headers(), method="GET"),
+            timeout_seconds=self.timeout_seconds,
+            retry_attempts=self.retry_attempts,
+            retry_status_codes=self.retry_status_codes,
+            retry_backoff_seconds=self.retry_backoff_seconds,
+            read_response_body=True,
+        )
+        exists, count = _github_asset_exists_from_response_body(result.body, asset_name)
+        if result.status_code is not None and 200 <= result.status_code < 300 and exists is None:
+            return result.status_code, None, count, result.attempts, "invalid_github_assets_response"
+        return result.status_code, exists, count, result.attempts, result.error
+
+    def _upload_asset(self, url: str, body: bytes) -> tuple[int | None, list[dict[str, Any]], str | None]:
+        result = _http_request_with_retries(
+            lambda: urllib.request.Request(
+                url,
+                data=body,
+                headers=self._request_headers(content_type="application/json"),
+                method="POST",
+            ),
+            timeout_seconds=self.timeout_seconds,
+            retry_attempts=self.retry_attempts,
+            retry_status_codes=self.retry_status_codes,
+            retry_backoff_seconds=self.retry_backoff_seconds,
+        )
+        return result.status_code, result.attempts, result.error
 
 
 @dataclass(frozen=True)
@@ -3397,6 +3481,99 @@ def _http_scheme_supported(value: str) -> bool:
 
 def _webhook_scheme_supported(value: str) -> bool:
     return _http_scheme_supported(value)
+
+
+def _coerce_retry_attempts(value: Any) -> int:
+    try:
+        attempts = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(attempts, 5))
+
+
+def _coerce_retry_backoff_seconds(value: Any) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(seconds, 30.0))
+
+
+def _coerce_retry_status_codes(value: Any) -> tuple[int, ...]:
+    if value is None:
+        return DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
+    raw_items: list[Any]
+    if isinstance(value, str):
+        raw_items = [item.strip() for item in value.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+    status_codes: list[int] = []
+    for item in raw_items:
+        try:
+            status_code = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 100 <= status_code <= 599 and status_code not in status_codes:
+            status_codes.append(status_code)
+    return tuple(status_codes) if status_codes else DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES
+
+
+def _http_request_with_retries(
+    request_factory: Any,
+    *,
+    timeout_seconds: float,
+    retry_attempts: Any = 0,
+    retry_status_codes: Any = None,
+    retry_backoff_seconds: Any = 0.0,
+    read_response_body: bool = False,
+) -> ExternalDeliveryHttpRequestResult:
+    max_retries = _coerce_retry_attempts(retry_attempts)
+    retryable_status_codes = set(_coerce_retry_status_codes(retry_status_codes))
+    backoff_seconds = _coerce_retry_backoff_seconds(retry_backoff_seconds)
+    total_attempts = max_retries + 1
+    attempts: list[dict[str, Any]] = []
+    final_status_code: int | None = None
+    final_error: str | None = None
+    final_body = b""
+    for attempt_number in range(1, total_attempts + 1):
+        status_code: int | None = None
+        error: str | None = None
+        body = b""
+        try:
+            request = request_factory()
+            with urllib.request.urlopen(request, timeout=float(timeout_seconds)) as response:
+                body = response.read() if read_response_body else response.read(0)
+                status_code = int(response.status)
+        except urllib.error.HTTPError as exc:
+            status_code = int(exc.code)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            error = exc.__class__.__name__
+        retryable = bool(error or (status_code in retryable_status_codes))
+        will_retry = retryable and attempt_number < total_attempts
+        attempts.append(
+            {
+                "attempt": attempt_number,
+                "status_code": status_code,
+                "error": error,
+                "retryable": retryable,
+                "will_retry": will_retry,
+            }
+        )
+        final_status_code = status_code
+        final_error = error
+        final_body = body
+        if not will_retry:
+            break
+        if backoff_seconds > 0:
+            time.sleep(backoff_seconds * (2 ** (attempt_number - 1)))
+    return ExternalDeliveryHttpRequestResult(
+        status_code=final_status_code,
+        error=final_error,
+        attempts=attempts,
+        body=final_body,
+    )
 
 
 def _redact_url_for_metadata(value: str) -> str | None:
