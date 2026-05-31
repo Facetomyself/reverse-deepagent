@@ -800,3 +800,15 @@ For default recovery / commit workflow planning, if there is runner work to do a
 Boundary: this is a plan-only baseline. It does not call the configured provider during planning, does not write `delivery-distributed-transaction-lock-operation.json`, does not acquire or release locks automatically, does not renew leases automatically, does not start a daemon or timer, does not perform stale takeover, does not implement Redlock quorum consensus, and does not bypass review gates. Actual acquire / release still requires explicit reviewed workflow steps and `resume_acquire_delivery_transaction_lock_provider` / `resume_release_delivery_transaction_lock_provider` approvals. Android / iOS / mini-program full runtime chains remain deferred.
 
 Tests cover missing provider lock evidence recommending acquire before recovery preflight, terminal provider lock evidence recommending release-only planning, explicit step actions remaining unchanged, dry-run no provider-operation writes, and existing resume workflow regressions.
+
+### Step 93 execution record: Workflow readiness plan baseline
+
+Status: implemented as read-only workflow readiness aggregation, not an automatic workflow engine.
+
+`DeliveryResumeWorkflowScheduler` now emits `workflow_readiness_plan` alongside `lock_lifecycle_plan` and `lease_renewal_plan`. The readiness plan aggregates planned steps, pending / already-completed counts, approval summary, failed checks, blocking reasons, lock lifecycle status, lease renewal status, and same-transaction workflow journal context into a compact review-facing summary.
+
+The plan reports `ready_for_review`, `ready_to_execute`, `blocked`, or `no_steps`, and includes required / missing / matched approval actions, whether lock-provider action or fencing review is required, journal-completed actions, and next review actions. This gives delivery / review subagents a stable read-only surface for deciding whether to record approvals, inspect checks, or run an explicitly reviewed workflow.
+
+Boundary: this is metadata only. It does not execute provider actions, write lock operation artifacts, replay side effects, start a daemon, perform automatic acquire / renew / release, bypass review approvals, decide rollback versus commit, or publish external delivery. Android / iOS / mini-program full runtime chains remain deferred.
+
+Tests cover missing provider-lock planning readiness, apply-mode missing approval blockers, and approved apply-mode pre-execution readiness for explicit lock lifecycle steps.

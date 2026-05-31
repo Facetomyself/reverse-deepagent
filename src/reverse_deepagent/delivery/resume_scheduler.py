@@ -101,6 +101,7 @@ class DeliveryResumeWorkflowExecution:
     existing_journal_summary: dict[str, Any]
     lock_lifecycle_plan: dict[str, Any]
     lease_renewal_plan: dict[str, Any]
+    workflow_readiness_plan: dict[str, Any]
     approval_summary: dict[str, Any]
     checks: list[dict[str, Any]]
     blocking_reasons: list[str]
@@ -135,6 +136,7 @@ class DeliveryResumeWorkflowExecution:
             "existing_journal_summary": self.existing_journal_summary,
             "lock_lifecycle_plan": self.lock_lifecycle_plan,
             "lease_renewal_plan": self.lease_renewal_plan,
+            "workflow_readiness_plan": self.workflow_readiness_plan,
             "approval_summary": self.approval_summary,
             "checks": self.checks,
             "blocking_reasons": self.blocking_reasons,
@@ -226,6 +228,18 @@ class DeliveryResumeWorkflowScheduler:
             transaction_id=transaction_id,
         )
         blocking_reasons = [check["name"] for check in checks if not check["passed"]]
+        workflow_readiness_plan = _workflow_readiness_plan(
+            action=self.config.action,
+            mode=self.config.mode,
+            transaction_id=str(transaction_id or ""),
+            planned_steps=planned_steps,
+            approval_summary=approval_summary,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            existing_journal_summary=existing_journal_summary,
+            lock_lifecycle_plan=lock_lifecycle_plan,
+            lease_renewal_plan=lease_renewal_plan,
+        )
         step_results: list[dict[str, Any]] = []
         if not blocking_reasons:
             step_results = self._run_steps(
@@ -262,6 +276,7 @@ class DeliveryResumeWorkflowScheduler:
             existing_journal_summary=existing_journal_summary,
             lock_lifecycle_plan=lock_lifecycle_plan,
             lease_renewal_plan=lease_renewal_plan,
+            workflow_readiness_plan=workflow_readiness_plan,
             approval_summary=approval_summary,
             checks=checks,
             blocking_reasons=blocking_reasons,
@@ -612,6 +627,99 @@ def _default_step_actions(resume_plan: dict[str, Any]) -> list[str]:
     if transition_recommended == "apply_recovery_or_commit_after_review":
         return ["preflight_backend_manifest_recovery"]
     return []
+
+
+def _workflow_readiness_plan(
+    *,
+    action: str,
+    mode: DeliveryExecutionMode,
+    transaction_id: str,
+    planned_steps: list[dict[str, Any]],
+    approval_summary: dict[str, Any],
+    checks: list[dict[str, Any]],
+    blocking_reasons: list[str],
+    existing_journal_summary: dict[str, Any],
+    lock_lifecycle_plan: dict[str, Any],
+    lease_renewal_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a side-effect-free readiness summary for review/subagent routing."""
+
+    pending_steps = [step for step in planned_steps if not step.get("already_completed")]
+    completed_steps = [step for step in planned_steps if step.get("already_completed")]
+    failed_checks = [str(check.get("name") or "") for check in checks if not check.get("passed")]
+    expected_step_actions = [str(action) for action in approval_summary.get("expected_step_actions", []) if str(action).strip()]
+    missing_step_actions = [str(action) for action in approval_summary.get("missing_step_actions", []) if str(action).strip()]
+    matched_step_actions = [str(action) for action in approval_summary.get("matched_step_actions", []) if str(action).strip()]
+    required_approval_actions = _approval_actions_for_step_actions(expected_step_actions)
+    missing_approval_actions = _approval_actions_for_step_actions(missing_step_actions)
+    matched_approval_actions = _approval_actions_for_step_actions(matched_step_actions)
+    requires_lock_provider_action = any(str(step.get("action") or "") in DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS for step in planned_steps)
+    lock_lifecycle_recommended = bool(lock_lifecycle_plan.get("recommended_step_actions"))
+    lease_renewal_recommended = bool(lease_renewal_plan.get("recommended_step_action"))
+    uses_journal_replay_context = bool(existing_journal_summary.get("completed_actions")) or any(step.get("already_completed") for step in planned_steps)
+
+    if blocking_reasons or failed_checks:
+        status = "blocked"
+        next_review_actions = ["inspect_resume_workflow_scheduler_checks"]
+    elif not planned_steps:
+        status = "no_steps"
+        next_review_actions = ["inspect_delivery_transaction_state"]
+    elif missing_approval_actions:
+        status = "ready_for_review"
+        next_review_actions = ["record_review_approval_for_each_pending_resume_workflow_step"]
+    elif action == "execute_workflow" and mode == DeliveryExecutionMode.APPLY:
+        status = "ready_to_execute"
+        next_review_actions = ["execute_delivery_resume_workflow"]
+    else:
+        status = "ready_for_review"
+        next_review_actions = ["review_planned_resume_workflow_steps"]
+
+    return {
+        "enabled": True,
+        "status": status,
+        "transaction_id": transaction_id or None,
+        "action": action,
+        "mode": mode.value,
+        "planned_step_count": len(planned_steps),
+        "pending_step_count": len(pending_steps),
+        "already_completed_step_count": len(completed_steps),
+        "pending_step_actions": [str(step.get("action") or "") for step in pending_steps],
+        "already_completed_step_actions": [str(step.get("action") or "") for step in completed_steps],
+        "required_step_actions": expected_step_actions,
+        "missing_step_actions": missing_step_actions,
+        "matched_step_actions": matched_step_actions,
+        "required_approval_actions": required_approval_actions,
+        "missing_approval_actions": missing_approval_actions,
+        "matched_approval_actions": matched_approval_actions,
+        "blocking_reasons": list(blocking_reasons),
+        "failed_checks": failed_checks,
+        "lock_lifecycle_status": lock_lifecycle_plan.get("status"),
+        "lock_lifecycle_reason": lock_lifecycle_plan.get("reason"),
+        "lease_renewal_status": lease_renewal_plan.get("status"),
+        "lease_renewal_reason": lease_renewal_plan.get("reason"),
+        "requires_lock_provider_action": requires_lock_provider_action,
+        "requires_fencing_review": bool(
+            requires_lock_provider_action or lock_lifecycle_recommended or lease_renewal_recommended
+        ),
+        "uses_journal_replay_context": uses_journal_replay_context,
+        "journal_completed_actions": list(existing_journal_summary.get("completed_actions", [])),
+        "next_review_actions": next_review_actions,
+        "dry_run_plan_only": True,
+        "side_effects_performed": False,
+        "automatic_execution": False,
+        "starts_daemon": False,
+        "automatic_lock_lifecycle": False,
+        "automatic_lease_renewal": False,
+    }
+
+
+def _approval_actions_for_step_actions(step_actions: list[str]) -> list[str]:
+    approval_actions: list[str] = []
+    for step_action in step_actions:
+        approval_action = RESUME_WORKFLOW_ACTION_TO_APPROVAL_ACTION.get(str(step_action))
+        if approval_action and approval_action not in approval_actions:
+            approval_actions.append(approval_action)
+    return approval_actions
 
 
 def _runner_policy(step: dict[str, Any]) -> dict[str, Any]:
