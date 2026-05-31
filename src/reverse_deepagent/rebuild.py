@@ -884,6 +884,17 @@ def render_not_ready_readme(plan: dict[str, Any]) -> str:
         ]
         for action in runtime_assisted.get("recommended_actions", []):
             lines.append(f"- {action}")
+        triage_hook_plan = runtime_assisted.get("triage_hook_plan") if isinstance(runtime_assisted.get("triage_hook_plan"), dict) else {}
+        if triage_hook_plan:
+            lines.extend(["", "Plan-only hook/debugger candidates:"])
+            for item in triage_hook_plan.get("hook_plans", []):
+                if not isinstance(item, dict):
+                    continue
+                lines.append(f"- {item.get('plan_id')}: {item.get('target')} -> {item.get('recommended_subagent')}")
+            artifacts = [str(item.get("artifact_key")) for item in triage_hook_plan.get("runtime_artifacts", []) if isinstance(item, dict) and item.get("artifact_key")]
+            if artifacts:
+                lines.extend(["", "Planned artifacts:"])
+                lines.extend([f"- {artifact}" for artifact in artifacts])
         lines.extend(["", "Full machine-readable plan:", "", "```json", json.dumps(plan, ensure_ascii=False, indent=2), "```", ""])
         return "\n".join(lines)
     return "# Rebuild bundle not ready\n\n" + json.dumps(plan, ensure_ascii=False, indent=2) + "\n"
@@ -1559,6 +1570,7 @@ def _build_runtime_assisted_plan(strategy: dict[str, Any]) -> dict[str, Any]:
             "Keep the original protected code under an instrumented runtime until portable semantics are proven.",
         ),
         "hook_points": [str(item) for item in strategy.get("hook_points", [])],
+        "triage_hook_plan": strategy.get("triage_hook_plan") if isinstance(strategy.get("triage_hook_plan"), dict) else {},
         "known_blockers": [str(item) for item in strategy.get("known_blockers", [])],
         "recommended_actions": [str(item) for item in replay_plan.get("recommended_actions", [])],
     }

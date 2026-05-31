@@ -429,6 +429,7 @@ The following items used to be listed as broad follow-ups and now have conservat
 - Built-in local archive, webhook, presigned object, and GitHub Release external delivery baselines.
 - Generalized runtime context stability diff baseline with field-level stable / volatile / session-bound / missing / type-drift / object-drift classification, legacy diff field compatibility, and secret-safe previews.
 - Generated rebuild review hints derived from runtime-context diff classifications, including volatile, session-bound, missing-field, type-drift, and object-drift risk hints.
+- Plan-only protected-flow triage hook planner for WASM / VM / obfuscation / anti-debug / dynamic-secret markers, including workspace routes for `protection-triage-hooks.json`, `wasm-runtime-candidates.json`, and `vm-dispatcher-candidates.json`.
 
 These baselines are intentionally review-gated, read-only, or pure-analysis-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, automatic browser context collection, or automatic external publication.
 

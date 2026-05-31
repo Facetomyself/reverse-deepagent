@@ -604,6 +604,12 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             self.assertIn("runtime-js-vm", plan["pure_extraction"]["runtime_context_required"])
             self.assertIn("wasm-module", plan["pure_extraction"]["runtime_context_required"])
             self.assertTrue(plan["runtime_assisted"]["required"])
+            triage_hook_plan = plan["runtime_assisted"]["triage_hook_plan"]
+            self.assertEqual(triage_hook_plan["status"], "planned")
+            plan_ids = {item["plan_id"] for item in triage_hook_plan["hook_plans"]}
+            self.assertIn("wasm-instantiation-observe", plan_ids)
+            self.assertIn("vm-dispatcher-candidate-observe", plan_ids)
+            self.assertIn("anti-debug-observe", plan_ids)
             manual_hint = next(hint for hint in plan["review_hints"] if hint["code"] == "manual_port_required")
             self.assertEqual(manual_hint["severity"], "risk")
             self.assertIn("strategy=triage_wasm_vm_obfuscation", manual_hint["evidence"])
@@ -611,6 +617,8 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             self.assertNotIn("sign_rebuild", rebuild.generated_files)
             readme = Path(rebuild.generated_files["README"]).read_text(encoding="utf-8")
             self.assertIn("Runtime-assisted triage required", readme)
+            self.assertIn("Plan-only hook/debugger candidates", readme)
+            self.assertIn("workspace/wasm-runtime-candidates.json", readme)
 
     def test_runtime_context_diff_adds_session_bound_review_hint(self) -> None:
         source_context = """function buildSign(keyword, timestamp) {

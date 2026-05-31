@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .protected_flow_planner import build_protected_flow_triage_plan
+
 StrategyDetector = Callable[[str], dict[str, Any] | None]
 
 
@@ -143,6 +145,7 @@ def _detect_protected_flow_triage(source_context: str) -> dict[str, Any] | None:
             "known_blockers": caveats,
         }
     )
+    strategy["triage_hook_plan"] = build_protected_flow_triage_plan(strategy)
     return strategy
 
 

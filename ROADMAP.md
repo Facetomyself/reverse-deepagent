@@ -72,6 +72,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Field-level runtime context classifications for stable, volatile, session-bound, missing, type-drift, and object-drift values.
 - Secret-like runtime context previews redacted to type, length, and digest metadata while preserving legacy `stable_keys` / `volatile_keys` / `changes` compatibility fields.
 - Generated rebuild review hints derived from runtime-context diff classifications for volatile, session-bound, missing, type-drift, and object-drift fields.
+- Plan-only WASM / VM / obfuscation triage hook planner with protected-flow hook/debugger candidates and workspace artifact routes.
 
 ## Active non-mobile follow-ups
 
@@ -95,7 +96,6 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Strategy and rebuild quality
 
-- WASM / VM / obfuscation triage hooks.
 - Stronger strategy confidence and evidence scoring.
 - Strategy detector pluginization if the built-in strategy corpus grows too large.
 

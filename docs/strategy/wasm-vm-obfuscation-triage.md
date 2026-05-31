@@ -124,6 +124,8 @@ The current public demo implements a conservative `protected_flow_triage` strate
 
 This is a marker-level baseline, not a full WASM binary inspector, VM bytecode semantics engine, or anti-debug neutralizer. The detector is intentionally conservative about false positives: ordinary `cookie`, `localStorage`, `navigator`, `nonce`, `csrf`, or business variables such as `ip` should not become protected-flow triage by name alone. They should remain runtime-context / manual-port inputs unless stronger evidence appears, such as WASM / VM structure, anti-debug checks, native bridge calls, volatile context, or a strong runtime challenge marker.
 
+The current baseline also includes a plan-only `triage_hook_plan`. It translates protected-flow findings into reviewable hook/debugger candidates and planned artifacts such as `workspace/protection-triage-hooks.json`, `workspace/wasm-runtime-candidates.json`, and `workspace/vm-dispatcher-candidates.json`. The planner is deliberately non-executing: it does not install hooks, patch runtime state, inspect WASM binaries, traverse arbitrary custom loaders, execute module federation `get/init`, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains. Rebuild README output may list these candidates so a human or subagent can decide which explicit protection/debug action to run next.
+
 Future work should deepen runtime/backend features behind the existing strategy / runtime contracts:
 
 - More strategy detector rules for obfuscator families, packed chunks, bytecode formats, and common self-defending patterns.

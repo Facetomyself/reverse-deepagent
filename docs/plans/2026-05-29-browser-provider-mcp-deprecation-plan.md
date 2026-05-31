@@ -864,3 +864,15 @@ Status: implemented as rebuild review metadata, not a rebuild readiness override
 Boundary: these hints do not change the authoritative `ready` calculation, do not mutate generated code, do not collect browser context, do not execute replay, do not bypass manual review or delivery gates, and do not touch Android / iOS / mini-program full runtime chains. They are review metadata for humans, CI gates, and rebuild / review subagents.
 
 Tests cover session-bound hint generation from raw runtime-context samples, volatile hint generation from derived diff payloads, explicit diff evidence for missing / type-drift / object-drift hints, and existing rebuild artifact regressions.
+
+### Step 99 execution record: Protected-flow triage hook planner baseline
+
+Status: implemented as a plan-only strategy / rebuild guidance baseline, not a hook executor, anti-debug patcher, WASM binary inspector, VM semantics engine, or runtime collector.
+
+`reverse_deepagent.strategies.protected_flow_planner` now exposes `ProtectedFlowTriagePlan` and `build_protected_flow_triage_plan(...)`. The existing `protected_flow_triage` detector attaches `triage_hook_plan` to triage-only strategies for WASM, VM / obfuscation, anti-debug, and dynamic-secret findings. The plan emits hook/debugger candidates, planned workspace artifacts, review hints, safe finding summaries, and an explicit side-effect policy showing that hooks are not installed, runtime is not patched, browsers are not started, MCP is not called, target code is not executed, and mobile full runtime chains are not touched.
+
+Rebuild plans now carry this protected-flow `triage_hook_plan` inside `runtime_assisted`, and the not-ready rebuild README lists plan-only hook/debugger candidates plus planned artifacts for reviewer handoff. The workspace contract indexes `workspace/protection-triage-hooks.json`, `workspace/wasm-runtime-candidates.json`, and `workspace/vm-dispatcher-candidates.json` under their future virtual folders without changing existing canonical flat artifact paths.
+
+Boundary: this is a reviewable planner only. It does not implement automatic WASM import/export inspection, arbitrary custom loader traversal, async chunk graph traversal, execution-style module federation analysis, closure wrapper replacement, JS heap mutation audit, automatic hook installation, automatic anti-debug neutralization, or Android / iOS / mini-program full runtime chains.
+
+Tests cover protected-flow strategy hook-plan output, rebuild runtime-assisted plan / README propagation, workspace route indexing, and existing protected-flow / rebuild regressions.

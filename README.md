@@ -878,7 +878,7 @@ python runner.py --base-url "http://127.0.0.1:8765" --output result.json
 
 策略库还提供 `STRATEGY_SAMPLE_CORPUS` / `list_strategy_sample_corpus()`，覆盖 fixture reducer、MD5、SHA-1、SHA-256、SHA-512、HMAC-MD5、HMAC-SHA1、HMAC-SHA256、HMAC-SHA512、Base64 和 URL encoding 的确定性样本。测试会用这些样本同时验证检测器输出和生成的 `sign_rebuild.py` 自检。
 
-WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说成纯 Python 可移植。对应边界见 [`docs/strategy/wasm-vm-obfuscation-triage.md`](docs/strategy/wasm-vm-obfuscation-triage.md)：这类场景会优先命中 `protected_flow_triage` 检测器，输出仅分诊 / 运行时辅助 / 部分完成计划，并通过 `review_hints` 阻断误导性的纯算交付。
+WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说成纯 Python 可移植。对应边界见 [`docs/strategy/wasm-vm-obfuscation-triage.md`](docs/strategy/wasm-vm-obfuscation-triage.md)：这类场景会优先命中 `protected_flow_triage` 检测器，输出仅分诊 / 运行时辅助 / 部分完成计划，并通过 `review_hints` 阻断误导性的纯算交付。protected-flow strategy 还会携带 plan-only `triage_hook_plan`，在 rebuild README 中列出 hook/debugger 候选和计划 artifact，例如 `workspace/protection-triage-hooks.json`、`workspace/wasm-runtime-candidates.json`、`workspace/vm-dispatcher-candidates.json`；这些只是显式复核计划，不会默认安装 hook、patch runtime、启动浏览器或调用 MCP。
 
 当前会阻断纯算提取的运行时上下文依赖：
 
