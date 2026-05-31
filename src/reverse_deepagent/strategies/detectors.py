@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .evidence_scoring import build_strategy_evidence_score
 from .protected_flow_planner import build_protected_flow_triage_plan
 
 StrategyDetector = Callable[[str], dict[str, Any] | None]
@@ -146,6 +147,7 @@ def _detect_protected_flow_triage(source_context: str) -> dict[str, Any] | None:
         }
     )
     strategy["triage_hook_plan"] = build_protected_flow_triage_plan(strategy)
+    strategy["evidence_score"] = build_strategy_evidence_score(strategy)
     return strategy
 
 
@@ -290,7 +292,7 @@ def _strategy(
         positive_markers=positive_markers or [],
         caveats=caveats or [],
     )
-    return {
+    strategy = {
         "id": strategy_id,
         "supported": supported,
         "confidence": confidence,
@@ -301,6 +303,8 @@ def _strategy(
         "salt": salt,
         "confidence_reason": confidence_reason,
     }
+    strategy["evidence_score"] = build_strategy_evidence_score(strategy)
+    return strategy
 
 
 def _confidence_score(

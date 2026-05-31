@@ -303,6 +303,9 @@ class RebuildArtifactTests(unittest.TestCase):
             self.assertEqual(rebuild.status, ExecutionStatus.SUCCESS)
             self.assertEqual(rebuild.rebuild_plan["algorithm_strategy"]["id"], "md5_keyword_timestamp")
             self.assertTrue(rebuild.rebuild_plan["pure_extraction"]["pure_extractable"])
+            self.assertEqual(rebuild.rebuild_plan["evidence_score"]["label"], "strong_pure_candidate")
+            self.assertIn("pure_extractable", rebuild.rebuild_plan["evidence_score"]["signals"])
+            self.assertFalse(rebuild.rebuild_plan["evidence_score"]["side_effect_policy"]["changes_ready_calculation"])
             hints = rebuild.rebuild_plan["review_hints"]
             self.assertIn("pure_strategy_detected", {hint["code"] for hint in hints})
             self.assertEqual({hint["severity"] for hint in hints}, {"info"})
@@ -604,6 +607,9 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             self.assertIn("runtime-js-vm", plan["pure_extraction"]["runtime_context_required"])
             self.assertIn("wasm-module", plan["pure_extraction"]["runtime_context_required"])
             self.assertTrue(plan["runtime_assisted"]["required"])
+            self.assertEqual(plan["evidence_score"]["label"], "runtime_assisted_required")
+            self.assertIn("protected_flow_triage_required", plan["evidence_score"]["blockers"])
+            self.assertEqual(plan["evidence_score"]["recommended_next_action"], "run_reviewed_runtime_triage_hooks_before_porting")
             triage_hook_plan = plan["runtime_assisted"]["triage_hook_plan"]
             self.assertEqual(triage_hook_plan["status"], "planned")
             plan_ids = {item["plan_id"] for item in triage_hook_plan["hook_plans"]}
@@ -667,6 +673,8 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         final_result = _final_result_for_source(source_context, sample_sign, runtime_context=runtime_context)
         with tempfile.TemporaryDirectory() as tmpdir:
             rebuild = write_rebuild_bundle(Path(tmpdir) / "artifacts", final_result.task_card, final_result)
+            self.assertIn("volatile_runtime_context", rebuild.rebuild_plan["evidence_score"]["blockers"])
+            self.assertEqual(rebuild.rebuild_plan["evidence_score"]["components"]["runtime_context"]["volatile_field_count"], 1)
             volatile_hint = next(hint for hint in rebuild.rebuild_plan["review_hints"] if hint["code"] == "volatile_runtime_context")
             self.assertEqual(volatile_hint["severity"], "risk")
             self.assertIn("volatile_keys=localStorage.nonce", volatile_hint["evidence"])

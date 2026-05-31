@@ -876,3 +876,15 @@ Rebuild plans now carry this protected-flow `triage_hook_plan` inside `runtime_a
 Boundary: this is a reviewable planner only. It does not implement automatic WASM import/export inspection, arbitrary custom loader traversal, async chunk graph traversal, execution-style module federation analysis, closure wrapper replacement, JS heap mutation audit, automatic hook installation, automatic anti-debug neutralization, or Android / iOS / mini-program full runtime chains.
 
 Tests cover protected-flow strategy hook-plan output, rebuild runtime-assisted plan / README propagation, workspace route indexing, and existing protected-flow / rebuild regressions.
+
+### Step 100 execution record: Strategy evidence scoring baseline
+
+Status: implemented as provider-neutral review metadata, not a readiness override, runtime collector, replay executor, or review-gate bypass.
+
+`reverse_deepagent.strategies.evidence_scoring` now exposes `StrategyEvidenceScore` and `build_strategy_evidence_score(...)`. Detector strategies keep their existing `confidence` / `confidence_score` compatibility fields and additionally carry `evidence_score`. Rebuild plans also embed `evidence_score`, combining detector confidence, strategy support, validation readiness, replay URL availability, pure or context-aware extraction state, runtime-context diff classifications, protected-flow triage state, and final rebuild readiness into a compact score, label, signals, blockers, components, and recommended next action.
+
+The scoring labels are intentionally review-facing: `strong_pure_candidate`, `reviewable_candidate`, `needs_more_evidence`, and `runtime_assisted_required`. Protected-flow strategies recommend reviewed runtime triage hooks before porting; volatile or missing runtime context recommends collecting or dynamically binding context; strong pure candidates recommend reviewing generated pure rebuild artifacts before delivery.
+
+Boundary: this score is advisory only. It does not change the authoritative `ready` calculation, does not collect runtime context, does not execute replay, does not start BrowserProvider sessions, does not call MCP, does not install hooks, does not mutate generated code, and does not touch Android / iOS / mini-program full runtime chains.
+
+Tests cover strong pure strategy scoring, runtime-context drift scoring, protected-flow runtime-assisted scoring, detector payload compatibility, and rebuild-plan propagation.

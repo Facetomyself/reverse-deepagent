@@ -106,8 +106,11 @@ class StrategyDetectorTests(unittest.TestCase):
                 self.assertEqual(strategy["template"], expected_template)
                 self.assertIn("confidence", strategy)
                 self.assertIn("confidence_score", strategy)
+                self.assertIn("evidence_score", strategy)
                 self.assertGreater(strategy["confidence_score"]["score"], 0)
+                self.assertGreaterEqual(strategy["evidence_score"]["score"], 0)
                 self.assertEqual(strategy["confidence_score"]["label"], strategy["confidence"])
+                self.assertTrue(strategy["evidence_score"]["side_effect_policy"]["score_only"])
 
     def test_unsupported_strategy_is_explicit(self) -> None:
         strategy = detect_algorithm_strategy("function buildSign() { return window.someVm.run(); }")
@@ -116,6 +119,8 @@ class StrategyDetectorTests(unittest.TestCase):
         self.assertEqual(strategy["confidence"], "low")
         self.assertLessEqual(strategy["confidence_score"]["score"], 0.2)
         self.assertIn("manual port or runtime-backed execution required", strategy["confidence_score"]["caveats"])
+        self.assertEqual(strategy["evidence_score"]["label"], "runtime_assisted_required")
+        self.assertIn("strategy_not_supported", strategy["evidence_score"]["blockers"])
 
     def test_confidence_score_records_caveats_for_dynamic_hmac_secret(self) -> None:
         strategy = detect_algorithm_strategy(

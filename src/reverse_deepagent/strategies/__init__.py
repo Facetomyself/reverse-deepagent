@@ -1,4 +1,5 @@
 from .corpus import STRATEGY_SAMPLE_CORPUS, StrategySample, list_strategy_sample_corpus
+from .evidence_scoring import StrategyEvidenceScore, build_strategy_evidence_score
 from .detectors import (
     ALGORITHM_STRATEGY_REGISTRY,
     AlgorithmStrategyRule,
@@ -15,9 +16,11 @@ __all__ = [
     "AlgorithmStrategyRule",
     "ProtectedFlowTriagePlan",
     "RuntimeContextSample",
+    "StrategyEvidenceScore",
     "StrategySample",
     "StrategyDetector",
     "build_protected_flow_triage_plan",
+    "build_strategy_evidence_score",
     "detect_algorithm_strategy",
     "diff_runtime_context_payload",
     "diff_runtime_context_samples",

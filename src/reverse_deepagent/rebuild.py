@@ -11,6 +11,7 @@ from reverse_deepagent.strategies import (
     ALGORITHM_STRATEGY_REGISTRY,
     AlgorithmStrategyRule,
     detect_algorithm_strategy,
+    build_strategy_evidence_score,
     diff_runtime_context_payload,
     list_algorithm_strategy_registry,
 )
@@ -47,6 +48,15 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
     base_url = _derive_base_url(replay_url or task_card.target_url_or_file)
     validation_ready = _validation_is_ready(best_validation)
     ready = bool(validation_ready and strategy["supported"] and (extraction["pure_extractable"] or extraction["context_aware_extractable"]) and replay_url)
+    evidence_score = build_strategy_evidence_score(
+        strategy,
+        extraction=extraction,
+        runtime_context_diff=runtime_context_diff,
+        validation=best_validation,
+        validation_ready=validation_ready,
+        replay_url=replay_url,
+        ready=ready,
+    )
     review_hints = _build_review_hints(
         strategy=strategy,
         extraction=extraction,
@@ -67,6 +77,7 @@ def build_rebuild_bundle(task_card: TaskCard, final_result: FinalResult) -> tupl
         "pure_extraction": extraction,
         "runtime_context": runtime_context,
         "runtime_context_diff": runtime_context_diff,
+        "evidence_score": evidence_score,
         "source": {
             "file_url": best_candidate.get("file_url"),
             "script_id": best_candidate.get("script_id"),
