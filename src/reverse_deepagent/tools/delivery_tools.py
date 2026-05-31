@@ -323,6 +323,7 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
         require_transaction_lock: bool = False,
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
+        lease_renewal_warning_seconds: int | None = None,
         expected_resume_token: str | None = None,
         expected_transaction_lock_fencing_token: str | None = None,
         transaction_lock_provider_id: str = "local-file-lock",
@@ -359,6 +360,7 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
             require_transaction_lock=require_transaction_lock,
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
+            lease_renewal_warning_seconds=lease_renewal_warning_seconds,
             expected_resume_token=expected_resume_token,
             expected_transaction_lock_fencing_token=expected_transaction_lock_fencing_token,
             transaction_lock_provider_id=transaction_lock_provider_id,
@@ -374,6 +376,8 @@ def make_delivery_resume_workflow_scheduler_tool(default_delivery_root: str | Pa
         "then delegates resume steps to DeliveryResumeRunner and appends delivery-resume-workflow-journal.json. "
         "step_actions_json should be a JSON list such as [\"preflight_backend_manifest_recovery\", \"apply_backend_manifest_recovery\"] "
         "or explicit lock-provider steps such as [\"acquire_delivery_transaction_lock_provider\", \"renew_delivery_transaction_lock_provider\", \"release_delivery_transaction_lock_provider\"]. "
+        "When no explicit step_actions_json is provided, lease_renewal_warning_seconds can tune the plan-only lease renewal recommendation window; "
+        "expired or soon-expiring provider lease evidence may prepend a reviewed renew_delivery_transaction_lock_provider step, but planning never contacts the provider. "
         "transaction_lock_provider_id and transaction_lock_provider_metadata_json configure those lock-provider steps; they call acquire_lock / renew_lock / release_lock only when explicitly reviewed and are not a background daemon or auto-renew loop. "
         "The scheduler skips already completed journaled steps, writes delivery-resume-workflow.json for completed apply workflows, "
         "and never starts new delivery, publishes external delivery, automatically acquires/renews/releases distributed locks, or executes physical rollback."

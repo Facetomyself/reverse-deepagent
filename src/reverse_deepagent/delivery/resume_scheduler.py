@@ -60,6 +60,7 @@ class DeliveryResumeWorkflowSchedulerConfig:
     require_transaction_lock: bool = False
     transaction_lock_owner: str | None = None
     transaction_lock_lease_seconds: int = 900
+    lease_renewal_warning_seconds: int | None = None
     expected_resume_token: str | None = None
     expected_transaction_lock_fencing_token: str | None = None
     transaction_lock_provider_id: str = "local-file-lock"
@@ -98,6 +99,7 @@ class DeliveryResumeWorkflowExecution:
     planned_steps: list[dict[str, Any]]
     step_results: list[dict[str, Any]]
     existing_journal_summary: dict[str, Any]
+    lease_renewal_plan: dict[str, Any]
     approval_summary: dict[str, Any]
     checks: list[dict[str, Any]]
     blocking_reasons: list[str]
@@ -130,6 +132,7 @@ class DeliveryResumeWorkflowExecution:
             "planned_steps": self.planned_steps,
             "step_results": self.step_results,
             "existing_journal_summary": self.existing_journal_summary,
+            "lease_renewal_plan": self.lease_renewal_plan,
             "approval_summary": self.approval_summary,
             "checks": self.checks,
             "blocking_reasons": self.blocking_reasons,
@@ -185,7 +188,20 @@ class DeliveryResumeWorkflowScheduler:
         transaction_id = self.config.transaction_id or _first_str(resume_plan.get("transaction_id"))
         existing_entries = _read_workflow_journal_entries(delivery_root / self.config.workflow_journal_name)
         existing_journal_summary = _journal_summary(existing_entries, transaction_id=str(transaction_id or ""))
-        planned_steps = self._planned_steps(resume_plan=resume_plan, completed_actions=set(existing_journal_summary["completed_actions"]))
+        lease_renewal_plan = _lease_renewal_plan(
+            delivery_root=delivery_root,
+            existing_entries=existing_entries,
+            transaction_id=str(transaction_id or ""),
+            created_at=created_at,
+            warning_seconds=self.config.lease_renewal_warning_seconds
+            if self.config.lease_renewal_warning_seconds is not None
+            else max(1, int(self.config.transaction_lock_lease_seconds) // 3),
+        )
+        planned_steps = self._planned_steps(
+            resume_plan=resume_plan,
+            completed_actions=set(existing_journal_summary["completed_actions"]),
+            lease_renewal_plan=lease_renewal_plan,
+        )
         approval_summary = _approval_summary(
             ledger_path=self.config.resolved_approval_ledger_path(),
             transaction_id=transaction_id,
@@ -233,6 +249,7 @@ class DeliveryResumeWorkflowScheduler:
             planned_steps=planned_steps,
             step_results=step_results,
             existing_journal_summary=existing_journal_summary,
+            lease_renewal_plan=lease_renewal_plan,
             approval_summary=approval_summary,
             checks=checks,
             blocking_reasons=blocking_reasons,
@@ -272,8 +289,21 @@ class DeliveryResumeWorkflowScheduler:
             )
         return execution
 
-    def _planned_steps(self, *, resume_plan: dict[str, Any], completed_actions: set[str]) -> list[dict[str, Any]]:
+    def _planned_steps(
+        self,
+        *,
+        resume_plan: dict[str, Any],
+        completed_actions: set[str],
+        lease_renewal_plan: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         actions = list(self.config.step_actions) if self.config.step_actions else _default_step_actions(resume_plan)
+        if (
+            not self.config.step_actions
+            and lease_renewal_plan.get("recommended_step_action") == DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION
+            and DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION not in actions
+            and DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION not in completed_actions
+        ):
+            actions = [DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION, *actions]
         steps: list[dict[str, Any]] = []
         for index, action in enumerate(actions[: max(0, int(self.config.max_steps))], start=1):
             steps.append(
@@ -558,6 +588,8 @@ def _default_step_actions(resume_plan: dict[str, Any]) -> list[str]:
     transition_recommended = str(transition.get("recommended_transition") or "")
     if transition_recommended in SUPPORTED_DELIVERY_RESUME_WORKFLOW_STEP_ACTIONS:
         return [transition_recommended]
+    if transition_recommended == "apply_recovery_or_commit_after_review":
+        return ["preflight_backend_manifest_recovery"]
     return []
 
 
@@ -760,6 +792,112 @@ def _journal_replay_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _lease_renewal_plan(
+    *,
+    delivery_root: Path,
+    existing_entries: list[dict[str, Any]],
+    transaction_id: str,
+    created_at: str,
+    warning_seconds: int,
+) -> dict[str, Any]:
+    projection = _read_json_object(delivery_root / "delivery-distributed-transaction-lock.json")
+    projection_candidate = _lease_candidate_from_projection(projection, transaction_id=transaction_id)
+    journal_candidate = _lease_candidate_from_journal(existing_entries, transaction_id=transaction_id)
+    candidate = projection_candidate if projection_candidate.get("lease_expires_at") else journal_candidate
+    lease_expires_at = str(candidate.get("lease_expires_at") or "")
+    remaining_seconds = _iso_datetime_remaining_seconds(lease_expires_at, now_iso=created_at) if lease_expires_at else None
+    warning_seconds = max(0, int(warning_seconds))
+    lease_missing = not bool(lease_expires_at)
+    lease_expired = remaining_seconds is not None and remaining_seconds <= 0
+    lease_expiring = remaining_seconds is not None and 0 < remaining_seconds <= warning_seconds
+    should_plan_renewal = bool(candidate.get("fencing_token")) and (lease_expired or lease_expiring)
+    if lease_missing:
+        reason = "lease_missing"
+    elif lease_expired:
+        reason = "lease_expired"
+    elif lease_expiring:
+        reason = "lease_expiring_soon"
+    else:
+        reason = "lease_healthy"
+    return {
+        "enabled": True,
+        "status": "renewal_recommended" if should_plan_renewal else "not_required",
+        "reason": reason,
+        "recommended_step_action": DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION if should_plan_renewal else None,
+        "requires_review_approval_action": RESUME_WORKFLOW_ACTION_TO_APPROVAL_ACTION[DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION] if should_plan_renewal else None,
+        "source": candidate.get("source"),
+        "provider_id": candidate.get("provider_id"),
+        "transaction_id": candidate.get("transaction_id") or None,
+        "owner": candidate.get("owner"),
+        "fencing_token_present": bool(candidate.get("fencing_token")),
+        "lease_expires_at": lease_expires_at or None,
+        "remaining_seconds": remaining_seconds,
+        "warning_seconds": warning_seconds,
+        "dry_run_plan_only": True,
+        "automatic_renewal": False,
+        "starts_daemon": False,
+        "requires_review_approval": bool(should_plan_renewal),
+    }
+
+
+def _lease_candidate_from_projection(payload: dict[str, Any], *, transaction_id: str) -> dict[str, Any]:
+    if not payload:
+        return {"source": "provider_projection_missing"}
+    payload_transaction_id = str(payload.get("transaction_id") or "").strip()
+    if transaction_id and payload_transaction_id and payload_transaction_id != transaction_id:
+        return {"source": "provider_projection_transaction_mismatch", "transaction_id": payload_transaction_id}
+    return {
+        "source": "provider_projection",
+        "provider_id": payload.get("provider_id"),
+        "transaction_id": payload_transaction_id,
+        "owner": payload.get("owner"),
+        "fencing_token": payload.get("fencing_token"),
+        "lease_expires_at": payload.get("lease_expires_at"),
+    }
+
+
+def _lease_candidate_from_journal(entries: list[dict[str, Any]], *, transaction_id: str) -> dict[str, Any]:
+    candidate: dict[str, Any] = {"source": "workflow_journal_missing"}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        action = str(entry.get("action") or "")
+        status = str(entry.get("status") or "")
+        if action not in DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS or status not in _DELIVERY_RESUME_WORKFLOW_SUCCESS_STATUSES:
+            continue
+        entry_transaction_id = str(entry.get("transaction_id") or "").strip()
+        if transaction_id and entry_transaction_id and entry_transaction_id != transaction_id:
+            continue
+        if action == DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION and status == "released":
+            candidate = {
+                "source": "workflow_journal_release",
+                "transaction_id": entry_transaction_id,
+                "provider_id": entry.get("lock_provider_id"),
+                "fencing_token": None,
+                "lease_expires_at": None,
+            }
+            continue
+        if action in {DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION, DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION} and status in {"acquired", "renewed"}:
+            candidate = {
+                "source": f"workflow_journal:{action}",
+                "transaction_id": entry_transaction_id,
+                "provider_id": entry.get("lock_provider_id"),
+                "fencing_token": entry.get("lock_fencing_token"),
+                "lease_expires_at": entry.get("lock_lease_expires_at"),
+            }
+    return candidate
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - planning treats malformed projection as missing.
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _iso_datetime_is_expired(value: Any, *, now_iso: str) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -774,6 +912,22 @@ def _iso_datetime_is_expired(value: Any, *, now_iso: str) -> bool:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     return expires_at <= now
+
+
+def _iso_datetime_remaining_seconds(value: Any, *, now_iso: str) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        expires_at = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        now = datetime.fromisoformat(str(now_iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return int((expires_at - now).total_seconds())
 
 
 def _fencing_propagation_metadata(

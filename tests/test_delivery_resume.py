@@ -485,6 +485,68 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
             self.assertFalse((root / "delivery-resume-workflow-journal.json").exists())
 
+    def test_resume_workflow_scheduler_dry_run_recommends_lease_renewal_when_projection_expired(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-lease-plan")
+            self._write_provider_lock(root, "tx-lease-plan", fencing_token="1")
+            lock_path = root / "delivery-distributed-transaction-lock.json"
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-lease-plan",
+                    action="plan_workflow",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-lease-plan",
+                    transaction_lock_owner="agent-a",
+                    lease_renewal_warning_seconds=60,
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["lease_renewal_plan"]["status"], "renewal_recommended")
+            self.assertEqual(payload["lease_renewal_plan"]["reason"], "lease_expired")
+            self.assertEqual(payload["lease_renewal_plan"]["recommended_step_action"], "renew_delivery_transaction_lock_provider")
+            self.assertEqual(payload["lease_renewal_plan"]["source"], "provider_projection")
+            self.assertEqual(payload["planned_steps"][0]["action"], "renew_delivery_transaction_lock_provider")
+            self.assertEqual(payload["planned_steps"][1]["action"], "preflight_backend_manifest_recovery")
+            self.assertTrue(payload["lease_renewal_plan"]["requires_review_approval"])
+            self.assertFalse(payload["lease_renewal_plan"]["automatic_renewal"])
+            self.assertFalse(payload["lease_renewal_plan"]["starts_daemon"])
+
+    def test_resume_workflow_scheduler_dry_run_does_not_recommend_renewal_for_healthy_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-lease-healthy")
+            self._write_provider_lock(root, "tx-lease-healthy", fencing_token="1")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-lease-healthy",
+                    action="plan_workflow",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-lease-healthy",
+                    transaction_lock_owner="agent-a",
+                    lease_renewal_warning_seconds=60,
+                )
+            ).execute().to_dict()
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["lease_renewal_plan"]["status"], "not_required")
+            self.assertEqual(payload["lease_renewal_plan"]["reason"], "lease_healthy")
+            self.assertIsNone(payload["lease_renewal_plan"]["recommended_step_action"])
+            self.assertEqual(payload["planned_steps"][0]["action"], "preflight_backend_manifest_recovery")
+            self.assertNotIn("renew_delivery_transaction_lock_provider", [step["action"] for step in payload["planned_steps"]])
+
     def test_resume_workflow_scheduler_apply_blocks_without_all_step_approvals(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -1137,6 +1199,35 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertTrue(payload["metadata"]["tool"])
             self.assertTrue((root / "delivery-resume-workflow.json").exists())
             self.assertTrue((root / "delivery-resume-workflow-journal.json").exists())
+
+    def test_resume_workflow_scheduler_tool_plans_lease_renewal_warning_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-workflow-tool-lease")
+            self._write_provider_lock(root, "tx-workflow-tool-lease", fencing_token="1")
+            lock_path = root / "delivery-distributed-transaction-lock.json"
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            tool = make_delivery_resume_workflow_scheduler_tool(root)
+
+            payload = tool(
+                transaction_id="tx-workflow-tool-lease",
+                action="plan_workflow",
+                mode="dry-run",
+                backend_manifest_path=str(manifest),
+                expected_transaction_id="tx-workflow-tool-lease",
+                transaction_lock_owner="agent-a",
+                lease_renewal_warning_seconds=30,
+            )
+
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["lease_renewal_plan"]["status"], "renewal_recommended")
+            self.assertEqual(payload["lease_renewal_plan"]["warning_seconds"], 30)
+            self.assertEqual(payload["lease_renewal_plan"]["requires_review_approval_action"], "resume_renew_delivery_transaction_lock_provider")
+            self.assertEqual(payload["planned_steps"][0]["action"], "renew_delivery_transaction_lock_provider")
+            self.assertFalse((root / "delivery-distributed-transaction-lock-operation.json").exists())
 
     def test_resume_workflow_scheduler_tool_executes_lock_renewal_with_provider_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

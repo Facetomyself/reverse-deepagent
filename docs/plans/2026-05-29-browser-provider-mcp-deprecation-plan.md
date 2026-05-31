@@ -776,3 +776,15 @@ The replay index is scoped to the current transaction id, so stale entries from 
 Boundary: this is an audit / dependency context baseline for durable workflow resume. It does not restore manifests, commit transactions, publish external delivery, replay provider actions, mutate files, automatically choose rollback-vs-commit, renew leases, or manage lock lifecycle. Automatic lease renewal, automatic lock lifecycle management, distributed orchestration, broader physical rollback, advanced adaptive retry, and real third-party delivery providers remain follow-up work. Android / iOS / mini-program full runtime chains remain deferred.
 
 Tests cover skipped preflight journal context replay, runner / transition status visibility, read-only side-effect metadata, and rejection of completed actions from other transaction ids.
+
+### Step 91 execution record: Lease renewal planning baseline
+
+Status: implemented as dry-run lease renewal planning guidance, not a background renewal daemon.
+
+`DeliveryResumeWorkflowScheduler` now emits `lease_renewal_plan` in workflow results. The plan reads the local provider projection `delivery-distributed-transaction-lock.json` and, when projection evidence is missing or unusable, falls back to same-transaction workflow journal lease evidence from acquire / renew / release lock-provider steps. It records the evidence source, provider id, transaction id, owner, fencing-token presence, lease expiry, remaining seconds, warning window, recommendation status, and the review approval action required for renewal.
+
+When an existing fenced lease is expired or within `lease_renewal_warning_seconds`, default workflow planning can prepend `renew_delivery_transaction_lock_provider` ahead of the normal recovery / commit preflight steps. Explicit `step_actions_json` / `step_actions` still remains authoritative and is not rewritten. The `execute_delivery_resume_workflow` tool now exposes `lease_renewal_warning_seconds`; when omitted, the warning window defaults to one third of `transaction_lock_lease_seconds`, with a minimum of one second.
+
+Boundary: this is a plan-only baseline. It does not call the configured provider during planning, does not write `delivery-distributed-transaction-lock-operation.json`, does not renew leases automatically, does not start a daemon or timer, does not acquire or release locks automatically, does not perform stale takeover, does not implement Redlock quorum consensus, and does not bypass the existing review gates. Actual renewal still requires an explicit reviewed `renew_delivery_transaction_lock_provider` workflow step and `resume_renew_delivery_transaction_lock_provider` approval. Missing lease evidence without a known fencing token remains review context rather than an automatic acquire plan. Android / iOS / mini-program full runtime chains remain deferred.
+
+Tests cover expired provider projection recommending renewal, healthy projection avoiding renewal, tool-level `lease_renewal_warning_seconds` pass-through, dry-run no provider-operation writes, and existing resume workflow regressions.
