@@ -9,6 +9,8 @@ from reverse_deepagent.delivery import (
     DeliveryExecutionMode,
     DeliveryExecutorConfig,
     DeliveryRecoveryExecutorConfig,
+    DeliveryRollbackExecutor,
+    DeliveryRollbackExecutorConfig,
     DeliveryRollbackStateArtifactWriter,
     DeliveryRollbackStateWriterConfig,
     DeliveryTransactionRecoveryExecutor,
@@ -232,6 +234,47 @@ def make_delivery_rollback_state_writer_tool(default_delivery_root: str | Path) 
         "does not acquire distributed locks, and does not execute physical rollback."
     )
     return write_delivery_rollback_state
+
+
+def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for planning and preflighting rollback workflows."""
+
+    root = Path(default_delivery_root)
+
+    def execute_delivery_rollback(
+        transaction_id: str,
+        action: str = "plan_rollback",
+        delivery_root: str | None = None,
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        backend_manifest_path: str | None = None,
+        expected_transaction_id: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan or explicitly preflight a delivery rollback workflow."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        target_root = Path(delivery_root) if delivery_root else root
+        config = DeliveryRollbackExecutorConfig(
+            delivery_root=target_root,
+            transaction_id=transaction_id,
+            action=action,
+            mode=DeliveryExecutionMode(mode),
+            backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
+            expected_transaction_id=expected_transaction_id,
+            metadata=metadata,
+        )
+        return DeliveryRollbackExecutor(config).execute().to_dict()
+
+    execute_delivery_rollback.__name__ = "execute_delivery_rollback"
+    execute_delivery_rollback.__doc__ = (
+        "Plan or explicitly preflight a delivery rollback workflow. "
+        "Supported actions are plan_rollback and preflight_rollback. "
+        "mode defaults to dry-run and is read-only. preflight_rollback in apply mode writes delivery-rollback-state.json and backend-artifact-manifest-recovery-preflight.json, "
+        "but does not restore manifests, does not commit transactions, does not call external delivery providers, does not acquire distributed locks, and does not execute physical rollback."
+    )
+    return execute_delivery_rollback
 
 
 def _artifact_from_payload(payload: Any) -> DeliveryArtifact:

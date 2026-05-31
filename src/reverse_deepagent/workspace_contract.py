@@ -352,6 +352,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_external_delivery_idempotency_ledger", "workspace/external-delivery-idempotency-ledger.json", "/workspace/delivery/", "external-delivery-idempotency-ledger.json", "export", ("delivery", "review")),
         ("workspace_delivery_transaction_idempotency_guard", "workspace/delivery-transaction-idempotency-guard.json", "/workspace/delivery/", "delivery-transaction-idempotency-guard.json", "export", ("delivery", "review")),
         ("workspace_delivery_rollback_state", "workspace/delivery-rollback-state.json", "/workspace/delivery/", "delivery-rollback-state.json", "triage", ("delivery", "review")),
+        ("workspace_delivery_rollback_execution", "workspace/delivery-rollback-execution.json", "/workspace/delivery/", "delivery-rollback-execution.json", "triage", ("delivery", "review")),
         ("workspace_delivery_transition_execution", "workspace/delivery-transition-execution.json", "/workspace/delivery/", "delivery-transition-execution.json", "triage", ("delivery", "review")),
         ("workspace_delivery_recovery_execution", "workspace/delivery-recovery-execution.json", "/workspace/delivery/", "delivery-recovery-execution.json", "triage", ("delivery", "review")),
         ("workspace_delivery_manifest_revision", "workspace/delivery-manifest-revision.json", "/workspace/delivery/", "delivery-manifest-revision.json", "export", ("delivery", "review")),

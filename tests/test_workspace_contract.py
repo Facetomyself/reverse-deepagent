@@ -109,6 +109,8 @@ class WorkspaceContractTests(unittest.TestCase):
         )
         self.assertEqual(routes["workspace/delivery-rollback-state.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/delivery-rollback-state.json"].future_path, "/workspace/delivery/delivery-rollback-state.json")
+        self.assertEqual(routes["workspace/delivery-rollback-execution.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/delivery-rollback-execution.json"].future_path, "/workspace/delivery/delivery-rollback-execution.json")
         self.assertEqual(routes["workspace/delivery-transition-execution.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/delivery-transition-execution.json"].future_path, "/workspace/delivery/delivery-transition-execution.json")
         self.assertEqual(routes["workspace/delivery-manifest-revision.json"].virtual_folder, "/workspace/delivery/")
