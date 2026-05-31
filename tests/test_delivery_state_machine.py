@@ -10,7 +10,9 @@ from reverse_deepagent.delivery import (
     DeliveryArtifact,
     DeliveryExecutionMode,
     DeliveryExecutorConfig,
+    DeliveryTransactionTransitionExecutor,
     DeliveryTransactionState,
+    DeliveryTransitionExecutorConfig,
     ExternalDeliveryPackage,
     ExternalDeliveryResult,
     LocalDeliveryExecutor,
@@ -213,6 +215,132 @@ class DeliveryTransactionStateMachineTests(TestCase):
             reevaluated = evaluate_delivery_transaction_state(journal).to_dict()
             self.assertEqual(reevaluated["state"], DeliveryTransactionState.COMMITTED.value)
             self.assertEqual(reevaluated["transaction_id"], "tx-commit-source")
+
+    def test_transition_executor_plans_supported_transition_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-transition-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            execution = DeliveryTransactionTransitionExecutor(
+                DeliveryTransitionExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-transition-plan",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    transition="preflight_backend_manifest_recovery",
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-transition-source",
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "planned")
+            self.assertTrue(payload["dry_run"])
+            self.assertEqual(payload["resolved_transition"], "preflight_backend_manifest_recovery")
+            self.assertIsNone(payload["execution_record_path"])
+            self.assertIsNotNone(payload["execution_result"])
+            self.assertEqual(payload["execution_result"]["backend_manifest_recovery_preflight"]["status"], "planned")
+            self.assertFalse((delivery_root / "delivery-transition-execution.json").exists())
+
+    def test_transition_executor_requires_explicit_transition_for_apply_auto(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-transition-ambiguous",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            execution = DeliveryTransactionTransitionExecutor(
+                DeliveryTransitionExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-transition-auto",
+                    mode=DeliveryExecutionMode.APPLY,
+                    transition="auto",
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-transition-ambiguous",
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("apply_requires_explicit_transition", payload["blocking_reasons"])
+            self.assertIn("ambiguous_transition_requires_explicit_selection", payload["blocking_reasons"])
+            self.assertIsNone(payload["execution_result"])
+            self.assertFalse((delivery_root / "delivery-transition-execution.json").exists())
+
+    def test_transition_executor_can_apply_recovery_preflight_and_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-transition-commit-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            preflight = DeliveryTransactionTransitionExecutor(
+                DeliveryTransitionExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-transition-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    transition="preflight_backend_manifest_recovery",
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-transition-commit-source",
+                )
+            ).execute()
+            self.assertEqual(preflight.status, "executed")
+            self.assertEqual(preflight.execution_result["backend_manifest_recovery_preflight"]["status"], "ready_for_review")
+
+            commit = DeliveryTransactionTransitionExecutor(
+                DeliveryTransitionExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-transition-commit",
+                    mode=DeliveryExecutionMode.APPLY,
+                    transition="commit_cross_run_transaction",
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-transition-commit-source",
+                )
+            ).execute()
+
+            payload = commit.to_dict()
+            self.assertEqual(payload["status"], "executed")
+            self.assertTrue(payload["execution_result"]["cross_run_transaction_committed"])
+            self.assertTrue(payload["side_effect_policy"]["transaction_committed"])
+            self.assertFalse(payload["side_effect_policy"]["external_delivery_performed"])
+            self.assertTrue((delivery_root / "delivery-transition-execution.json").exists())
 
 
 def _write_source(root: Path) -> Path:

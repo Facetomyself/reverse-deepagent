@@ -40,6 +40,7 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
         self.assertTrue(inspection["artifacts"]["transaction_journal"]["loaded"])
         self.assertIn("external_delivery_result", inspection["missing_artifacts"])
         self.assertIn("external_delivery_idempotency_ledger", inspection["missing_artifacts"])
+        self.assertIn("delivery_transition_execution", inspection["missing_artifacts"])
 
     def test_inspector_loads_external_delivery_result_and_commit_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

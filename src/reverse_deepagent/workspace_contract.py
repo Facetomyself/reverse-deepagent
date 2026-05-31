@@ -350,6 +350,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_external_delivery_result", "workspace/external-delivery-result.json", "/workspace/delivery/", "external-delivery-result.json", "export", ("delivery", "review")),
         ("workspace_external_delivery_duplicate_guard", "workspace/external-delivery-duplicate-guard.json", "/workspace/delivery/", "external-delivery-duplicate-guard.json", "export", ("delivery", "review")),
         ("workspace_external_delivery_idempotency_ledger", "workspace/external-delivery-idempotency-ledger.json", "/workspace/delivery/", "external-delivery-idempotency-ledger.json", "export", ("delivery", "review")),
+        ("workspace_delivery_transition_execution", "workspace/delivery-transition-execution.json", "/workspace/delivery/", "delivery-transition-execution.json", "triage", ("delivery", "review")),
         ("workspace_delivery_manifest_revision", "workspace/delivery-manifest-revision.json", "/workspace/delivery/", "delivery-manifest-revision.json", "export", ("delivery", "review")),
         ("workspace_backend_artifact_manifest_mutation", "workspace/backend-artifact-manifest-mutation.json", "/workspace/delivery/", "backend-artifact-manifest-mutation.json", "export", ("delivery", "review")),
         ("workspace_backend_artifact_manifest_patched", "workspace/backend-artifact-manifest.patched.json", "/workspace/delivery/", "backend-artifact-manifest.patched.json", "export", ("delivery", "review")),

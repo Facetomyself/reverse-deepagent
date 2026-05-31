@@ -4,7 +4,14 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from reverse_deepagent.delivery import DeliveryArtifact, DeliveryExecutionMode, DeliveryExecutorConfig, LocalDeliveryExecutor
+from reverse_deepagent.delivery import (
+    DeliveryArtifact,
+    DeliveryExecutionMode,
+    DeliveryExecutorConfig,
+    DeliveryTransactionTransitionExecutor,
+    DeliveryTransitionExecutorConfig,
+    LocalDeliveryExecutor,
+)
 
 
 DeliveryTool = Callable[..., dict[str, Any]]
@@ -98,6 +105,47 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "external_delivery_idempotency_key defaults to the transaction id; duplicate external delivery is blocked by default unless allow_duplicate_external_delivery is explicitly true."
     )
     return execute_local_delivery
+
+
+def make_delivery_transition_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for explicit transaction transition execution."""
+
+    root = Path(default_delivery_root)
+
+    def execute_delivery_transition(
+        transaction_id: str,
+        transition: str = "auto",
+        delivery_root: str | None = None,
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        backend_manifest_path: str | None = None,
+        expected_transaction_id: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan or explicitly execute one supported delivery transaction transition."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        target_root = Path(delivery_root) if delivery_root else root
+        config = DeliveryTransitionExecutorConfig(
+            delivery_root=target_root,
+            transaction_id=transaction_id,
+            transition=transition,
+            mode=DeliveryExecutionMode(mode),
+            backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
+            expected_transaction_id=expected_transaction_id,
+            metadata=metadata,
+        )
+        return DeliveryTransactionTransitionExecutor(config).execute().to_dict()
+
+    execute_delivery_transition.__name__ = "execute_delivery_transition"
+    execute_delivery_transition.__doc__ = (
+        "Plan or explicitly execute one supported delivery transaction transition. "
+        "Supported transitions are preflight_backend_manifest_recovery, apply_backend_manifest_recovery, and commit_cross_run_transaction. "
+        "mode defaults to dry-run and is read-only. apply mode requires an explicit transition value rather than auto, then delegates to LocalDeliveryExecutor so existing journal, digest, recovery, commit, and external-delivery checks still apply. "
+        "The tool writes delivery-transition-execution.json only for successful explicit apply-mode transition attempts and never publishes external delivery."
+    )
+    return execute_delivery_transition
 
 
 def _artifact_from_payload(payload: Any) -> DeliveryArtifact:

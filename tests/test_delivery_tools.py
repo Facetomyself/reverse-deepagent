@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import TestCase
 
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
-from reverse_deepagent.tools.delivery_tools import make_local_delivery_executor_tool
+from reverse_deepagent.tools.delivery_tools import make_delivery_transition_executor_tool, make_local_delivery_executor_tool
 
 
 class DeliveryToolTests(TestCase):
@@ -290,6 +290,48 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
             self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery.json").exists())
 
+    def test_delivery_transition_tool_can_commit_cross_run_transaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            transition_tool = make_delivery_transition_executor_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-transition-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            preflight = transition_tool(
+                transaction_id="tx-tool-transition-preflight",
+                mode="apply",
+                transition="preflight_backend_manifest_recovery",
+                expected_transaction_id="tx-tool-transition-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = transition_tool(
+                transaction_id="tx-tool-transition-commit",
+                mode="apply",
+                transition="commit_cross_run_transaction",
+                expected_transaction_id="tx-tool-transition-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+
+            self.assertEqual(preflight["status"], "executed")
+            self.assertEqual(result["status"], "executed")
+            self.assertTrue(result["execution_result"]["cross_run_transaction_committed"])
+            self.assertTrue((root / "delivery" / "delivery-transition-execution.json").exists())
+
     def test_local_delivery_tool_can_request_external_delivery_review_only_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -429,11 +471,11 @@ class DeliveryToolTests(TestCase):
 
 
 class DeliverySubagentToolTests(TestCase):
-    def test_delivery_subagent_exposes_local_delivery_tool_only(self) -> None:
+    def test_delivery_subagent_exposes_delivery_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             subagent = build_delivery_subagent(Path(tmp) / "artifacts")
             tool_names = [tool.__name__ for tool in subagent["tools"]]
-            self.assertEqual(tool_names, ["execute_local_delivery"])
+            self.assertEqual(tool_names, ["execute_local_delivery", "execute_delivery_transition"])
 
 
 def _sha256_file(path: Path) -> str:

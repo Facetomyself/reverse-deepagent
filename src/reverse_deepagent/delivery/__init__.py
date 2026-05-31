@@ -6,6 +6,12 @@ from .inspector import (
     DeliveryTransactionInspection,
     inspect_delivery_transaction_root,
 )
+from .transitions import (
+    SUPPORTED_DELIVERY_TRANSITIONS,
+    DeliveryTransactionTransitionExecutor,
+    DeliveryTransitionExecution,
+    DeliveryTransitionExecutorConfig,
+)
 from .executors import (
     BackendManifestInPlaceMutation,
     BackendManifestInPlacePreflight,
@@ -58,6 +64,10 @@ __all__ = [
     "DeliveryTransactionInspection",
     "DELIVERY_TRANSACTION_INSPECTOR_VERSION",
     "DELIVERY_TRANSACTION_ARTIFACT_NAMES",
+    "SUPPORTED_DELIVERY_TRANSITIONS",
+    "DeliveryTransactionTransitionExecutor",
+    "DeliveryTransitionExecution",
+    "DeliveryTransitionExecutorConfig",
     "EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP",
     "ExternalDeliveryProviderCapabilities",
     "ExternalDeliveryProviderFactory",
