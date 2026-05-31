@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed Step 18 execution record. Current status: auto-stitch conflict resolver baseline is implemented as review-only output with `auto_stitch_conflict_resolutions`, `auto_stitch_conflict_resolution_summary`, and `virtual://workspace/auto-stitch-conflict-resolutions.json`; it does not enable automatic stitching or materialization.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-103 is implemented through the workspace artifact reader resolver baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -912,3 +912,15 @@ Unlike the template package, the fixture provider is runtime-functional: `is_ava
 Boundary: this fixture provider does not launch a real browser, import Playwright, probe CDP, provide stealth / fingerprint behavior, capture network events, install hooks, call MCP, or touch Android / iOS / mini-program full runtime chains. Production third-party providers such as vendor anti-detect browsers or hosted browser services remain provider-specific follow-up packages.
 
 Tests cover the pyproject entry point, dependency declaration, side-effect-free registration metadata, delayed factory invocation, registry alias resolution, metadata matrix compatibility, functional start / connect sessions, page operations, provider stop behavior, and launch smoke through `browser_provider_smoke_row(...)`.
+
+### Step 103 execution record: Workspace artifact reader resolver baseline
+
+Status: implemented as read-only resolver-backed artifact consumption, not physical path migration, default dual-write, or canonical path replacement.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `make_read_workspace_artifact_tool(...)`. The tool reads workspace artifacts by artifact key, legacy `workspace/*.json` path, future `/workspace/<area>/...` path, `virtual://workspace/...` URI, or artifact-root-relative fallback path. It uses `WorkspacePathResolver` to inspect legacy and future paths while keeping legacy flat paths authoritative.
+
+The coordinator and read-only review/rebuild/timeline/hook/debugger subagents now include `read_workspace_artifact`, so subagents can fetch existing workspace artifacts before applying their specialized JSON review tools.
+
+Boundary: this is read-only. It does not write artifacts, create directories, move files, enable dual-write, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains. Physical folder migration remains deferred until broader resolver adoption and compatibility metrics are in place.
+
+Tests cover key / legacy / future / virtual URI reads, dual-write future path fallback, direct relative fallback, missing path diagnostics, side-effect policy, and subagent tool exposure.

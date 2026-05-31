@@ -102,7 +102,7 @@ class ReviewSubagentTests(unittest.TestCase):
         self.assertEqual(subagent["name"], REVIEW_SUBAGENT_NAME)
         self.assertEqual(subagent["description"], REVIEW_SUBAGENT_DESCRIPTION)
         self.assertIn("Review Subagent", subagent["system_prompt"])
-        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"evaluate_delivery_review_gate", "record_review_approval"})
+        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"read_workspace_artifact", "evaluate_delivery_review_gate", "record_review_approval"})
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/review.txt"

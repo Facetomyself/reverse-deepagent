@@ -64,7 +64,7 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(subagent["name"], HOOK_SUBAGENT_NAME)
         self.assertEqual(subagent["description"], HOOK_SUBAGENT_DESCRIPTION)
         self.assertIn("Hook Subagent", subagent["system_prompt"])
-        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"review_hook_artifacts"})
+        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"read_workspace_artifact", "review_hook_artifacts"})
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/hook.txt"

@@ -18,6 +18,7 @@ from reverse_deepagent.subagents.review import build_review_subagent
 from reverse_deepagent.subagents.router import build_router_subagent
 from reverse_deepagent.subagents.timeline import build_timeline_subagent
 from reverse_deepagent.subagents.web_recon import build_web_recon_subagent
+from reverse_deepagent.tools.artifact_tools import make_read_workspace_artifact_tool
 from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool
 from reverse_deepagent.tools.route_tools import DEFAULT_JS_REVERSE_SKILL_ROOT, route_reverse_task
 
@@ -111,14 +112,15 @@ def build_reverse_agent(
     route_reverse_task_tool.__name__ = "route_reverse_task"
     tools = [
         route_reverse_task_tool,
+        make_read_workspace_artifact_tool(effective_artifact_root),
         make_build_rebuild_delivery_tool(effective_artifact_root),
         *(extra_tools or []),
     ]
     subagents = [
         build_router_subagent(skill_root=effective_skill_root),
-        build_debugger_subagent(),
-        build_hook_subagent(),
-        build_timeline_subagent(),
+        build_debugger_subagent(artifact_root=effective_artifact_root),
+        build_hook_subagent(artifact_root=effective_artifact_root),
+        build_timeline_subagent(artifact_root=effective_artifact_root),
         build_review_subagent(artifact_root=effective_artifact_root),
         build_rebuild_subagent(artifact_root=effective_artifact_root),
         build_delivery_subagent(artifact_root=effective_artifact_root),

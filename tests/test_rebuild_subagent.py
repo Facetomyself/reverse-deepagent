@@ -95,7 +95,7 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertEqual(subagent["name"], REBUILD_SUBAGENT_NAME)
         self.assertEqual(subagent["description"], REBUILD_SUBAGENT_DESCRIPTION)
         self.assertIn("Rebuild Subagent", subagent["system_prompt"])
-        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"build_rebuild_delivery", "review_rebuild_artifacts"})
+        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"read_workspace_artifact", "build_rebuild_delivery", "review_rebuild_artifacts"})
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/rebuild.txt"

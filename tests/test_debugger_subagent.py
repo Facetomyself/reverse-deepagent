@@ -98,7 +98,7 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertEqual(subagent["description"], DEBUGGER_SUBAGENT_DESCRIPTION)
         self.assertIn("Debugger Subagent", subagent["system_prompt"])
         tool_names = {tool.__name__ for tool in subagent["tools"]}
-        self.assertEqual(tool_names, {"review_debugger_artifacts"})
+        self.assertEqual(tool_names, {"read_workspace_artifact", "review_debugger_artifacts"})
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/debugger.txt"
