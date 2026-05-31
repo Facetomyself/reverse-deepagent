@@ -321,6 +321,11 @@ class RecordingGitHubReleaseAssetPreflightHandler(http.server.BaseHTTPRequestHan
         self.send_response(404)
         self.end_headers()
 
+    def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        self.send_response(204)
+        self.end_headers()
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
         return
 
@@ -1945,7 +1950,15 @@ class LocalDeliveryExecutorTests(TestCase):
             delivery_root = root / "delivery"
             RecordingGitHubReleaseAssetPreflightHandler.requests = []
             RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
-                {"id": 7, "name": "reverse-delivery.json", "browser_download_url": "https://example.invalid/body-not-recorded"}
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:1/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                    "browser_download_url": "https://example.invalid/body-not-recorded?download_secret=hidden",
+                    "size": 123,
+                    "content_type": "application/json",
+                    "state": "uploaded",
+                }
             ]
             server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
             server.timeout = 5
@@ -1980,6 +1993,7 @@ class LocalDeliveryExecutorTests(TestCase):
             release_request, assets_request = RecordingGitHubReleaseAssetPreflightHandler.requests
             self.assertEqual(release_request["method"], "POST")
             self.assertEqual(assets_request["method"], "GET")
+            self.assertFalse(any(request["method"] == "DELETE" for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
             self.assertFalse(any(str(request["path"]).startswith("/uploads/duplicate") for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
             metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
             self.assertTrue(metadata["check_existing_asset"])
@@ -1989,6 +2003,21 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(metadata["asset_lookup_succeeded"])
             self.assertTrue(metadata["existing_asset_found"])
             self.assertEqual(metadata["existing_asset_count"], 1)
+            self.assertEqual(metadata["existing_asset"]["id"], 7)
+            self.assertEqual(metadata["existing_asset"]["name"], "reverse-delivery.json")
+            self.assertEqual(metadata["existing_asset"]["api_url"], "http://127.0.0.1:1/repos/owner/repo/releases/assets/7")
+            self.assertTrue(metadata["existing_asset"]["browser_download_url_present"])
+            self.assertFalse(metadata["existing_asset"]["browser_download_url_recorded"])
+            overwrite_plan = metadata["existing_asset_overwrite_plan"]
+            self.assertEqual(overwrite_plan["status"], "requires_review")
+            self.assertTrue(overwrite_plan["delete_required"])
+            self.assertTrue(overwrite_plan["overwrite_required"])
+            self.assertFalse(overwrite_plan["delete_performed"])
+            self.assertFalse(overwrite_plan["overwrite_performed"])
+            self.assertTrue(overwrite_plan["requires_explicit_approval"])
+            self.assertEqual(overwrite_plan["recommended_transition"], "approve_github_release_asset_delete_then_upload")
+            self.assertFalse(overwrite_plan["side_effect_policy"]["sends_delete_request"])
+            self.assertFalse(overwrite_plan["side_effect_policy"]["uploads_replacement_asset"])
             self.assertEqual(metadata["asset_lookup_status_code"], 200)
             self.assertFalse(metadata["upload_request_attempted"])
             self.assertFalse(metadata["upload_succeeded"])
@@ -1996,6 +2025,8 @@ class LocalDeliveryExecutorTests(TestCase):
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("ghp_asset_conflict_secret", serialized_result)
             self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+            self.assertNotIn("download_secret=hidden", serialized_result)
             self.assertNotIn("body-not-recorded", serialized_result)
 
     def test_github_release_external_delivery_can_attempt_upload_when_existing_asset_allowed(self) -> None:
@@ -2007,7 +2038,12 @@ class LocalDeliveryExecutorTests(TestCase):
             delivery_root = root / "delivery"
             RecordingGitHubReleaseAssetPreflightHandler.requests = []
             RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
-                {"id": 7, "name": "reverse-delivery.json", "browser_download_url": "https://example.invalid/body-not-recorded"}
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": "https://api.github.example.invalid/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                    "browser_download_url": "https://example.invalid/body-not-recorded?download_secret=hidden",
+                }
             ]
             server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
             server.timeout = 5
@@ -2044,17 +2080,24 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(release_request["method"], "POST")
             self.assertEqual(assets_request["method"], "GET")
             self.assertEqual(upload_request["method"], "POST")
+            self.assertFalse(any(request["method"] == "DELETE" for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
             self.assertEqual(upload_request["path"], "/uploads/duplicate?name=reverse-delivery.json")
             metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
             self.assertTrue(metadata["check_existing_asset"])
             self.assertTrue(metadata["allow_existing_asset"])
             self.assertTrue(metadata["existing_asset_found"])
             self.assertEqual(metadata["existing_asset_count"], 1)
+            self.assertEqual(metadata["existing_asset_overwrite_plan"]["status"], "requires_review")
+            self.assertTrue(metadata["existing_asset_overwrite_plan"]["allow_existing_asset"])
+            self.assertFalse(metadata["existing_asset_overwrite_plan"]["delete_performed"])
+            self.assertFalse(metadata["existing_asset_overwrite_plan"]["overwrite_performed"])
             self.assertTrue(metadata["upload_request_attempted"])
             self.assertTrue(metadata["upload_succeeded"])
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("ghp_asset_allowed_secret", serialized_result)
             self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+            self.assertNotIn("download_secret=hidden", serialized_result)
             self.assertNotIn("body-not-recorded", serialized_result)
 
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:

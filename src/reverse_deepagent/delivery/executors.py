@@ -982,6 +982,8 @@ class GitHubReleaseExternalDeliveryProvider:
         asset_lookup_succeeded = False
         existing_asset_found = False
         existing_asset_count: int | None = None
+        existing_asset: dict[str, Any] | None = None
+        existing_asset_overwrite_plan: dict[str, Any] | None = None
         release_succeeded = False
         upload_succeeded = False
         if dry_run:
@@ -1050,6 +1052,7 @@ class GitHubReleaseExternalDeliveryProvider:
                         asset_lookup_status_code,
                         existing_asset_found_value,
                         existing_asset_count,
+                        existing_asset,
                         asset_lookup_attempts,
                         asset_lookup_error,
                     ) = self._asset_exists(assets_url, asset_name)
@@ -1078,10 +1081,19 @@ class GitHubReleaseExternalDeliveryProvider:
                             "asset_lookup_retry_count": max(0, len(asset_lookup_attempts) - 1),
                             "existing_asset_found": existing_asset_found,
                             "existing_asset_count": existing_asset_count,
+                            "existing_asset": existing_asset,
                             "allow_existing_asset": allow_existing_asset,
                         },
                     }
                 )
+            existing_asset_overwrite_plan = _github_existing_asset_overwrite_plan(
+                asset_name=asset_name,
+                existing_asset_found=existing_asset_found,
+                existing_asset=existing_asset,
+                check_existing_asset=check_existing_asset,
+                allow_existing_asset=allow_existing_asset,
+                asset_lookup_succeeded=asset_lookup_succeeded,
+            )
             if release_succeeded and upload_url:
                 if asset_check_passed:
                     upload_request_attempted = True
@@ -1165,6 +1177,11 @@ class GitHubReleaseExternalDeliveryProvider:
                 "asset_lookup_succeeded": asset_lookup_succeeded,
                 "existing_asset_found": existing_asset_found,
                 "existing_asset_count": existing_asset_count,
+                "existing_asset": existing_asset,
+                "existing_asset_overwrite_plan": existing_asset_overwrite_plan,
+                "existing_asset_overwrite_plan_recorded": existing_asset_overwrite_plan is not None,
+                "existing_asset_delete_performed": False,
+                "existing_asset_overwrite_performed": False,
                 "release_succeeded": release_succeeded,
                 "upload_succeeded": upload_succeeded,
                 "release_status_code": release_status_code,
@@ -1186,6 +1203,7 @@ class GitHubReleaseExternalDeliveryProvider:
                     "github_release_json_asset_upload_baseline",
                     "existing_release_reuse_requires_explicit_config",
                     "existing_asset_conflict_blocks_upload_by_default",
+                    "existing_asset_overwrite_delete_is_preflight_plan_only",
                     "does_not_record_response_body_or_headers",
                     "retry_requires_explicit_config",
                     "does_not_delete_or_overwrite_existing_release_assets",
@@ -1244,7 +1262,7 @@ class GitHubReleaseExternalDeliveryProvider:
 
     def _asset_exists(
         self, url: str, asset_name: str
-    ) -> tuple[int | None, bool | None, int | None, list[dict[str, Any]], str | None]:
+    ) -> tuple[int | None, bool | None, int | None, dict[str, Any] | None, list[dict[str, Any]], str | None]:
         result = _http_request_with_retries(
             lambda: urllib.request.Request(url, headers=self._request_headers(), method="GET"),
             timeout_seconds=self.timeout_seconds,
@@ -1253,10 +1271,10 @@ class GitHubReleaseExternalDeliveryProvider:
             retry_backoff_seconds=self.retry_backoff_seconds,
             read_response_body=True,
         )
-        exists, count = _github_asset_exists_from_response_body(result.body, asset_name)
+        exists, count, existing_asset = _github_asset_lookup_from_response_body(result.body, asset_name)
         if result.status_code is not None and 200 <= result.status_code < 300 and exists is None:
-            return result.status_code, None, count, result.attempts, "invalid_github_assets_response"
-        return result.status_code, exists, count, result.attempts, result.error
+            return result.status_code, None, count, None, result.attempts, "invalid_github_assets_response"
+        return result.status_code, exists, count, existing_asset, result.attempts, result.error
 
     def _upload_asset(self, url: str, body: bytes) -> tuple[int | None, list[dict[str, Any]], str | None]:
         result = _http_request_with_retries(
@@ -3905,19 +3923,129 @@ def _github_release_urls_from_response_body(body: bytes) -> tuple[str | None, st
 
 
 def _github_asset_exists_from_response_body(body: bytes, asset_name: str) -> tuple[bool | None, int | None]:
+    exists, count, _asset = _github_asset_lookup_from_response_body(body, asset_name)
+    return exists, count
+
+
+def _github_asset_lookup_from_response_body(body: bytes, asset_name: str) -> tuple[bool | None, int | None, dict[str, Any] | None]:
     try:
         payload = json.loads(body.decode("utf-8") or "[]")
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return None, None
+        return None, None, None
     if not isinstance(payload, list):
-        return None, None
+        return None, None, None
     normalized_asset_name = str(asset_name or "").strip()
-    names = [
-        str(item.get("name", "")).strip()
-        for item in payload
-        if isinstance(item, dict)
-    ]
-    return normalized_asset_name in names, len(names)
+    names: list[str] = []
+    matched_asset: dict[str, Any] | None = None
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        names.append(name)
+        if name == normalized_asset_name and matched_asset is None:
+            matched_asset = _github_asset_metadata_summary(item)
+    return normalized_asset_name in names, len(names), matched_asset
+
+
+def _github_asset_metadata_summary(asset: dict[str, Any]) -> dict[str, Any]:
+    raw_id = asset.get("id")
+    asset_id: int | str | None
+    try:
+        asset_id = int(raw_id) if raw_id is not None else None
+    except (TypeError, ValueError):
+        asset_id = str(raw_id) if raw_id is not None else None
+    api_url = str(asset.get("url") or "").strip()
+    return {
+        "id": asset_id,
+        "name": str(asset.get("name") or "").strip() or None,
+        "api_url": _redact_url_for_metadata(api_url) if api_url else None,
+        "browser_download_url_present": bool(str(asset.get("browser_download_url") or "").strip()),
+        "browser_download_url_recorded": False,
+        "size": asset.get("size") if isinstance(asset.get("size"), int) else None,
+        "content_type": str(asset.get("content_type") or "").strip() or None,
+        "state": str(asset.get("state") or "").strip() or None,
+        "created_at": str(asset.get("created_at") or "").strip() or None,
+        "updated_at": str(asset.get("updated_at") or "").strip() or None,
+        "raw_response_body_recorded": False,
+        "headers_recorded": False,
+    }
+
+
+def _github_existing_asset_overwrite_plan(
+    *,
+    asset_name: str,
+    existing_asset_found: bool,
+    existing_asset: dict[str, Any] | None,
+    check_existing_asset: bool,
+    allow_existing_asset: bool,
+    asset_lookup_succeeded: bool,
+) -> dict[str, Any] | None:
+    if not check_existing_asset:
+        return None
+    if not asset_lookup_succeeded:
+        return {
+            "status": "blocked",
+            "asset_name": asset_name,
+            "existing_asset_found": False,
+            "delete_required": False,
+            "overwrite_required": False,
+            "delete_performed": False,
+            "overwrite_performed": False,
+            "requires_explicit_approval": True,
+            "recommended_transition": "fix_github_asset_lookup_before_overwrite_plan",
+            "reason": "asset_lookup_not_succeeded",
+            "side_effect_policy": {
+                "sends_delete_request": False,
+                "uploads_replacement_asset": False,
+                "preflight_only": True,
+            },
+        }
+    if not existing_asset_found:
+        return {
+            "status": "not_required",
+            "asset_name": asset_name,
+            "existing_asset_found": False,
+            "delete_required": False,
+            "overwrite_required": False,
+            "delete_performed": False,
+            "overwrite_performed": False,
+            "requires_explicit_approval": False,
+            "recommended_transition": "upload_new_github_release_asset",
+            "side_effect_policy": {
+                "sends_delete_request": False,
+                "uploads_replacement_asset": False,
+                "preflight_only": True,
+            },
+        }
+    return {
+        "status": "requires_review",
+        "asset_name": asset_name,
+        "existing_asset_found": True,
+        "existing_asset": existing_asset,
+        "delete_required": True,
+        "overwrite_required": True,
+        "delete_performed": False,
+        "overwrite_performed": False,
+        "allow_existing_asset": allow_existing_asset,
+        "requires_explicit_approval": True,
+        "recommended_transition": "approve_github_release_asset_delete_then_upload",
+        "approval_requirements": [
+            "confirm_existing_asset_identity",
+            "approve_delete_existing_release_asset",
+            "approve_upload_replacement_release_asset",
+            "record_partial_failure_recovery_plan",
+        ],
+        "partial_failure_plan": {
+            "delete_succeeds_upload_fails": "record_external_delivery_result_blocked_and_retry_with_same_transaction_id",
+            "delete_fails": "do_not_upload_replacement_asset",
+            "upload_conflict_after_delete": "record_conflict_and_require_manual_github_release_review",
+        },
+        "side_effect_policy": {
+            "sends_delete_request": False,
+            "uploads_replacement_asset": False,
+            "preflight_only": True,
+        },
+    }
 
 
 def _github_upload_url_with_asset_name(upload_url: str, asset_name: str) -> str:
