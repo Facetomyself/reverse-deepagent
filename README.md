@@ -962,7 +962,7 @@ WASM、JS VM、重混淆、反调试和动态 secret 这类流程不能被硬说
 
 `review_hints` 是给后续人工 review、CI gate 或子智能体复核使用的 机器可读提示，不替代 `ready` / `pure_extraction`。当前由 `reverse_deepagent.schemas.ReviewHint` 集中约束，固定字段为 `severity`、`category`、`code`、`message`、`evidence`，会覆盖 pure rebuild、context-aware rebuild、人工移植 / 部分 rebuild，以及易变运行时上下文等风险。
 
-`workspace/runtime-context-diff.json` 会对运行时上下文做稳定性摘要。默认运行时会采集多次样本，字段包括 `status`（`multi_sample` 或 `single_sample` 兜底）、`sample_count`、`stable`、`stable_keys`、`volatile_keys`、`missing_requirements` 和 `changes`。其中 `sample_index` / `collected_at_ms` 只作为采样元数据，不参与稳定性判断；`volatile_keys` 应被视为 replay 时仍需要运行时绑定的输入。
+`workspace/runtime-context-diff.json` 会对运行时上下文做稳定性摘要。默认运行时会采集多次样本，兼容字段仍包括 `status`（legacy runtime 输出 `multi_sample` 或 `single_sample` 兜底）、`sample_count`、`stable`、`stable_keys`、`volatile_keys`、`missing_requirements` 和 `changes`；通用 diff 基线还会输出 `fields`、`summary` 和 `review_hints`，把字段细分为 `stable`、`volatile`、`session_bound`、`missing_in_some_samples`、`type_drift` 或 `object_drift`。其中 `sample_index` / `collected_at_ms` 只作为采样元数据，不参与稳定性判断；`token` / `cookie` / `csrf` / `session` / `auth` 等敏感路径只输出类型、长度和 digest 摘要，不落原值；`volatile_keys` 应被视为 replay 时仍需要运行时绑定的输入。
 
 ## 运行时后端能力
 

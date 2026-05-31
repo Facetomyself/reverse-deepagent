@@ -66,6 +66,12 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Mini-program adapter interface draft and minimal `mini-program-devtools` metadata / configurable vendor-devtools probe / artifact export baseline.
 - Platform-neutral artifact categories and `target_platforms` semantics.
 
+### Strategy and rebuild quality baseline
+
+- Generalized runtime context stability diff for legacy runtime payloads and provider-neutral strategy / rebuild consumers.
+- Field-level runtime context classifications for stable, volatile, session-bound, missing, type-drift, and object-drift values.
+- Secret-like runtime context previews redacted to type, length, and digest metadata while preserving legacy `stable_keys` / `volatile_keys` / `changes` compatibility fields.
+
 ## Active non-mobile follow-ups
 
 These are the next realistic non-mobile work items. They should be implemented without leaking provider-specific details into the coordinator.
@@ -88,7 +94,6 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Strategy and rebuild quality
 
-- Multi-sample runtime context stability diff.
 - WASM / VM / obfuscation triage hooks.
 - Stronger strategy confidence and evidence scoring.
 - Generated code review hints for rebuild artifacts.

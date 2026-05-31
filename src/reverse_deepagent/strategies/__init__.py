@@ -6,14 +6,18 @@ from .detectors import (
     detect_algorithm_strategy,
     list_algorithm_strategy_registry,
 )
+from .runtime_context_diff import RuntimeContextSample, diff_runtime_context_payload, diff_runtime_context_samples
 
 __all__ = [
     "ALGORITHM_STRATEGY_REGISTRY",
     "STRATEGY_SAMPLE_CORPUS",
     "AlgorithmStrategyRule",
+    "RuntimeContextSample",
     "StrategySample",
     "StrategyDetector",
     "detect_algorithm_strategy",
+    "diff_runtime_context_payload",
+    "diff_runtime_context_samples",
     "list_algorithm_strategy_registry",
     "list_strategy_sample_corpus",
 ]

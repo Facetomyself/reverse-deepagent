@@ -427,8 +427,9 @@ The following items used to be listed as broad follow-ups and now have conservat
 - Workflow readiness planning, step dependency context, and runtime-gate evidence projection.
 - External delivery retry metadata, explicit retry, duplicate / idempotency guard, existing-release reuse, asset duplicate preflight, overwrite / delete preflight, explicit delete + replacement upload, and idempotency ledger baselines.
 - Built-in local archive, webhook, presigned object, and GitHub Release external delivery baselines.
+- Generalized runtime context stability diff baseline with field-level stable / volatile / session-bound / missing / type-drift / object-drift classification, legacy diff field compatibility, and secret-safe previews.
 
-These baselines are intentionally review-gated or read-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, or automatic external publication.
+These baselines are intentionally review-gated, read-only, or pure-analysis-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, automatic browser context collection, or automatic external publication.
 
 ### Active capability-gated future work
 

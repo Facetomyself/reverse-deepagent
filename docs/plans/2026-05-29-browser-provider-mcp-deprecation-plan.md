@@ -840,3 +840,15 @@ Boundary: this is artifact observation only. It does not call providers, write w
 `docs/runtime/browser-provider-architecture.md` now splits the old future-work paragraph into completed hardening, active capability-gated future work, and explicitly deferred automation. Items completed through Step 95, such as fencing propagation, journal replay, lock lifecycle planning, lease renewal planning, workflow readiness, dependency context, runtime-gate evidence projection, and external delivery ledger / retry / overwrite baselines, are no longer presented as future work.
 
 Boundary: this is a docs-only status correction. It does not change runtime behavior, provider behavior, workspace artifact layout, tests, CLI flags, or the deferred Android / iOS / mini-program full runtime chains.
+
+### Step 97 execution record: Runtime context stability diff baseline
+
+Status: implemented as a provider-neutral pure-Python analysis baseline, not a browser context collector or runtime executor.
+
+`reverse_deepagent.strategies.runtime_context_diff` now exposes `RuntimeContextSample`, `diff_runtime_context_samples(...)`, and `diff_runtime_context_payload(...)`. The diff flattens captured runtime context samples, ignores sampling metadata such as `sample_index` / `collected_at_ms`, classifies fields as `stable`, `volatile`, `session_bound`, `missing_in_some_samples`, `type_drift`, or `object_drift`, and emits summary counts plus review hints for downstream rebuild / review consumers.
+
+The legacy JSReverser runtime now delegates `workspace/runtime-context-diff.json` generation to this shared analyzer while preserving existing compatibility fields such as `status=multi_sample|single_sample`, `stable_keys`, `volatile_keys`, `missing_requirements`, and `changes`. Secret-like paths containing token / cookie / csrf / session / auth / key / password / credential markers are redacted in previews and legacy change values, keeping only type, length, and digest-style evidence.
+
+Boundary: this baseline does not collect browser context, start BrowserProvider sessions, call MCP, write workspace artifacts by itself, execute replay, prove pure rebuild readiness, or touch Android / iOS / mini-program full runtime chains. Existing runtime collectors remain responsible for gathering samples; rebuild / review gates remain responsible for deciding whether volatile or session-bound inputs are acceptable.
+
+Tests cover stable / volatile classification, session-bound secret redaction, volatile secret redaction in legacy change values, missing-field detection, type drift, object drift, payload-helper compatibility, and legacy runtime adapter compatibility.

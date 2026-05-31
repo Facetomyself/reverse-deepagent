@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from reverse_deepagent.runtime.base import BrowserSessionInfo, WebReverseRuntime, RuntimeBackendCapabilities, RuntimeExportBundle
+from reverse_deepagent.strategies import diff_runtime_context_payload
 from reverse_deepagent.schemas import (
     ArtifactKind,
     ArtifactRef,
@@ -501,110 +502,10 @@ class JSReverserRuntime(WebReverseRuntime):
     def _build_runtime_context_diff(cls, runtime_context: dict[str, Any]) -> dict[str, Any]:
         """Build a conservative runtime context stability summary."""
 
-        if not runtime_context:
-            return {}
-
-        requirements = [str(item) for item in runtime_context.get("detected_requirements", []) if item]
-        captured = [str(item) for item in runtime_context.get("captured_requirements", []) if item]
-        missing_requirements = [item for item in requirements if item not in captured]
-        raw_samples = runtime_context.get("samples")
-        samples = [item for item in raw_samples if isinstance(item, dict)] if isinstance(raw_samples, list) else []
-        if len(samples) >= 2:
-            return cls._build_multi_sample_runtime_context_diff(samples, requirements, captured, missing_requirements)
-
-        sample = samples[0] if len(samples) == 1 else runtime_context
-        flat = cls._filter_runtime_context_flattened(cls._flatten_runtime_context(sample))
-        return {
-            "status": "single_sample",
-            "stable": not missing_requirements,
-            "sample_count": 1,
-            "requirements": requirements,
-            "captured_requirements": captured,
-            "stable_keys": sorted(flat),
-            "volatile_keys": [],
-            "missing_requirements": missing_requirements,
-            "changes": {},
-            "notes": ["single sample only; collect multiple samples to detect volatile context keys"],
-        }
-
-    @classmethod
-    def _build_multi_sample_runtime_context_diff(
-        cls,
-        samples: list[dict[str, Any]],
-        requirements: list[str],
-        captured: list[str],
-        missing_requirements: list[str],
-    ) -> dict[str, Any]:
-        flattened_samples = [cls._filter_runtime_context_flattened(cls._flatten_runtime_context(sample)) for sample in samples]
-        all_keys = sorted({key for sample in flattened_samples for key in sample})
-        stable_keys: list[str] = []
-        volatile_keys: list[str] = []
-        changes: dict[str, list[Any]] = {}
-        for key in all_keys:
-            values = [sample.get(key, "__MISSING__") for sample in flattened_samples]
-            comparable = [cls._stable_json(value) for value in values]
-            if len(set(comparable)) == 1:
-                stable_keys.append(key)
-            else:
-                volatile_keys.append(key)
-                unique_values: list[Any] = []
-                seen: set[str] = set()
-                for value, fingerprint in zip(values, comparable, strict=False):
-                    if fingerprint in seen:
-                        continue
-                    seen.add(fingerprint)
-                    unique_values.append(None if value == "__MISSING__" else value)
-                    if len(unique_values) >= 5:
-                        break
-                changes[key] = unique_values
-        return {
-            "status": "multi_sample",
-            "stable": not volatile_keys and not missing_requirements,
-            "sample_count": len(samples),
-            "requirements": requirements,
-            "captured_requirements": captured,
-            "stable_keys": stable_keys,
-            "volatile_keys": volatile_keys,
-            "missing_requirements": missing_requirements,
-            "changes": changes,
-            "notes": [
-                "multi-sample runtime context diff; volatile keys should be treated as runtime-bound inputs",
-                "sample_index and collected_at_ms are metadata and excluded from stability decisions",
-            ],
-        }
-
-    @classmethod
-    def _filter_runtime_context_flattened(cls, flat: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: value
-            for key, value in flat.items()
-            if not key.endswith("_raw")
-            and key not in {"sample_index", "collected_at_ms"}
-            and not key.startswith("environment_raw")
-            and not key.startswith("storage_raw")
-            and not key.startswith("samples.")
-            and ".environment_raw" not in key
-            and ".storage_raw" not in key
-        }
-
-    @staticmethod
-    def _stable_json(value: Any) -> str:
-        try:
-            return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
-        except TypeError:
-            return str(value)
-
-    @classmethod
-    def _flatten_runtime_context(cls, value: Any, prefix: str = "") -> dict[str, Any]:
-        if isinstance(value, dict):
-            output: dict[str, Any] = {}
-            for key, item in value.items():
-                next_prefix = f"{prefix}.{key}" if prefix else str(key)
-                output.update(cls._flatten_runtime_context(item, next_prefix))
-            return output
-        if isinstance(value, list):
-            return {prefix: value}
-        return {prefix: value}
+        diff = diff_runtime_context_payload(runtime_context)
+        if diff.get("legacy_status"):
+            diff = {**diff, "status": diff["legacy_status"]}
+        return diff
 
     @classmethod
     def _detect_runtime_context_requirements(cls, source_contexts: list[dict[str, Any]]) -> list[str]:
