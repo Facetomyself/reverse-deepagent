@@ -207,6 +207,7 @@ class DeliveryResumeWorkflowScheduler:
                 transaction_id=str(transaction_id or ""),
                 planned_steps=planned_steps,
                 created_at=created_at,
+                existing_entries=existing_entries,
             )
             failed_steps = [step for step in step_results if step.get("status") == "blocked"]
             if failed_steps:
@@ -355,14 +356,27 @@ class DeliveryResumeWorkflowScheduler:
         transaction_id: str,
         planned_steps: list[dict[str, Any]],
         created_at: str,
+        existing_entries: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         dry_run = self.config.mode == DeliveryExecutionMode.DRY_RUN
         results: list[dict[str, Any]] = []
         propagated_fencing_token = str(self.config.expected_transaction_lock_fencing_token or "").strip() or None
         propagated_fencing_source = "config.expected_transaction_lock_fencing_token" if propagated_fencing_token else None
+        journal_fencing_state = _journal_fencing_replay_state(
+            entries=existing_entries,
+            transaction_id=transaction_id,
+            created_at=created_at,
+        )
         for step in planned_steps:
             action = str(step.get("action") or "")
             if step.get("already_completed"):
+                replay = _journal_fencing_replay_for_skipped_step(journal_fencing_state, action=action)
+                if replay.get("clear_token"):
+                    propagated_fencing_token = None
+                    propagated_fencing_source = None
+                elif replay.get("fencing_token") and not self.config.expected_transaction_lock_fencing_token:
+                    propagated_fencing_token = str(replay["fencing_token"])
+                    propagated_fencing_source = str(replay["source"])
                 results.append(
                     {
                         **step,
@@ -371,6 +385,7 @@ class DeliveryResumeWorkflowScheduler:
                         "workflow_id": workflow_id,
                         "created_at": created_at,
                         "runner_execution": None,
+                        "fencing_token_replay": replay,
                         "journal_recordable": False,
                     }
                 )
@@ -587,6 +602,130 @@ def _fencing_token_propagation_from_lock_step(step: dict[str, Any]) -> dict[str,
                 "lease_expires_at": operation.get("lease_expires_at"),
             }
     return {}
+
+
+def _journal_fencing_replay_state(
+    *,
+    entries: list[dict[str, Any]],
+    transaction_id: str,
+    created_at: str,
+) -> dict[str, dict[str, Any]]:
+    """Return conservative replay metadata for journaled lock-provider steps.
+
+    The replay state is intentionally scoped to the selected transaction and to
+    successful lock-provider lifecycle entries.  It does not re-run provider
+    operations and does not make stale or malformed lease evidence usable.
+    """
+
+    state: dict[str, dict[str, Any]] = {}
+    propagated_token: str | None = None
+    propagated_source: str | None = None
+    propagated_provider_id: Any = None
+    propagated_lease_expires_at: Any = None
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        action = str(entry.get("action") or "")
+        status = str(entry.get("status") or "")
+        if action not in DELIVERY_RESUME_WORKFLOW_LOCK_PROVIDER_ACTIONS or status not in _DELIVERY_RESUME_WORKFLOW_SUCCESS_STATUSES:
+            continue
+        entry_transaction_id = str(entry.get("transaction_id") or "").strip()
+        if transaction_id and entry_transaction_id and entry_transaction_id != transaction_id:
+            continue
+        source = f"workflow_journal:{action}"
+        if action == DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION and status == "released":
+            propagated_token = None
+            propagated_source = None
+            propagated_provider_id = None
+            propagated_lease_expires_at = None
+            state[action] = {
+                "clear_token": True,
+                "source": source,
+                "status": "replayed",
+                "entry_status": status,
+            }
+            continue
+        if action in {DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION, DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION} and status in {"acquired", "renewed"}:
+            token = str(entry.get("lock_fencing_token") or "").strip()
+            lease_expires_at = entry.get("lock_lease_expires_at")
+            if not token:
+                propagated_token = None
+                propagated_source = None
+                propagated_provider_id = None
+                propagated_lease_expires_at = None
+                state[action] = {
+                    "status": "not_replayed",
+                    "reason": "missing_fencing_token",
+                    "source": source,
+                    "entry_status": status,
+                    "lease_expires_at": lease_expires_at,
+                }
+                continue
+            if _iso_datetime_is_expired(lease_expires_at, now_iso=created_at):
+                propagated_token = None
+                propagated_source = None
+                propagated_provider_id = None
+                propagated_lease_expires_at = None
+                state[action] = {
+                    "status": "not_replayed",
+                    "reason": "lease_expired_or_malformed",
+                    "source": source,
+                    "entry_status": status,
+                    "lease_expires_at": lease_expires_at,
+                }
+                continue
+            propagated_token = token
+            propagated_source = source
+            propagated_provider_id = entry.get("lock_provider_id")
+            propagated_lease_expires_at = lease_expires_at
+            state[action] = {
+                "fencing_token": propagated_token,
+                "source": propagated_source,
+                "provider_id": propagated_provider_id,
+                "lease_expires_at": propagated_lease_expires_at,
+                "status": "replayed",
+                "entry_status": status,
+            }
+            continue
+    if propagated_token:
+        state["__current__"] = {
+            "fencing_token": propagated_token,
+            "source": propagated_source,
+            "provider_id": propagated_provider_id,
+            "lease_expires_at": propagated_lease_expires_at,
+            "status": "replayed",
+        }
+    return state
+
+
+def _journal_fencing_replay_for_skipped_step(state: dict[str, dict[str, Any]], *, action: str) -> dict[str, Any]:
+    if action == DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION:
+        replay = state.get(action)
+        return dict(replay) if isinstance(replay, dict) else {"clear_token": True, "source": f"workflow_journal:{action}", "status": "replayed"}
+    if action in {DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION, DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION}:
+        current = state.get("__current__")
+        if isinstance(current, dict):
+            return dict(current)
+        replay = state.get(action)
+        return dict(replay) if isinstance(replay, dict) else {}
+    current = state.get("__current__")
+    return dict(current) if isinstance(current, dict) else {}
+
+
+def _iso_datetime_is_expired(value: Any, *, now_iso: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    try:
+        expires_at = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        now = datetime.fromisoformat(str(now_iso).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return expires_at <= now
 
 
 def _fencing_propagation_metadata(

@@ -667,6 +667,62 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             self.assertEqual(propagation["workflow_expected_transaction_lock_fencing_token"], "1")
             self.assertEqual(propagation["workflow_explicit_expected_transaction_lock_fencing_token"], "1")
 
+    def test_resume_workflow_scheduler_replays_journaled_fencing_token_for_skipped_lock_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-fence-journal-replay")
+            self._write_approval(workspace, "tx-fence-journal-replay", "resume_acquire_delivery_transaction_lock_provider")
+
+            first = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-fence-journal-replay",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("acquire_delivery_transaction_lock_provider",),
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    transaction_lock_owner="agent-a",
+                )
+            ).execute().to_dict()
+            self._write_approval(workspace, "tx-fence-journal-replay", "resume_preflight_backend_manifest_recovery")
+            self._write_approval(workspace, "tx-fence-journal-replay", "resume_apply_backend_manifest_recovery")
+
+            second = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-fence-journal-replay",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=(
+                        "acquire_delivery_transaction_lock_provider",
+                        "preflight_backend_manifest_recovery",
+                        "apply_backend_manifest_recovery",
+                    ),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-fence-journal-replay",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                )
+            ).execute().to_dict()
+
+            runner = second["step_results"][2]["runner_execution"]
+            lock = runner["transition_execution"]["execution_result"]["transaction_lock"]
+            propagation = second["step_results"][2]["fencing_token_propagation"]
+            replay = second["step_results"][0]["fencing_token_replay"]
+            self.assertEqual(first["status"], "completed")
+            self.assertEqual(second["status"], "completed")
+            self.assertEqual(second["step_results"][0]["status"], "skipped_completed")
+            self.assertEqual(replay["source"], "workflow_journal:acquire_delivery_transaction_lock_provider")
+            self.assertEqual(replay["status"], "replayed")
+            self.assertEqual(lock["expected_fencing_token"], "1")
+            self.assertEqual(lock["fencing_token"], "1")
+            self.assertTrue(lock["metadata"]["downstream_fencing_enforced"])
+            self.assertTrue(propagation["workflow_fencing_token_propagated"])
+            self.assertEqual(propagation["workflow_fencing_token_source"], "workflow_journal:acquire_delivery_transaction_lock_provider")
+
     def test_resume_workflow_scheduler_does_not_propagate_released_fencing_token_to_later_runner_step(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -708,6 +764,134 @@ class DeliveryResumeWorkflowSchedulerTests(unittest.TestCase):
             propagation = payload["step_results"][2]["fencing_token_propagation"]
             self.assertFalse(propagation["workflow_fencing_token_propagated"])
             self.assertIsNone(propagation["workflow_expected_transaction_lock_fencing_token"])
+
+    def test_resume_workflow_scheduler_replayed_release_clears_journaled_fencing_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-fence-journal-release")
+            self._write_approval(workspace, "tx-fence-journal-release", "resume_acquire_delivery_transaction_lock_provider")
+            self._write_approval(workspace, "tx-fence-journal-release", "resume_release_delivery_transaction_lock_provider")
+
+            first = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-fence-journal-release",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=("acquire_delivery_transaction_lock_provider", "release_delivery_transaction_lock_provider"),
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    transaction_lock_owner="agent-a",
+                )
+            ).execute().to_dict()
+            self._write_approval(workspace, "tx-fence-journal-release", "resume_preflight_backend_manifest_recovery")
+            self._write_approval(workspace, "tx-fence-journal-release", "resume_apply_backend_manifest_recovery")
+
+            second = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-fence-journal-release",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=(
+                        "acquire_delivery_transaction_lock_provider",
+                        "release_delivery_transaction_lock_provider",
+                        "preflight_backend_manifest_recovery",
+                        "apply_backend_manifest_recovery",
+                    ),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-fence-journal-release",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                )
+            ).execute().to_dict()
+
+            runner = second["step_results"][3]["runner_execution"]
+            lock = runner["transition_execution"]["execution_result"]["transaction_lock"]
+            propagation = second["step_results"][3]["fencing_token_propagation"]
+            self.assertEqual(first["status"], "completed")
+            self.assertEqual(second["status"], "completed")
+            self.assertEqual(second["step_results"][0]["status"], "skipped_completed")
+            self.assertEqual(second["step_results"][1]["status"], "skipped_completed")
+            self.assertTrue(second["step_results"][1]["fencing_token_replay"]["clear_token"])
+            self.assertIsNone(lock["expected_fencing_token"])
+            self.assertFalse(lock["metadata"]["downstream_fencing_enforced"])
+            self.assertFalse(propagation["workflow_fencing_token_propagated"])
+            self.assertIsNone(propagation["workflow_expected_transaction_lock_fencing_token"])
+
+    def test_resume_workflow_scheduler_does_not_replay_expired_journaled_fencing_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "delivery"
+            workspace = base / "workspace"
+            manifest = self._write_recoverable_manifest_transaction(root, "tx-fence-journal-expired")
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "delivery-resume-workflow-journal.json").write_text(
+                json.dumps(
+                    {
+                        "version": "2026-06-01.delivery-resume-workflow-journal-v1",
+                        "workflow_id": "previous-workflow",
+                        "entries": [
+                            {
+                                "workflow_id": "previous-workflow",
+                                "order": 1,
+                                "action": "acquire_delivery_transaction_lock_provider",
+                                "approval_action": "resume_acquire_delivery_transaction_lock_provider",
+                                "status": "acquired",
+                                "transaction_id": "tx-fence-journal-expired",
+                                "lock_status": "acquired",
+                                "lock_provider_id": "local-file-lock",
+                                "lock_fencing_token": "1",
+                                "lock_lease_expires_at": "2000-01-01T00:00:00+00:00",
+                                "created_at": "2000-01-01T00:00:00+00:00",
+                                "side_effect_policy": {"lock_acquired": True},
+                            }
+                        ],
+                        "entry_count": 1,
+                        "updated_at": "2000-01-01T00:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self._write_provider_lock(root, "tx-fence-journal-expired", fencing_token="1")
+            lock = json.loads((root / "delivery-distributed-transaction-lock.json").read_text(encoding="utf-8"))
+            lock["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+            (root / "delivery-distributed-transaction-lock.json").write_text(json.dumps(lock), encoding="utf-8")
+            self._write_approval(workspace, "tx-fence-journal-expired", "resume_preflight_backend_manifest_recovery")
+            self._write_approval(workspace, "tx-fence-journal-expired", "resume_apply_backend_manifest_recovery")
+
+            payload = DeliveryResumeWorkflowScheduler(
+                DeliveryResumeWorkflowSchedulerConfig(
+                    delivery_root=root,
+                    transaction_id="tx-fence-journal-expired",
+                    action="execute_workflow",
+                    mode=DeliveryExecutionMode.APPLY,
+                    step_actions=(
+                        "acquire_delivery_transaction_lock_provider",
+                        "preflight_backend_manifest_recovery",
+                        "apply_backend_manifest_recovery",
+                    ),
+                    backend_manifest_path=manifest,
+                    expected_transaction_id="tx-fence-journal-expired",
+                    approval_ledger_path=workspace / "review-approval-ledger.json",
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                )
+            ).execute().to_dict()
+
+            runner = payload["step_results"][2]["runner_execution"]
+            lock = runner["transition_execution"]["execution_result"]["transaction_lock"]
+            replay = payload["step_results"][0]["fencing_token_replay"]
+            propagation = payload["step_results"][2]["fencing_token_propagation"]
+            self.assertEqual(payload["status"], "completed")
+            self.assertEqual(payload["step_results"][0]["status"], "skipped_completed")
+            self.assertEqual(replay["status"], "not_replayed")
+            self.assertEqual(replay["reason"], "lease_expired_or_malformed")
+            self.assertIsNone(lock["expected_fencing_token"])
+            self.assertFalse(lock["metadata"]["downstream_fencing_enforced"])
+            self.assertFalse(propagation["workflow_fencing_token_propagated"])
 
     def test_resume_workflow_scheduler_executes_approved_lock_renewal_and_writes_journal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
