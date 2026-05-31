@@ -54,6 +54,10 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         transaction_lock_owner: str | None = None,
         transaction_lock_lease_seconds: int = 900,
         expected_resume_token: str | None = None,
+        release_transaction_lock: bool = False,
+        approve_transaction_lock_release: bool = False,
+        expected_transaction_lock_owner: str | None = None,
+        expected_transaction_lock_transaction_id: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
         """Plan or apply local filesystem delivery for reviewed artifact paths."""
@@ -96,6 +100,10 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
             transaction_lock_owner=transaction_lock_owner,
             transaction_lock_lease_seconds=transaction_lock_lease_seconds,
             expected_resume_token=expected_resume_token,
+            release_transaction_lock=release_transaction_lock,
+            approve_transaction_lock_release=approve_transaction_lock_release,
+            expected_transaction_lock_owner=expected_transaction_lock_owner,
+            expected_transaction_lock_transaction_id=expected_transaction_lock_transaction_id,
             metadata=metadata,
         )
         return LocalDeliveryExecutor(config).execute(artifacts).to_dict()
@@ -117,7 +125,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "and presigned-object/object-storage can PUT a redacted JSON delivery package to an explicit presigned_url after apply. "
         "external_delivery_provider_config_json passes provider-specific JSON options such as {\"archive_root\": \"...\"}, {\"webhook_url\": \"...\", \"headers\": {...}}, or {\"presigned_url\": \"...\", \"object_name\": \"release.json\", \"headers\": {...}}; raw config values are not exported in package metadata. "
         "external_delivery_idempotency_key defaults to the transaction id; duplicate external delivery is blocked by default unless allow_duplicate_external_delivery is explicitly true. "
-        "require_transaction_lock enables a local delivery-transaction-lock.json gate for apply-mode side effects; transaction_lock_owner, transaction_lock_lease_seconds, and expected_resume_token control the local lease / resume preflight baseline."
+        "require_transaction_lock enables a local delivery-transaction-lock.json gate for apply-mode side effects; transaction_lock_owner, transaction_lock_lease_seconds, and expected_resume_token control the local lease / resume preflight baseline. "
+        "release_transaction_lock creates a delivery-transaction-lock-release.json review record; apply mode removes the local lock only when approve_transaction_lock_release=true and optional expected owner / transaction id / resume token checks pass."
     )
     return execute_local_delivery
 

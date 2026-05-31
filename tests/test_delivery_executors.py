@@ -611,6 +611,125 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(result.transaction_lock.resume_token, "resume-a")
             self.assertTrue((delivery_root / "final-result.json").exists())
 
+    def test_transaction_lock_release_requires_explicit_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-release",
+                    mode=DeliveryExecutionMode.APPLY,
+                    release_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    expected_resume_token="resume-a",
+                )
+            ).execute([])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "fix_delivery_transaction_lock_release_blockers")
+            self.assertIsNotNone(result.transaction_lock_release)
+            assert result.transaction_lock_release is not None
+            self.assertIn("transaction_lock_release_approved", result.transaction_lock_release.blocking_reasons)
+            self.assertFalse(result.transaction_lock_release.lock_removed)
+            self.assertTrue(lock_path.exists())
+            self.assertTrue((delivery_root / "delivery-transaction-lock-release.json").exists())
+
+    def test_transaction_lock_release_removes_matching_local_lock_when_approved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-release",
+                    mode=DeliveryExecutionMode.APPLY,
+                    release_transaction_lock=True,
+                    approve_transaction_lock_release=True,
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_transaction_id="tx-existing",
+                    expected_resume_token="resume-a",
+                )
+            ).execute([])
+
+            release_path = delivery_root / "delivery-transaction-lock-release.json"
+            self.assertEqual(result.status, "lock_released")
+            self.assertEqual(result.next_action, "review_delivery_transaction_lock_release")
+            self.assertFalse(lock_path.exists())
+            self.assertTrue(release_path.exists())
+            release = json.loads(release_path.read_text(encoding="utf-8"))
+            self.assertEqual(release["status"], "released")
+            self.assertTrue(release["lock_removed"])
+            self.assertEqual(release["expected_lock_transaction_id"], "tx-existing")
+            self.assertFalse(release["metadata"]["distributed_lock"])
+
+    def test_transaction_lock_release_blocks_expected_owner_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-release",
+                    mode=DeliveryExecutionMode.APPLY,
+                    release_transaction_lock=True,
+                    approve_transaction_lock_release=True,
+                    expected_transaction_lock_owner="agent-b",
+                )
+            ).execute([])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertIsNotNone(result.transaction_lock_release)
+            assert result.transaction_lock_release is not None
+            self.assertIn("expected_transaction_lock_owner_matches", result.transaction_lock_release.blocking_reasons)
+            self.assertFalse(result.transaction_lock_release.lock_removed)
+            self.assertTrue(lock_path.exists())
+
 
     def test_lock_blocking_prevents_backend_manifest_in_place_mutation_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

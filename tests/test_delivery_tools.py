@@ -93,6 +93,43 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(lock["operation"], "local_delivery_apply")
             self.assertFalse(lock["metadata"]["distributed_lock"])
 
+    def test_local_delivery_tool_can_release_transaction_lock_with_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            tool = make_local_delivery_executor_tool(delivery_root)
+
+            result = tool(
+                artifacts_json="[]",
+                transaction_id="tx-tool-release",
+                mode="apply",
+                release_transaction_lock=True,
+                approve_transaction_lock_release=True,
+                expected_transaction_lock_owner="agent-a",
+                expected_transaction_lock_transaction_id="tx-existing",
+                expected_resume_token="resume-a",
+            )
+
+            self.assertEqual(result["status"], "lock_released")
+            self.assertIsNotNone(result["transaction_lock_release"])
+            self.assertTrue(result["transaction_lock_release"]["lock_removed"])
+            self.assertFalse(lock_path.exists())
+            self.assertTrue((delivery_root / "delivery-transaction-lock-release.json").exists())
+
     def test_local_delivery_tool_can_commit_manifest_revision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

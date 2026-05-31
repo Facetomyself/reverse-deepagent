@@ -108,6 +108,31 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
         self.assertIn("owner", inspection["artifacts"]["transaction_lock"]["keys"])
         self.assertIn("resume_token", inspection["artifacts"]["transaction_lock"]["keys"])
 
+    def test_inspector_loads_transaction_lock_release_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            release_path = root / "delivery-transaction-lock-release.json"
+            release_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-lock-release",
+                        "status": "released",
+                        "operation": "release_delivery_transaction_lock",
+                        "lock_removed": True,
+                        "stale_lock_detected": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            inspection = inspect_delivery_transaction_root(root).to_dict()
+
+        self.assertFalse(inspection["ok"])
+        self.assertIn("transaction_journal", inspection["missing_artifacts"])
+        self.assertTrue(inspection["artifacts"]["transaction_lock_release"]["loaded"])
+        self.assertIn("lock_removed", inspection["artifacts"]["transaction_lock_release"]["keys"])
+        self.assertIn("stale_lock_detected", inspection["artifacts"]["transaction_lock_release"]["keys"])
+
     def test_inspector_reports_malformed_artifact_without_raising(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

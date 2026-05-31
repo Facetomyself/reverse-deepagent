@@ -118,6 +118,11 @@ class DeliveryExecutorConfig:
     transaction_lock_owner: str | None = None
     transaction_lock_lease_seconds: int = 900
     expected_resume_token: str | None = None
+    release_transaction_lock: bool = False
+    approve_transaction_lock_release: bool = False
+    transaction_lock_release_name: str = "delivery-transaction-lock-release.json"
+    expected_transaction_lock_owner: str | None = None
+    expected_transaction_lock_transaction_id: str | None = None
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -1877,6 +1882,56 @@ class DeliveryTransactionLock:
 
 
 @dataclass(frozen=True)
+class DeliveryTransactionLockRelease:
+    transaction_id: str
+    status: str
+    operation: str
+    lock_path: str
+    release_path: str | None
+    delivery_root: str
+    owner: str | None
+    expected_owner: str | None
+    expected_lock_transaction_id: str | None
+    expected_resume_token: str | None
+    dry_run: bool
+    approval_required: bool
+    release_approved: bool
+    lock_removed: bool
+    stale_lock_detected: bool
+    existing_lock: dict[str, Any] | None
+    checks: list[dict[str, Any]]
+    blocking_reasons: list[str]
+    recommended_actions: list[str]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "status": self.status,
+            "operation": self.operation,
+            "lock_path": self.lock_path,
+            "release_path": self.release_path,
+            "delivery_root": self.delivery_root,
+            "owner": self.owner,
+            "expected_owner": self.expected_owner,
+            "expected_lock_transaction_id": self.expected_lock_transaction_id,
+            "expected_resume_token": self.expected_resume_token,
+            "dry_run": self.dry_run,
+            "approval_required": self.approval_required,
+            "release_approved": self.release_approved,
+            "lock_removed": self.lock_removed,
+            "stale_lock_detected": self.stale_lock_detected,
+            "existing_lock": self.existing_lock,
+            "checks": self.checks,
+            "blocking_reasons": self.blocking_reasons,
+            "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
 class DeliveryTransactionJournal:
     transaction_id: str
     status: str
@@ -1970,6 +2025,7 @@ class DeliveryExecutionResult:
     backend_manifest_recovery: BackendManifestRecovery | None
     backend_manifest_transaction_commit: BackendManifestTransactionCommit | None
     transaction_lock: DeliveryTransactionLock | None
+    transaction_lock_release: DeliveryTransactionLockRelease | None
     transaction_idempotency_guard: DeliveryTransactionIdempotencyGuard | None
     external_delivery_result: ExternalDeliveryResult | None
     external_delivery_idempotency_ledger: ExternalDeliveryIdempotencyLedger | None
@@ -2005,6 +2061,7 @@ class DeliveryExecutionResult:
             "backend_manifest_recovery": self.backend_manifest_recovery.to_dict() if self.backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": self.backend_manifest_transaction_commit.to_dict() if self.backend_manifest_transaction_commit else None,
             "transaction_lock": self.transaction_lock.to_dict() if self.transaction_lock else None,
+            "transaction_lock_release": self.transaction_lock_release.to_dict() if self.transaction_lock_release else None,
             "transaction_idempotency_guard": self.transaction_idempotency_guard.to_dict() if self.transaction_idempotency_guard else None,
             "external_delivery_result": self.external_delivery_result.to_dict() if self.external_delivery_result else None,
             "external_delivery_idempotency_ledger": (
@@ -2036,6 +2093,17 @@ class LocalDeliveryExecutor:
         recovery_only = self._is_recovery_preflight_only(artifacts)
         recovery_apply_only = self._is_backend_manifest_recovery_apply_only(artifacts)
         transaction_commit_only = self._is_cross_run_transaction_commit_only(artifacts)
+        lock_release_only = self.config.release_transaction_lock
+        transaction_lock_release_path = (
+            str(delivery_root / self.config.transaction_lock_release_name)
+            if self.config.write_receipt and not dry_run and not errors and lock_release_only
+            else None
+        )
+        transaction_lock_release = self._build_transaction_lock_release(
+            release_path=transaction_lock_release_path,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
         lock_operation = self._transaction_lock_operation(artifacts)
         transaction_lock_path = (
             str(delivery_root / self.config.transaction_lock_name)
@@ -2044,6 +2112,7 @@ class LocalDeliveryExecutor:
             and not errors
             and self.config.require_transaction_lock
             and lock_operation is not None
+            and not lock_release_only
             else None
         )
         transaction_lock = self._build_transaction_lock(
@@ -2064,9 +2133,17 @@ class LocalDeliveryExecutor:
             status = "failed"
             next_action = "fix_delivery_artifact_inputs"
         elif dry_run:
-            status = "planned"
-            next_action = "approve_local_delivery_apply"
+            status = "lock_release_planned" if lock_release_only else "planned"
+            next_action = "approve_delivery_transaction_lock_release" if lock_release_only else "approve_local_delivery_apply"
             skipped = [dict(item, reason="dry_run") for item in planned]
+        elif lock_release_only:
+            if transaction_lock_release and transaction_lock_release.lock_removed:
+                status = "lock_released"
+                next_action = "review_delivery_transaction_lock_release"
+            else:
+                status = "blocked"
+                next_action = "fix_delivery_transaction_lock_release_blockers"
+            skipped = [dict(item, reason="transaction_lock_release_only") for item in planned]
         elif transaction_lock_blocking:
             status = "blocked"
             next_action = "review_or_release_delivery_transaction_lock"
@@ -2096,12 +2173,12 @@ class LocalDeliveryExecutor:
 
         receipt_path = (
             str(delivery_root / "delivery-receipt.json")
-            if self.config.write_receipt and not dry_run and not errors and not transaction_lock_blocking and not recovery_only and not recovery_apply_only and not transaction_commit_only
+            if self.config.write_receipt and not dry_run and not errors and not transaction_lock_blocking and not lock_release_only and not recovery_only and not recovery_apply_only and not transaction_commit_only
             else None
         )
         journal_path = (
             str(delivery_root / "delivery-transaction-journal.json")
-            if self.config.write_receipt and not dry_run and not errors and not transaction_lock_blocking and not recovery_only and not recovery_apply_only and not transaction_commit_only
+            if self.config.write_receipt and not dry_run and not errors and not transaction_lock_blocking and not lock_release_only and not recovery_only and not recovery_apply_only and not transaction_commit_only
             else None
         )
         manifest_revision_path = (
@@ -2481,6 +2558,8 @@ class LocalDeliveryExecutor:
             _write_json(Path(external_delivery_result_path), external_delivery_result.to_dict())
         if external_delivery_idempotency_ledger_path and external_delivery_idempotency_ledger:
             _write_json(Path(external_delivery_idempotency_ledger_path), external_delivery_idempotency_ledger.to_dict())
+        if transaction_lock_release_path and transaction_lock_release:
+            _write_json(Path(transaction_lock_release_path), transaction_lock_release.to_dict())
         if transaction_lock_path and transaction_lock and transaction_lock.lock_acquired:
             _write_json(Path(transaction_lock_path), transaction_lock.to_dict())
         should_write_journal = bool(journal_path) and (
@@ -2490,7 +2569,13 @@ class LocalDeliveryExecutor:
         )
         if should_write_journal:
             _write_json(Path(journal_path), journal.to_dict())
-        if transaction_lock_blocking:
+        if lock_release_only:
+            next_action = (
+                "review_delivery_transaction_lock_release"
+                if transaction_lock_release and transaction_lock_release.lock_removed
+                else "fix_delivery_transaction_lock_release_blockers"
+            )
+        elif transaction_lock_blocking:
             next_action = "review_or_release_delivery_transaction_lock"
         elif backend_manifest_mutated:
             next_action = "review_backend_manifest_in_place_mutation_before_cross_run_commit"
@@ -2500,13 +2585,17 @@ class LocalDeliveryExecutor:
             next_action = "review_backend_manifest_recovery_preflight_before_cross_run_commit"
         elif backend_manifest_recovery_preflight and backend_manifest_recovery_preflight.blocking_reasons:
             next_action = "fix_backend_manifest_recovery_preflight_blockers"
+        delivery_allowed = (
+            not bool(errors)
+            and status != "blocked"
+            and not bool(external_delivery_result and external_delivery_result.blocking_reasons)
+        )
         result_payload_for_state = {
             "status": status,
             "mode": mode.value,
             "transaction_id": self.config.transaction_id,
             "dry_run": dry_run,
-            "delivery_allowed": not bool(errors)
-            and not bool(external_delivery_result and external_delivery_result.blocking_reasons),
+            "delivery_allowed": delivery_allowed,
             "filesystem_artifact_mutated": bool(delivered),
             "external_delivery_performed": external_delivery_performed,
             "cross_run_transaction_committed": cross_run_transaction_committed,
@@ -2530,6 +2619,7 @@ class LocalDeliveryExecutor:
             "backend_manifest_recovery": backend_manifest_recovery.to_dict() if backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": backend_manifest_transaction_commit.to_dict() if backend_manifest_transaction_commit else None,
             "transaction_lock": transaction_lock.to_dict() if transaction_lock else None,
+            "transaction_lock_release": transaction_lock_release.to_dict() if transaction_lock_release else None,
             "transaction_idempotency_guard": transaction_idempotency_guard.to_dict() if transaction_idempotency_guard else None,
             "external_delivery_result": external_delivery_result.to_dict() if external_delivery_result else None,
             "external_delivery_idempotency_ledger": (
@@ -2545,8 +2635,7 @@ class LocalDeliveryExecutor:
             mode=mode.value,
             transaction_id=self.config.transaction_id,
             dry_run=dry_run,
-            delivery_allowed=not bool(errors)
-            and not bool(external_delivery_result and external_delivery_result.blocking_reasons),
+            delivery_allowed=delivery_allowed,
             filesystem_artifact_mutated=bool(delivered),
             external_delivery_performed=external_delivery_performed,
             cross_run_transaction_committed=cross_run_transaction_committed,
@@ -2572,6 +2661,7 @@ class LocalDeliveryExecutor:
             backend_manifest_recovery=backend_manifest_recovery,
             backend_manifest_transaction_commit=backend_manifest_transaction_commit,
             transaction_lock=transaction_lock,
+            transaction_lock_release=transaction_lock_release,
             transaction_idempotency_guard=transaction_idempotency_guard,
             external_delivery_result=external_delivery_result,
             external_delivery_idempotency_ledger=external_delivery_idempotency_ledger,
@@ -2679,6 +2769,8 @@ class LocalDeliveryExecutor:
     def _transaction_lock_operation(self, artifacts: list[DeliveryArtifact]) -> str | None:
         if self.config.mode == DeliveryExecutionMode.DRY_RUN:
             return None
+        if self.config.release_transaction_lock:
+            return None
         if self.config.apply_backend_manifest_recovery:
             return "apply_backend_manifest_recovery"
         if self.config.commit_cross_run_transaction:
@@ -2690,6 +2782,173 @@ class LocalDeliveryExecutor:
         if artifacts:
             return "local_delivery_apply"
         return None
+
+    def _build_transaction_lock_release(
+        self,
+        *,
+        release_path: str | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> DeliveryTransactionLockRelease | None:
+        if not self.config.release_transaction_lock:
+            return None
+        delivery_root = self.config.resolved_delivery_root()
+        resolved_lock_path = (delivery_root / self.config.transaction_lock_name).resolve()
+        resolved_release_path = Path(release_path).expanduser().resolve() if release_path else None
+        owner = str(self.config.transaction_lock_owner or "").strip() or None
+        expected_owner = str(self.config.expected_transaction_lock_owner or owner or "").strip() or None
+        expected_lock_transaction_id = str(self.config.expected_transaction_lock_transaction_id or "").strip() or None
+        expected_resume_token = str(self.config.expected_resume_token or "").strip() or None
+        existing_lock_present = resolved_lock_path.exists()
+        existing_lock: dict[str, Any] | None = None
+        existing_lock_load_error: str | None = None
+        if existing_lock_present:
+            try:
+                existing_lock = _read_json_object(resolved_lock_path)
+            except Exception as exc:  # noqa: BLE001 - malformed lock must not be removed automatically.
+                existing_lock_load_error = str(exc)
+                existing_lock = {}
+        existing_owner = str(existing_lock.get("owner") or "") if existing_lock else ""
+        existing_transaction_id = str(existing_lock.get("transaction_id") or "") if existing_lock else ""
+        existing_resume_token = str(existing_lock.get("resume_token") or "") if existing_lock else ""
+        existing_lease_expires_at = str(existing_lock.get("lease_expires_at") or "") if existing_lock else ""
+        stale_lock_detected = bool(existing_lock_present and existing_lock) and _iso_datetime_is_past(existing_lease_expires_at, created_at)
+        owner_matches = not expected_owner or (existing_owner == expected_owner)
+        transaction_id_matches = not expected_lock_transaction_id or (existing_transaction_id == expected_lock_transaction_id)
+        resume_token_matches = not expected_resume_token or (existing_resume_token == expected_resume_token)
+        approval_passed = dry_run or bool(self.config.approve_transaction_lock_release)
+        checks = [
+            {
+                "name": "transaction_lock_file_exists",
+                "passed": existing_lock_present,
+                "details": {"lock_path": str(resolved_lock_path)},
+            },
+            {
+                "name": "transaction_lock_file_is_valid",
+                "passed": existing_lock_load_error is None,
+                "details": {"load_error": existing_lock_load_error, "lock_path": str(resolved_lock_path)},
+            },
+            {
+                "name": "transaction_lock_release_approved",
+                "passed": approval_passed,
+                "details": {
+                    "dry_run": dry_run,
+                    "approve_transaction_lock_release": self.config.approve_transaction_lock_release,
+                },
+            },
+            {
+                "name": "expected_transaction_lock_owner_matches",
+                "passed": owner_matches,
+                "details": {"expected_owner": expected_owner, "existing_owner": existing_owner or None},
+            },
+            {
+                "name": "expected_transaction_lock_transaction_id_matches",
+                "passed": transaction_id_matches,
+                "details": {
+                    "expected_transaction_id": expected_lock_transaction_id,
+                    "existing_transaction_id": existing_transaction_id or None,
+                },
+            },
+            {
+                "name": "expected_resume_token_matches_lock",
+                "passed": resume_token_matches,
+                "details": {
+                    "expected_resume_token_configured": bool(expected_resume_token),
+                    "existing_resume_token_present": bool(existing_resume_token),
+                    "resume_token_matches": resume_token_matches,
+                },
+            },
+            {
+                "name": "stale_lock_reviewed",
+                "passed": True,
+                "details": {
+                    "stale_lock_detected": stale_lock_detected,
+                    "existing_lease_expires_at": existing_lease_expires_at or None,
+                },
+            },
+        ]
+        if not existing_lock_present:
+            blocking_reasons: list[str] = []
+            status = "planned" if dry_run else "no_lock_found"
+        else:
+            blocking_reasons = [
+                check["name"]
+                for check in checks
+                if not check["passed"] and check["name"] != "transaction_lock_file_exists"
+            ]
+            status = "planned" if dry_run else "blocked" if blocking_reasons else "release_ready"
+        lock_removed = False
+        if status == "release_ready" and not dry_run:
+            try:
+                resolved_lock_path.unlink()
+                lock_removed = True
+                status = "released"
+            except Exception as exc:  # noqa: BLE001 - report filesystem release failures as blockers.
+                checks.append(
+                    {
+                        "name": "transaction_lock_file_removed",
+                        "passed": False,
+                        "details": {"error": str(exc), "lock_path": str(resolved_lock_path)},
+                    }
+                )
+                blocking_reasons.append("transaction_lock_file_removed")
+                status = "blocked"
+        elif status == "release_ready":
+            status = "planned"
+        if lock_removed:
+            checks.append(
+                {
+                    "name": "transaction_lock_file_removed",
+                    "passed": True,
+                    "details": {"lock_path": str(resolved_lock_path)},
+                }
+            )
+        if status == "released":
+            recommended_actions = ["review_delivery_transaction_lock_release"]
+        elif status == "no_lock_found":
+            recommended_actions = ["continue_without_delivery_transaction_lock_release"]
+        elif blocking_reasons:
+            recommended_actions = ["fix_delivery_transaction_lock_release_blockers"]
+        else:
+            recommended_actions = ["approve_delivery_transaction_lock_release"]
+        return DeliveryTransactionLockRelease(
+            transaction_id=self.config.transaction_id,
+            status=status,
+            operation="release_delivery_transaction_lock",
+            lock_path=str(resolved_lock_path),
+            release_path=str(resolved_release_path) if resolved_release_path else None,
+            delivery_root=str(delivery_root),
+            owner=owner,
+            expected_owner=expected_owner,
+            expected_lock_transaction_id=expected_lock_transaction_id,
+            expected_resume_token=expected_resume_token,
+            dry_run=dry_run,
+            approval_required=True,
+            release_approved=bool(self.config.approve_transaction_lock_release),
+            lock_removed=lock_removed,
+            stale_lock_detected=stale_lock_detected,
+            existing_lock=existing_lock if existing_lock else None,
+            checks=checks,
+            blocking_reasons=blocking_reasons,
+            recommended_actions=recommended_actions,
+            created_at=created_at,
+            metadata={
+                **self.config.metadata,
+                "executor": "local-filesystem",
+                "scope": "delivery-transaction-lock-release-review-baseline",
+                "local_file_lock": True,
+                "distributed_lock": False,
+                "automatic_stale_lock_takeover": False,
+                "release_requires_explicit_approval": True,
+                "limitations": [
+                    "local_delivery_root_lock_release_only",
+                    "does_not_provide_distributed_consensus",
+                    "does_not_renew_leases",
+                    "does_not_auto_take_over_stale_locks",
+                    "does_not_resume_transactions",
+                ],
+            },
+        )
 
     def _build_transaction_lock(
         self,

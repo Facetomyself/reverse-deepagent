@@ -107,6 +107,11 @@ class WorkspaceContractTests(unittest.TestCase):
             routes["workspace/delivery-transaction-lock.json"].future_path,
             "/workspace/delivery/delivery-transaction-lock.json",
         )
+        self.assertEqual(routes["workspace/delivery-transaction-lock-release.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-transaction-lock-release.json"].future_path,
+            "/workspace/delivery/delivery-transaction-lock-release.json",
+        )
         self.assertEqual(routes["workspace/delivery-transaction-idempotency-guard.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(
             routes["workspace/delivery-transaction-idempotency-guard.json"].future_path,
