@@ -2,11 +2,13 @@ import unittest
 
 from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
 from reverse_deepagent.browser.smoke import (
+    BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
     DEFAULT_BROWSER_PROVIDER_MATRIX,
     browser_provider_metadata_matrix_payload,
     browser_provider_smoke_matrix_payload,
     browser_provider_smoke_row,
     legacy_browser_provider_payload_from_smoke_row,
+    validate_browser_provider_capability_compatibility,
 )
 
 
@@ -122,15 +124,50 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         payload = browser_provider_metadata_matrix_payload(provider_metadata=metadata)
 
         self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["compatibility_rule_version"], BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION)
         self.assertEqual(payload["summary"]["provider_count"], 1)
+        self.assertEqual(payload["summary"]["compatibility"]["compatible_count"], 1)
         row = payload["providers"][0]
         self.assertEqual(row["provider_id"], "registered-browser")
         self.assertEqual(row["aliases"], ["registered-alias"])
         self.assertEqual(row["supported_modes"], ["connect", "cdp", "runtime-eval"])
+        self.assertEqual(row["compatibility"]["status"], "compatible")
         lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
         self.assertEqual(lifecycle["configured"], "ok")
         self.assertEqual(lifecycle["availability_checked"], "not_checked")
         self.assertEqual(row["smoke"]["status"], "skipped")
+
+    def test_capability_compatibility_flags_invalid_breakpoint_combo(self) -> None:
+        compatibility = validate_browser_provider_capability_compatibility(
+            BrowserProviderCapabilities(
+                provider_id="bad-debugger",
+                display_name="Bad Debugger",
+                supports_launch=True,
+                supports_breakpoints=True,
+                supports_runtime_eval=True,
+            ).model_dump(mode="json")
+        )
+
+        self.assertFalse(compatibility["ok"])
+        self.assertEqual(compatibility["status"], "error")
+        self.assertIn("breakpoints_require_cdp", {item["code"] for item in compatibility["errors"]})
+
+    def test_metadata_matrix_marks_incompatible_provider_not_ok(self) -> None:
+        metadata = [
+            BrowserProviderCapabilities(
+                provider_id="bad-websocket",
+                display_name="Bad WebSocket",
+                supports_connect=True,
+                supports_websocket_frames=True,
+            ).model_dump(mode="json")
+        ]
+
+        payload = browser_provider_metadata_matrix_payload(provider_metadata=metadata)
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["summary"]["compatibility"]["error_count"], 1)
+        self.assertEqual(payload["providers"][0]["compatibility"]["status"], "error")
 
     def test_availability_and_launch_lifecycle_are_recorded(self) -> None:
         row = browser_provider_smoke_row(

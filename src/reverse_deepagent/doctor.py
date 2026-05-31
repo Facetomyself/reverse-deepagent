@@ -205,7 +205,10 @@ def _browser_provider_matrix(args: argparse.Namespace) -> dict[str, Any]:
     payload["provider_registration_metadata"] = provider_metadata
     payload["registered_provider_ids"] = registry.provider_ids()
     payload["side_effect_policy"]["provider_factories_invoked"] = False
-    payload["ok"] = all(bool(item.get("configured")) for item in payload["providers"])
+    payload["ok"] = all(
+        bool(item.get("configured")) and bool(item.get("compatibility", {}).get("ok", True))
+        for item in payload["providers"]
+    )
     return payload
 
 

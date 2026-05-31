@@ -132,7 +132,7 @@ reverse-agent-doctor --browser cloakbrowser
 reverse-agent-doctor --browser-provider-matrix
 ```
 
-输出里的 `browser_provider_smoke_matrix` 由 `BrowserProviderRegistry` 驱动，会列出内置 `playwright-chromium`、`cloakbrowser`、`remote-cdp` 以及已安装 `reverse_deepagent.browser_providers` entry point plugin 的 capability flags、alias、supported modes 和标准 lifecycle stages。metadata-only matrix 会读取 registration metadata 和 `describe()` 输出，但不调用 provider factory、不导入可选浏览器依赖、不探测 CDP 端点、不启动浏览器，也不依赖 MCP；单 provider doctor 输出会保留旧字段，并额外带 `browser_provider.smoke_matrix`，方便 CI 或人工 review 对比 provider 差异。
+输出里的 `browser_provider_smoke_matrix` 由 `BrowserProviderRegistry` 驱动，会列出内置 `playwright-chromium`、`cloakbrowser`、`remote-cdp` 以及已安装 `reverse_deepagent.browser_providers` entry point plugin 的 capability flags、alias、supported modes、compatibility 结果和标准 lifecycle stages。metadata-only matrix 会读取 registration metadata 和 `describe()` 输出，但不调用 provider factory、不导入可选浏览器依赖、不探测 CDP 端点、不启动浏览器，也不依赖 MCP；compatibility validator 会检查 breakpoints/CDP、response body/network 或 CDP、persistent context/lifecycle 等能力组合是否自洽，单 provider doctor 输出会保留旧字段，并额外带 `browser_provider.smoke_matrix`，方便 CI 或人工 review 对比 provider 差异。
 
 仓库还提供 BrowserProvider 插件模板包 [`packages/reverse-deepagent-browser-provider-template/`](packages/reverse-deepagent-browser-provider-template/)，声明 `reverse_deepagent.browser_providers` entry point，并用 `template-browser` 示例证明 metadata-only 注册不会启动浏览器、探测 CDP 或调用 provider factory。接入自定义浏览器、反检测浏览器或托管 CDP 服务时，优先复制这个包，而不是把新 provider 硬编码进 core runtime。
 

@@ -6,6 +6,7 @@ from typing import Any
 from reverse_deepagent.browser.base import BrowserProvider
 
 BROWSER_SMOKE_MATRIX_VERSION = "2026-05-31.lifecycle-baseline"
+BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION = "2026-05-31.metadata-compatibility-v1"
 DEFAULT_BROWSER_PROVIDER_MATRIX: tuple[str, ...] = (
     "playwright-chromium",
     "cloakbrowser",
@@ -59,6 +60,7 @@ def browser_provider_metadata_matrix_payload(
     return {
         "matrix_version": BROWSER_SMOKE_MATRIX_VERSION,
         "provider_ids": [str(item.get("provider_id")) for item in provider_metadata],
+        "ok": _matrix_ok(rows),
         "side_effect_policy": {
             "metadata_only_by_default": True,
             "availability_check_requested": False,
@@ -68,6 +70,7 @@ def browser_provider_metadata_matrix_payload(
         },
         "lifecycle_stages": list(LIFECYCLE_STAGES),
         "capability_flags": list(CAPABILITY_FLAG_KEYS),
+        "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
         "providers": rows,
         "summary": _matrix_summary(rows),
     }
@@ -85,6 +88,7 @@ def _browser_provider_metadata_row(metadata: dict[str, Any], *, smoke_url: str) 
         "smoke_url": smoke_url,
         "capabilities": metadata,
         "capability_matrix": _capability_matrix(metadata),
+        "compatibility": validate_browser_provider_capability_compatibility(metadata),
         "supported_modes": _supported_modes(metadata),
         "aliases": list(metadata.get("aliases", [])) if isinstance(metadata.get("aliases", []), list) else [],
         "keys": list(metadata.get("keys", [])) if isinstance(metadata.get("keys", []), list) else [],
@@ -131,6 +135,7 @@ def browser_provider_smoke_matrix_payload(
     return {
         "matrix_version": BROWSER_SMOKE_MATRIX_VERSION,
         "provider_ids": list(selected_provider_ids),
+        "ok": _matrix_ok(rows),
         "side_effect_policy": {
             "metadata_only_by_default": True,
             "availability_check_requested": include_availability,
@@ -139,6 +144,7 @@ def browser_provider_smoke_matrix_payload(
         },
         "lifecycle_stages": list(LIFECYCLE_STAGES),
         "capability_flags": list(CAPABILITY_FLAG_KEYS),
+        "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
         "providers": rows,
         "summary": _matrix_summary(rows),
     }
@@ -174,6 +180,7 @@ def browser_provider_smoke_row(
         capabilities = provider.describe().model_dump(mode="json")
         row["capabilities"] = capabilities
         row["capability_matrix"] = _capability_matrix(capabilities)
+        row["compatibility"] = validate_browser_provider_capability_compatibility(capabilities)
         row["supported_modes"] = _supported_modes(capabilities)
         _append_lifecycle(row, "capability_described", "ok", "provider capabilities captured without launching")
     except Exception as exc:
@@ -304,11 +311,85 @@ def _supported_modes(capabilities: dict[str, Any]) -> list[str]:
     return modes
 
 
+def validate_browser_provider_capability_compatibility(capabilities: dict[str, Any]) -> dict[str, Any]:
+    """Validate BrowserProvider capability combinations without side effects.
+
+    This is intentionally metadata-only. It does not inspect provider objects,
+    import optional SDKs, probe CDP endpoints, or launch browsers. The goal is
+    to flag impossible or suspicious capability combinations before a provider
+    is used by native-web.
+    """
+
+    provider_id = str(capabilities.get("provider_id") or "unknown")
+    errors: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
+
+    def enabled(key: str) -> bool:
+        return bool(capabilities.get(key))
+
+    def add_error(code: str, message: str) -> None:
+        errors.append({"code": code, "message": message})
+
+    def add_warning(code: str, message: str) -> None:
+        warnings.append({"code": code, "message": message})
+
+    if provider_id == "unknown":
+        add_error("missing_provider_id", "capabilities must include a stable provider_id")
+
+    has_lifecycle_mode = enabled("supports_launch") or enabled("supports_connect")
+    if enabled("supports_breakpoints") and not enabled("supports_cdp"):
+        add_error("breakpoints_require_cdp", "supports_breakpoints requires supports_cdp for Debugger domain access")
+    if enabled("supports_persistent_context") and not has_lifecycle_mode:
+        add_error(
+            "persistent_context_requires_lifecycle",
+            "supports_persistent_context requires launch or connect lifecycle support",
+        )
+    for feature_key, code in (
+        ("supports_response_body", "response_body_requires_network_or_cdp"),
+        ("supports_request_initiator", "request_initiator_requires_network_or_cdp"),
+        ("supports_websocket_frames", "websocket_frames_require_network_or_cdp"),
+    ):
+        if enabled(feature_key) and not (enabled("supports_network_events") or enabled("supports_cdp")):
+            add_error(code, f"{feature_key} requires supports_network_events or supports_cdp")
+
+    if enabled("supports_runtime_eval") and not (enabled("supports_playwright_api") or enabled("supports_cdp")):
+        add_warning(
+            "runtime_eval_without_known_transport",
+            "supports_runtime_eval is declared without supports_playwright_api or supports_cdp",
+        )
+    if enabled("supports_script_source") and not (
+        enabled("supports_cdp") or enabled("supports_network_events") or enabled("supports_runtime_eval")
+    ):
+        add_warning(
+            "script_source_without_known_acquisition_path",
+            "supports_script_source is declared without CDP, network events, or runtime eval",
+        )
+    if enabled("supports_cdp") and not has_lifecycle_mode:
+        add_warning("cdp_without_lifecycle_mode", "supports_cdp is declared but provider cannot launch or connect")
+    if enabled("managed_browser") and not enabled("supports_launch"):
+        add_warning("managed_browser_without_launch", "managed_browser usually implies supports_launch")
+    if any(enabled(key) for key in CAPABILITY_FLAG_KEYS if key != "managed_browser") and not has_lifecycle_mode:
+        add_warning("capabilities_without_lifecycle_mode", "runtime capabilities are declared but provider cannot launch or connect")
+
+    status = "error" if errors else "warning" if warnings else "compatible"
+    return {
+        "rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
+        "provider_id": provider_id,
+        "status": status,
+        "ok": not errors,
+        "error_count": len(errors),
+        "warning_count": len(warnings),
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
 def _append_lifecycle(row: dict[str, Any], stage: str, status: str, message: str) -> None:
     row.setdefault("lifecycle", []).append({"stage": stage, "status": status, "message": message})
 
 
 def _matrix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    compatibility_items = [row.get("compatibility") for row in rows if isinstance(row.get("compatibility"), dict)]
     return {
         "provider_count": len(rows),
         "configured_count": sum(1 for row in rows if row.get("configured")),
@@ -317,4 +398,13 @@ def _matrix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "launched_count": sum(1 for row in rows if row.get("launched")),
         "failed_count": sum(1 for row in rows if row.get("ok") is False and row.get("launch_requested")),
         "metadata_ok_count": sum(1 for row in rows if row.get("configured") and row.get("capabilities")),
+        "compatibility": {
+            "compatible_count": sum(1 for item in compatibility_items if item.get("status") == "compatible"),
+            "warning_count": sum(1 for item in compatibility_items if item.get("status") == "warning"),
+            "error_count": sum(1 for item in compatibility_items if item.get("status") == "error"),
+        },
     }
+
+
+def _matrix_ok(rows: list[dict[str, Any]]) -> bool:
+    return all(bool(row.get("configured")) and bool(row.get("compatibility", {}).get("ok", True)) for row in rows)
