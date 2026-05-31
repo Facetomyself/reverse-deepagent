@@ -6,6 +6,7 @@ from typing import Any
 from reverse_deepagent.tools.delivery_tools import (
     make_delivery_recovery_executor_tool,
     make_delivery_rollback_executor_tool,
+    make_delivery_resume_planner_tool,
     make_delivery_rollback_state_writer_tool,
     make_delivery_transition_executor_tool,
     make_local_delivery_executor_tool,
@@ -30,6 +31,7 @@ def build_delivery_subagent(
         "system_prompt": load_delivery_prompt(prompt_path),
         "tools": [
             make_local_delivery_executor_tool(Path(artifact_root) / "delivery"),
+            make_delivery_resume_planner_tool(Path(artifact_root) / "delivery"),
             make_delivery_transition_executor_tool(Path(artifact_root) / "delivery"),
             make_delivery_recovery_executor_tool(Path(artifact_root) / "delivery"),
             make_delivery_rollback_state_writer_tool(Path(artifact_root) / "delivery"),

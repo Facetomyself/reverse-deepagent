@@ -16,6 +16,7 @@ DELIVERY_TRANSACTION_ARTIFACT_NAMES: dict[str, str] = {
     "delivery_transition_execution": "delivery-transition-execution.json",
     "transaction_lock": "delivery-transaction-lock.json",
     "transaction_lock_release": "delivery-transaction-lock-release.json",
+    "delivery_resume_plan": "delivery-resume-plan.json",
     "transaction_idempotency_guard": "delivery-transaction-idempotency-guard.json",
     "backend_manifest_recovery_preflight": "backend-artifact-manifest-recovery-preflight.json",
     "backend_manifest_recovery": "backend-artifact-manifest-recovery.json",

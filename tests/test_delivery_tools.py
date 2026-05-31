@@ -9,6 +9,7 @@ from unittest import TestCase
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
 from reverse_deepagent.tools.delivery_tools import (
     make_delivery_recovery_executor_tool,
+    make_delivery_resume_planner_tool,
     make_delivery_rollback_executor_tool,
     make_delivery_rollback_state_writer_tool,
     make_delivery_transition_executor_tool,
@@ -715,6 +716,7 @@ class DeliverySubagentToolTests(TestCase):
                 tool_names,
                 [
                     "execute_local_delivery",
+                    "plan_delivery_resume",
                     "execute_delivery_transition",
                     "execute_delivery_recovery",
                     "write_delivery_rollback_state",

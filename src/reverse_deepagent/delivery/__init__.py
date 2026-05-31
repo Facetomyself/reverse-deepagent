@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from .resume import (
+    SUPPORTED_DELIVERY_RESUME_ACTIONS,
+    DeliveryResumePlan,
+    DeliveryResumePlanner,
+    DeliveryResumePlannerConfig,
+)
 from .recovery import (
     SUPPORTED_DELIVERY_RECOVERY_ACTIONS,
     DeliveryRecoveryExecution,
@@ -86,6 +92,10 @@ from .state_machine import (
 )
 
 __all__ = [
+    "SUPPORTED_DELIVERY_RESUME_ACTIONS",
+    "DeliveryResumePlan",
+    "DeliveryResumePlanner",
+    "DeliveryResumePlannerConfig",
     "inspect_delivery_transaction_root",
     "DeliveryTransactionInspection",
     "DELIVERY_TRANSACTION_INSPECTOR_VERSION",

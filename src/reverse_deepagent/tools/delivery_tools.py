@@ -12,6 +12,8 @@ from reverse_deepagent.delivery import (
     DeliveryRollbackExecutor,
     DeliveryRollbackExecutorConfig,
     DeliveryRollbackStateArtifactWriter,
+    DeliveryResumePlanner,
+    DeliveryResumePlannerConfig,
     DeliveryRollbackStateWriterConfig,
     DeliveryTransactionRecoveryExecutor,
     DeliveryTransactionTransitionExecutor,
@@ -129,6 +131,49 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         "release_transaction_lock creates a delivery-transaction-lock-release.json review record; apply mode removes the local lock only when approve_transaction_lock_release=true and optional expected owner / transaction id / resume token checks pass."
     )
     return execute_local_delivery
+
+
+def make_delivery_resume_planner_tool(default_delivery_root: str | Path) -> DeliveryTool:
+    """Create a tool wrapper for durable delivery resume planning."""
+
+    root = Path(default_delivery_root)
+
+    def plan_delivery_resume(
+        delivery_root: str | None = None,
+        transaction_id: str | None = None,
+        mode: str = DeliveryExecutionMode.DRY_RUN.value,
+        write_resume_plan: bool = True,
+        resume_plan_name: str = "delivery-resume-plan.json",
+        expected_resume_token: str | None = None,
+        transaction_lock_owner: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan a durable delivery transaction resume from existing artifacts."""
+
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json must decode to an object")
+        target_root = Path(delivery_root) if delivery_root else root
+        config = DeliveryResumePlannerConfig(
+            delivery_root=target_root,
+            transaction_id=transaction_id,
+            mode=DeliveryExecutionMode(mode),
+            write_resume_plan=write_resume_plan,
+            resume_plan_name=resume_plan_name,
+            expected_resume_token=expected_resume_token,
+            transaction_lock_owner=transaction_lock_owner,
+            metadata=metadata,
+        )
+        return DeliveryResumePlanner(config).execute().to_dict()
+
+    plan_delivery_resume.__name__ = "plan_delivery_resume"
+    plan_delivery_resume.__doc__ = (
+        "Plan a durable delivery resume path from existing transaction artifacts. "
+        "mode defaults to dry-run and is read-only. apply mode writes only delivery-resume-plan.json when checks pass; "
+        "it does not execute transitions, restore manifests, commit transactions, publish external delivery, acquire/release locks, or run physical rollback. "
+        "expected_resume_token and transaction_lock_owner are used only to decide whether an existing local delivery-transaction-lock.json allows a reviewed resume plan."
+    )
+    return plan_delivery_resume
 
 
 def make_delivery_transition_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:
