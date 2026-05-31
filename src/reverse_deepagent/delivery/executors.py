@@ -108,6 +108,7 @@ class DeliveryExecutorConfig:
     external_delivery_idempotency_key: str | None = None
     allow_duplicate_external_delivery: bool = False
     external_delivery_duplicate_guard_name: str = "external-delivery-duplicate-guard.json"
+    external_delivery_idempotency_ledger_name: str = "external-delivery-idempotency-ledger.json"
 
     def resolved_delivery_root(self) -> Path:
         return self.delivery_root.expanduser().resolve()
@@ -209,6 +210,50 @@ class ExternalDeliveryResult:
             "checks": self.checks,
             "blocking_reasons": self.blocking_reasons,
             "recommended_actions": self.recommended_actions,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(frozen=True)
+class ExternalDeliveryIdempotencyLedger:
+    """Append-only audit ledger for external delivery idempotency decisions.
+
+    The ledger is an evidence artifact only.  It never publishes externally,
+    retries requests, recovers transactions, or bypasses the duplicate guard.
+    """
+
+    transaction_id: str
+    idempotency_key: str
+    provider_id: str
+    status: str
+    ledger_path: str | None
+    delivery_root: str
+    external_delivery_result_path: str | None
+    external_delivery_performed: bool
+    duplicate_guard_triggered: bool
+    allow_duplicate_external_delivery: bool
+    provider_factory_invoked: bool | None
+    entry_count: int
+    entries: list[dict[str, Any]]
+    created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "idempotency_key": self.idempotency_key,
+            "provider_id": self.provider_id,
+            "status": self.status,
+            "ledger_path": self.ledger_path,
+            "delivery_root": self.delivery_root,
+            "external_delivery_result_path": self.external_delivery_result_path,
+            "external_delivery_performed": self.external_delivery_performed,
+            "duplicate_guard_triggered": self.duplicate_guard_triggered,
+            "allow_duplicate_external_delivery": self.allow_duplicate_external_delivery,
+            "provider_factory_invoked": self.provider_factory_invoked,
+            "entry_count": self.entry_count,
+            "entries": self.entries,
             "created_at": self.created_at,
             "metadata": self.metadata,
         }
@@ -1580,6 +1625,7 @@ class DeliveryTransactionJournal:
     rollback_available: bool
     external_delivery_result_path: str | None
     external_delivery_idempotency_key: str | None
+    external_delivery_idempotency_ledger_path: str | None
     manifest_revision_path: str | None
     backend_manifest_mutation_path: str | None
     backend_manifest_patched_path: str | None
@@ -1611,6 +1657,7 @@ class DeliveryTransactionJournal:
             "rollback_available": self.rollback_available,
             "external_delivery_result_path": self.external_delivery_result_path,
             "external_delivery_idempotency_key": self.external_delivery_idempotency_key,
+            "external_delivery_idempotency_ledger_path": self.external_delivery_idempotency_ledger_path,
             "manifest_revision_path": self.manifest_revision_path,
             "backend_manifest_mutation_path": self.backend_manifest_mutation_path,
             "backend_manifest_patched_path": self.backend_manifest_patched_path,
@@ -1661,6 +1708,7 @@ class DeliveryExecutionResult:
     backend_manifest_recovery: BackendManifestRecovery | None
     backend_manifest_transaction_commit: BackendManifestTransactionCommit | None
     external_delivery_result: ExternalDeliveryResult | None
+    external_delivery_idempotency_ledger: ExternalDeliveryIdempotencyLedger | None
     planned_artifacts: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
     next_action: str = "review_delivery_receipt_before_external_handoff"
@@ -1693,6 +1741,9 @@ class DeliveryExecutionResult:
             "backend_manifest_recovery": self.backend_manifest_recovery.to_dict() if self.backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": self.backend_manifest_transaction_commit.to_dict() if self.backend_manifest_transaction_commit else None,
             "external_delivery_result": self.external_delivery_result.to_dict() if self.external_delivery_result else None,
+            "external_delivery_idempotency_ledger": (
+                self.external_delivery_idempotency_ledger.to_dict() if self.external_delivery_idempotency_ledger else None
+            ),
             "planned_artifacts": self.planned_artifacts,
             "errors": self.errors,
             "next_action": self.next_action,
@@ -1809,6 +1860,11 @@ class LocalDeliveryExecutor:
         )
         external_delivery_result_path = (
             str(delivery_root / self.config.external_delivery_result_name)
+            if self.config.write_receipt and self.config.request_external_delivery and not dry_run
+            else None
+        )
+        external_delivery_idempotency_ledger_path = (
+            str(delivery_root / self.config.external_delivery_idempotency_ledger_name)
             if self.config.write_receipt and self.config.request_external_delivery and not dry_run
             else None
         )
@@ -1967,6 +2023,16 @@ class LocalDeliveryExecutor:
             (backend_manifest_recovery and backend_manifest_recovery.recovered)
             or previous_journal.get("backend_manifest_recovered")
         )
+        external_delivery_idempotency_ledger = self._build_external_delivery_idempotency_ledger(
+            delivery_root=delivery_root,
+            ledger_path=external_delivery_idempotency_ledger_path,
+            result_path=external_delivery_result_path,
+            external_delivery_result=external_delivery_result,
+            dry_run=dry_run,
+            created_at=created_at,
+        )
+        if external_delivery_idempotency_ledger and external_delivery_idempotency_ledger.ledger_path:
+            external_delivery_idempotency_ledger_path = external_delivery_idempotency_ledger.ledger_path
         journal_limitations = [
             "rollback_is_local_checkpoint_baseline",
             "full_cross_run_manifest_recovery_state_machine_not_implemented",
@@ -2006,6 +2072,11 @@ class LocalDeliveryExecutor:
                 previous_journal,
                 "external_delivery_idempotency_key",
                 self._external_delivery_idempotency_key() if self.config.request_external_delivery else None,
+            ),
+            external_delivery_idempotency_ledger_path=_journal_str(
+                previous_journal,
+                "external_delivery_idempotency_ledger_path",
+                external_delivery_idempotency_ledger_path,
             ),
             manifest_revision_path=_journal_str(previous_journal, "manifest_revision_path", manifest_revision_path),
             backend_manifest_mutation_path=_journal_str(previous_journal, "backend_manifest_mutation_path", backend_manifest_mutation_path),
@@ -2095,6 +2166,8 @@ class LocalDeliveryExecutor:
             _write_json(Path(backend_manifest_transaction_commit_path), backend_manifest_transaction_commit.to_dict())
         if external_delivery_result_path and external_delivery_result:
             _write_json(Path(external_delivery_result_path), external_delivery_result.to_dict())
+        if external_delivery_idempotency_ledger_path and external_delivery_idempotency_ledger:
+            _write_json(Path(external_delivery_idempotency_ledger_path), external_delivery_idempotency_ledger.to_dict())
         should_write_journal = bool(journal_path) and (
             (not transaction_commit_only and not recovery_apply_only)
             or bool(backend_manifest_transaction_commit and backend_manifest_transaction_commit.committed)
@@ -2140,6 +2213,9 @@ class LocalDeliveryExecutor:
             "backend_manifest_recovery": backend_manifest_recovery.to_dict() if backend_manifest_recovery else None,
             "backend_manifest_transaction_commit": backend_manifest_transaction_commit.to_dict() if backend_manifest_transaction_commit else None,
             "external_delivery_result": external_delivery_result.to_dict() if external_delivery_result else None,
+            "external_delivery_idempotency_ledger": (
+                external_delivery_idempotency_ledger.to_dict() if external_delivery_idempotency_ledger else None
+            ),
             "planned_artifacts": planned,
             "errors": errors,
             "next_action": next_action,
@@ -2177,6 +2253,7 @@ class LocalDeliveryExecutor:
             backend_manifest_recovery=backend_manifest_recovery,
             backend_manifest_transaction_commit=backend_manifest_transaction_commit,
             external_delivery_result=external_delivery_result,
+            external_delivery_idempotency_ledger=external_delivery_idempotency_ledger,
             planned_artifacts=planned,
             errors=errors,
             next_action=next_action,
@@ -2214,6 +2291,7 @@ class LocalDeliveryExecutor:
         if duplicate_guard is not None:
             return duplicate_guard
         provider = self.config.external_delivery_provider
+        provider_factory_invoked = False
         if provider is None:
             registry = self.config.external_delivery_provider_registry
             if registry is None:
@@ -2224,6 +2302,7 @@ class LocalDeliveryExecutor:
                 self.config.external_delivery_provider_id,
                 **self.config.external_delivery_provider_config,
             )
+            provider_factory_invoked = True
         package = ExternalDeliveryPackage(
             transaction_id=self.config.transaction_id,
             status=status,
@@ -2245,6 +2324,7 @@ class LocalDeliveryExecutor:
                 ),
                 "external_delivery_idempotency_key": self._external_delivery_idempotency_key(),
                 "allow_duplicate_external_delivery": self.config.allow_duplicate_external_delivery,
+                "provider_factory_invoked": provider_factory_invoked,
                 "automatic_delivery": False,
             },
         )
@@ -2257,6 +2337,95 @@ class LocalDeliveryExecutor:
 
     def _external_delivery_idempotency_key(self) -> str:
         return self.config.external_delivery_idempotency_key or self.config.transaction_id
+
+    def _build_external_delivery_idempotency_ledger(
+        self,
+        *,
+        delivery_root: Path,
+        ledger_path: str | None,
+        result_path: str | None,
+        external_delivery_result: ExternalDeliveryResult | None,
+        dry_run: bool,
+        created_at: str,
+    ) -> ExternalDeliveryIdempotencyLedger | None:
+        if not self.config.request_external_delivery or external_delivery_result is None:
+            return None
+        idempotency_key = self._external_delivery_idempotency_key()
+        resolved_ledger_path = Path(ledger_path).expanduser().resolve() if ledger_path else None
+        previous_entries: list[dict[str, Any]] = []
+        previous_metadata: dict[str, Any] = {}
+        previous_ledger_load_error: str | None = None
+        if resolved_ledger_path and resolved_ledger_path.exists():
+            try:
+                previous_ledger = _read_json_object(resolved_ledger_path)
+            except Exception as exc:  # noqa: BLE001 - audit artifact should not mask delivery result.
+                previous_ledger_load_error = str(exc)
+            else:
+                raw_entries = previous_ledger.get("entries")
+                if isinstance(raw_entries, list):
+                    previous_entries = [dict(item) for item in raw_entries if isinstance(item, dict)]
+                previous_metadata = previous_ledger.get("metadata") if isinstance(previous_ledger.get("metadata"), dict) else {}
+        metadata = external_delivery_result.metadata if isinstance(external_delivery_result.metadata, dict) else {}
+        attempt_summary = _external_delivery_attempt_summary(external_delivery_result)
+        entry = {
+            "entry_id": f"{self.config.transaction_id}:{len(previous_entries) + 1}",
+            "transaction_id": self.config.transaction_id,
+            "idempotency_key": idempotency_key,
+            "provider_id": external_delivery_result.provider_id,
+            "status": external_delivery_result.status,
+            "result_path": external_delivery_result.result_path or result_path,
+            "external_delivery_performed": external_delivery_result.external_delivery_performed,
+            "duplicate_guard_triggered": bool(metadata.get("duplicate_guard_triggered")),
+            "allow_duplicate_external_delivery": self.config.allow_duplicate_external_delivery,
+            "provider_factory_invoked": _external_delivery_provider_factory_invoked(metadata),
+            "package_digest_sha256": external_delivery_result.package_digest_sha256,
+            "blocking_reasons": list(external_delivery_result.blocking_reasons),
+            "recommended_actions": list(external_delivery_result.recommended_actions),
+            "attempt_summary": attempt_summary,
+            "created_at": created_at,
+        }
+        entries = [*previous_entries, entry]
+        ledger_metadata = {
+            **previous_metadata,
+            "schema_version": "reverse-deepagent.external-delivery-idempotency-ledger.v1",
+            "scope": "external-delivery-idempotency-ledger-baseline",
+            "append_only_audit": True,
+            "dry_run": dry_run,
+            "raw_request_headers_recorded": False,
+            "raw_response_headers_recorded": False,
+            "response_body_recorded": False,
+            "provider_config_values_recorded": False,
+            "does_not_publish_external_delivery": True,
+            "does_not_retry_external_delivery": True,
+            "does_not_restore_or_mutate_manifest": True,
+            "limitations": [
+                "ledger_is_audit_only",
+                "does_not_replace_duplicate_guard",
+                "does_not_execute_recovery",
+                "full_cross_run_transaction_state_machine_not_implemented",
+            ],
+        }
+        if entry["duplicate_guard_triggered"]:
+            ledger_metadata["limitations"].append("duplicate_guard_blocks_provider_invocation")
+        if previous_ledger_load_error:
+            ledger_metadata["previous_ledger_load_error"] = previous_ledger_load_error
+        return ExternalDeliveryIdempotencyLedger(
+            transaction_id=self.config.transaction_id,
+            idempotency_key=idempotency_key,
+            provider_id=external_delivery_result.provider_id,
+            status=external_delivery_result.status,
+            ledger_path=str(resolved_ledger_path) if resolved_ledger_path else None,
+            delivery_root=str(delivery_root),
+            external_delivery_result_path=external_delivery_result.result_path or result_path,
+            external_delivery_performed=external_delivery_result.external_delivery_performed,
+            duplicate_guard_triggered=bool(metadata.get("duplicate_guard_triggered")),
+            allow_duplicate_external_delivery=self.config.allow_duplicate_external_delivery,
+            provider_factory_invoked=_external_delivery_provider_factory_invoked(metadata),
+            entry_count=len(entries),
+            entries=entries,
+            created_at=created_at,
+            metadata=ledger_metadata,
+        )
 
     def _build_external_delivery_duplicate_guard(
         self,
@@ -3461,6 +3630,89 @@ def _external_delivery_provider_config_summary(config: dict[str, Any]) -> dict[s
         "secret_like_key_count": secret_like_key_count,
         "raw_values_exported": False,
     }
+
+
+def _external_delivery_provider_factory_invoked(metadata: dict[str, Any]) -> bool | None:
+    if "provider_factory_invoked" in metadata:
+        return bool(metadata.get("provider_factory_invoked"))
+    if metadata.get("duplicate_guard_triggered"):
+        return False
+    return None
+
+
+def _external_delivery_attempt_summary(result: ExternalDeliveryResult) -> dict[str, Any]:
+    metadata = result.metadata if isinstance(result.metadata, dict) else {}
+    stages: list[dict[str, Any]] = []
+    if isinstance(metadata.get("request_attempts"), list):
+        stages.append(
+            _external_delivery_attempt_stage(
+                "request",
+                metadata.get("request_attempt_count"),
+                metadata.get("request_retry_count"),
+                metadata.get("request_attempts"),
+            )
+        )
+    for stage_name in ("release_request", "existing_release_lookup", "asset_lookup", "upload_request"):
+        attempts_key = f"{stage_name}_attempts"
+        if isinstance(metadata.get(attempts_key), list):
+            stages.append(
+                _external_delivery_attempt_stage(
+                    stage_name,
+                    metadata.get(f"{stage_name}_attempt_count"),
+                    metadata.get(f"{stage_name}_retry_count"),
+                    metadata.get(attempts_key),
+                )
+            )
+    attempt_count = sum(int(stage.get("attempt_count") or 0) for stage in stages)
+    retry_count = sum(int(stage.get("retry_count") or 0) for stage in stages)
+    return {
+        "attempt_count": attempt_count,
+        "retry_count": retry_count,
+        "stage_count": len(stages),
+        "stages": stages,
+        "attempt_metadata_recorded": bool(stages),
+        "headers_recorded": False,
+        "response_body_recorded": False,
+    }
+
+
+def _external_delivery_attempt_stage(
+    stage_name: str,
+    attempt_count: Any,
+    retry_count: Any,
+    attempts: Any,
+) -> dict[str, Any]:
+    safe_attempts: list[dict[str, Any]] = []
+    if isinstance(attempts, list):
+        for item in attempts:
+            if not isinstance(item, dict):
+                continue
+            safe_attempts.append(
+                {
+                    "attempt": item.get("attempt"),
+                    "status_code": item.get("status_code"),
+                    "error": item.get("error"),
+                    "retryable": bool(item.get("retryable")),
+                    "will_retry": bool(item.get("will_retry")),
+                }
+            )
+    return {
+        "stage": stage_name,
+        "attempt_count": _int_or_len(attempt_count, safe_attempts),
+        "retry_count": _int_or_default(retry_count, max(0, len(safe_attempts) - 1)),
+        "attempts": safe_attempts,
+    }
+
+
+def _int_or_len(value: Any, items: list[Any]) -> int:
+    return _int_or_default(value, len(items))
+
+
+def _int_or_default(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _normalize_external_delivery_url(value: str | None) -> str:

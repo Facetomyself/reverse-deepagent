@@ -11,6 +11,7 @@ DELIVERY_TRANSACTION_INSPECTOR_VERSION = "2026-05-31.delivery-transaction-inspec
 DELIVERY_TRANSACTION_ARTIFACT_NAMES: dict[str, str] = {
     "transaction_journal": "delivery-transaction-journal.json",
     "external_delivery_result": "external-delivery-result.json",
+    "external_delivery_idempotency_ledger": "external-delivery-idempotency-ledger.json",
     "backend_manifest_recovery_preflight": "backend-artifact-manifest-recovery-preflight.json",
     "backend_manifest_recovery": "backend-artifact-manifest-recovery.json",
     "backend_manifest_transaction_commit": "backend-artifact-manifest-transaction-commit.json",

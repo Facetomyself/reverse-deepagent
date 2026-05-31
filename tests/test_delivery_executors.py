@@ -1301,6 +1301,46 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["external_delivery_performed"])
             self.assertTrue(external_result["external_delivery_performed"])
 
+    def test_external_delivery_writes_idempotency_ledger_for_performed_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-ledger",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider=FakeExternalDeliveryProvider(),
+                    external_delivery_idempotency_key="ledger-key-1",
+                    external_delivery_provider_config={"api_token": "ledger-secret"},
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            ledger_path = delivery_root / "external-delivery-idempotency-ledger.json"
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+            self.assertEqual(result.status, "external_delivered")
+            self.assertIsNotNone(result.external_delivery_idempotency_ledger)
+            self.assertTrue(ledger_path.exists())
+            self.assertEqual(Path(journal["external_delivery_idempotency_ledger_path"]).resolve(), ledger_path.resolve())
+            self.assertEqual(ledger["transaction_id"], "tx-external-ledger")
+            self.assertEqual(ledger["idempotency_key"], "ledger-key-1")
+            self.assertEqual(ledger["provider_id"], "fake-provider")
+            self.assertTrue(ledger["external_delivery_performed"])
+            self.assertFalse(ledger["duplicate_guard_triggered"])
+            self.assertEqual(ledger["entry_count"], 1)
+            self.assertEqual(ledger["entries"][0]["status"], "delivered")
+            self.assertEqual(ledger["entries"][0]["idempotency_key"], "ledger-key-1")
+            self.assertFalse(ledger["entries"][0]["attempt_summary"]["headers_recorded"])
+            self.assertFalse(ledger["metadata"]["provider_config_values_recorded"])
+            serialized_ledger = json.dumps(ledger, ensure_ascii=False)
+            self.assertNotIn("ledger-secret", serialized_ledger)
+
     def test_external_delivery_provider_config_is_summarized_without_exporting_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1559,6 +1599,16 @@ class LocalDeliveryExecutorTests(TestCase):
             serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
             self.assertNotIn("retry-secret", serialized_result)
             self.assertNotIn("query_secret=redacted", serialized_result)
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            attempt_summary = ledger["entries"][0]["attempt_summary"]
+            self.assertEqual(attempt_summary["attempt_count"], 2)
+            self.assertEqual(attempt_summary["retry_count"], 1)
+            self.assertEqual(attempt_summary["stages"][0]["stage"], "request")
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][0]["status_code"], 503)
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][1]["status_code"], 204)
+            serialized_ledger = json.dumps(ledger, ensure_ascii=False)
+            self.assertNotIn("retry-secret", serialized_ledger)
+            self.assertNotIn("query_secret=redacted", serialized_ledger)
 
     def test_presigned_object_external_delivery_dry_run_redacts_target_without_network(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2061,6 +2111,14 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(journal["external_delivery_idempotency_key"], "delivery-key-1")
             self.assertEqual(Path(journal["external_delivery_result_path"]).resolve(), first_result_path.resolve())
             self.assertTrue(json.loads(first_result_path.read_text(encoding="utf-8"))["external_delivery_performed"])
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            self.assertEqual(ledger["entry_count"], 2)
+            self.assertTrue(ledger["entries"][0]["external_delivery_performed"])
+            self.assertFalse(ledger["entries"][0]["duplicate_guard_triggered"])
+            self.assertFalse(ledger["entries"][1]["external_delivery_performed"])
+            self.assertTrue(ledger["entries"][1]["duplicate_guard_triggered"])
+            self.assertFalse(ledger["entries"][1]["provider_factory_invoked"])
+            self.assertIn("duplicate_guard_blocks_provider_invocation", ledger["metadata"]["limitations"])
 
     def test_external_delivery_duplicate_guard_can_be_explicitly_overridden(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

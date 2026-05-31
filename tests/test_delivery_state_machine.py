@@ -140,7 +140,9 @@ class DeliveryTransactionStateMachineTests(TestCase):
             self.assertIn(DeliveryTransactionState.EXTERNAL_DELIVERY_ATTEMPTED.value, state["completed_states"])
             self.assertIn(DeliveryTransactionState.EXTERNAL_DELIVERED.value, state["completed_states"])
             self.assertTrue(state["flags"]["external_delivery_performed"])
+            self.assertTrue(state["flags"]["external_delivery_idempotency_ledger_recorded"])
             self.assertIn("external_delivery_result", state["evidence_paths"])
+            self.assertIn("external_delivery_idempotency_ledger", state["evidence_paths"])
 
     def test_review_only_external_delivery_blocker_maps_to_blocked_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

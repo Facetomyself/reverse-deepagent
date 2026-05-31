@@ -39,6 +39,7 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
         self.assertFalse(inspection["side_effect_policy"]["external_delivery_performed"])
         self.assertTrue(inspection["artifacts"]["transaction_journal"]["loaded"])
         self.assertIn("external_delivery_result", inspection["missing_artifacts"])
+        self.assertIn("external_delivery_idempotency_ledger", inspection["missing_artifacts"])
 
     def test_inspector_loads_external_delivery_result_and_commit_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,6 +52,17 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
                 json.dumps({"transaction_id": "tx-commit", "external_delivery_performed": True}),
                 encoding="utf-8",
             )
+            (root / "external-delivery-idempotency-ledger.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-commit",
+                        "ledger_path": str(root / "external-delivery-idempotency-ledger.json"),
+                        "entry_count": 1,
+                        "entries": [{"transaction_id": "tx-commit", "external_delivery_performed": True}],
+                    }
+                ),
+                encoding="utf-8",
+            )
             (root / "backend-artifact-manifest-transaction-commit.json").write_text(
                 json.dumps({"source_transaction_id": "tx-commit", "committed": True}),
                 encoding="utf-8",
@@ -61,6 +73,8 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
         self.assertTrue(inspection["ok"])
         self.assertEqual(inspection["state_snapshot"]["state"], "committed")
         self.assertIn("external_delivered", inspection["state_snapshot"]["completed_states"])
+        self.assertTrue(inspection["state_snapshot"]["flags"]["external_delivery_idempotency_ledger_recorded"])
+        self.assertIn("external_delivery_idempotency_ledger", inspection["state_snapshot"]["evidence_paths"])
         self.assertEqual(inspection["transition_plan"]["recommended_transition"], "no_next_transition")
 
     def test_inspector_reports_malformed_artifact_without_raising(self) -> None:

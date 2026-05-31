@@ -97,6 +97,7 @@ def evaluate_delivery_transaction_state(record: Mapping[str, Any] | None) -> Del
     payload = dict(record or {})
     journal = _mapping(payload.get("transaction_journal")) or payload
     external_result = _mapping(payload.get("external_delivery_result"))
+    external_idempotency_ledger = _mapping(payload.get("external_delivery_idempotency_ledger"))
     recovery_preflight = _mapping(payload.get("backend_manifest_recovery_preflight"))
     recovery_result = _mapping(payload.get("backend_manifest_recovery"))
     transaction_commit = _mapping(payload.get("backend_manifest_transaction_commit"))
@@ -109,12 +110,27 @@ def evaluate_delivery_transaction_state(record: Mapping[str, Any] | None) -> Del
         transaction_commit.get("source_transaction_id") if transaction_commit else None,
     )
 
-    flags = _state_flags(payload, journal, external_result, recovery_preflight, recovery_result, transaction_commit)
+    flags = _state_flags(
+        payload,
+        journal,
+        external_result,
+        external_idempotency_ledger,
+        recovery_preflight,
+        recovery_result,
+        transaction_commit,
+    )
     completed_states = _completed_states(flags)
     blocking_reasons = _blocking_reasons(payload, external_result, recovery_preflight, recovery_result, transaction_commit)
     blocked = bool(blocking_reasons) or bool(payload.get("errors"))
     state = _current_state(flags, completed_states, blocked=blocked)
-    evidence_paths = _evidence_paths(journal, external_result, recovery_preflight, recovery_result, transaction_commit)
+    evidence_paths = _evidence_paths(
+        journal,
+        external_result,
+        external_idempotency_ledger,
+        recovery_preflight,
+        recovery_result,
+        transaction_commit,
+    )
     recommended_actions = _recommended_actions(state, flags, blocking_reasons)
     notes = [
         "read_only_state_model",
@@ -124,6 +140,8 @@ def evaluate_delivery_transaction_state(record: Mapping[str, Any] | None) -> Del
     ]
     if flags.get("external_delivery_performed"):
         notes.append("external_delivery_performed_by_configured_provider")
+    if flags.get("external_delivery_idempotency_ledger_recorded"):
+        notes.append("external_delivery_idempotency_ledger_recorded")
     if flags.get("cross_run_transaction_committed"):
         notes.append("local_transaction_journal_marked_committed")
     return DeliveryTransactionSnapshot(
@@ -192,6 +210,7 @@ def _state_flags(
     payload: Mapping[str, Any],
     journal: Mapping[str, Any],
     external_result: Mapping[str, Any],
+    external_idempotency_ledger: Mapping[str, Any],
     recovery_preflight: Mapping[str, Any],
     recovery_result: Mapping[str, Any],
     transaction_commit: Mapping[str, Any],
@@ -211,18 +230,28 @@ def _state_flags(
         "backend_manifest_recovered": _bool(payload, journal, "backend_manifest_recovered") or bool(recovery_result.get("recovered")),
         "external_delivery_requested": bool(
             payload.get("external_delivery_result")
+            or payload.get("external_delivery_idempotency_ledger")
             or journal.get("external_delivery_result_path")
+            or journal.get("external_delivery_idempotency_ledger_path")
             or external_result.get("external_delivery_requested")
         ),
         "external_delivery_attempted": bool(
             payload.get("external_delivery_result")
+            or payload.get("external_delivery_idempotency_ledger")
             or journal.get("external_delivery_result_path")
+            or journal.get("external_delivery_idempotency_ledger_path")
             or external_result.get("external_delivery_requested")
+            or external_idempotency_ledger.get("entry_count")
             or external_metadata.get("request_attempted")
             or external_metadata.get("duplicate_guard_triggered")
         ),
         "external_delivery_performed": _bool(payload, journal, "external_delivery_performed") or bool(external_result.get("external_delivery_performed")),
         "duplicate_guard_triggered": bool(external_metadata.get("duplicate_guard_triggered")),
+        "external_delivery_idempotency_ledger_recorded": bool(
+            payload.get("external_delivery_idempotency_ledger")
+            or journal.get("external_delivery_idempotency_ledger_path")
+            or external_idempotency_ledger.get("entry_count")
+        ),
         "cross_run_transaction_committed": _bool(payload, journal, "cross_run_transaction_committed") or bool(transaction_commit.get("committed")),
     }
 
@@ -312,6 +341,7 @@ def _blocking_reasons(
 def _evidence_paths(
     journal: Mapping[str, Any],
     external_result: Mapping[str, Any],
+    external_idempotency_ledger: Mapping[str, Any],
     recovery_preflight: Mapping[str, Any],
     recovery_result: Mapping[str, Any],
     transaction_commit: Mapping[str, Any],
@@ -330,6 +360,8 @@ def _evidence_paths(
         "backend_manifest_transaction_commit": journal.get("backend_manifest_transaction_commit_path")
         or transaction_commit.get("commit_path"),
         "external_delivery_result": journal.get("external_delivery_result_path") or external_result.get("result_path"),
+        "external_delivery_idempotency_ledger": journal.get("external_delivery_idempotency_ledger_path")
+        or external_idempotency_ledger.get("ledger_path"),
     }
     return {key: str(value) for key, value in candidates.items() if value}
 

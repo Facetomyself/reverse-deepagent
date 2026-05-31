@@ -97,6 +97,11 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/delivery-transaction-journal.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/external-delivery-result.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/external-delivery-duplicate-guard.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/external-delivery-idempotency-ledger.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/external-delivery-idempotency-ledger.json"].future_path,
+            "/workspace/delivery/external-delivery-idempotency-ledger.json",
+        )
         self.assertEqual(routes["workspace/delivery-manifest-revision.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/backend-artifact-manifest-mutation.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/backend-artifact-manifest.patched.json"].virtual_folder, "/workspace/delivery/")
