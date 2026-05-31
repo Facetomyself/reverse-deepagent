@@ -358,6 +358,8 @@ class DeliveryResumeWorkflowScheduler:
     ) -> list[dict[str, Any]]:
         dry_run = self.config.mode == DeliveryExecutionMode.DRY_RUN
         results: list[dict[str, Any]] = []
+        propagated_fencing_token = str(self.config.expected_transaction_lock_fencing_token or "").strip() or None
+        propagated_fencing_source = "config.expected_transaction_lock_fencing_token" if propagated_fencing_token else None
         for step in planned_steps:
             action = str(step.get("action") or "")
             if step.get("already_completed"):
@@ -395,9 +397,23 @@ class DeliveryResumeWorkflowScheduler:
                     created_at=created_at,
                 )
                 results.append(lock_result)
+                propagation = _fencing_token_propagation_from_lock_step(lock_result)
+                if propagation.get("clear_token"):
+                    propagated_fencing_token = None
+                    propagated_fencing_source = None
+                elif propagation.get("fencing_token"):
+                    propagated_fencing_token = str(propagation["fencing_token"])
+                    propagated_fencing_source = str(propagation["source"])
                 if lock_result.get("status") == "blocked":
                     break
                 continue
+            expected_fencing_token = self.config.expected_transaction_lock_fencing_token or propagated_fencing_token
+            fencing_metadata = _fencing_propagation_metadata(
+                expected_fencing_token=expected_fencing_token,
+                propagated_fencing_token=propagated_fencing_token,
+                propagated_fencing_source=propagated_fencing_source,
+                explicit_expected_fencing_token=self.config.expected_transaction_lock_fencing_token,
+            )
             runner = DeliveryResumeRunner(
                 DeliveryResumeRunnerConfig(
                     delivery_root=delivery_root,
@@ -414,10 +430,11 @@ class DeliveryResumeWorkflowScheduler:
                     transaction_lock_owner=self.config.transaction_lock_owner,
                     transaction_lock_lease_seconds=self.config.transaction_lock_lease_seconds,
                     expected_resume_token=self.config.expected_resume_token,
-                    expected_transaction_lock_fencing_token=self.config.expected_transaction_lock_fencing_token,
+                    expected_transaction_lock_fencing_token=expected_fencing_token,
                     write_execution_record=False,
                     metadata={
                         **self.config.metadata,
+                        **fencing_metadata,
                         "resume_workflow_scheduler": True,
                         "resume_workflow_id": workflow_id,
                         "resume_workflow_step_order": step.get("order"),
@@ -433,6 +450,7 @@ class DeliveryResumeWorkflowScheduler:
                     "workflow_id": workflow_id,
                     "created_at": created_at,
                     "runner_execution": runner,
+                    "fencing_token_propagation": fencing_metadata,
                     "journal_recordable": runner.get("status") in _DELIVERY_RESUME_WORKFLOW_SUCCESS_STATUSES,
                 }
             )
@@ -550,6 +568,43 @@ def _step_managed_distributed_lock(step: dict[str, Any], *, flag: str, status: s
     )
 
 
+def _fencing_token_propagation_from_lock_step(step: dict[str, Any]) -> dict[str, Any]:
+    operation = step.get("lock_operation") if isinstance(step.get("lock_operation"), dict) else {}
+    action = str(step.get("action") or "")
+    status = str(step.get("status") or "")
+    if action == DELIVERY_RESUME_WORKFLOW_LOCK_RELEASE_ACTION and status == "released":
+        return {
+            "clear_token": True,
+            "source": f"workflow_step:{action}",
+        }
+    if action in {DELIVERY_RESUME_WORKFLOW_LOCK_ACQUIRE_ACTION, DELIVERY_RESUME_WORKFLOW_LOCK_RENEWAL_ACTION} and status in {"acquired", "renewed"}:
+        token = str(operation.get("fencing_token") or "").strip()
+        if token:
+            return {
+                "fencing_token": token,
+                "source": f"workflow_step:{action}",
+                "provider_id": operation.get("provider_id"),
+                "lease_expires_at": operation.get("lease_expires_at"),
+            }
+    return {}
+
+
+def _fencing_propagation_metadata(
+    *,
+    expected_fencing_token: str | None,
+    propagated_fencing_token: str | None,
+    propagated_fencing_source: str | None,
+    explicit_expected_fencing_token: str | None,
+) -> dict[str, Any]:
+    return {
+        "workflow_fencing_token_propagation": True,
+        "workflow_fencing_token_propagated": bool(propagated_fencing_token and not explicit_expected_fencing_token),
+        "workflow_fencing_token_source": "config.expected_transaction_lock_fencing_token" if explicit_expected_fencing_token else propagated_fencing_source,
+        "workflow_expected_transaction_lock_fencing_token": expected_fencing_token,
+        "workflow_explicit_expected_transaction_lock_fencing_token": explicit_expected_fencing_token,
+    }
+
+
 def _approval_summary(*, ledger_path: Path, transaction_id: str | None, step_actions: list[str], expected_decision: str) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "ledger_path": str(ledger_path),
@@ -663,6 +718,7 @@ def _sanitize_existing_entries(entries: list[dict[str, Any]]) -> list[dict[str, 
 def _journal_entry_from_step(step: dict[str, Any]) -> dict[str, Any]:
     runner = step.get("runner_execution") if isinstance(step.get("runner_execution"), dict) else {}
     lock_operation = step.get("lock_operation") if isinstance(step.get("lock_operation"), dict) else {}
+    fencing_propagation = step.get("fencing_token_propagation") if isinstance(step.get("fencing_token_propagation"), dict) else {}
     return {
         "workflow_id": step.get("workflow_id"),
         "order": step.get("order"),
@@ -675,6 +731,7 @@ def _journal_entry_from_step(step: dict[str, Any]) -> dict[str, Any]:
         "lock_provider_id": lock_operation.get("provider_id"),
         "lock_fencing_token": lock_operation.get("fencing_token"),
         "lock_lease_expires_at": lock_operation.get("lease_expires_at"),
+        "fencing_token_propagation": fencing_propagation,
         "transition_status": runner.get("transition_execution", {}).get("status") if isinstance(runner.get("transition_execution"), dict) else None,
         "created_at": step.get("created_at"),
         "side_effect_policy": runner.get("side_effect_policy", {}) or lock_operation.get("side_effect_policy", {}),
