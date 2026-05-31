@@ -290,6 +290,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
 
     routes = (
         ("workspace_task_card", "workspace/task-card.json", "/workspace/recon/", "task-card.json", "workspace", ("router",)),
+        ("workspace_dual_write_plan", "workspace/workspace-dual-write-plan.json", "/workspace/delivery/", "workspace-dual-write-plan.json", "workspace", ("coordinator", "delivery")),
         ("workspace_route", "workspace/route-decision.json", "/workspace/recon/", "route-decision.json", "workspace", ("router",)),
         ("workspace_recon", "workspace/recon-result.json", "/workspace/recon/", "recon-result.json", "workspace", ("web_recon",)),
         ("workspace_network_requests", "workspace/network-requests.json", "/workspace/recon/", "network-requests.json", "network", ("web_recon",)),
@@ -517,14 +518,16 @@ def workspace_contract_payload() -> dict[str, Any]:
             "workspace_path_resolver_available": True,
             "dual_write_is_opt_in": True,
             "dual_write_default_enabled": False,
+            "actual_dual_write_writer_available": True,
             "physical_migration_default_enabled": False,
         },
         "path_resolver": {
             "status": "resolver-only",
             "default_canonical_path": "legacy_path",
             "default_write_policy": "legacy-only",
-            "opt_in_dual_write_policy": "legacy-and-future-path-plan",
-            "does_not_create_directories": True,
+            "opt_in_dual_write_policy": "legacy-and-future-path",
+            "dual_write_audit_artifact": "workspace/workspace-dual-write-plan.json",
+            "does_not_create_directories": False,
             "does_not_move_existing_artifacts": True,
         },
         "workspace_folders": _jsonable_dataclass_items(default_workspace_folders()),

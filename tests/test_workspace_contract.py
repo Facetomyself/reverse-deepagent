@@ -28,8 +28,11 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertTrue(payload["path_migration_policy"]["workspace_path_resolver_available"])
         self.assertTrue(payload["path_migration_policy"]["dual_write_is_opt_in"])
         self.assertFalse(payload["path_migration_policy"]["dual_write_default_enabled"])
+        self.assertTrue(payload["path_migration_policy"]["actual_dual_write_writer_available"])
         self.assertEqual(payload["path_resolver"]["status"], "resolver-only")
         self.assertEqual(payload["path_resolver"]["default_write_policy"], "legacy-only")
+        self.assertEqual(payload["path_resolver"]["opt_in_dual_write_policy"], "legacy-and-future-path")
+        self.assertEqual(payload["path_resolver"]["dual_write_audit_artifact"], "workspace/workspace-dual-write-plan.json")
         self.assertGreaterEqual(payload["artifact_route_count"], 20)
 
     def test_virtual_folders_include_deepagents_collaboration_areas(self) -> None:
@@ -86,6 +89,7 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/review-gate-after-rollback.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-gate-after-physical-rollback.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-gate-replacement-results.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/workspace-dual-write-plan.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/delivery-guard-after-review-gate-replacement.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/final-delivery-package-after-review-gate-replacement.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/final-delivery-transaction-commit.json"].virtual_folder, "/workspace/delivery/")
@@ -198,10 +202,56 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertEqual(task_alias["virtual_folder"], "/workspace/recon/")
             self.assertEqual(task_alias["future_path"], "/workspace/recon/task-card.json")
             self.assertEqual(Path(manifest_by_key["workspace_task_card"]["path"]).name, "task-card.json")
+            self.assertFalse((Path(tmpdir) / "artifacts" / "workspace" / "recon" / "task-card.json").exists())
 
             index_path = Path(output.artifacts["index"])
             index = json.loads(index_path.read_text(encoding="utf-8"))
             self.assertEqual(index["workspace"]["workspace_contract"], str(contract_path))
+
+    def test_web_pipeline_can_opt_in_to_workspace_dual_write_without_changing_canonical_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "artifacts"
+            output = run_reverse_pipeline(
+                task_text="https://example.com/search 找 sign 入口，并给出下一步建议",
+                artifact_root=root,
+                runtime_kind="mock",
+                enable_workspace_dual_write=True,
+            )
+
+            legacy_task = root / "workspace" / "task-card.json"
+            future_task = root / "workspace" / "recon" / "task-card.json"
+            legacy_manifest = root / "workspace" / "backend-artifact-manifest.json"
+            future_manifest = root / "workspace" / "delivery" / "backend-artifact-manifest.json"
+            dual_write_plan_path = root / "workspace" / "workspace-dual-write-plan.json"
+            future_dual_write_plan_path = root / "workspace" / "delivery" / "workspace-dual-write-plan.json"
+
+            self.assertEqual(output.artifacts["workspace_task_card"], str(legacy_task))
+            self.assertTrue(legacy_task.exists())
+            self.assertTrue(future_task.exists())
+            self.assertEqual(
+                json.loads(legacy_task.read_text(encoding="utf-8")),
+                json.loads(future_task.read_text(encoding="utf-8")),
+            )
+            self.assertTrue(legacy_manifest.exists())
+            self.assertTrue(future_manifest.exists())
+            self.assertTrue(dual_write_plan_path.exists())
+            self.assertTrue(future_dual_write_plan_path.exists())
+
+            plan = json.loads(dual_write_plan_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["status"], "applied")
+            self.assertGreaterEqual(plan["dual_written_count"], 1)
+            task_records = [record for record in plan["records"] if record["artifact_key"] == "workspace_task_card"]
+            self.assertEqual(len(task_records), 1)
+            self.assertEqual(task_records[0]["write_paths"], [str(legacy_task), str(future_task)])
+            self.assertTrue(task_records[0]["canonical_path_remains_authoritative"])
+            self.assertFalse(task_records[0]["physical_migration_enabled"])
+
+            manifest = json.loads(legacy_manifest.read_text(encoding="utf-8"))
+            manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
+            self.assertEqual(manifest_by_key["workspace_task_card"]["path"], str(legacy_task))
+            self.assertIn("workspace_dual_write_plan", manifest_by_key)
+            alias = manifest_by_key["workspace_dual_write_plan"]["metadata"]["workspace_alias"]
+            self.assertEqual(alias["future_path"], "/workspace/delivery/workspace-dual-write-plan.json")
 
     def test_platform_pipeline_writes_workspace_contract_and_manifest_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

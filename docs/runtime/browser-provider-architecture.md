@@ -234,7 +234,7 @@ This split leaves the `delivery` subagent focused on local delivery, backend man
 
 `WorkspacePathResolver` is now the compatibility layer between existing flat `workspace/*.json` artifacts and the DeepAgents virtual folder contract. It resolves artifacts by canonical key, legacy path, future foldered path, or `virtual://workspace/...` URI while keeping the legacy flat path authoritative by default.
 
-The resolver introduces an opt-in dual-write plan: `enable_dual_write=True` returns both the legacy canonical path and foldered future path in `write_paths`, but it does not create directories, copy files, move artifacts, or flip the canonical path. This keeps physical workspace migration separated from consumer API migration and gives follow-up work a safe seam for real dual-write adoption.
+The resolver introduces an opt-in dual-write writer seam. `WorkspacePathResolver(enable_dual_write=True)` returns both the legacy canonical path and foldered future path in `write_paths`; the deterministic Web and platform pipelines expose `enable_workspace_dual_write=True` to actually write both physical paths under the artifact root and emit `workspace/workspace-dual-write-plan.json` as an audit record. The legacy flat path remains authoritative, existing artifacts are not moved, and full physical migration remains a separate follow-up.
 
 ## 5.9 BrowserProvider plugin package template
 
