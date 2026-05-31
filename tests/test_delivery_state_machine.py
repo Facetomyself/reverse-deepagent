@@ -540,6 +540,115 @@ class DeliveryTransactionStateMachineTests(TestCase):
             self.assertEqual(written["status"], "preflighted")
             self.assertEqual(written["metadata"]["source"], "rollback-executor-test")
 
+    def test_rollback_executor_apply_blocks_without_explicit_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-apply-block-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            DeliveryRollbackExecutor(
+                DeliveryRollbackExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-apply-block-preflight",
+                    action="preflight_rollback",
+                    mode=DeliveryExecutionMode.APPLY,
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-rollback-apply-block-source",
+                )
+            ).execute()
+
+            execution = DeliveryRollbackExecutor(
+                DeliveryRollbackExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-apply-block",
+                    action="apply_rollback",
+                    mode=DeliveryExecutionMode.APPLY,
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-rollback-apply-block-source",
+                    approve_rollback=False,
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("apply_rollback_requires_explicit_approval", payload["blocking_reasons"])
+            self.assertFalse(payload["side_effect_policy"]["manifest_recovered"])
+            self.assertFalse((delivery_root / "backend-artifact-manifest-recovery.json").exists())
+
+    def test_rollback_executor_apply_recovers_manifest_after_explicit_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = _write_source(root)
+            backend_manifest = _write_backend_manifest(root)
+            original_manifest = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            delivery_root = root / "delivery"
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-apply-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            DeliveryRollbackExecutor(
+                DeliveryRollbackExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-apply-preflight",
+                    action="preflight_rollback",
+                    mode=DeliveryExecutionMode.APPLY,
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-rollback-apply-source",
+                )
+            ).execute()
+
+            execution = DeliveryRollbackExecutor(
+                DeliveryRollbackExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-rollback-apply",
+                    action="apply_rollback",
+                    mode=DeliveryExecutionMode.APPLY,
+                    backend_manifest_path=backend_manifest,
+                    expected_transaction_id="tx-rollback-apply-source",
+                    approve_rollback=True,
+                    expected_rollback_phase=DeliveryRollbackPhase.ROLLBACK_DECISION_REQUIRED.value,
+                    metadata={"source": "rollback-apply-test"},
+                )
+            ).execute()
+
+            payload = execution.to_dict()
+            self.assertEqual(payload["status"], "rolled_back")
+            self.assertFalse(payload["dry_run"])
+            self.assertTrue(payload["side_effect_policy"]["writes_rollback_state_artifact"])
+            self.assertTrue(payload["side_effect_policy"]["writes_recovery_preflight"])
+            self.assertTrue(payload["side_effect_policy"]["manifest_recovered"])
+            self.assertTrue(payload["side_effect_policy"]["local_manifest_rollback_performed"])
+            self.assertFalse(payload["side_effect_policy"]["physical_rollback_performed"])
+            self.assertFalse(payload["side_effect_policy"]["broader_filesystem_physical_rollback_performed"])
+            self.assertFalse(payload["side_effect_policy"]["transaction_committed"])
+            self.assertFalse(payload["side_effect_policy"]["external_delivery_performed"])
+            self.assertEqual(payload["after_rollback_state"]["phase"], DeliveryRollbackPhase.ROLLBACK_APPLIED.value)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertTrue((delivery_root / "backend-artifact-manifest-recovery.json").exists())
+            written = json.loads((delivery_root / "delivery-rollback-execution.json").read_text(encoding="utf-8"))
+            self.assertEqual(written["status"], "rolled_back")
+            self.assertEqual(written["metadata"]["source"], "rollback-apply-test")
+
     def test_rollback_executor_blocks_preflight_after_external_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

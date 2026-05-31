@@ -7,6 +7,7 @@ from typing import Any
 
 from .executors import DeliveryExecutionMode, _write_json
 from .inspector import inspect_delivery_transaction_root
+from .recovery import DeliveryRecoveryExecutorConfig, DeliveryTransactionRecoveryExecutor
 from .rollback_state import DeliveryRollbackPhase
 from .rollback_writer import DeliveryRollbackStateArtifactWriter, DeliveryRollbackStateWriterConfig
 from .transitions import DeliveryTransactionTransitionExecutor, DeliveryTransitionExecutorConfig
@@ -14,6 +15,7 @@ from .transitions import DeliveryTransactionTransitionExecutor, DeliveryTransiti
 SUPPORTED_DELIVERY_ROLLBACK_ACTIONS: tuple[str, ...] = (
     "plan_rollback",
     "preflight_rollback",
+    "apply_rollback",
 )
 
 
@@ -21,10 +23,11 @@ SUPPORTED_DELIVERY_ROLLBACK_ACTIONS: tuple[str, ...] = (
 class DeliveryRollbackExecutorConfig:
     """Configuration for a conservative delivery rollback executor baseline.
 
-    This executor does not apply rollback.  It can plan the rollback path and,
-    when explicitly requested in apply mode, materialize the rollback-state
-    audit artifact and recovery preflight record that a later reviewed physical
-    rollback executor can consume.
+    This executor is explicit-review-only.  It can plan the rollback path,
+    materialize preflight evidence, and apply the local manifest recovery path
+    only when the caller selects apply mode and provides explicit approval.
+    It still does not commit transactions, publish external delivery, acquire
+    distributed locks, or execute broader physical rollback.
     """
 
     delivery_root: Path
@@ -33,6 +36,8 @@ class DeliveryRollbackExecutorConfig:
     mode: DeliveryExecutionMode = DeliveryExecutionMode.DRY_RUN
     backend_manifest_path: Path | None = None
     expected_transaction_id: str | None = None
+    approve_rollback: bool = False
+    expected_rollback_phase: str | None = None
     write_execution_record: bool = True
     execution_record_name: str = "delivery-rollback-execution.json"
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -70,6 +75,11 @@ class DeliveryRollbackExecution:
         transition_wrote_preflight = any(
             _transition_wrote_recovery_preflight(item) for item in self.transition_executions
         )
+        manifest_recovered = any(
+            bool(item.get("execution_result", {}).get("backend_manifest_recovered"))
+            for item in self.transition_executions
+            if isinstance(item.get("execution_result"), dict)
+        )
         rollback_state_written = bool(
             isinstance(self.state_write, dict)
             and self.state_write.get("side_effect_policy", {}).get("writes_rollback_state_artifact")
@@ -96,13 +106,15 @@ class DeliveryRollbackExecution:
                 "dry_run_is_read_only": True,
                 "writes_rollback_state_artifact": rollback_state_written,
                 "writes_recovery_preflight": transition_wrote_preflight,
-                "files_mutated": False,
+                "files_mutated": manifest_recovered,
                 "manifest_mutated": False,
-                "manifest_recovered": False,
+                "manifest_recovered": manifest_recovered,
+                "local_manifest_rollback_performed": manifest_recovered,
                 "transaction_committed": False,
                 "external_delivery_performed": False,
                 "publishes_externally": False,
                 "physical_rollback_performed": False,
+                "broader_filesystem_physical_rollback_performed": False,
                 "automatic_rollback": False,
                 "distributed_lock_acquired": False,
             },
@@ -110,7 +122,7 @@ class DeliveryRollbackExecution:
 
 
 class DeliveryRollbackExecutor:
-    """Plan and preflight a reviewed delivery rollback workflow."""
+    """Plan, preflight, or explicitly apply a reviewed local-manifest rollback workflow."""
 
     def __init__(self, config: DeliveryRollbackExecutorConfig) -> None:
         self.config = config
@@ -158,15 +170,15 @@ class DeliveryRollbackExecutor:
             metadata={
                 **self.config.metadata,
                 "executor": "delivery-rollback-executor",
-                "scope": "delivery-rollback-executor-preflight-baseline",
+                "scope": "delivery-rollback-executor-explicit-review-baseline",
                 "supported_actions": list(SUPPORTED_DELIVERY_ROLLBACK_ACTIONS),
                 "delegates_preflight_to_transition_executor": True,
+                "delegates_apply_to_recovery_executor": True,
                 "automatic_rollback": False,
                 "limitations": [
-                    "does_not_apply_manifest_recovery",
                     "does_not_commit_cross_run_transaction",
                     "does_not_publish_external_delivery",
-                    "does_not_execute_physical_rollback",
+                    "does_not_execute_broader_filesystem_physical_rollback",
                     "does_not_acquire_distributed_transaction_lock",
                     "does_not_implement_resume_semantics",
                 ],
@@ -179,36 +191,47 @@ class DeliveryRollbackExecutor:
     def _build_rollback_plan(self, rollback_state: dict[str, Any]) -> dict[str, Any]:
         phase = str(rollback_state.get("phase") or "")
         preflight_ready = phase == DeliveryRollbackPhase.ROLLBACK_PREFLIGHT_REQUIRED.value
+        apply_ready = phase == DeliveryRollbackPhase.ROLLBACK_DECISION_REQUIRED.value
         steps = [
             {
                 "name": "write_delivery_rollback_state",
                 "required": True,
-                "mode": self.config.mode.value if self.config.action == "preflight_rollback" else DeliveryExecutionMode.DRY_RUN.value,
-                "side_effect": self.config.mode == DeliveryExecutionMode.APPLY and self.config.action == "preflight_rollback",
+                "mode": self.config.mode.value if self.config.action in {"preflight_rollback", "apply_rollback"} else DeliveryExecutionMode.DRY_RUN.value,
+                "side_effect": self.config.mode == DeliveryExecutionMode.APPLY and self.config.action in {"preflight_rollback", "apply_rollback"},
             },
             {
                 "name": "preflight_backend_manifest_recovery",
-                "required": preflight_ready,
-                "mode": self.config.mode.value if self.config.action == "preflight_rollback" else DeliveryExecutionMode.DRY_RUN.value,
-                "side_effect": self.config.mode == DeliveryExecutionMode.APPLY and self.config.action == "preflight_rollback",
+                "required": preflight_ready or self.config.action == "apply_rollback",
+                "mode": self.config.mode.value if self.config.action in {"preflight_rollback", "apply_rollback"} else DeliveryExecutionMode.DRY_RUN.value,
+                "side_effect": self.config.mode == DeliveryExecutionMode.APPLY and self.config.action in {"preflight_rollback", "apply_rollback"},
+            },
+            {
+                "name": "apply_backend_manifest_recovery",
+                "required": apply_ready and self.config.action == "apply_rollback",
+                "mode": self.config.mode.value if self.config.action == "apply_rollback" else DeliveryExecutionMode.DRY_RUN.value,
+                "side_effect": self.config.mode == DeliveryExecutionMode.APPLY and self.config.action == "apply_rollback",
+                "requires_approval": True,
             },
             {
                 "name": "review_rollback_or_commit_decision",
-                "required": True,
+                "required": self.config.action != "apply_rollback",
                 "mode": DeliveryExecutionMode.DRY_RUN.value,
                 "side_effect": False,
             },
         ]
         return {
-            "source": "delivery-rollback-executor-preflight-baseline",
+            "source": "delivery-rollback-executor-explicit-review-baseline",
             "current_phase": phase,
             "requested_action": self.config.action,
             "steps": steps,
             "allowed_transitions": rollback_state.get("allowed_transitions", []),
             "requires_review": True,
             "requires_expected_transaction_id_for_apply": True,
+            "requires_explicit_approval_for_apply": True,
             "automatic_rollback": False,
+            "local_manifest_rollback_performed": False,
             "physical_rollback_performed": False,
+            "broader_filesystem_physical_rollback_performed": False,
             "external_delivery_performed": False,
             "publishes_externally": False,
         }
@@ -217,9 +240,13 @@ class DeliveryRollbackExecutor:
         action = str(self.config.action or "")
         dry_run = self.config.mode == DeliveryExecutionMode.DRY_RUN
         preflight = action == "preflight_rollback"
+        apply_rollback = action == "apply_rollback"
         phase = str(rollback_state.get("phase") or "")
         flags = rollback_state.get("flags") if isinstance(rollback_state.get("flags"), dict) else {}
         load_errors = inspection.get("load_errors", {})
+        expected_phase = str(self.config.expected_rollback_phase or DeliveryRollbackPhase.ROLLBACK_DECISION_REQUIRED.value)
+        expected_transaction_id = str(self.config.expected_transaction_id or "").strip()
+        backend_manifest_path_configured = self.config.resolved_backend_manifest_path() is not None
         return [
             {
                 "name": "rollback_action_is_supported",
@@ -261,19 +288,39 @@ class DeliveryRollbackExecutor:
                 "details": {"phase": phase, "required_phase": DeliveryRollbackPhase.ROLLBACK_PREFLIGHT_REQUIRED.value},
             },
             {
+                "name": "apply_rollback_requires_decision_phase",
+                "passed": dry_run or not apply_rollback or phase == expected_phase,
+                "details": {"phase": phase, "expected_rollback_phase": expected_phase},
+            },
+            {
+                "name": "apply_rollback_requires_explicit_approval",
+                "passed": dry_run or not apply_rollback or bool(self.config.approve_rollback),
+                "details": {"approve_rollback": bool(self.config.approve_rollback), "mode": self.config.mode.value},
+            },
+            {
                 "name": "preflight_rollback_requires_expected_transaction_id",
-                "passed": dry_run or not preflight or bool(str(self.config.expected_transaction_id or "").strip()),
-                "details": {"expected_transaction_id_configured": bool(str(self.config.expected_transaction_id or "").strip())},
+                "passed": dry_run or not preflight or bool(expected_transaction_id),
+                "details": {"expected_transaction_id_configured": bool(expected_transaction_id)},
+            },
+            {
+                "name": "apply_rollback_requires_expected_transaction_id",
+                "passed": dry_run or not apply_rollback or bool(expected_transaction_id),
+                "details": {"expected_transaction_id_configured": bool(expected_transaction_id)},
             },
             {
                 "name": "preflight_rollback_requires_backend_manifest_path",
-                "passed": dry_run or not preflight or self.config.resolved_backend_manifest_path() is not None,
-                "details": {"backend_manifest_path_configured": self.config.resolved_backend_manifest_path() is not None},
+                "passed": dry_run or not preflight or backend_manifest_path_configured,
+                "details": {"backend_manifest_path_configured": backend_manifest_path_configured},
+            },
+            {
+                "name": "apply_rollback_requires_backend_manifest_path",
+                "passed": dry_run or not apply_rollback or backend_manifest_path_configured,
+                "details": {"backend_manifest_path_configured": backend_manifest_path_configured},
             },
         ]
 
     def _write_state_artifact(self) -> dict[str, Any] | None:
-        if self.config.action != "preflight_rollback":
+        if self.config.action not in {"preflight_rollback", "apply_rollback"}:
             return None
         state_write = DeliveryRollbackStateArtifactWriter(
             DeliveryRollbackStateWriterConfig(
@@ -290,26 +337,46 @@ class DeliveryRollbackExecutor:
         return state_write.to_dict()
 
     def _execute_action(self) -> list[dict[str, Any]]:
-        if self.config.action != "preflight_rollback":
-            return []
-        transition = DeliveryTransactionTransitionExecutor(
-            DeliveryTransitionExecutorConfig(
-                delivery_root=self.config.delivery_root,
-                transaction_id=f"{self.config.transaction_id}-preflight",
-                transition="preflight_backend_manifest_recovery",
-                mode=self.config.mode,
-                backend_manifest_path=self.config.backend_manifest_path,
-                expected_transaction_id=self.config.expected_transaction_id,
-                write_execution_record=False,
-                metadata={
-                    **self.config.metadata,
-                    "rollback_executor": True,
-                    "rollback_action": self.config.action,
-                    "rollback_step": "preflight_backend_manifest_recovery",
-                },
-            )
-        ).execute()
-        return [transition.to_dict()]
+        if self.config.action == "preflight_rollback":
+            transition = DeliveryTransactionTransitionExecutor(
+                DeliveryTransitionExecutorConfig(
+                    delivery_root=self.config.delivery_root,
+                    transaction_id=f"{self.config.transaction_id}-preflight",
+                    transition="preflight_backend_manifest_recovery",
+                    mode=self.config.mode,
+                    backend_manifest_path=self.config.backend_manifest_path,
+                    expected_transaction_id=self.config.expected_transaction_id,
+                    write_execution_record=False,
+                    metadata={
+                        **self.config.metadata,
+                        "rollback_executor": True,
+                        "rollback_action": self.config.action,
+                        "rollback_step": "preflight_backend_manifest_recovery",
+                    },
+                )
+            ).execute()
+            return [transition.to_dict()]
+        if self.config.action == "apply_rollback":
+            recovery = DeliveryTransactionRecoveryExecutor(
+                DeliveryRecoveryExecutorConfig(
+                    delivery_root=self.config.delivery_root,
+                    transaction_id=f"{self.config.transaction_id}-apply",
+                    action="apply_recovery",
+                    mode=self.config.mode,
+                    backend_manifest_path=self.config.backend_manifest_path,
+                    expected_transaction_id=self.config.expected_transaction_id,
+                    approve_recovery=self.config.approve_rollback,
+                    write_execution_record=False,
+                    metadata={
+                        **self.config.metadata,
+                        "rollback_executor": True,
+                        "rollback_action": self.config.action,
+                        "rollback_step": "apply_backend_manifest_recovery",
+                    },
+                )
+            ).execute()
+            return _recovery_steps_as_transitions(recovery.to_dict())
+        return []
 
     @staticmethod
     def _status(
@@ -323,6 +390,12 @@ class DeliveryRollbackExecutor:
             return "planned"
         if any(item.get("status") == "blocked" for item in transition_executions):
             return "blocked"
+        if any(
+            bool(item.get("execution_result", {}).get("backend_manifest_recovered"))
+            for item in transition_executions
+            if isinstance(item.get("execution_result"), dict)
+        ):
+            return "rolled_back"
         if transition_executions:
             return "preflighted"
         return "planned"
@@ -336,6 +409,10 @@ class DeliveryRollbackExecutor:
                 "review_backend_manifest_recovery_preflight",
                 "choose_apply_recovery_or_commit_cross_run_transaction_after_review",
             ],
+            "rolled_back": [
+                "review_recovered_manifest_before_new_transaction",
+                "decide_whether_to_commit_recovered_state_or_retry_delivery",
+            ],
         }.get(status, ["review_delivery_rollback_execution"])
 
 
@@ -345,3 +422,10 @@ def _transition_wrote_recovery_preflight(transition_execution: dict[str, Any]) -
         return False
     preflight = execution_result.get("backend_manifest_recovery_preflight")
     return bool(isinstance(preflight, dict) and preflight.get("status") in {"ready_for_review", "no_recovery_required", "passed"})
+
+
+def _recovery_steps_as_transitions(recovery_execution: dict[str, Any]) -> list[dict[str, Any]]:
+    transitions = recovery_execution.get("transition_executions")
+    if isinstance(transitions, list):
+        return [item for item in transitions if isinstance(item, dict)]
+    return []

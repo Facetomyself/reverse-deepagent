@@ -248,9 +248,11 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         backend_manifest_path: str | None = None,
         expected_transaction_id: str | None = None,
+        approve_rollback: bool = False,
+        expected_rollback_phase: str | None = None,
         metadata_json: str | None = None,
     ) -> dict[str, Any]:
-        """Plan or explicitly preflight a delivery rollback workflow."""
+        """Plan, preflight, or explicitly apply a reviewed delivery rollback workflow."""
 
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
@@ -263,16 +265,19 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
             mode=DeliveryExecutionMode(mode),
             backend_manifest_path=Path(backend_manifest_path) if backend_manifest_path else None,
             expected_transaction_id=expected_transaction_id,
+            approve_rollback=approve_rollback,
+            expected_rollback_phase=expected_rollback_phase,
             metadata=metadata,
         )
         return DeliveryRollbackExecutor(config).execute().to_dict()
 
     execute_delivery_rollback.__name__ = "execute_delivery_rollback"
     execute_delivery_rollback.__doc__ = (
-        "Plan or explicitly preflight a delivery rollback workflow. "
-        "Supported actions are plan_rollback and preflight_rollback. "
+        "Plan, preflight, or explicitly apply a reviewed delivery rollback workflow. "
+        "Supported actions are plan_rollback, preflight_rollback, and apply_rollback. "
         "mode defaults to dry-run and is read-only. preflight_rollback in apply mode writes delivery-rollback-state.json and backend-artifact-manifest-recovery-preflight.json, "
-        "but does not restore manifests, does not commit transactions, does not call external delivery providers, does not acquire distributed locks, and does not execute physical rollback."
+        "while apply_rollback in apply mode additionally requires approve_rollback=true, expected_transaction_id, backend_manifest_path, and a matching rollback phase before delegating local manifest recovery to the recovery executor. "
+        "It does not commit transactions, does not call external delivery providers, does not acquire distributed locks, does not publish externally, and does not execute broader filesystem physical rollback."
     )
     return execute_delivery_rollback
 

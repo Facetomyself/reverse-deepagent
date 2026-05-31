@@ -453,6 +453,57 @@ class DeliveryToolTests(TestCase):
             self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery-preflight.json").exists())
             self.assertTrue((root / "delivery" / "delivery-rollback-execution.json").exists())
 
+    def test_delivery_rollback_tool_can_apply_approved_rollback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            original_manifest = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            rollback_tool = make_delivery_rollback_executor_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-rollback-apply-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            rollback_tool(
+                transaction_id="tx-tool-rollback-apply-preflight",
+                action="preflight_rollback",
+                mode="apply",
+                expected_transaction_id="tx-tool-rollback-apply-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = rollback_tool(
+                transaction_id="tx-tool-rollback-apply",
+                action="apply_rollback",
+                mode="apply",
+                expected_transaction_id="tx-tool-rollback-apply-source",
+                expected_rollback_phase="rollback_decision_required",
+                approve_rollback=True,
+                backend_manifest_path=str(backend_manifest),
+                metadata_json=json.dumps({"source": "tool-test"}),
+            )
+
+            self.assertEqual(result["status"], "rolled_back")
+            self.assertEqual(result["after_rollback_state"]["phase"], "rollback_applied")
+            self.assertTrue(result["side_effect_policy"]["manifest_recovered"])
+            self.assertTrue(result["side_effect_policy"]["local_manifest_rollback_performed"])
+            self.assertFalse(result["side_effect_policy"]["physical_rollback_performed"])
+            self.assertFalse(result["side_effect_policy"]["transaction_committed"])
+            self.assertFalse(result["side_effect_policy"]["external_delivery_performed"])
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery.json").exists())
+
     def test_local_delivery_tool_can_request_external_delivery_review_only_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
