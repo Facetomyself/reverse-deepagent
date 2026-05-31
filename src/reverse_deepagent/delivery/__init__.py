@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from .inspector import (
+    DELIVERY_TRANSACTION_ARTIFACT_NAMES,
+    DELIVERY_TRANSACTION_INSPECTOR_VERSION,
+    DeliveryTransactionInspection,
+    inspect_delivery_transaction_root,
+)
 from .executors import (
     BackendManifestInPlaceMutation,
     BackendManifestInPlacePreflight,
@@ -45,6 +51,10 @@ from .state_machine import (
 )
 
 __all__ = [
+    "inspect_delivery_transaction_root",
+    "DeliveryTransactionInspection",
+    "DELIVERY_TRANSACTION_INSPECTOR_VERSION",
+    "DELIVERY_TRANSACTION_ARTIFACT_NAMES",
     "EXTERNAL_DELIVERY_PROVIDER_ENTRY_POINT_GROUP",
     "ExternalDeliveryProviderCapabilities",
     "ExternalDeliveryProviderFactory",

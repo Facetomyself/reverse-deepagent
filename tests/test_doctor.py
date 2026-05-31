@@ -102,6 +102,7 @@ class DoctorTests(unittest.TestCase):
             "browser_smoke_url": "about:blank",
             "external_delivery_providers": False,
             "runtime_backends": False,
+            "delivery_transaction_root": None,
             "request_timeout": 1.0,
             "startup_timeout": 1.0,
             "strict": False,
@@ -352,6 +353,31 @@ class DoctorTests(unittest.TestCase):
         self.assertFalse(matrix["side_effect_policy"]["chrome_started"])
         self.assertFalse(matrix["side_effect_policy"]["mcp_started"])
         self.assertFalse(matrix["side_effect_policy"]["platform_tools_invoked"])
+
+    def test_doctor_can_inspect_delivery_transaction_without_browser_or_mcp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "delivery"
+            root.mkdir()
+            (root / "delivery-transaction-journal.json").write_text(
+                json.dumps({"transaction_id": "tx-doctor", "filesystem_artifact_mutated": True}),
+                encoding="utf-8",
+            )
+            payload = run_doctor(
+                self.make_args(
+                    Path(tmp),
+                    delivery_transaction_root=str(root),
+                    jsreverser_mcp_command=str(Path(tmp) / "missing-mcp"),
+                )
+            )
+        transaction = payload["delivery_transaction"]
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertTrue(transaction["ok"])
+        self.assertEqual(transaction["state_snapshot"]["transaction_id"], "tx-doctor")
+        self.assertEqual(transaction["state_snapshot"]["state"], "local_applied")
+        self.assertFalse(transaction["side_effect_policy"]["manifest_mutated"])
+        self.assertFalse(transaction["side_effect_policy"]["external_delivery_performed"])
 
     def test_runtime_backend_matrix_loads_entry_points_without_invoking_factories(self) -> None:
         factory_calls: list[str] = []
