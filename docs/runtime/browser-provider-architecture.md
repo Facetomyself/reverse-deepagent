@@ -230,7 +230,13 @@ This subagent owns risk / warning review hints, evidence-level review requiremen
 
 This split leaves the `delivery` subagent focused on local delivery, backend manifest mutation, recovery, transaction commit, and external delivery provider requests. Rebuild can generate and review pure / context-aware / Scrapy replay artifacts, but it does not execute local delivery, mutate manifests, publish external releases, or bypass review gates.
 
-## 5.8 BrowserProvider plugin package template
+## 5.8 WorkspacePathResolver baseline
+
+`WorkspacePathResolver` is now the compatibility layer between existing flat `workspace/*.json` artifacts and the DeepAgents virtual folder contract. It resolves artifacts by canonical key, legacy path, future foldered path, or `virtual://workspace/...` URI while keeping the legacy flat path authoritative by default.
+
+The resolver introduces an opt-in dual-write plan: `enable_dual_write=True` returns both the legacy canonical path and foldered future path in `write_paths`, but it does not create directories, copy files, move artifacts, or flip the canonical path. This keeps physical workspace migration separated from consumer API migration and gives follow-up work a safe seam for real dual-write adoption.
+
+## 5.9 BrowserProvider plugin package template
 
 `packages/reverse-deepagent-browser-provider-template/` is the copy-and-replace package template for external BrowserProvider integrations. It declares the `reverse_deepagent.browser_providers` entry point and returns a `BrowserProviderRegistration` for `template-browser` without calling the provider factory. The template provider is intentionally runtime-unavailable: `start()` and `connect()` raise `BrowserProviderUnavailableError` until an integrator replaces them with real launch / attach code.
 

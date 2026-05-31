@@ -55,6 +55,36 @@ class WorkspaceArtifactRoute:
     migration_status: str = "indexed-only"
 
 
+@dataclass(frozen=True)
+class WorkspacePathResolution:
+    """Resolved workspace artifact path view used before physical migration.
+
+    The resolution is deliberately conservative: the legacy flat path remains
+    the canonical read/write path unless callers explicitly opt in to a dual
+    write plan.  This lets consumers move to a resolver API before the project
+    performs any filesystem-level folder migration.
+    """
+
+    artifact_key: str
+    legacy_path: str
+    future_path: str
+    virtual_uri: str
+    canonical_path: str
+    canonical_uri: str
+    read_paths: tuple[str, ...]
+    write_paths: tuple[str, ...]
+    dual_write_enabled: bool
+    physical_migration_enabled: bool
+    canonical_path_remains_authoritative: bool
+    migration_status: str
+    virtual_folder: str
+    category: str
+    producer_roles: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def _jsonable_dataclass_items(items: tuple[Any, ...]) -> list[dict[str, Any]]:
     return [asdict(item) for item in items]
 
@@ -69,6 +99,17 @@ def workspace_virtual_uri(path: str) -> str:
     """
 
     return f"virtual://{path.lstrip('/')}"
+
+
+def _normalize_workspace_lookup(value: str) -> str:
+    normalized = value.strip()
+    if normalized.startswith("virtual://"):
+        return workspace_virtual_uri(normalized.removeprefix("virtual://"))
+    if normalized.startswith("/workspace/"):
+        return normalized
+    if normalized.startswith("workspace/"):
+        return normalized
+    return normalized
 
 
 def default_workspace_folders() -> tuple[WorkspaceFolderContract, ...]:
@@ -341,6 +382,93 @@ def workspace_artifact_routes_by_key() -> dict[str, WorkspaceArtifactRoute]:
     return {route.artifact_key: route for route in default_workspace_artifact_routes()}
 
 
+def workspace_artifact_routes_by_path() -> dict[str, WorkspaceArtifactRoute]:
+    """Return workspace artifact routes keyed by legacy path, future path, and virtual URI."""
+
+    routes: dict[str, WorkspaceArtifactRoute] = {}
+    for route in default_workspace_artifact_routes():
+        routes[route.legacy_path] = route
+        routes[route.future_path] = route
+        routes[workspace_virtual_uri(route.future_path)] = route
+    return routes
+
+
+class WorkspacePathResolver:
+    """Resolve canonical and future workspace paths without moving artifacts.
+
+    ``enable_dual_write`` is an opt-in planning flag.  When enabled, write
+    plans include both the canonical flat path and the foldered future path,
+    but ``canonical_path_remains_authoritative`` stays true until a later
+    physical migration explicitly changes the contract.
+    """
+
+    def __init__(
+        self,
+        *,
+        enable_dual_write: bool = False,
+        physical_migration_enabled: bool = False,
+    ) -> None:
+        self.enable_dual_write = enable_dual_write
+        self.physical_migration_enabled = physical_migration_enabled
+        self._routes_by_key = workspace_artifact_routes_by_key()
+        self._routes_by_path = workspace_artifact_routes_by_path()
+
+    def resolve_artifact_key(self, artifact_key: str) -> WorkspacePathResolution | None:
+        route = self._routes_by_key.get(artifact_key)
+        if route is None:
+            return None
+        return self._resolution_for_route(route)
+
+    def resolve_path(self, path_or_uri: str) -> WorkspacePathResolution | None:
+        route = self._routes_by_path.get(_normalize_workspace_lookup(path_or_uri))
+        if route is None:
+            return None
+        return self._resolution_for_route(route)
+
+    def plan_dual_write(self, artifact_key: str) -> dict[str, Any]:
+        resolution = self.resolve_artifact_key(artifact_key)
+        if resolution is None:
+            return {
+                "artifact_key": artifact_key,
+                "status": "unknown-artifact",
+                "write_paths": (),
+                "dual_write_enabled": self.enable_dual_write,
+                "physical_migration_enabled": self.physical_migration_enabled,
+            }
+        return {
+            "artifact_key": artifact_key,
+            "status": "planned",
+            "canonical_path": resolution.canonical_path,
+            "future_path": resolution.future_path,
+            "virtual_uri": resolution.virtual_uri,
+            "write_paths": resolution.write_paths,
+            "dual_write_enabled": resolution.dual_write_enabled,
+            "physical_migration_enabled": resolution.physical_migration_enabled,
+            "canonical_path_remains_authoritative": resolution.canonical_path_remains_authoritative,
+            "migration_status": resolution.migration_status,
+        }
+
+    def _resolution_for_route(self, route: WorkspaceArtifactRoute) -> WorkspacePathResolution:
+        write_paths = (route.legacy_path, route.future_path) if self.enable_dual_write else (route.legacy_path,)
+        return WorkspacePathResolution(
+            artifact_key=route.artifact_key,
+            legacy_path=route.legacy_path,
+            future_path=route.future_path,
+            virtual_uri=workspace_virtual_uri(route.future_path),
+            canonical_path=route.legacy_path,
+            canonical_uri=workspace_virtual_uri(route.legacy_path),
+            read_paths=(route.legacy_path, route.future_path, workspace_virtual_uri(route.future_path)),
+            write_paths=write_paths,
+            dual_write_enabled=self.enable_dual_write,
+            physical_migration_enabled=self.physical_migration_enabled,
+            canonical_path_remains_authoritative=True,
+            migration_status="dual-write-plan-only" if self.enable_dual_write else "resolver-only",
+            virtual_folder=route.virtual_folder,
+            category=route.category,
+            producer_roles=route.producer_roles,
+        )
+
+
 def workspace_manifest_alias_metadata(artifact_key: str) -> dict[str, Any]:
     """Return manifest-only virtual folder alias metadata for an artifact.
 
@@ -352,17 +480,23 @@ def workspace_manifest_alias_metadata(artifact_key: str) -> dict[str, Any]:
     route = workspace_artifact_routes_by_key().get(artifact_key)
     if route is None:
         return {}
+    resolver = WorkspacePathResolver()
+    resolution = resolver.resolve_artifact_key(artifact_key)
+    if resolution is None:
+        return {}
     return {
         "workspace_alias": {
-            "canonical_path": route.legacy_path,
-            "canonical_path_remains_authoritative": True,
-            "virtual_folder": route.virtual_folder,
-            "future_path": route.future_path,
-            "virtual_uri": workspace_virtual_uri(route.future_path),
+            "canonical_path": resolution.canonical_path,
+            "canonical_uri": resolution.canonical_uri,
+            "canonical_path_remains_authoritative": resolution.canonical_path_remains_authoritative,
+            "virtual_folder": resolution.virtual_folder,
+            "future_path": resolution.future_path,
+            "virtual_uri": resolution.virtual_uri,
             "migration_status": "manifest-alias-only",
             "route_migration_status": route.migration_status,
-            "category": route.category,
-            "producer_roles": list(route.producer_roles),
+            "resolver_migration_status": resolution.migration_status,
+            "category": resolution.category,
+            "producer_roles": list(resolution.producer_roles),
         }
     }
 
@@ -380,6 +514,18 @@ def workspace_contract_payload() -> dict[str, Any]:
             "foldered_paths_are_future_targets": True,
             "backend_manifest_includes_foldered_aliases": True,
             "foldered_aliases_are_manifest_only": True,
+            "workspace_path_resolver_available": True,
+            "dual_write_is_opt_in": True,
+            "dual_write_default_enabled": False,
+            "physical_migration_default_enabled": False,
+        },
+        "path_resolver": {
+            "status": "resolver-only",
+            "default_canonical_path": "legacy_path",
+            "default_write_policy": "legacy-only",
+            "opt_in_dual_write_policy": "legacy-and-future-path-plan",
+            "does_not_create_directories": True,
+            "does_not_move_existing_artifacts": True,
         },
         "workspace_folders": _jsonable_dataclass_items(default_workspace_folders()),
         "subagent_roles": _jsonable_dataclass_items(default_subagent_roles()),

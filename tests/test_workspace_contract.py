@@ -5,6 +5,7 @@ from pathlib import Path
 
 from reverse_deepagent.coordinator import run_platform_pipeline, run_reverse_pipeline
 from reverse_deepagent.workspace_contract import (
+    WorkspacePathResolver,
     default_middleware_chain,
     default_subagent_roles,
     default_workspace_artifact_routes,
@@ -24,6 +25,11 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertTrue(payload["path_migration_policy"]["existing_flat_workspace_paths_remain_canonical"])
         self.assertTrue(payload["path_migration_policy"]["backend_manifest_includes_foldered_aliases"])
         self.assertTrue(payload["path_migration_policy"]["foldered_aliases_are_manifest_only"])
+        self.assertTrue(payload["path_migration_policy"]["workspace_path_resolver_available"])
+        self.assertTrue(payload["path_migration_policy"]["dual_write_is_opt_in"])
+        self.assertFalse(payload["path_migration_policy"]["dual_write_default_enabled"])
+        self.assertEqual(payload["path_resolver"]["status"], "resolver-only")
+        self.assertEqual(payload["path_resolver"]["default_write_policy"], "legacy-only")
         self.assertGreaterEqual(payload["artifact_route_count"], 20)
 
     def test_virtual_folders_include_deepagents_collaboration_areas(self) -> None:
@@ -109,11 +115,59 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(alias["virtual_folder"], "/workspace/timeline/")
         self.assertEqual(alias["future_path"], "/workspace/timeline/flow-timeline.json")
         self.assertEqual(alias["virtual_uri"], "virtual://workspace/timeline/flow-timeline.json")
+        self.assertEqual(alias["canonical_uri"], "virtual://workspace/flow-timeline.json")
         self.assertEqual(alias["migration_status"], "manifest-alias-only")
+        self.assertEqual(alias["resolver_migration_status"], "resolver-only")
         self.assertEqual(alias["route_migration_status"], "indexed-only")
         self.assertIn("timeline", alias["producer_roles"])
         self.assertEqual(workspace_virtual_uri("/workspace/review/review-gate.json"), "virtual://workspace/review/review-gate.json")
         self.assertEqual(workspace_manifest_alias_metadata("non_workspace_report"), {})
+
+    def test_workspace_path_resolver_keeps_legacy_path_authoritative_by_default(self) -> None:
+        resolver = WorkspacePathResolver()
+
+        by_key = resolver.resolve_artifact_key("workspace_flow_timeline")
+        self.assertIsNotNone(by_key)
+        assert by_key is not None
+        self.assertEqual(by_key.canonical_path, "workspace/flow-timeline.json")
+        self.assertEqual(by_key.future_path, "/workspace/timeline/flow-timeline.json")
+        self.assertEqual(by_key.virtual_uri, "virtual://workspace/timeline/flow-timeline.json")
+        self.assertEqual(by_key.write_paths, ("workspace/flow-timeline.json",))
+        self.assertTrue(by_key.canonical_path_remains_authoritative)
+        self.assertFalse(by_key.dual_write_enabled)
+        self.assertEqual(by_key.migration_status, "resolver-only")
+
+        by_legacy = resolver.resolve_path("workspace/flow-timeline.json")
+        by_future = resolver.resolve_path("/workspace/timeline/flow-timeline.json")
+        by_virtual = resolver.resolve_path("virtual://workspace/timeline/flow-timeline.json")
+        self.assertEqual(by_legacy, by_key)
+        self.assertEqual(by_future, by_key)
+        self.assertEqual(by_virtual, by_key)
+        self.assertIsNone(resolver.resolve_artifact_key("missing_artifact"))
+        self.assertIsNone(resolver.resolve_path("workspace/missing.json"))
+
+    def test_workspace_path_resolver_dual_write_is_opt_in_plan_only(self) -> None:
+        resolver = WorkspacePathResolver(enable_dual_write=True)
+
+        resolution = resolver.resolve_artifact_key("workspace_rebuild_plan")
+        self.assertIsNotNone(resolution)
+        assert resolution is not None
+        self.assertEqual(resolution.canonical_path, "workspace/rebuild-plan.json")
+        self.assertEqual(resolution.write_paths, ("workspace/rebuild-plan.json", "/workspace/rebuild/rebuild-plan.json"))
+        self.assertTrue(resolution.dual_write_enabled)
+        self.assertFalse(resolution.physical_migration_enabled)
+        self.assertTrue(resolution.canonical_path_remains_authoritative)
+        self.assertEqual(resolution.migration_status, "dual-write-plan-only")
+
+        plan = resolver.plan_dual_write("workspace_rebuild_plan")
+        self.assertEqual(plan["status"], "planned")
+        self.assertEqual(plan["write_paths"], ("workspace/rebuild-plan.json", "/workspace/rebuild/rebuild-plan.json"))
+        self.assertTrue(plan["dual_write_enabled"])
+        self.assertFalse(plan["physical_migration_enabled"])
+
+        missing = resolver.plan_dual_write("missing_artifact")
+        self.assertEqual(missing["status"], "unknown-artifact")
+        self.assertEqual(missing["write_paths"], ())
 
     def test_web_pipeline_writes_workspace_contract_and_manifest_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
