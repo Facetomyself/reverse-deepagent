@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from reverse_deepagent.tools.artifact_tools import read_workspace_artifact_payload, summarize_workspace_artifact_read
+
 from reverse_deepagent.delivery import (
     DeliveryArtifact,
     DeliveryExecutionMode,
@@ -32,15 +34,20 @@ from reverse_deepagent.delivery import (
 DeliveryTool = Callable[..., dict[str, Any]]
 
 
-def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> DeliveryTool:
+def make_local_delivery_executor_tool(
+    default_delivery_root: str | Path,
+    default_artifact_root: str | Path | None = None,
+) -> DeliveryTool:
     """Create a tool wrapper for side-effect-safe local delivery execution."""
 
     root = Path(default_delivery_root)
+    artifact_root_default = Path(default_artifact_root) if default_artifact_root is not None else root.parent
 
     def execute_local_delivery(
         artifacts_json: str,
         transaction_id: str,
         delivery_root: str | None = None,
+        artifact_root: str | None = None,
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         overwrite: bool = False,
         commit_manifest_revision: bool = False,
@@ -75,7 +82,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
         raw_artifacts = json.loads(artifacts_json)
         if not isinstance(raw_artifacts, list):
             raise ValueError("artifacts_json must decode to a list")
-        artifacts = [_artifact_from_payload(item) for item in raw_artifacts]
+        effective_artifact_root = Path(artifact_root) if artifact_root else artifact_root_default
+        artifacts = [_artifact_from_payload(item, artifact_root=effective_artifact_root) for item in raw_artifacts]
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
             raise ValueError("metadata_json must decode to an object")
@@ -121,8 +129,8 @@ def make_local_delivery_executor_tool(default_delivery_root: str | Path) -> Deli
 
     execute_local_delivery.__name__ = "execute_local_delivery"
     execute_local_delivery.__doc__ = (
-        "Plan or apply local filesystem delivery. artifacts_json is a JSON list with source_path, optional artifact_key, "
-        "destination_name, required, and metadata. mode defaults to dry-run; apply copies files locally and writes receipt/journal. "
+        "Plan or apply local filesystem delivery. artifacts_json is a JSON list with source_path or source_artifact_ref/artifact_ref, optional artifact_key, "
+        "destination_name, required, and metadata. artifact refs resolve through WorkspacePathResolver before planning; mode defaults to dry-run; apply copies files locally and writes receipt/journal. "
         "commit_manifest_revision can additionally write a local delivery-manifest-revision.json. "
         "commit_backend_manifest_mutation writes a local mutation record plus patched backend manifest copy without mutating the source manifest in place. "
         "preflight_backend_manifest_in_place_mutation writes a preflight record that checks whether a future in-place manifest mutation would be safe, without mutating the source manifest. "
@@ -394,6 +402,7 @@ def make_delivery_transition_executor_tool(default_delivery_root: str | Path) ->
         transaction_id: str,
         transition: str = "auto",
         delivery_root: str | None = None,
+        artifact_root: str | None = None,
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         backend_manifest_path: str | None = None,
         expected_transaction_id: str | None = None,
@@ -446,6 +455,7 @@ def make_delivery_recovery_executor_tool(default_delivery_root: str | Path) -> D
         transaction_id: str,
         action: str = "plan_recovery",
         delivery_root: str | None = None,
+        artifact_root: str | None = None,
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         backend_manifest_path: str | None = None,
         expected_transaction_id: str | None = None,
@@ -539,6 +549,7 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
         transaction_id: str,
         action: str = "plan_rollback",
         delivery_root: str | None = None,
+        artifact_root: str | None = None,
         mode: str = DeliveryExecutionMode.DRY_RUN.value,
         backend_manifest_path: str | None = None,
         expected_transaction_id: str | None = None,
@@ -587,16 +598,36 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
     return execute_delivery_rollback
 
 
-def _artifact_from_payload(payload: Any) -> DeliveryArtifact:
+def _artifact_from_payload(payload: Any, *, artifact_root: Path) -> DeliveryArtifact:
     if not isinstance(payload, dict):
         raise ValueError("each delivery artifact must be an object")
-    source_path = payload.get("source_path") or payload.get("path")
-    if not source_path:
-        raise ValueError("delivery artifact requires source_path")
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    source_path = payload.get("source_path") or payload.get("path")
+    source_artifact_ref = payload.get("source_artifact_ref") or payload.get("artifact_ref")
+    artifact_key = str(payload.get("artifact_key")) if payload.get("artifact_key") is not None else None
+    if source_path and source_artifact_ref:
+        raise ValueError("delivery artifact must not provide both source_path and source_artifact_ref")
+    if source_artifact_ref:
+        read_result = read_workspace_artifact_payload(
+            artifact_ref=str(source_artifact_ref),
+            default_artifact_root=artifact_root,
+            max_chars=1,
+        )
+        if read_result.get("status") != "found" or not read_result.get("path"):
+            raise ValueError(f"delivery artifact source_artifact_ref could not be resolved: {source_artifact_ref}; checked_paths={read_result.get('checked_paths')}")
+        source_path = str(read_result["path"])
+        resolution = read_result.get("resolution") if isinstance(read_result.get("resolution"), dict) else {}
+        artifact_key = artifact_key or str(resolution.get("artifact_key") or source_artifact_ref)
+        metadata = {
+            **metadata,
+            "source_artifact_ref": str(source_artifact_ref),
+            "workspace_artifact_read": summarize_workspace_artifact_read(read_result),
+        }
+    if not source_path:
+        raise ValueError("delivery artifact requires source_path or source_artifact_ref")
     return DeliveryArtifact(
         source_path=Path(str(source_path)),
-        artifact_key=str(payload.get("artifact_key")) if payload.get("artifact_key") is not None else None,
+        artifact_key=artifact_key,
         destination_name=str(payload.get("destination_name")) if payload.get("destination_name") is not None else None,
         required=bool(payload.get("required", True)),
         metadata=metadata,

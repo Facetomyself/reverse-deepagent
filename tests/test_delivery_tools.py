@@ -69,6 +69,82 @@ class DeliveryToolTests(TestCase):
             self.assertTrue((root / "delivery" / "delivery-receipt.json").exists())
             self.assertTrue((root / "delivery" / "delivery-transaction-journal.json").exists())
 
+
+    def test_local_delivery_tool_resolves_source_artifact_ref_in_dry_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_artifact_ref": "workspace_final"}]),
+                transaction_id="tx-tool-artifact-ref-dry-run",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertTrue(result["dry_run"])
+            self.assertFalse(result["filesystem_artifact_mutated"])
+            self.assertFalse((root / "delivery").exists())
+            planned = result["planned_artifacts"][0]
+            self.assertEqual(planned["artifact_key"], "workspace_final")
+            self.assertEqual(planned["source_path"], str(source.resolve()))
+            self.assertEqual(planned["metadata"]["source_artifact_ref"], "workspace_final")
+            self.assertEqual(planned["metadata"]["workspace_artifact_read"]["resolution"]["artifact_key"], "workspace_final")
+
+    def test_local_delivery_tool_resolves_source_artifact_ref_in_apply_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            result = tool(
+                artifacts_json=json.dumps(
+                    [
+                        {
+                            "source_artifact_ref": "virtual://workspace/delivery/final-result.json",
+                            "destination_name": "final-result.json",
+                        }
+                    ]
+                ),
+                transaction_id="tx-tool-artifact-ref-apply",
+                mode="apply",
+            )
+
+            self.assertEqual(result["status"], "delivered")
+            self.assertFalse(result["dry_run"])
+            self.assertTrue(result["filesystem_artifact_mutated"])
+            delivered = result["receipt"]["delivered_artifacts"][0]
+            self.assertEqual(delivered["source_path"], str(source.resolve()))
+            self.assertEqual(delivered["metadata"]["source_artifact_ref"], "virtual://workspace/delivery/final-result.json")
+            self.assertTrue((root / "delivery" / "final-result.json").exists())
+
+
+    def test_local_delivery_tool_rejects_ambiguous_source_path_and_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            with self.assertRaisesRegex(ValueError, "must not provide both source_path and source_artifact_ref"):
+                tool(
+                    artifacts_json=json.dumps(
+                        [
+                            {
+                                "source_path": str(source),
+                                "source_artifact_ref": "workspace_final",
+                                "artifact_key": "workspace_final",
+                            }
+                        ]
+                    ),
+                    transaction_id="tx-tool-ambiguous-source",
+                )
+
     def test_local_delivery_tool_can_require_transaction_lock(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

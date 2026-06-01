@@ -43,7 +43,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 
 - DeepAgents workspace contract indexed-only baseline.
 - Manifest-only workspace alias for future foldered virtual paths while keeping flat `workspace/*.json` paths canonical.
-- Read-only workspace artifact reader and specialized review-helper artifact-ref resolver baselines for artifact key, legacy path, future path, `virtual://workspace/...` URI, and artifact-root-relative consumption by coordinator plus review / rebuild / timeline / hook / debugger subagents.
+- Workspace artifact reader, specialized read-only review-helper artifact-ref resolver, and delivery artifact-list resolver baselines for artifact key, legacy path, future path, `virtual://workspace/...` URI, and artifact-root-relative consumption by coordinator, review / rebuild / timeline / hook / debugger subagents, and reviewed local delivery planning / apply inputs.
 - Router, web recon, browser runtime, debugger, hook, timeline, review, rebuild, and delivery subagent baselines.
 - Review approval ledger baseline.
 
@@ -105,8 +105,8 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Workspace and artifact evolution
 
-- Broader consumer adoption of workspace aliases and virtual workspace folders beyond the coordinator and review / rebuild / timeline / hook / debugger read-only helper baseline.
-- Resolver adoption in delivery planning / artifact listing paths before any physical folder migration.
+- Broader consumer adoption of workspace aliases and virtual workspace folders beyond the coordinator, review helper, and delivery artifact-list baselines.
+- Resolver compatibility metrics before any physical folder migration.
 - Opt-in dual-write expansion with compatibility metrics.
 - A narrow foldered-canonical migration pilot only after consumers support the resolver.
 

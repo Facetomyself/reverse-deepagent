@@ -33,7 +33,7 @@ def build_delivery_subagent(
         "description": DELIVERY_SUBAGENT_DESCRIPTION,
         "system_prompt": load_delivery_prompt(prompt_path),
         "tools": [
-            make_local_delivery_executor_tool(Path(artifact_root) / "delivery"),
+            make_local_delivery_executor_tool(Path(artifact_root) / "delivery", default_artifact_root=artifact_root),
             make_delivery_resume_planner_tool(Path(artifact_root) / "delivery"),
             make_delivery_resume_runner_tool(Path(artifact_root) / "delivery"),
             make_delivery_resume_workflow_scheduler_tool(Path(artifact_root) / "delivery"),

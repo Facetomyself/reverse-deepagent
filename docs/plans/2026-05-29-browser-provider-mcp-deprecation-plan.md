@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-104 is implemented through the read-only review helper artifact-ref resolver adoption baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-105 is implemented through the delivery artifact-list resolver adoption baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -936,3 +936,15 @@ The read-only `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_
 Boundary: this does not change review decisions, execute delivery, write artifacts, enable dual-write, migrate workspace paths, start browsers, call MCP, install hooks, resume debuggers, run replay code, or touch Android / iOS / mini-program full runtime chains. Delivery apply paths and physical foldered-canonical migration remain separate follow-ups.
 
 Tests cover artifact-ref reads for timeline, hook, debugger, rebuild, and review gate helpers while preserving existing JSON-input behavior and read-only side-effect policies.
+
+### Step 105 execution record: Delivery artifact-list resolver adoption baseline
+
+Status: implemented as delivery artifact list normalization for reviewed local delivery inputs, not a bypass of apply-mode side-effect gates or physical workspace migration.
+
+`execute_local_delivery` now accepts an optional `artifact_root` and lets each artifact entry provide `source_artifact_ref` or `artifact_ref` instead of `source_path`. The tool resolves those refs through the same workspace resolver reader before constructing `DeliveryArtifact` objects, infers the artifact key from the route when omitted, and preserves compact resolver diagnostics under artifact metadata. Existing `source_path` inputs remain supported, and providing both `source_path` and `source_artifact_ref` is rejected.
+
+The delivery subagent passes the configured artifact root into `make_local_delivery_executor_tool(...)`, so default agent wiring resolves workspace refs relative to the same artifact root used by the rest of the pipeline.
+
+Boundary: this does not change `LocalDeliveryExecutor` apply semantics. Dry-run remains side-effect-free, apply still requires explicit `mode=apply` and all existing delivery / manifest / transaction / lock gates, and external delivery duplicate / review gates remain unchanged. It does not enable dual-write, migrate physical workspace paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+Tests cover dry-run and explicit apply delivery from `source_artifact_ref`, including metadata diagnostics and unchanged local delivery side-effect behavior.
