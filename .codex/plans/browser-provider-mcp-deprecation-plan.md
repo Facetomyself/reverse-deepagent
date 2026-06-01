@@ -1880,3 +1880,15 @@ Status: implemented as an explicit review-approved custom-loader module export h
 Boundary: this closes the post-diff reviewed hook follow-through only. It does not re-execute custom loaders, rerun module discovery, load chunks, invoke module factories, install hooks automatically from a diff plan, recursively traverse custom-loader graphs, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper custom-loader traversal remains a capability-gated follow-up.
 
 Tests cover manager-level approval blocking / candidate provenance / delegated install behavior, native-web reviewed route metadata and no-approval blocking, and existing module hook / custom-loader diff regressions.
+
+### Step 141 execution record: Bounded custom loader traversal continuation planning baseline
+
+Status: implemented as a continuation-aware review plan extension on `custom-loader-traversal-plan.json`, not automatic recursive custom-loader execution, dynamic `import()` execution, webpack `require.e` execution, module factory invocation, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`CustomLoaderTraversalPlanManager` now accepts previous reviewed custom-loader execution evidence plus next custom-loader candidates. It fingerprints already executed loader candidates, marks them as `already_executed`, enforces bounded `traversal_depth`, exposes `ready_continuation_count`, `already_executed_count`, `max_depth_blocked_count`, `previous_execution_count`, and emits a nested `reverse-deepagent.custom-loader-traversal-continuation.v1` summary. This lets reviewers choose the next unexecuted candidate without rerunning a prior loader or pretending traversal is automatic.
+
+`CustomLoaderExecutionPreflightManager` now blocks already executed continuation candidates and candidates that exceed the reviewed traversal depth before any JavaScript evaluation. `native-web` keeps the existing `virtual://workspace/custom-loader-traversal-plan.json` artifact surface, adds continuation verification / metadata counts, and forwards `next_action=review_next_custom_loader_continuation_candidate` when an unexecuted bounded continuation candidate is ready.
+
+Boundary: this is still plan-only until a reviewer separately runs the existing preflight and reviewed single-step executor for one selected candidate. It does not invoke custom loaders, request chunks, run dynamic imports, invoke module factories, recurse automatically, install hooks automatically, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper execution-style traversal beyond reviewed one-step-at-a-time continuation remains capability-gated follow-up work.
+
+Tests cover manager-level previous-execution fingerprinting / already-executed blocking / depth blocking, preflight reuse blocking for already executed candidates, native-web continuation metadata and next action, hook-subagent regression coverage, and existing custom-loader traversal behavior.

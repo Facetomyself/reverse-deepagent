@@ -339,6 +339,79 @@ class CustomLoaderTraversalPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.plan["next_action"], "provide_custom_loader_candidates_from_chunk_graph")
         self.assertTrue(result.side_effect_policy["plan_only"])
 
+    def test_custom_loader_traversal_plan_tracks_bounded_continuation_without_execution(self) -> None:
+        spec = CustomLoaderTraversalPlanSpec.from_context(
+            {
+                "traversal_depth": 2,
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "selected_candidate": {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                    },
+                    "execution": {
+                        "attempted": True,
+                        "ok": True,
+                        "loaderInvoked": True,
+                        "loaderPath": "window.__customLoader.load",
+                    },
+                },
+                "next_custom_loader_candidates": [
+                    {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "depth": 1,
+                    },
+                    {
+                        "chunk_id": "custom-sign-child",
+                        "target": "window.__customLoader.loadChild",
+                        "loader_path": "window.__customLoader.loadChild",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "parent_loader_path": "window.__customLoader.load",
+                        "depth": 2,
+                    },
+                    {
+                        "chunk_id": "too-deep",
+                        "target": "window.__customLoader.loadGrandChild",
+                        "loader_path": "window.__customLoader.loadGrandChild",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "parent_loader_path": "window.__customLoader.loadChild",
+                        "depth": 3,
+                    },
+                ],
+            }
+        )
+
+        result = CustomLoaderTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertTrue(result.side_effect_policy["requires_review_approval_per_step"])
+        plan = result.plan
+        self.assertEqual(plan["previous_execution_count"], 1)
+        self.assertEqual(plan["already_executed_count"], 1)
+        self.assertEqual(plan["ready_continuation_count"], 1)
+        self.assertEqual(plan["max_depth_blocked_count"], 1)
+        self.assertEqual(plan["next_action"], "review_next_custom_loader_continuation_candidate")
+        self.assertEqual(plan["continuation"]["schema_version"], "reverse-deepagent.custom-loader-traversal-continuation.v1")
+        self.assertEqual(plan["continuation"]["status"], "ready_for_review")
+        first, second, third = plan["candidates"]
+        self.assertEqual(first["status"], "already_executed")
+        self.assertIn("custom_loader_candidate_already_executed", first["blocking_reasons"])
+        self.assertTrue(second["continuation_supported"])
+        self.assertEqual(second["parent_loader_path"], "window.__customLoader.load")
+        self.assertFalse(second["side_effect_policy"]["executed_now"])
+        self.assertEqual(third["status"], "blocked")
+        self.assertIn("max_traversal_depth_exceeded", third["blocking_reasons"])
+
 
 class CustomLoaderExecutionPreflightManagerTests(unittest.TestCase):
     def _plan(self) -> dict[str, Any]:
@@ -422,6 +495,44 @@ class CustomLoaderExecutionPreflightManagerTests(unittest.TestCase):
         self.assertIn("unsupported_loader_kind_for_custom_execution_preflight", result.preflight["blocking_reasons"])
         self.assertIn("strict_dotted_loader_path_required", result.preflight["blocking_reasons"])
         self.assertIn("dynamic_import_requires_dedicated_gate", result.preflight["blocking_reasons"])
+
+    def test_blocks_already_executed_continuation_candidate(self) -> None:
+        plan_spec = CustomLoaderTraversalPlanSpec.from_context(
+            {
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "selected_candidate": {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                    },
+                    "execution": {"attempted": True, "ok": True, "loaderInvoked": True},
+                },
+                "next_custom_loader_candidates": [
+                    {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                    }
+                ],
+            }
+        )
+        spec = CustomLoaderExecutionPreflightSpec.from_context(
+            {
+                "custom_loader_traversal_plan": CustomLoaderTraversalPlanManager().plan(plan_spec).plan,
+                "candidate_index": 0,
+                "review_approved": True,
+            }
+        )
+
+        result = CustomLoaderExecutionPreflightManager().preflight(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "custom_loader_candidate_already_executed")
+        self.assertIn("custom_loader_candidate_already_executed", result.preflight["blocking_reasons"])
 
 
 class CustomLoaderExecutionManagerTests(unittest.TestCase):

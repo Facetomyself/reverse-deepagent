@@ -205,6 +205,8 @@ class CustomLoaderTraversalPlanSpec:
     """Plan-only custom loader / non-webpack async traversal request."""
 
     candidates: list[dict[str, Any]] = field(default_factory=list)
+    previous_traversal_plan: dict[str, Any] = field(default_factory=dict)
+    previous_execution_results: list[dict[str, Any]] = field(default_factory=list)
     traversal_depth: int = 1
     max_candidates: int = 20
     max_preview_length: int = 240
@@ -223,11 +225,27 @@ class CustomLoaderTraversalPlanSpec:
             or context.get("customLoaderTraversal")
             or context.get("loader_traversal_plan")
             or context.get("loaderTraversalPlan")
+            or context.get("previous_custom_loader_traversal_plan")
+            or context.get("previousCustomLoaderTraversalPlan")
+            or context.get("custom_loader_traversal_plan")
+            or context.get("customLoaderTraversalPlan")
+            or context.get("custom_loader_execution_result")
+            or context.get("customLoaderExecutionResult")
+            or context.get("previous_custom_loader_execution_results")
+            or context.get("previousCustomLoaderExecutionResults")
         )
         if not candidates and not traversal_requested:
             return None
+        previous_plan = (
+            context.get("previous_custom_loader_traversal_plan")
+            or context.get("previousCustomLoaderTraversalPlan")
+            or context.get("custom_loader_traversal_plan")
+            or context.get("customLoaderTraversalPlan")
+        )
         return cls(
             candidates=cls._dedupe_candidates(candidates, max_candidates=int(context.get("max_candidates", context.get("maxCandidates", 20)) or 20)),
+            previous_traversal_plan=dict(previous_plan) if isinstance(previous_plan, dict) else {},
+            previous_execution_results=cls._execution_result_records(context),
             traversal_depth=max(0, int(context.get("traversal_depth", context.get("traversalDepth", 1)) or 1)),
             max_candidates=max(1, int(context.get("max_candidates", context.get("maxCandidates", 20)) or 20)),
             max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
@@ -244,6 +262,10 @@ class CustomLoaderTraversalPlanSpec:
             "customLoaderCandidates",
             "loader_candidates",
             "loaderCandidates",
+            "next_custom_loader_candidates",
+            "nextCustomLoaderCandidates",
+            "discovered_custom_loader_candidates",
+            "discoveredCustomLoaderCandidates",
             "chunk_candidates",
             "chunkCandidates",
         ):
@@ -256,6 +278,28 @@ class CustomLoaderTraversalPlanSpec:
             records.extend(cls._list_of_dicts(chunk_graph.get("candidates")))
             records.extend(cls._list_of_dicts(chunk_graph.get("customLoaderCandidates")))
             records.extend(cls._list_of_dicts(chunk_graph.get("loaderCandidates")))
+        return [dict(item) for item in records]
+
+    @classmethod
+    def _execution_result_records(cls, context: dict[str, Any]) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for key in (
+            "custom_loader_execution_result",
+            "custom-loader-execution-result",
+            "customLoaderExecutionResult",
+            "previous_custom_loader_execution_result",
+            "previousCustomLoaderExecutionResult",
+        ):
+            value = context.get(key)
+            if isinstance(value, dict):
+                records.append(value)
+        for key in (
+            "custom_loader_execution_results",
+            "customLoaderExecutionResults",
+            "previous_custom_loader_execution_results",
+            "previousCustomLoaderExecutionResults",
+        ):
+            records.extend(cls._list_of_dicts(context.get(key)))
         return [dict(item) for item in records]
 
     @staticmethod
@@ -331,58 +375,116 @@ class CustomLoaderTraversalPlanManager:
         policy = self._side_effect_policy()
         if spec is None:
             return CustomLoaderTraversalPlanResult(status="unsupported", reason="missing_custom_loader_traversal_request", side_effect_policy=policy)
-        planned_candidates = [self._candidate_plan(item, index=index, spec=spec) for index, item in enumerate(spec.candidates)]
+        executed_fingerprints = self._executed_candidate_fingerprints(spec.previous_execution_results)
+        planned_candidates = [
+            self._candidate_plan(item, index=index, spec=spec, executed_fingerprints=executed_fingerprints)
+            for index, item in enumerate(spec.candidates)
+        ]
         summary = self._summary(planned_candidates)
+        continuation = self._continuation_summary(spec, planned_candidates, executed_fingerprints)
         plan = {
             "schema_version": "reverse-deepagent.custom-loader-traversal-plan.v1",
             "status": "ready_for_review" if planned_candidates else "blocked",
             "review_required": True,
             "review_approved_input_ignored": bool(spec.review_approved),
             "traversal_depth": spec.traversal_depth,
+            "max_traversal_depth": spec.traversal_depth,
             "candidate_count": len(planned_candidates),
             "custom_candidate_count": summary["custom_candidate_count"],
             "blocked_execution_count": summary["blocked_execution_count"],
             "ready_for_review_count": summary["ready_for_review_count"],
+            "ready_continuation_count": summary["ready_continuation_count"],
+            "already_executed_count": summary["already_executed_count"],
+            "max_depth_blocked_count": summary["max_depth_blocked_count"],
+            "previous_execution_count": len(spec.previous_execution_results),
             "candidates": planned_candidates,
+            "continuation": continuation,
             "approval_requirements": [
                 "confirm_loader_candidate_origin",
                 "classify_loader_side_effects",
                 "review_network_request_scope",
                 "review_module_factory_execution_risk",
                 "prefer_webpack_async_chunk_load_when_loader_kind_is_supported",
+                "review_each_continuation_step_individually",
             ],
             "side_effect_policy": policy,
-            "next_action": "review_custom_loader_traversal_plan" if planned_candidates else "provide_custom_loader_candidates_from_chunk_graph",
+            "next_action": continuation["next_action"] if planned_candidates else "provide_custom_loader_candidates_from_chunk_graph",
         }
         return CustomLoaderTraversalPlanResult(status="planned" if planned_candidates else "blocked", plan=plan, side_effect_policy=policy, reason=None if planned_candidates else "no_custom_loader_candidates")
 
     @classmethod
-    def _candidate_plan(cls, candidate: dict[str, Any], *, index: int, spec: CustomLoaderTraversalPlanSpec) -> dict[str, Any]:
+    def _candidate_plan(
+        cls,
+        candidate: dict[str, Any],
+        *,
+        index: int,
+        spec: CustomLoaderTraversalPlanSpec,
+        executed_fingerprints: set[tuple[str, str, str]],
+    ) -> dict[str, Any]:
         loader_kind = str(candidate.get("loader_kind") or candidate.get("loaderKind") or "custom-loader") or "custom-loader"
         edge_type = str(candidate.get("edge_type") or candidate.get("edgeType") or "custom-loader-candidate") or "custom-loader-candidate"
         chunk_id = str(candidate.get("chunk_id") or candidate.get("chunkId") or candidate.get("target") or "")[: spec.max_preview_length]
         target = str(candidate.get("target") or candidate.get("url") or candidate.get("href") or chunk_id)[: spec.max_preview_length]
         loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or target)[: spec.max_preview_length]
         runtime_path = str(candidate.get("runtime_path") or candidate.get("runtimePath") or "")[: spec.max_preview_length]
+        depth = cls._candidate_depth(candidate, default=1)
+        parent_loader_path = str(candidate.get("parent_loader_path") or candidate.get("parentLoaderPath") or "")[: spec.max_preview_length]
         classification = cls._classify(loader_kind, edge_type=edge_type)
+        fingerprint = cls._candidate_fingerprint({"loader_path": loader_path, "target": target, "chunk_id": chunk_id})
+        fingerprint_variants = {
+            fingerprint,
+            cls._candidate_fingerprint({"loader_path": loader_path, "target": loader_path}),
+            cls._candidate_fingerprint({"loader_path": loader_path}),
+        }
+        already_executed = bool(executed_fingerprints & fingerprint_variants)
+        max_depth_exceeded = depth > spec.traversal_depth
+        blocking_reasons = list(classification["blocking_reasons"])
+        review_requirements = list(classification["review_requirements"])
+        status = classification["status"]
+        recommended_follow_up = classification["recommended_follow_up"]
+        if already_executed:
+            status = "already_executed"
+            recommended_follow_up = "select_unexecuted_continuation_candidate"
+            blocking_reasons.append("custom_loader_candidate_already_executed")
+            review_requirements.append("inspect_previous_custom_loader_execution_result")
+        if max_depth_exceeded:
+            status = "blocked"
+            recommended_follow_up = "reduce_candidate_depth_or_increase_reviewed_traversal_depth"
+            blocking_reasons.append("max_traversal_depth_exceeded")
+            review_requirements.append("review_bounded_traversal_depth_before_continuing")
+        continuation_context_present = bool(parent_loader_path or executed_fingerprints or spec.previous_traversal_plan)
+        continuation_supported = (
+            status == "ready_for_review"
+            and classification["classification"] == "arbitrary_custom_loader"
+            and not already_executed
+            and not max_depth_exceeded
+            and continuation_context_present
+        )
         return {
             "index": index,
-            "status": classification["status"],
+            "candidate_id": f"custom-loader-candidate-{index}",
+            "status": status,
             "risk_level": classification["risk_level"],
             "classification": classification["classification"],
+            "depth": depth,
+            "parent_loader_path": parent_loader_path,
             "chunk_id": chunk_id,
             "target": target,
             "loader_path": loader_path,
             "loader_kind": loader_kind,
             "edge_type": edge_type,
             "runtime_path": runtime_path,
+            "fingerprint": "|".join(fingerprint),
+            "already_executed": already_executed,
+            "max_traversal_depth_exceeded": max_depth_exceeded,
             "discovery_source": str(candidate.get("discovery_source") or candidate.get("discoverySource") or "unknown"),
             "execution_supported": False,
-            "traversal_supported": False,
+            "traversal_supported": continuation_supported,
+            "continuation_supported": continuation_supported,
             "automatic_execution": False,
-            "recommended_follow_up": classification["recommended_follow_up"],
-            "blocking_reasons": classification["blocking_reasons"],
-            "review_requirements": classification["review_requirements"],
+            "recommended_follow_up": recommended_follow_up,
+            "blocking_reasons": blocking_reasons,
+            "review_requirements": review_requirements,
             "side_effect_policy": {
                 "would_call_loader_if_executed": True,
                 "would_request_chunk_if_executed": classification["would_request_chunk"],
@@ -453,7 +555,77 @@ class CustomLoaderTraversalPlanManager:
             "custom_candidate_count": sum(1 for item in candidates if item.get("classification") == "arbitrary_custom_loader"),
             "blocked_execution_count": sum(1 for item in candidates if item.get("blocking_reasons")),
             "ready_for_review_count": sum(1 for item in candidates if item.get("status") == "ready_for_review"),
+            "ready_continuation_count": sum(1 for item in candidates if item.get("continuation_supported")),
+            "already_executed_count": sum(1 for item in candidates if item.get("already_executed")),
+            "max_depth_blocked_count": sum(1 for item in candidates if item.get("max_traversal_depth_exceeded")),
         }
+
+    @classmethod
+    def _continuation_summary(
+        cls,
+        spec: CustomLoaderTraversalPlanSpec,
+        candidates: list[dict[str, Any]],
+        executed_fingerprints: set[tuple[str, str, str]],
+    ) -> dict[str, Any]:
+        ready = [item for item in candidates if item.get("continuation_supported")]
+        already = [item for item in candidates if item.get("already_executed")]
+        max_depth_blocked = [item for item in candidates if item.get("max_traversal_depth_exceeded")]
+        continuation_observed = bool(spec.previous_execution_results or spec.previous_traversal_plan or any(item.get("parent_loader_path") for item in candidates))
+        if ready:
+            next_action = "review_next_custom_loader_continuation_candidate"
+        elif max_depth_blocked:
+            next_action = "review_bounded_custom_loader_traversal_depth"
+        elif already:
+            next_action = "provide_unexecuted_custom_loader_continuation_candidates"
+        else:
+            next_action = "review_custom_loader_traversal_plan"
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-continuation.v1",
+            "status": "ready_for_review" if ready else "blocked" if max_depth_blocked or already else "not_observed",
+            "continuation_observed": continuation_observed,
+            "previous_execution_count": len(spec.previous_execution_results),
+            "previous_fingerprint_count": len(executed_fingerprints),
+            "previous_plan_present": bool(spec.previous_traversal_plan),
+            "max_traversal_depth": spec.traversal_depth,
+            "ready_continuation_count": len(ready),
+            "already_executed_count": len(already),
+            "max_depth_blocked_count": len(max_depth_blocked),
+            "automatic_recursive_execution": False,
+            "requires_review_approval_per_step": True,
+            "next_action": next_action,
+        }
+
+    @classmethod
+    def _executed_candidate_fingerprints(cls, execution_results: list[dict[str, Any]]) -> set[tuple[str, str, str]]:
+        fingerprints: set[tuple[str, str, str]] = set()
+        for item in execution_results:
+            payload = item.get("execution") if isinstance(item.get("execution"), dict) else item
+            candidate = item.get("selected_candidate") or item.get("selectedCandidate") or payload.get("selected_candidate") or payload.get("selectedCandidate")
+            if isinstance(candidate, dict):
+                fingerprints.add(cls._candidate_fingerprint(candidate))
+            loader_path = payload.get("loaderPath") or payload.get("loader_path") or item.get("loader_path") or item.get("loaderPath")
+            if loader_path:
+                fingerprints.add(cls._candidate_fingerprint({"loader_path": loader_path, "target": loader_path}))
+        return {item for item in fingerprints if any(item)}
+
+    @staticmethod
+    def _candidate_fingerprint(candidate: dict[str, Any]) -> tuple[str, str, str]:
+        loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or "").strip()
+        target = str(candidate.get("target") or candidate.get("url") or candidate.get("href") or "").strip()
+        chunk_id = str(candidate.get("chunk_id") or candidate.get("chunkId") or "").strip()
+        if not loader_path and target:
+            loader_path = target
+        if not target and loader_path:
+            target = loader_path
+        return (loader_path, target, chunk_id)
+
+    @staticmethod
+    def _candidate_depth(candidate: dict[str, Any], *, default: int) -> int:
+        value = candidate.get("depth", candidate.get("traversal_depth", candidate.get("traversalDepth", default)))
+        try:
+            return max(1, int(value))
+        except (TypeError, ValueError):
+            return max(1, default)
 
     @staticmethod
     def _side_effect_policy() -> dict[str, Any]:
@@ -467,6 +639,8 @@ class CustomLoaderTraversalPlanManager:
             "module_factory_invoked": False,
             "module_federation_get_init_executed": False,
             "browser_state_mutated": False,
+            "automatic_recursive_traversal": False,
+            "requires_review_approval_per_step": True,
             "calls_mcp": False,
             "mobile_runtime_used": False,
         }
@@ -604,11 +778,16 @@ class CustomLoaderExecutionPreflightManager:
         classification = str(candidate.get("classification") or "").strip().lower()
         loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or "").strip()
         edge_type = str(candidate.get("edge_type") or candidate.get("edgeType") or "").strip().lower()
+        status = str(candidate.get("status") or "").strip().lower()
+        already_executed = bool(candidate.get("already_executed") or candidate.get("alreadyExecuted") or status == "already_executed")
+        max_depth_exceeded = bool(candidate.get("max_traversal_depth_exceeded") or candidate.get("maxTraversalDepthExceeded"))
         is_custom_loader = loader_kind not in CustomLoaderTraversalPlanManager.WEBPACK_KINDS | CustomLoaderTraversalPlanManager.DYNAMIC_IMPORT_KINDS | CustomLoaderTraversalPlanManager.FEDERATION_KINDS and classification in {"arbitrary_custom_loader", "", "custom_loader"}
         expected_match = True if not spec.expected_loader_path else loader_path == spec.expected_loader_path
         return [
             {"name": "candidate_selected", "passed": True, "details": {"index": candidate.get("index")}},
             {"name": "review_approved", "passed": bool(spec.review_approved), "reason": "review_approval_required" if not spec.review_approved else ""},
+            {"name": "not_already_executed", "passed": not already_executed, "reason": "custom_loader_candidate_already_executed" if already_executed else ""},
+            {"name": "within_traversal_depth", "passed": not max_depth_exceeded, "reason": "max_traversal_depth_exceeded" if max_depth_exceeded else ""},
             {"name": "custom_loader_candidate", "passed": bool(is_custom_loader), "reason": "unsupported_loader_kind_for_custom_execution_preflight" if not is_custom_loader else "", "details": {"loader_kind": loader_kind, "classification": classification, "edge_type": edge_type}},
             {"name": "strict_dotted_loader_path", "passed": bool(JS_DOTTED_PATH_RE.fullmatch(loader_path)), "reason": "strict_dotted_loader_path_required" if not JS_DOTTED_PATH_RE.fullmatch(loader_path) else "", "details": {"loader_path": loader_path[: spec.max_preview_length]}},
             {"name": "expected_loader_path_match", "passed": bool(expected_match), "reason": "expected_loader_path_mismatch" if not expected_match else "", "details": {"expected_loader_path": spec.expected_loader_path or "", "loader_path": loader_path[: spec.max_preview_length]}},

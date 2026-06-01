@@ -1752,6 +1752,9 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"custom_loader_traversal_ready_for_review_count={plan.get('ready_for_review_count', 0)}",
                 f"custom_loader_traversal_blocked_execution_count={plan.get('blocked_execution_count', 0)}",
                 f"custom_loader_traversal_custom_candidate_count={plan.get('custom_candidate_count', 0)}",
+                f"custom_loader_traversal_ready_continuation_count={plan.get('ready_continuation_count', 0)}",
+                f"custom_loader_traversal_already_executed_count={plan.get('already_executed_count', 0)}",
+                f"custom_loader_traversal_previous_execution_count={plan.get('previous_execution_count', 0)}",
                 f"context_keys={sorted(context.keys())}",
             ]
             if result.reason:
@@ -1770,13 +1773,16 @@ class NativeWebRuntime(WebReverseRuntime):
                         "ready_for_review_count": plan.get("ready_for_review_count", 0),
                         "blocked_execution_count": plan.get("blocked_execution_count", 0),
                         "custom_candidate_count": plan.get("custom_candidate_count", 0),
+                        "ready_continuation_count": plan.get("ready_continuation_count", 0),
+                        "already_executed_count": plan.get("already_executed_count", 0),
+                        "previous_execution_count": plan.get("previous_execution_count", 0),
                         "review_required": plan.get("review_required", True),
                         "plan_only": result.side_effect_policy.get("plan_only", True),
                     },
                 )
             ]
             if result.status == "planned":
-                next_action = "review_custom_loader_traversal_plan"
+                next_action = plan.get("next_action", "review_custom_loader_traversal_plan")
                 status = ExecutionStatus.SUCCESS
                 applied_actions = ["plan_custom_loader_traversal"]
             elif result.status == "blocked":

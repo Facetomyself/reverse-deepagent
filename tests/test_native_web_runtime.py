@@ -1082,6 +1082,64 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["custom_candidate_count"], 1)
         self.assertTrue(result.artifacts[0].metadata["plan_only"])
 
+    def test_native_web_runtime_plans_custom_loader_traversal_continuation_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-traversal-plan",
+            {
+                "traversal_depth": 2,
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "selected_candidate": {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                    },
+                    "execution": {
+                        "attempted": True,
+                        "ok": True,
+                        "loaderInvoked": True,
+                        "loaderPath": "window.__customLoader.load",
+                    },
+                },
+                "next_custom_loader_candidates": [
+                    {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                    },
+                    {
+                        "chunk_id": "custom-sign-child",
+                        "target": "window.__customLoader.loadChild",
+                        "loader_path": "window.__customLoader.loadChild",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "parent_loader_path": "window.__customLoader.load",
+                        "depth": 2,
+                    },
+                ],
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_traversal"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_traversal_plan_status=planned", result.verification)
+        self.assertIn("custom_loader_traversal_candidate_count=2", result.verification)
+        self.assertIn("custom_loader_traversal_ready_continuation_count=1", result.verification)
+        self.assertIn("custom_loader_traversal_already_executed_count=1", result.verification)
+        self.assertIn("custom_loader_traversal_previous_execution_count=1", result.verification)
+        self.assertEqual(result.next_action, "review_next_custom_loader_continuation_candidate")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["ready_continuation_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["already_executed_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["previous_execution_count"], 1)
+
     def test_native_web_runtime_preflights_reviewed_custom_loader_execution_without_running_loader(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
