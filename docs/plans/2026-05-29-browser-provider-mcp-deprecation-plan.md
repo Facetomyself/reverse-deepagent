@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-105 is implemented through the delivery artifact-list resolver adoption baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-106 is implemented through the workspace resolver compatibility metrics baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -921,7 +921,7 @@ Status: implemented as read-only resolver-backed artifact consumption, not physi
 
 The coordinator and read-only review/rebuild/timeline/hook/debugger subagents now include `read_workspace_artifact`, so subagents can fetch existing workspace artifacts before applying their specialized JSON review tools.
 
-Boundary: this is read-only. It does not write artifacts, create directories, move files, enable dual-write, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains. Physical folder migration remains deferred until broader resolver adoption and compatibility metrics are in place.
+Boundary: this is read-only. It does not write artifacts, create directories, move files, enable dual-write, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains. Physical folder migration remains deferred until broader resolver adoption and compatibility-informed migration planning are in place.
 
 Tests cover key / legacy / future / virtual URI reads, dual-write future path fallback, direct relative fallback, missing path diagnostics, side-effect policy, and subagent tool exposure.
 
@@ -948,3 +948,15 @@ The delivery subagent passes the configured artifact root into `make_local_deliv
 Boundary: this does not change `LocalDeliveryExecutor` apply semantics. Dry-run remains side-effect-free, apply still requires explicit `mode=apply` and all existing delivery / manifest / transaction / lock gates, and external delivery duplicate / review gates remain unchanged. It does not enable dual-write, migrate physical workspace paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
 
 Tests cover dry-run and explicit apply delivery from `source_artifact_ref`, including metadata diagnostics and unchanged local delivery side-effect behavior.
+
+### Step 106 execution record: Workspace resolver compatibility metrics baseline
+
+Status: implemented as read-only resolver usage diagnostics attached to workspace artifact reads, not physical migration, default dual-write, migration automation, or delivery gate relaxation.
+
+`read_workspace_artifact_payload(...)` now emits `resolver_metrics` for found, missing, and UTF-8 error reads. The metrics classify the requested ref shape, resolution status, resolved artifact key, checked path count, hit path kind, legacy / future path checks, future-path fallback usage, direct-path fallback usage, canonical-path authority, missing state, and read-only policy.
+
+`summarize_workspace_artifact_read(...)` includes those metrics, so specialized review helper `artifact_input` diagnostics and delivery artifact metadata inherit the same compatibility evidence without exposing artifact content.
+
+Boundary: metrics are local read diagnostics only. They do not write audit artifacts, create directories, enable dual-write, change canonical paths, migrate files, start browsers, call MCP, perform delivery, or touch Android / iOS / mini-program full runtime chains. They are intended to inform later alias adoption, opt-in dual-write expansion, and any future foldered-canonical migration pilot.
+
+Tests cover legacy canonical hits, future foldered fallback hits, direct relative fallback hits, missing resolved artifacts, and compact summary propagation.
