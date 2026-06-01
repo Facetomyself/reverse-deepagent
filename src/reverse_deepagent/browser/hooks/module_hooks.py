@@ -2598,6 +2598,372 @@ class CustomLoaderTraversalLoopPlanManager:
 
 
 @dataclass(slots=True)
+class CustomLoaderTraversalLoopExecutionSpec:
+    """Review-gated executor for one bounded custom-loader traversal loop iteration."""
+
+    loop_plan: dict[str, Any] = field(default_factory=dict)
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    traversal_plan: dict[str, Any] = field(default_factory=dict)
+    continuation_workflow: dict[str, Any] = field(default_factory=dict)
+    preflight: dict[str, Any] = field(default_factory=dict)
+    execution_result: dict[str, Any] = field(default_factory=dict)
+    module_diff: dict[str, Any] = field(default_factory=dict)
+    module_hook_result: dict[str, Any] = field(default_factory=dict)
+    existing_journal: dict[str, Any] = field(default_factory=dict)
+    module_discovery: dict[str, Any] = field(default_factory=dict)
+    modules: list[dict[str, Any]] = field(default_factory=list)
+    selected_iteration_index: int | None = None
+    selected_step_index: int | None = None
+    candidate_index: int | None = None
+    plan_continuation_workflow: bool = False
+    run_preflight: bool = False
+    execute_custom_loader: bool = False
+    run_module_diff: bool = False
+    install_module_hook: bool = False
+    append_journal: bool = False
+    review_approved: bool = False
+    loader_arguments: list[Any] = field(default_factory=list)
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderTraversalLoopExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("custom_loader_traversal_loop_execution")
+            or context.get("customLoaderTraversalLoopExecution")
+            or context.get("custom-loader-traversal-loop-execution")
+            or context.get("execute_custom_loader_traversal_loop")
+            or context.get("executeCustomLoaderTraversalLoop")
+        )
+        loop_plan = (
+            context.get("custom_loader_traversal_loop_plan")
+            or context.get("customLoaderTraversalLoopPlan")
+            or context.get("custom-loader-traversal-loop-plan")
+            or context.get("loop_plan")
+            or context.get("loopPlan")
+        )
+        if isinstance(loop_plan, dict) and isinstance(loop_plan.get("loop_plan"), dict):
+            loop_plan = loop_plan["loop_plan"]
+        if not isinstance(loop_plan, dict):
+            return None if not requested else cls()
+        workflow_plan = (
+            context.get("custom_loader_traversal_workflow_plan")
+            or context.get("customLoaderTraversalWorkflowPlan")
+            or context.get("custom-loader-traversal-workflow-plan")
+            or context.get("traversal_workflow_plan")
+            or context.get("traversalWorkflowPlan")
+        )
+        if isinstance(workflow_plan, dict) and isinstance(workflow_plan.get("workflow_plan"), dict):
+            workflow_plan = workflow_plan["workflow_plan"]
+        traversal_plan = (
+            context.get("custom_loader_traversal_plan")
+            or context.get("custom-loader-traversal-plan")
+            or context.get("customLoaderTraversalPlan")
+            or context.get("loader_traversal_plan")
+            or context.get("loaderTraversalPlan")
+        )
+        if isinstance(traversal_plan, dict) and isinstance(traversal_plan.get("plan"), dict):
+            traversal_plan = traversal_plan["plan"]
+        continuation_workflow = (
+            context.get("custom_loader_continuation_workflow")
+            or context.get("custom-loader-continuation-workflow")
+            or context.get("customLoaderContinuationWorkflow")
+            or context.get("continuation_workflow")
+            or context.get("continuationWorkflow")
+        )
+        if isinstance(continuation_workflow, dict) and isinstance(continuation_workflow.get("workflow"), dict):
+            continuation_workflow = continuation_workflow["workflow"]
+        loader_arguments_value = context.get("loader_arguments", context.get("loaderArguments"))
+        loader_argument_value = context.get("loader_argument", context.get("loaderArgument"))
+        if isinstance(loader_arguments_value, list):
+            loader_arguments = list(loader_arguments_value)
+        elif loader_arguments_value is not None:
+            loader_arguments = [loader_arguments_value]
+        elif loader_argument_value is not None:
+            loader_arguments = [loader_argument_value]
+        else:
+            loader_arguments = []
+        modules = context.get("modules", context.get("module_candidates", context.get("moduleCandidates", [])))
+        return cls(
+            loop_plan=dict(loop_plan),
+            workflow_plan=dict(workflow_plan) if isinstance(workflow_plan, dict) else {},
+            traversal_plan=dict(traversal_plan) if isinstance(traversal_plan, dict) else {},
+            continuation_workflow=dict(continuation_workflow) if isinstance(continuation_workflow, dict) else {},
+            preflight=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_execution_preflight", "custom-loader-execution-preflight", "customLoaderExecutionPreflight"),
+            execution_result=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_execution_result", "custom-loader-execution-result", "customLoaderExecutionResult"),
+            module_diff=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_module_diff", "custom-loader-module-diff", "customLoaderModuleDiff"),
+            module_hook_result=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_module_hook_result", "custom-loader-module-hook-result", "customLoaderModuleHookResult", "module_hooks", "module-hooks"),
+            existing_journal=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_continuation_journal", "custom-loader-continuation-journal", "customLoaderContinuationJournal"),
+            module_discovery=CustomLoaderContinuationJournalSpec._object_alias(context, "module_discovery", "moduleDiscovery", "module_registry", "moduleRegistry"),
+            modules=[dict(item) for item in modules if isinstance(item, dict)] if isinstance(modules, list) else [],
+            selected_iteration_index=CustomLoaderTraversalWorkflowExecutionSpec._optional_int(context.get("selected_iteration_index", context.get("selectedIterationIndex", context.get("iteration_index", context.get("iterationIndex"))))),
+            selected_step_index=CustomLoaderTraversalWorkflowExecutionSpec._optional_int(context.get("selected_step_index", context.get("selectedStepIndex", context.get("step_index", context.get("stepIndex"))))),
+            candidate_index=CustomLoaderTraversalWorkflowExecutionSpec._optional_int(context.get("candidate_index", context.get("candidateIndex"))),
+            plan_continuation_workflow=bool(context.get("plan_continuation_workflow") or context.get("planContinuationWorkflow") or context.get("plan_custom_loader_continuation_workflow") or context.get("planCustomLoaderContinuationWorkflow")),
+            run_preflight=bool(context.get("run_preflight") or context.get("runPreflight") or context.get("execute_preflight") or context.get("executePreflight")),
+            execute_custom_loader=bool(context.get("execute_custom_loader") or context.get("executeCustomLoader")),
+            run_module_diff=bool(context.get("run_module_diff") or context.get("runModuleDiff") or context.get("refresh_module_diff") or context.get("refreshModuleDiff")),
+            install_module_hook=bool(context.get("install_module_hook") or context.get("installModuleHook") or context.get("hook_custom_loader_module") or context.get("hookCustomLoaderModule")),
+            append_journal=bool(context.get("append_journal") or context.get("appendJournal") or context.get("append_custom_loader_continuation_journal") or context.get("appendCustomLoaderContinuationJournal")),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            loader_arguments=loader_arguments,
+        )
+
+
+@dataclass(slots=True)
+class CustomLoaderTraversalLoopExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class CustomLoaderTraversalLoopExecutionManager:
+    """Execute one reviewed custom-loader loop iteration and stop before recursion."""
+
+    def execute(self, page: BrowserPage, spec: CustomLoaderTraversalLoopExecutionSpec | None) -> CustomLoaderTraversalLoopExecutionResult:
+        if spec is None or not spec.loop_plan:
+            return CustomLoaderTraversalLoopExecutionResult(status="unsupported", reason="missing_custom_loader_traversal_loop_plan", side_effect_policy=self._side_effect_policy())
+        selected_iteration = self._selected_iteration(spec)
+        if not selected_iteration:
+            execution = self._execution_payload(spec, {}, {}, [], status="blocked", reason="missing_custom_loader_traversal_loop_iteration")
+            return CustomLoaderTraversalLoopExecutionResult(status="blocked", execution=execution, side_effect_policy=self._side_effect_policy(spec=spec), reason="missing_custom_loader_traversal_loop_iteration")
+        workflow_plan = self._workflow_plan(spec, selected_iteration)
+        if not workflow_plan:
+            execution = self._execution_payload(spec, selected_iteration, {}, [], status="blocked", reason="missing_custom_loader_traversal_workflow_plan")
+            return CustomLoaderTraversalLoopExecutionResult(status="blocked", execution=execution, side_effect_policy=self._side_effect_policy(spec=spec), reason="missing_custom_loader_traversal_workflow_plan")
+        stages: list[dict[str, Any]] = [self._stage("select_custom_loader_traversal_loop_iteration", "selected", "", side_effect=False)]
+        workflow_execution_payload: dict[str, Any] = {}
+        if self._has_workflow_execution_flags(spec):
+            workflow_result = CustomLoaderTraversalWorkflowExecutionManager().execute(
+                page,
+                CustomLoaderTraversalWorkflowExecutionSpec(
+                    workflow_plan=workflow_plan,
+                    traversal_plan=spec.traversal_plan,
+                    continuation_workflow=spec.continuation_workflow,
+                    preflight=spec.preflight,
+                    execution_result=spec.execution_result,
+                    module_diff=spec.module_diff,
+                    module_hook_result=spec.module_hook_result,
+                    existing_journal=spec.existing_journal,
+                    module_discovery=spec.module_discovery,
+                    modules=spec.modules,
+                    selected_step_index=self._selected_step_index(spec, selected_iteration),
+                    candidate_index=self._candidate_index(spec, selected_iteration),
+                    plan_continuation_workflow=spec.plan_continuation_workflow,
+                    run_preflight=spec.run_preflight,
+                    execute_custom_loader=spec.execute_custom_loader,
+                    run_module_diff=spec.run_module_diff,
+                    install_module_hook=spec.install_module_hook,
+                    append_journal=spec.append_journal,
+                    review_approved=spec.review_approved,
+                    loader_arguments=spec.loader_arguments,
+                ),
+            )
+            workflow_execution_payload = workflow_result.to_dict()
+            stages.append(self._stage("execute_one_custom_loader_traversal_workflow_step", workflow_result.status, workflow_result.reason, side_effect=True))
+        else:
+            stages.append(self._stage("execute_one_custom_loader_traversal_workflow_step", "pending", "", side_effect=True))
+        stages.append(self._stage("stop_before_graph_rebuild_workflow_replan_and_next_loop_iteration", "stopped", "manual_checkpoint_required", side_effect=False))
+        status = self._status(stages, workflow_execution_payload)
+        reason = self._reason(stages)
+        execution = self._execution_payload(spec, selected_iteration, workflow_execution_payload, stages, status=status, reason=reason)
+        return CustomLoaderTraversalLoopExecutionResult(status=status, execution=execution, side_effect_policy=self._side_effect_policy(spec=spec, workflow_execution=workflow_execution_payload), reason=reason)
+
+    @staticmethod
+    def _selected_iteration(spec: CustomLoaderTraversalLoopExecutionSpec) -> dict[str, Any]:
+        iterations = spec.loop_plan.get("iterations") if isinstance(spec.loop_plan.get("iterations"), list) else []
+        normalized = [dict(item) for item in iterations if isinstance(item, dict)]
+        if not normalized:
+            return {}
+        selected_index = spec.selected_iteration_index if spec.selected_iteration_index is not None else 0
+        for iteration in normalized:
+            if int(iteration.get("iteration_index", -1)) == selected_index:
+                return iteration
+        if 0 <= selected_index < len(normalized):
+            return normalized[selected_index]
+        return {}
+
+    @staticmethod
+    def _selected_step_index(spec: CustomLoaderTraversalLoopExecutionSpec, iteration: dict[str, Any]) -> int | None:
+        if spec.selected_step_index is not None:
+            return spec.selected_step_index
+        raw = iteration.get("source_step_index", iteration.get("step_index"))
+        try:
+            return int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _candidate_index(spec: CustomLoaderTraversalLoopExecutionSpec, iteration: dict[str, Any]) -> int | None:
+        if spec.candidate_index is not None:
+            return spec.candidate_index
+        raw = iteration.get("candidate_index", iteration.get("index"))
+        try:
+            return int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _workflow_plan(spec: CustomLoaderTraversalLoopExecutionSpec, iteration: dict[str, Any]) -> dict[str, Any]:
+        if spec.workflow_plan:
+            return dict(spec.workflow_plan)
+        step = {
+            "step_index": iteration.get("source_step_index", iteration.get("iteration_index", 0)),
+            "candidate_index": iteration.get("candidate_index"),
+            "candidate_fingerprint": iteration.get("candidate_fingerprint"),
+            "loader_path": iteration.get("loader_path"),
+            "target": iteration.get("loader_path"),
+            "depth": iteration.get("depth"),
+        }
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "plan_id": spec.loop_plan.get("source_workflow_plan_id") or "custom-loader-traversal-workflow-plan",
+            "source_graph_id": spec.loop_plan.get("source_graph_id"),
+            "planned_steps": [step],
+        }
+
+    @staticmethod
+    def _has_workflow_execution_flags(spec: CustomLoaderTraversalLoopExecutionSpec) -> bool:
+        return any(
+            (
+                spec.plan_continuation_workflow,
+                spec.run_preflight,
+                spec.execute_custom_loader,
+                spec.run_module_diff,
+                spec.install_module_hook,
+                spec.append_journal,
+            )
+        )
+
+    @staticmethod
+    def _stage(name: str, status: str, reason: str | None, *, side_effect: bool) -> dict[str, Any]:
+        return {"stage": name, "status": status, "reason": reason or "", "side_effect": side_effect}
+
+    @classmethod
+    def _status(cls, stages: list[dict[str, Any]], workflow_execution: dict[str, Any]) -> str:
+        if any(item["status"] in {"failed", "error"} for item in stages):
+            return "failed"
+        if any(item["status"] in {"blocked", "unsupported"} for item in stages):
+            return "blocked"
+        nested_execution = workflow_execution.get("execution") if isinstance(workflow_execution.get("execution"), dict) else {}
+        nested_status = str(workflow_execution.get("status") or nested_execution.get("status") or "")
+        if nested_status in {"journal_appended", "module_hook_recorded", "module_diff_ready", "execution_complete", "preflight_ready", "continuation_workflow_approved", "continuation_workflow_ready"}:
+            return nested_status
+        return "ready_for_review"
+
+    @staticmethod
+    def _reason(stages: list[dict[str, Any]]) -> str | None:
+        for item in stages:
+            if item["status"] in {"blocked", "failed", "error", "unsupported"} and item.get("reason"):
+                return str(item["reason"])
+        return None
+
+    @classmethod
+    def _execution_payload(
+        cls,
+        spec: CustomLoaderTraversalLoopExecutionSpec,
+        selected_iteration: dict[str, Any],
+        workflow_execution: dict[str, Any],
+        stages: list[dict[str, Any]],
+        *,
+        status: str,
+        reason: str | None,
+    ) -> dict[str, Any]:
+        nested_execution = workflow_execution.get("execution") if isinstance(workflow_execution.get("execution"), dict) else {}
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-loop-execution.v1",
+            "status": status,
+            "reason": reason,
+            "loop_plan_id": spec.loop_plan.get("plan_id"),
+            "source_workflow_plan_id": spec.loop_plan.get("source_workflow_plan_id") or spec.workflow_plan.get("plan_id"),
+            "source_graph_id": spec.loop_plan.get("source_graph_id") or spec.workflow_plan.get("source_graph_id"),
+            "selected_iteration_index": selected_iteration.get("iteration_index"),
+            "selected_step_index": cls._selected_step_index(spec, selected_iteration) if selected_iteration else None,
+            "selected_candidate_index": cls._candidate_index(spec, selected_iteration) if selected_iteration else None,
+            "selected_iteration": selected_iteration,
+            "review_approved": bool(spec.review_approved),
+            "manual_checkpoint_required": True,
+            "bounded_loop": True,
+            "execute_at_most_one_loop_iteration_per_review": True,
+            "execute_at_most_one_loader_step_per_review": True,
+            "stages": stages,
+            "custom_loader_traversal_workflow_execution": workflow_execution,
+            "workflow_execution_status": workflow_execution.get("status") or nested_execution.get("status"),
+            "artifact_refs": {
+                "loop_plan": "workspace/custom-loader-traversal-loop-plan.json",
+                "workflow_plan": "workspace/custom-loader-traversal-workflow-plan.json",
+                "workflow_execution": "workspace/custom-loader-traversal-workflow-execution.json" if workflow_execution else "",
+                "continuation_journal": "workspace/custom-loader-continuation-journal.json" if nested_execution.get("custom_loader_continuation_execution") else "",
+            },
+            "next_action": cls._next_action(status, reason),
+        }
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "continuation_workflow_ready":
+            return "review_custom_loader_continuation_workflow_before_preflight"
+        if status == "continuation_workflow_approved":
+            return "run_custom_loader_execution_preflight_for_selected_loop_iteration"
+        if status == "preflight_ready":
+            return "execute_custom_loader_with_review_approval"
+        if status == "execution_complete":
+            return "run_custom_loader_module_diff_after_reviewed_execution"
+        if status == "module_diff_ready":
+            return "review_custom_loader_module_diff_hook_candidates"
+        if status == "module_hook_recorded":
+            return "append_custom_loader_continuation_journal"
+        if status == "journal_appended":
+            return "rebuild_custom_loader_traversal_graph_and_replan_workflow_before_next_loop_iteration"
+        if status == "blocked" and reason:
+            return "resolve_custom_loader_traversal_loop_execution_blockers"
+        if status == "failed":
+            return "inspect_custom_loader_traversal_loop_execution_failure"
+        return "review_custom_loader_traversal_loop_execution_plan"
+
+    @staticmethod
+    def _side_effect_policy(
+        spec: CustomLoaderTraversalLoopExecutionSpec | None = None,
+        workflow_execution: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        nested_policy = workflow_execution.get("side_effect_policy") if isinstance(workflow_execution, dict) and isinstance(workflow_execution.get("side_effect_policy"), dict) else {}
+        return {
+            "plan_only_by_default": not bool(spec and CustomLoaderTraversalLoopExecutionManager._has_workflow_execution_flags(spec)),
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": bool(spec and spec.review_approved),
+            "manual_checkpoint_required": True,
+            "bounded_loop": True,
+            "execute_at_most_one_loop_iteration_per_review": True,
+            "execute_at_most_one_loader_step_per_review": True,
+            "continuation_workflow_planned": bool(nested_policy.get("continuation_workflow_planned", False)),
+            "preflight_executed": bool(nested_policy.get("preflight_executed", False)),
+            "loader_invoked": bool(nested_policy.get("loader_invoked", False)),
+            "custom_loader_executed": bool(nested_policy.get("custom_loader_executed", False)),
+            "module_diff_executed": bool(nested_policy.get("module_diff_executed", False)),
+            "module_hook_installed": bool(nested_policy.get("module_hook_installed", False)),
+            "writes_journal": bool(nested_policy.get("writes_journal", False)),
+            "traversal_graph_rebuilt": False,
+            "workflow_replanned": False,
+            "automatic_loop_execution": False,
+            "automatic_queue_advance": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class CustomLoaderExecutionPreflightSpec:
     """Side-effect-free preflight for a reviewed custom loader execution candidate."""
 

@@ -1671,6 +1671,97 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["automatic_loop_execution"])
         self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
 
+    def test_native_web_runtime_executes_one_reviewed_custom_loader_loop_iteration(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        traversal_plan = {
+            "status": "planned",
+            "candidates": [
+                {
+                    "index": 0,
+                    "status": "ready_for_review",
+                    "classification": "arbitrary_custom_loader",
+                    "loader_kind": "custom-loader",
+                    "edge_type": "custom-loader-candidate",
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "continuation_supported": True,
+                }
+            ],
+        }
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "plan_id": "native-traversal-workflow-plan",
+            "source_graph_id": "custom-loader-traversal-graph",
+            "planned_steps": [
+                {
+                    "step_index": 0,
+                    "candidate_index": 0,
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                }
+            ],
+        }
+        loop_plan = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-loop-plan.v1",
+            "status": "ready_for_review",
+            "plan_id": "custom-loader-traversal-loop-plan",
+            "source_workflow_plan_id": "native-traversal-workflow-plan",
+            "source_graph_id": "custom-loader-traversal-graph",
+            "iterations": [
+                {
+                    "iteration_index": 0,
+                    "source_step_index": 0,
+                    "candidate_index": 0,
+                    "candidate_fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                    "loader_path": "window.__customLoader.load",
+                    "depth": 1,
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-custom-loader-traversal-loop",
+            {
+                "custom_loader_traversal_loop_plan": loop_plan,
+                "custom_loader_traversal_workflow_plan": workflow_plan,
+                "custom_loader_traversal_plan": traversal_plan,
+                "plan_continuation_workflow": True,
+                "run_preflight": True,
+                "execute_custom_loader": True,
+                "run_module_diff": True,
+                "append_journal": True,
+                "review_approved": True,
+                "module_discovery": {"status": "success"},
+                "modules": [{"module_id": "884", "export_names": ["sign"], "runtime_path": "window.__webpack_require__"}],
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_custom_loader_traversal_loop_iteration"])
+        self.assertEqual(page.custom_loader_executions, ["window.__customLoader.load"])
+        self.assertIn("custom_loader_traversal_loop_execution_status=journal_appended", result.verification)
+        self.assertIn("custom_loader_traversal_loop_execution_selected_iteration_index=0", result.verification)
+        self.assertIn("custom_loader_traversal_loop_execution_loader_invoked=True", result.verification)
+        self.assertIn("custom_loader_traversal_loop_execution_writes_journal=True", result.verification)
+        self.assertIn("custom_loader_traversal_loop_execution_traversal_graph_rebuilt=False", result.verification)
+        self.assertIn("custom_loader_traversal_loop_execution_workflow_replanned=False", result.verification)
+        self.assertIn("custom_loader_traversal_loop_execution_automatic_queue_advance=False", result.verification)
+        self.assertIn("custom_loader_traversal_loop_execution_automatic_recursive_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "rebuild_custom_loader_traversal_graph_and_replan_workflow_before_next_loop_iteration")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-loop-execution.json")
+        self.assertTrue(result.artifacts[0].metadata["loader_invoked"])
+        self.assertTrue(result.artifacts[0].metadata["writes_journal"])
+        self.assertFalse(result.artifacts[0].metadata["traversal_graph_rebuilt"])
+        self.assertFalse(result.artifacts[0].metadata["workflow_replanned"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_queue_advance"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+
     def test_native_web_runtime_executes_one_reviewed_custom_loader_traversal_workflow_step(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

@@ -46,6 +46,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalWorkflowExecutionSpec,
     CustomLoaderTraversalLoopPlanManager,
     CustomLoaderTraversalLoopPlanSpec,
+    CustomLoaderTraversalLoopExecutionManager,
+    CustomLoaderTraversalLoopExecutionSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1778,6 +1780,90 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_traversal_loop_execution_request(protection_name, context):
+            spec = CustomLoaderTraversalLoopExecutionSpec.from_context(context)
+            result = CustomLoaderTraversalLoopExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"custom_loader_traversal_loop_execution_status={result.status}",
+                f"custom_loader_traversal_loop_execution_reason={result.reason or ''}",
+                f"custom_loader_traversal_loop_execution_stage_count={len(stages)}",
+                f"custom_loader_traversal_loop_execution_selected_iteration_index={execution.get('selected_iteration_index')}",
+                f"custom_loader_traversal_loop_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"custom_loader_traversal_loop_execution_selected_candidate_index={execution.get('selected_candidate_index')}",
+                f"custom_loader_traversal_loop_execution_review_approved={policy.get('review_approved', False)}",
+                f"custom_loader_traversal_loop_execution_continuation_workflow_planned={policy.get('continuation_workflow_planned', False)}",
+                f"custom_loader_traversal_loop_execution_preflight_executed={policy.get('preflight_executed', False)}",
+                f"custom_loader_traversal_loop_execution_loader_invoked={policy.get('loader_invoked', False)}",
+                f"custom_loader_traversal_loop_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
+                f"custom_loader_traversal_loop_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
+                f"custom_loader_traversal_loop_execution_writes_journal={policy.get('writes_journal', False)}",
+                f"custom_loader_traversal_loop_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"custom_loader_traversal_loop_execution_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"custom_loader_traversal_loop_execution_automatic_loop_execution={policy.get('automatic_loop_execution', False)}",
+                f"custom_loader_traversal_loop_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"custom_loader_traversal_loop_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"custom_loader_traversal_loop_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-loop-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated bounded custom loader traversal loop execution baseline.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "loop_plan_id": execution.get("loop_plan_id"),
+                        "source_workflow_plan_id": execution.get("source_workflow_plan_id"),
+                        "source_graph_id": execution.get("source_graph_id"),
+                        "selected_iteration_index": execution.get("selected_iteration_index"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_candidate_index": execution.get("selected_candidate_index"),
+                        "stage_count": len(stages),
+                        "workflow_execution_status": execution.get("workflow_execution_status"),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "continuation_workflow_planned": policy.get("continuation_workflow_planned", False),
+                        "preflight_executed": policy.get("preflight_executed", False),
+                        "loader_invoked": policy.get("loader_invoked", False),
+                        "module_diff_executed": policy.get("module_diff_executed", False),
+                        "module_hook_installed": policy.get("module_hook_installed", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "execute_at_most_one_loop_iteration_per_review": policy.get("execute_at_most_one_loop_iteration_per_review", True),
+                        "execute_at_most_one_loader_step_per_review": policy.get("execute_at_most_one_loader_step_per_review", True),
+                        "automatic_loop_execution": policy.get("automatic_loop_execution", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_custom_loader_traversal_loop_iteration" if result.status != "ready_for_review" else "plan_custom_loader_traversal_loop_execution_iteration"]
+                next_action = execution.get("next_action", "review_custom_loader_traversal_loop_execution_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_loop_execution_iteration"]
+                next_action = execution.get("next_action", "resolve_custom_loader_traversal_loop_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_custom_loader_traversal_loop_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
             )
         if self._is_custom_loader_traversal_workflow_execution_request(protection_name, context):
             spec = CustomLoaderTraversalWorkflowExecutionSpec.from_context(context)
@@ -3693,6 +3779,22 @@ class NativeWebRuntime(WebReverseRuntime):
     def _is_custom_loader_traversal_loop_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {
+            "custom-loader-traversal-loop-execution",
+            "execute-custom-loader-traversal-loop",
+            "custom-loader-bounded-loop-execution",
+            "reviewed-custom-loader-traversal-loop-execution",
+        } or any(
+            key in context
+            for key in (
+                "custom_loader_traversal_loop_execution",
+                "customLoaderTraversalLoopExecution",
+                "custom-loader-traversal-loop-execution",
+                "execute_custom_loader_traversal_loop",
+                "executeCustomLoaderTraversalLoop",
+            )
+        ):
+            return False
+        if normalized in {
             "custom-loader-traversal-loop-plan",
             "custom-loader-deep-traversal-loop",
             "plan-custom-loader-traversal-loop",
@@ -3709,6 +3811,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 "customLoaderDeepTraversalLoop",
                 "plan_custom_loader_traversal_loop",
                 "planCustomLoaderTraversalLoop",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_traversal_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-traversal-loop-execution",
+            "execute-custom-loader-traversal-loop",
+            "custom-loader-bounded-loop-execution",
+            "reviewed-custom-loader-traversal-loop-execution",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_traversal_loop_execution",
+                "customLoaderTraversalLoopExecution",
+                "custom-loader-traversal-loop-execution",
+                "execute_custom_loader_traversal_loop",
+                "executeCustomLoaderTraversalLoop",
             )
         )
 
