@@ -4893,6 +4893,364 @@ class AsyncChunkTraversalWorkflowPlanManager:
 
 
 @dataclass(slots=True)
+class AsyncChunkTraversalWorkflowExecutionSpec:
+    """Review-gated executor over one selected async chunk traversal workflow step."""
+
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    async_chunk_load_plan: dict[str, Any] = field(default_factory=dict)
+    async_chunk_load_result: dict[str, Any] = field(default_factory=dict)
+    async_chunk_module_diff: dict[str, Any] = field(default_factory=dict)
+    module_hook_result: dict[str, Any] = field(default_factory=dict)
+    module_discovery: dict[str, Any] = field(default_factory=dict)
+    modules: list[dict[str, Any]] = field(default_factory=list)
+    selected_step_index: int | None = None
+    candidate_index: int | None = None
+    plan_async_chunk_load: bool = False
+    execute_async_chunk_load: bool = False
+    run_module_diff: bool = False
+    install_module_hook: bool = False
+    review_approved: bool = False
+    capture_args: bool = True
+    capture_result: bool = True
+    max_preview_length: int = 240
+    trigger_expression: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkTraversalWorkflowExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("async_chunk_traversal_workflow_execution")
+            or context.get("asyncChunkTraversalWorkflowExecution")
+            or context.get("async-chunk-traversal-workflow-execution")
+            or context.get("execute_async_chunk_traversal_workflow")
+            or context.get("executeAsyncChunkTraversalWorkflow")
+        )
+        workflow_plan = (
+            context.get("async_chunk_traversal_workflow_plan")
+            or context.get("asyncChunkTraversalWorkflowPlan")
+            or context.get("async-chunk-traversal-workflow-plan")
+            or context.get("traversal_workflow_plan")
+            or context.get("traversalWorkflowPlan")
+        )
+        if isinstance(workflow_plan, dict) and isinstance(workflow_plan.get("workflow_plan"), dict):
+            workflow_plan = workflow_plan["workflow_plan"]
+        if not isinstance(workflow_plan, dict):
+            return None if not requested else cls()
+        modules = context.get("modules", context.get("module_candidates", context.get("moduleCandidates", [])))
+        return cls(
+            workflow_plan=dict(workflow_plan),
+            async_chunk_load_plan=cls._object_alias(context, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan"),
+            async_chunk_load_result=cls._object_alias(context, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult"),
+            async_chunk_module_diff=cls._object_alias(context, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff"),
+            module_hook_result=cls._object_alias(context, "async_chunk_module_hook_result", "async-chunk-module-hook-result", "asyncChunkModuleHookResult", "module_hooks", "module-hooks"),
+            module_discovery=cls._object_alias(context, "module_discovery", "moduleDiscovery", "module_registry", "moduleRegistry"),
+            modules=[dict(item) for item in modules if isinstance(item, dict)] if isinstance(modules, list) else [],
+            selected_step_index=cls._optional_int(context.get("selected_step_index", context.get("selectedStepIndex", context.get("step_index", context.get("stepIndex"))))),
+            candidate_index=cls._optional_int(context.get("candidate_index", context.get("candidateIndex"))),
+            plan_async_chunk_load=bool(context.get("plan_async_chunk_load") or context.get("planAsyncChunkLoad") or context.get("plan_chunk_load") or context.get("planChunkLoad")),
+            execute_async_chunk_load=bool(context.get("execute_async_chunk_load") or context.get("executeAsyncChunkLoad") or context.get("execute_chunk_load") or context.get("executeChunkLoad")),
+            run_module_diff=bool(context.get("run_module_diff") or context.get("runModuleDiff") or context.get("refresh_module_diff") or context.get("refreshModuleDiff")),
+            install_module_hook=bool(context.get("install_module_hook") or context.get("installModuleHook") or context.get("hook_async_chunk_module") or context.get("hookAsyncChunkModule")),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            capture_args=bool(context.get("capture_args", context.get("captureArgs", True))),
+            capture_result=bool(context.get("capture_result", context.get("captureResult", True))),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            trigger_expression=str(context.get("trigger_expression", context.get("triggerExpression"))) if context.get("trigger_expression", context.get("triggerExpression")) else None,
+        )
+
+    @staticmethod
+    def _object_alias(context: dict[str, Any], *keys: str) -> dict[str, Any]:
+        for key in keys:
+            value = context.get(key)
+            if isinstance(value, dict):
+                return dict(value)
+        return {}
+
+    @staticmethod
+    def _optional_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+
+@dataclass(slots=True)
+class AsyncChunkTraversalWorkflowExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class AsyncChunkTraversalWorkflowExecutionManager:
+    """Execute at most one reviewed async chunk traversal workflow step."""
+
+    def execute(self, page: BrowserPage, spec: AsyncChunkTraversalWorkflowExecutionSpec | None) -> AsyncChunkTraversalWorkflowExecutionResult:
+        if spec is None or not spec.workflow_plan:
+            return AsyncChunkTraversalWorkflowExecutionResult(status="unsupported", reason="missing_async_chunk_traversal_workflow_plan", side_effect_policy=self._side_effect_policy())
+        selected_step = self._selected_step(spec)
+        if not selected_step:
+            execution = self._execution_payload(spec, {}, [], {}, {}, {}, {}, status="blocked", reason="missing_async_chunk_traversal_workflow_step")
+            return AsyncChunkTraversalWorkflowExecutionResult(status="blocked", execution=execution, side_effect_policy=self._side_effect_policy(spec=spec), reason="missing_async_chunk_traversal_workflow_step")
+
+        stages: list[dict[str, Any]] = [self._stage("select_async_chunk_traversal_workflow_step", "selected", "", side_effect=False)]
+        async_chunk_load_plan = dict(spec.async_chunk_load_plan)
+        async_chunk_load_payload = dict(spec.async_chunk_load_result)
+        module_diff_payload = dict(spec.async_chunk_module_diff)
+        module_hook_payload = dict(spec.module_hook_result)
+
+        if spec.plan_async_chunk_load:
+            load_result = AsyncChunkLoadManager().plan_or_execute(page, self._load_spec(spec, selected_step, execute=False))
+            async_chunk_load_plan = load_result.plan
+            stages.append(self._stage("plan_async_chunk_load", load_result.status, load_result.reason, side_effect=False))
+        elif async_chunk_load_plan:
+            stages.append(self._stage("plan_async_chunk_load", str(async_chunk_load_plan.get("status") or "observed"), "", side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("plan_async_chunk_load", "pending", "", side_effect=False))
+
+        if spec.execute_async_chunk_load:
+            load_result = AsyncChunkLoadManager().plan_or_execute(page, self._load_spec(spec, selected_step, execute=True))
+            if not async_chunk_load_plan:
+                async_chunk_load_plan = load_result.plan
+            async_chunk_load_payload = load_result.to_dict()
+            stages.append(self._stage("execute_one_reviewed_async_chunk_load", load_result.status, load_result.reason, side_effect=True))
+        elif async_chunk_load_payload:
+            stages.append(self._stage("execute_one_reviewed_async_chunk_load", str(async_chunk_load_payload.get("status") or "observed"), "", side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("execute_one_reviewed_async_chunk_load", "pending", "", side_effect=True))
+
+        if spec.run_module_diff:
+            if not async_chunk_load_payload:
+                stages.append(self._stage("run_async_chunk_module_diff", "blocked", "async_chunk_load_result_required", side_effect=False))
+            else:
+                diff_result = AsyncChunkModuleDiffManager().plan(
+                    AsyncChunkModuleDiffSpec(
+                        async_chunk_load_result=async_chunk_load_payload,
+                        module_discovery=spec.module_discovery,
+                        modules=spec.modules,
+                    )
+                )
+                module_diff_payload = diff_result.to_dict()
+                stages.append(self._stage("run_async_chunk_module_diff", diff_result.status, diff_result.reason, side_effect=False))
+        elif module_diff_payload:
+            stages.append(self._stage("run_async_chunk_module_diff", str(module_diff_payload.get("status") or "observed"), "", side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("run_async_chunk_module_diff", "pending", "", side_effect=False))
+
+        if spec.install_module_hook:
+            if not module_diff_payload:
+                stages.append(self._stage("install_reviewed_async_chunk_module_hook", "blocked", "async_chunk_module_diff_required", side_effect=True))
+            else:
+                hook_result = AsyncChunkModuleHookManager().install(
+                    page,
+                    AsyncChunkModuleHookSpec(
+                        async_chunk_module_diff=module_diff_payload,
+                        review_approved=spec.review_approved,
+                        candidate_index=spec.candidate_index,
+                        capture_args=spec.capture_args,
+                        capture_result=spec.capture_result,
+                        max_preview_length=spec.max_preview_length,
+                        trigger_expression=spec.trigger_expression,
+                    ),
+                )
+                module_hook_payload = hook_result.to_dict()
+                stages.append(self._stage("install_reviewed_async_chunk_module_hook", hook_result.status, hook_result.reason, side_effect=True))
+        elif module_hook_payload:
+            stages.append(self._stage("install_reviewed_async_chunk_module_hook", str(module_hook_payload.get("status") or "observed"), "", side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("install_reviewed_async_chunk_module_hook", "pending", "", side_effect=True))
+
+        stages.append(self._stage("stop_before_recursive_async_chunk_traversal", "stopped", "manual_checkpoint_required", side_effect=False))
+        status = self._status(stages, async_chunk_load_payload, module_diff_payload, module_hook_payload)
+        reason = self._reason(stages)
+        execution = self._execution_payload(
+            spec,
+            selected_step,
+            stages,
+            async_chunk_load_plan,
+            async_chunk_load_payload,
+            module_diff_payload,
+            module_hook_payload,
+            status=status,
+            reason=reason,
+        )
+        return AsyncChunkTraversalWorkflowExecutionResult(status=status, execution=execution, side_effect_policy=self._side_effect_policy(spec=spec, load_result=async_chunk_load_payload, module_diff=module_diff_payload, module_hook=module_hook_payload), reason=reason)
+
+    @staticmethod
+    def _selected_step(spec: AsyncChunkTraversalWorkflowExecutionSpec) -> dict[str, Any]:
+        steps = spec.workflow_plan.get("planned_steps") if isinstance(spec.workflow_plan.get("planned_steps"), list) else []
+        normalized_steps = [dict(item) for item in steps if isinstance(item, dict)]
+        if not normalized_steps:
+            return {}
+        selected_index = spec.selected_step_index if spec.selected_step_index is not None else 0
+        for step in normalized_steps:
+            try:
+                if int(step.get("step_index", -1)) == selected_index:
+                    return step
+            except (TypeError, ValueError):
+                continue
+        if 0 <= selected_index < len(normalized_steps):
+            return normalized_steps[selected_index]
+        return {}
+
+    @staticmethod
+    def _candidate_index(spec: AsyncChunkTraversalWorkflowExecutionSpec, selected_step: dict[str, Any]) -> int | None:
+        if spec.candidate_index is not None:
+            return spec.candidate_index
+        raw = selected_step.get("candidate_index", selected_step.get("index"))
+        try:
+            return int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _load_spec(cls, spec: AsyncChunkTraversalWorkflowExecutionSpec, selected_step: dict[str, Any], *, execute: bool) -> AsyncChunkLoadSpec | None:
+        return AsyncChunkLoadSpec.from_context(
+            {
+                "chunk_candidate": selected_step,
+                "chunk_id": selected_step.get("chunk_id") or selected_step.get("chunkId") or selected_step.get("target"),
+                "chunk_target": selected_step.get("target"),
+                "loader_kind": selected_step.get("loader_kind") or selected_step.get("loaderKind") or "webpack-runtime",
+                "edge_type": selected_step.get("edge_type") or selected_step.get("edgeType") or "runtime-async-chunk",
+                "runtime_path": selected_step.get("runtime_path") or selected_step.get("runtimePath") or "window.__webpack_require__",
+                "loader_path": selected_step.get("loader_path") or selected_step.get("loaderPath"),
+                "execute_chunk_load": execute,
+                "review_approved": spec.review_approved,
+                "max_preview_length": spec.max_preview_length,
+            }
+        )
+
+    @staticmethod
+    def _stage(name: str, status: str, reason: str | None, *, side_effect: bool, observed: bool = False) -> dict[str, Any]:
+        return {"stage": name, "status": status, "reason": reason or "", "side_effect": side_effect, "observed_input": observed}
+
+    @classmethod
+    def _status(cls, stages: list[dict[str, Any]], load_result: dict[str, Any], module_diff: dict[str, Any], module_hook: dict[str, Any]) -> str:
+        if any(item["status"] in {"failed", "failure", "error"} for item in stages):
+            return "failed"
+        if any(item["status"] in {"blocked", "unsupported"} for item in stages):
+            return "blocked"
+        hook_status = str(module_hook.get("status") or "")
+        if hook_status in {"success", "partial"}:
+            return "module_hook_recorded"
+        nested_diff = module_diff.get("diff") if isinstance(module_diff.get("diff"), dict) else {}
+        diff_status = str(module_diff.get("status") or nested_diff.get("status") or "")
+        if diff_status in {"planned", "ready_for_review"}:
+            return "module_diff_ready"
+        nested_load_execution = load_result.get("execution") if isinstance(load_result.get("execution"), dict) else {}
+        load_status = str(load_result.get("status") or nested_load_execution.get("status") or "")
+        if load_status == "success":
+            return "async_chunk_load_success"
+        if load_status == "planned":
+            return "async_chunk_load_planned"
+        return "ready_for_review"
+
+    @staticmethod
+    def _reason(stages: list[dict[str, Any]]) -> str | None:
+        for item in stages:
+            if item["status"] in {"blocked", "failed", "failure", "error", "unsupported"} and item.get("reason"):
+                return str(item["reason"])
+        return None
+
+    @classmethod
+    def _execution_payload(
+        cls,
+        spec: AsyncChunkTraversalWorkflowExecutionSpec,
+        selected_step: dict[str, Any],
+        stages: list[dict[str, Any]],
+        async_chunk_load_plan: dict[str, Any],
+        async_chunk_load_result: dict[str, Any],
+        async_chunk_module_diff: dict[str, Any],
+        module_hook_result: dict[str, Any],
+        *,
+        status: str,
+        reason: str | None,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-traversal-workflow-execution.v1",
+            "status": status,
+            "reason": reason,
+            "workflow_plan_id": spec.workflow_plan.get("plan_id"),
+            "source_graph_id": spec.workflow_plan.get("source_graph_id"),
+            "selected_step_index": selected_step.get("step_index"),
+            "selected_candidate_index": cls._candidate_index(spec, selected_step),
+            "selected_step": selected_step,
+            "review_approved": bool(spec.review_approved),
+            "manual_checkpoint_required": True,
+            "execute_at_most_one_chunk_load_per_review": True,
+            "stages": stages,
+            "async_chunk_load_plan": async_chunk_load_plan,
+            "async_chunk_load_result": async_chunk_load_result,
+            "async_chunk_module_diff": async_chunk_module_diff,
+            "module_hook_result": module_hook_result,
+            "artifact_refs": {
+                "workflow_plan": "workspace/async-chunk-traversal-workflow-plan.json",
+                "async_chunk_load_plan": "workspace/async-chunk-load-plan.json" if async_chunk_load_plan else "",
+                "async_chunk_load_result": "workspace/async-chunk-load-result.json" if async_chunk_load_result else "",
+                "async_chunk_module_diff": "workspace/async-chunk-module-diff.json" if async_chunk_module_diff else "",
+                "module_hooks": "workspace/module-hooks.json" if module_hook_result else "",
+            },
+            "next_action": cls._next_action(status, reason),
+        }
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "async_chunk_load_planned":
+            return "approve_execute_async_chunk_load_for_selected_traversal_step"
+        if status == "async_chunk_load_success":
+            return "run_async_chunk_module_diff_after_reviewed_load"
+        if status == "module_diff_ready":
+            return "review_async_chunk_module_diff_hook_candidates"
+        if status == "module_hook_recorded":
+            return "rerun_module_discovery_and_rebuild_async_chunk_traversal_graph"
+        if status == "blocked" and reason:
+            return "resolve_async_chunk_traversal_workflow_execution_blockers"
+        if status == "failed":
+            return "inspect_async_chunk_traversal_workflow_execution_failure"
+        return "review_async_chunk_traversal_workflow_execution_plan"
+
+    @staticmethod
+    def _side_effect_policy(
+        spec: AsyncChunkTraversalWorkflowExecutionSpec | None = None,
+        load_result: dict[str, Any] | None = None,
+        module_diff: dict[str, Any] | None = None,
+        module_hook: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        load_result = load_result or {}
+        load_policy = load_result.get("side_effect_policy") if isinstance(load_result.get("side_effect_policy"), dict) else {}
+        return {
+            "plan_only_by_default": True,
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": bool(spec and spec.review_approved),
+            "async_chunk_load_planned": bool(spec and spec.plan_async_chunk_load),
+            "runtime_loader_executed": bool(load_policy.get("runtime_loader_executed")),
+            "chunk_request_sent": bool(load_policy.get("chunk_request_sent")),
+            "module_diff_executed": bool(spec and spec.run_module_diff and module_diff),
+            "module_hook_installed": bool((module_hook or {}).get("module_hook_result")),
+            "module_factory_invoked": False,
+            "automatic_recursive_traversal": False,
+            "automatic_queue_advance": False,
+            "traversal_graph_rebuilt": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "execute_at_most_one_chunk_load_per_review": True,
+        }
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 

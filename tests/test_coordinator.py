@@ -203,6 +203,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native async chunk traversal workflow execution",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="async_chunk_traversal_workflow_execution",
+                    details={"status": "module_diff_ready", "stage_count": 6},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map fetch plan",
                     kind=EvidenceKind.NOTE,
                     source="source_map_fetch_plan",
@@ -366,6 +373,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["async-chunk-module-diff.json"]["candidate_count"], 1)
         self.assertEqual(payloads["async-chunk-traversal-graph.json"]["queue_count"], 1)
         self.assertEqual(payloads["async-chunk-traversal-workflow-plan.json"]["planned_step_count"], 1)
+        self.assertEqual(payloads["async-chunk-traversal-workflow-execution.json"]["stage_count"], 6)
         self.assertEqual(payloads["custom-loader-traversal-plan.json"]["candidate_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-graph.json"]["queue_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-workflow-plan.json"]["planned_step_count"], 1)
@@ -405,6 +413,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_module_diff"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_graph"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_workflow_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_workflow_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_factory_invoke_result"), "trace")

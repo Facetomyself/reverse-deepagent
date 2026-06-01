@@ -14,6 +14,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkTraversalGraphSpec,
     AsyncChunkTraversalWorkflowPlanManager,
     AsyncChunkTraversalWorkflowPlanSpec,
+    AsyncChunkTraversalWorkflowExecutionManager,
+    AsyncChunkTraversalWorkflowExecutionSpec,
     AsyncChunkModuleDiffManager,
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
@@ -2237,6 +2239,83 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
             )
+        if self._is_async_chunk_traversal_workflow_execution_request(protection_name, context):
+            spec = AsyncChunkTraversalWorkflowExecutionSpec.from_context(context)
+            result = AsyncChunkTraversalWorkflowExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"async_chunk_traversal_workflow_execution_status={result.status}",
+                f"async_chunk_traversal_workflow_execution_reason={result.reason or ''}",
+                f"async_chunk_traversal_workflow_execution_stage_count={len(stages)}",
+                f"async_chunk_traversal_workflow_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"async_chunk_traversal_workflow_execution_selected_candidate_index={execution.get('selected_candidate_index')}",
+                f"async_chunk_traversal_workflow_execution_review_approved={policy.get('review_approved', False)}",
+                f"async_chunk_traversal_workflow_execution_load_planned={policy.get('async_chunk_load_planned', False)}",
+                f"async_chunk_traversal_workflow_execution_runtime_loader_executed={policy.get('runtime_loader_executed', False)}",
+                f"async_chunk_traversal_workflow_execution_chunk_request_sent={policy.get('chunk_request_sent', False)}",
+                f"async_chunk_traversal_workflow_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
+                f"async_chunk_traversal_workflow_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
+                f"async_chunk_traversal_workflow_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"async_chunk_traversal_workflow_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"async_chunk_traversal_workflow_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"async_chunk_traversal_workflow_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-traversal-workflow-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated async chunk traversal workflow execution baseline.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "workflow_plan_id": execution.get("workflow_plan_id"),
+                        "source_graph_id": execution.get("source_graph_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_candidate_index": execution.get("selected_candidate_index"),
+                        "stage_count": len(stages),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "async_chunk_load_planned": policy.get("async_chunk_load_planned", False),
+                        "runtime_loader_executed": policy.get("runtime_loader_executed", False),
+                        "chunk_request_sent": policy.get("chunk_request_sent", False),
+                        "module_diff_executed": policy.get("module_diff_executed", False),
+                        "module_hook_installed": policy.get("module_hook_installed", False),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "execute_at_most_one_chunk_load_per_review": policy.get("execute_at_most_one_chunk_load_per_review", True),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "async_chunk_load_planned"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_async_chunk_traversal_workflow_execution_step"]
+                next_action = execution.get("next_action", "review_async_chunk_traversal_workflow_execution_plan")
+            elif result.status in {"async_chunk_load_success", "module_diff_ready", "module_hook_recorded"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_async_chunk_traversal_workflow_step"]
+                next_action = execution.get("next_action", "review_async_chunk_traversal_workflow_execution_result")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_async_chunk_traversal_workflow_execution_step"]
+                next_action = execution.get("next_action", "resolve_async_chunk_traversal_workflow_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_async_chunk_traversal_workflow_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "async_chunk_load_planned", "async_chunk_load_success", "module_diff_ready", "module_hook_recorded"} else ConfidenceLevel.LOW,
+            )
         if self._is_async_chunk_traversal_workflow_plan_request(protection_name, context):
             spec = AsyncChunkTraversalWorkflowPlanSpec.from_context(context)
             result = AsyncChunkTraversalWorkflowPlanManager().plan(spec)
@@ -3635,6 +3714,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 "asyncChunkGraphQueue",
                 "plan_async_chunk_deep_traversal",
                 "planAsyncChunkDeepTraversal",
+            )
+        )
+
+    @staticmethod
+    def _is_async_chunk_traversal_workflow_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "async-chunk-traversal-workflow-execution",
+            "execute-async-chunk-traversal-workflow",
+            "async-chunk-traversal-workflow-step",
+            "reviewed-async-chunk-traversal-workflow-execution",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "async_chunk_traversal_workflow_execution",
+                "asyncChunkTraversalWorkflowExecution",
+                "async-chunk-traversal-workflow-execution",
+                "execute_async_chunk_traversal_workflow",
+                "executeAsyncChunkTraversalWorkflow",
             )
         )
 
