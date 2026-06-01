@@ -149,6 +149,39 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["summary"]["async_chunk_load_execution_attempted"])
         self.assertEqual(result["summary"]["async_chunk_load_added_registry_key_count"], 1)
 
+    def test_review_hook_artifacts_warns_for_module_federation_get_init_probe_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_get_init_plan": {
+                "status": "planned",
+                "plan": {"status": "ready_for_review", "candidate_count": 1},
+            },
+            "module_federation_get_init_result": {
+                "status": "success",
+                "execution": {
+                    "attempted": True,
+                    "ok": True,
+                    "containerInitCalled": True,
+                    "remoteGetCalled": True,
+                    "remoteFactoryInvoked": False,
+                    "addedSharedScopeKeys": ["default"],
+                },
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_get_init_probe_requires_factory_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_get_init_probe_before_factory_invocation")
+        self.assertEqual(result["summary"]["module_federation_get_init_result_status"], "success")
+        self.assertTrue(result["summary"]["module_federation_get_init_execution_attempted"])
+        self.assertTrue(result["summary"]["module_federation_get_init_container_init_called"])
+        self.assertTrue(result["summary"]["module_federation_get_init_remote_get_called"])
+        self.assertFalse(result["summary"]["module_federation_get_init_remote_factory_invoked"])
+        self.assertEqual(result["summary"]["module_federation_get_init_added_shared_scope_key_count"], 1)
+        self.assertEqual(result["review_required_items"][0]["module_federation_get_init_result_status"], "success")
+
 
     def test_review_hook_artifacts_reads_artifact_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

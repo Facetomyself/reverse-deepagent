@@ -110,6 +110,7 @@ class FakeRawPage:
         self.module_hook_installed = False
         self.module_hook_events = []
         self.async_chunk_loads = []
+        self.module_federation_get_init_probes = []
         self.external_source = ""
         self.runtime_module_payload = None
         self.page_mutation_html_length = 10
@@ -327,6 +328,29 @@ class FakeRawPage:
                 "afterCacheCount": 0,
                 "addedCacheKeys": [],
                 "moduleFactoryInvoked": False,
+            }
+        if "__REVERSE_AGENT_MODULE_FEDERATION_GET_INIT_PROBE__" in expression:
+            self.module_federation_get_init_probes.append("./token")
+            return {
+                "marker": "__REVERSE_AGENT_MODULE_FEDERATION_GET_INIT_PROBE__",
+                "attempted": True,
+                "ok": True,
+                "status": "success",
+                "containerPath": "window.remoteOther",
+                "exposedName": "./token",
+                "shareScopePath": "window.__webpack_share_scopes__.default",
+                "containerInitCalled": True,
+                "remoteGetCalled": True,
+                "remoteFactoryInvoked": False,
+                "remoteCodeExecuted": False,
+                "factoryType": "function",
+                "beforeSharedScopeKeys": [],
+                "afterSharedScopeKeys": ["default"],
+                "addedSharedScopeKeys": ["default"],
+                "beforeContainerKeys": ["get", "init"],
+                "afterContainerKeys": ["get", "init"],
+                "addedContainerKeys": [],
+                "reviewRequiredBeforeFactoryInvocation": True,
             }
         if "fetch(" in expression and "/assets/app.js" in expression:
             return self.external_source
@@ -1041,6 +1065,48 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.next_action, "inspect_module_registry_diff_after_chunk_load")
         self.assertTrue(result.artifacts[1].metadata["execution_ok"])
         self.assertEqual(result.artifacts[1].metadata["added_registry_key_count"], 1)
+
+    def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "module-federation-get-init",
+            {
+                "module_federation_candidates": [
+                    {
+                        "kind": "module-federation",
+                        "runtime_path": "window.remoteOther",
+                        "module_id": "./token",
+                        "export_names": [],
+                        "hook_paths": [],
+                        "discovery_source": "module_federation",
+                    }
+                ],
+                "execute_module_federation_get_init": True,
+                "review_approved": True,
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["probe_module_federation_get_init"])
+        self.assertEqual(page.module_federation_get_init_probes, ["./token"])
+        self.assertIn("module_federation_get_init_probe_status=success", result.verification)
+        self.assertIn("module_federation_get_init_execution_attempted=True", result.verification)
+        self.assertIn("module_federation_get_init_execution_ok=True", result.verification)
+        self.assertIn("module_federation_get_init_container_init_called=True", result.verification)
+        self.assertIn("module_federation_get_init_remote_get_called=True", result.verification)
+        self.assertIn("module_federation_get_init_remote_factory_invoked=False", result.verification)
+        self.assertIn("module_federation_get_init_added_shared_scope_key_count=1", result.verification)
+        self.assertEqual(result.next_action, "review_module_federation_get_init_probe_before_factory_invocation")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-get-init-plan.json")
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/module-federation-get-init-result.json")
+        self.assertTrue(result.artifacts[1].metadata["execution_ok"])
+        self.assertTrue(result.artifacts[1].metadata["container_init_called"])
+        self.assertTrue(result.artifacts[1].metadata["remote_get_called"])
+        self.assertFalse(result.artifacts[1].metadata["remote_factory_invoked"])
+        self.assertEqual(result.artifacts[1].metadata["added_shared_scope_key_count"], 1)
+        self.assertEqual(result.artifacts[1].metadata["factory_type"], "function")
 
     def test_native_web_runtime_apply_minimal_protection_builds_flow_timeline(self) -> None:
         provider = FakeProvider()

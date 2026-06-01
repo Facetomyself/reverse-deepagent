@@ -14,6 +14,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalPlanSpec,
     ModuleFederationGetInitPlanManager,
     ModuleFederationGetInitPlanSpec,
+    ModuleFederationGetInitProbeManager,
+    ModuleFederationGetInitProbeSpec,
     BreakpointManager,
     BreakpointSpec,
     BrowserHookManager,
@@ -1270,6 +1272,88 @@ class NativeWebRuntime(WebReverseRuntime):
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_get_init_request(protection_name, context):
+            if self._is_module_federation_get_init_probe_request(context):
+                spec = ModuleFederationGetInitProbeSpec.from_context(context)
+                result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
+                execution = result.execution if isinstance(result.execution, dict) else {}
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                verification = [
+                    f"module_federation_get_init_probe_status={result.status}",
+                    f"module_federation_get_init_plan_status={plan.get('status', 'missing')}",
+                    f"module_federation_get_init_execution_attempted={execution.get('attempted', False)}",
+                    f"module_federation_get_init_execution_ok={execution.get('ok', False)}",
+                    f"module_federation_get_init_container_init_called={execution.get('containerInitCalled', False)}",
+                    f"module_federation_get_init_remote_get_called={execution.get('remoteGetCalled', False)}",
+                    f"module_federation_get_init_remote_factory_invoked={execution.get('remoteFactoryInvoked', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if execution.get("addedSharedScopeKeys") is not None:
+                    verification.append(f"module_federation_get_init_added_shared_scope_key_count={len(execution.get('addedSharedScopeKeys') or [])}")
+                if execution.get("factoryType"):
+                    verification.append(f"module_federation_get_init_factory_type={execution.get('factoryType')}")
+                if execution.get("reason"):
+                    verification.append(f"module_federation_get_init_execution_reason={execution['reason']}")
+                if result.reason:
+                    verification.append(f"module_federation_get_init_reason={result.reason}")
+                if result.error:
+                    verification.append(f"module_federation_get_init_error={result.error}")
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-get-init-plan.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-only Module Federation get/init plan.",
+                        metadata={
+                            "status": result.status,
+                            "plan_status": plan.get("status"),
+                            "candidate_count": plan.get("candidate_count", 0),
+                            "container_count": plan.get("container_count", 0),
+                            "exposed_module_count": plan.get("exposed_module_count", 0),
+                            "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
+                            "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                            "review_required": plan.get("review_required", True),
+                        },
+                    ),
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-get-init-result.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-gated Module Federation init/get probe evidence.",
+                        metadata={
+                            "status": result.status,
+                            "execution_attempted": execution.get("attempted", False),
+                            "execution_ok": execution.get("ok", False),
+                            "container_init_called": execution.get("containerInitCalled", False),
+                            "remote_get_called": execution.get("remoteGetCalled", False),
+                            "remote_factory_invoked": execution.get("remoteFactoryInvoked", False),
+                            "added_shared_scope_key_count": len(execution.get("addedSharedScopeKeys") or []),
+                            "factory_type": execution.get("factoryType"),
+                        },
+                    ),
+                ]
+                if result.status == "success":
+                    next_action = "review_module_federation_get_init_probe_before_factory_invocation"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["probe_module_federation_get_init"]
+                elif result.status == "planned":
+                    next_action = "review_module_federation_get_init_plan"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["plan_module_federation_get_init"]
+                elif result.status == "blocked":
+                    next_action = "approve_module_federation_get_init_or_choose_function_path_candidate"
+                    status = ExecutionStatus.PARTIAL
+                    applied_actions = ["plan_module_federation_get_init"]
+                else:
+                    next_action = "inspect_module_federation_get_init_probe_failure"
+                    status = ExecutionStatus.FAILED
+                    applied_actions = []
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=applied_actions,
+                    verification=verification,
+                    status=status,
+                    artifacts=artifact_paths,
+                    next_action=next_action,
+                    confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
+                )
             spec = ModuleFederationGetInitPlanSpec.from_context(context)
             result = ModuleFederationGetInitPlanManager().plan(spec)
             plan = result.plan if isinstance(result.plan, dict) else {}
@@ -2065,6 +2149,20 @@ class NativeWebRuntime(WebReverseRuntime):
                 "federationModules",
                 "exposed_modules",
                 "exposedModules",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_get_init_probe_request(context: dict[str, Any]) -> bool:
+        return any(
+            bool(context.get(key))
+            for key in (
+                "execute_module_federation_get_init",
+                "executeModuleFederationGetInit",
+                "probe_module_federation_get_init",
+                "probeModuleFederationGetInit",
+                "execute_get_init",
+                "executeGetInit",
             )
         )
 

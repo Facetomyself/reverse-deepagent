@@ -780,6 +780,276 @@ class ModuleFederationGetInitPlanManager:
 
 
 @dataclass(slots=True)
+class ModuleFederationGetInitProbeSpec:
+    """Review-gated single Module Federation init/get probe request."""
+
+    candidate: dict[str, Any] = field(default_factory=dict)
+    execute_get_init: bool = False
+    review_approved: bool = False
+    share_scope_path: str = "window.__webpack_share_scopes__.default"
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationGetInitProbeSpec | None":
+        context = context or {}
+        execute_get_init = bool(
+            context.get("execute_module_federation_get_init")
+            or context.get("executeModuleFederationGetInit")
+            or context.get("probe_module_federation_get_init")
+            or context.get("probeModuleFederationGetInit")
+            or context.get("execute_get_init")
+            or context.get("executeGetInit")
+        )
+        plan_spec = ModuleFederationGetInitPlanSpec.from_context(context)
+        if plan_spec is None and not execute_get_init:
+            return None
+        candidate = plan_spec.candidates[0] if plan_spec and plan_spec.candidates else {}
+        return cls(
+            candidate=dict(candidate),
+            execute_get_init=execute_get_init,
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))),
+            share_scope_path=str(context.get("share_scope_path", context.get("shareScopePath", "window.__webpack_share_scopes__.default")) or "window.__webpack_share_scopes__.default"),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+    def to_plan_spec(self) -> ModuleFederationGetInitPlanSpec:
+        return ModuleFederationGetInitPlanSpec(
+            candidates=[dict(self.candidate)] if self.candidate else [],
+            max_candidates=1,
+            max_preview_length=self.max_preview_length,
+            review_approved=self.review_approved,
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationGetInitProbeResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class ModuleFederationGetInitProbeManager:
+    """Plan and explicitly run a reviewed single container.init/container.get probe."""
+
+    def plan_or_probe(self, page: BrowserPage, spec: ModuleFederationGetInitProbeSpec | None) -> ModuleFederationGetInitProbeResult:
+        if spec is None:
+            return ModuleFederationGetInitProbeResult(status="unsupported", reason="missing_module_federation_get_init_request")
+        plan_result = ModuleFederationGetInitPlanManager().plan(spec.to_plan_spec())
+        plan = plan_result.plan
+        if not spec.execute_get_init:
+            return ModuleFederationGetInitProbeResult(
+                status="planned",
+                plan=plan,
+                execution={"attempted": False, "reason": "execute_module_federation_get_init_not_requested"},
+                side_effect_policy=plan_result.side_effect_policy,
+            )
+        if not spec.review_approved:
+            return ModuleFederationGetInitProbeResult(
+                status="blocked",
+                plan=plan,
+                execution={"attempted": False, "reason": "review_approval_required"},
+                side_effect_policy=plan_result.side_effect_policy,
+                reason="review_approval_required",
+            )
+        candidates = plan.get("candidates") if isinstance(plan.get("candidates"), list) else []
+        candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+        readiness_error = self._execution_readiness_error(candidate, spec)
+        if readiness_error:
+            return ModuleFederationGetInitProbeResult(
+                status="blocked",
+                plan=plan,
+                execution={"attempted": False, "reason": readiness_error},
+                side_effect_policy=plan_result.side_effect_policy,
+                reason=readiness_error,
+            )
+        try:
+            payload = page.evaluate(self._probe_expression(candidate, spec))
+        except Exception as exc:
+            return ModuleFederationGetInitProbeResult(
+                status="failed",
+                plan=plan,
+                execution={"attempted": True, "ok": False, "error": str(exc)},
+                side_effect_policy=self._executed_side_effect_policy(),
+                error=str(exc),
+            )
+        execution = payload if isinstance(payload, dict) else {"attempted": True, "ok": False, "result": payload}
+        status = "success" if execution.get("ok") else "failed"
+        return ModuleFederationGetInitProbeResult(status=status, plan=plan, execution=execution, side_effect_policy=self._executed_side_effect_policy())
+
+    @staticmethod
+    def _execution_readiness_error(candidate: dict[str, Any], spec: ModuleFederationGetInitProbeSpec) -> str | None:
+        if not candidate:
+            return "no_module_federation_candidate"
+        if candidate.get("status") == "blocked":
+            return str(candidate.get("classification") or "candidate_blocked")
+        container_path = str(candidate.get("container_path") or "")
+        exposed_name = str(candidate.get("exposed_name") or "")
+        if not container_path or not JS_DOTTED_PATH_RE.fullmatch(container_path):
+            return "strict_dotted_container_path_required"
+        if not exposed_name:
+            return "exposed_module_name_required"
+        if candidate.get("function_path_candidate_available"):
+            return "prefer_existing_function_path_candidate"
+        if not JS_DOTTED_PATH_RE.fullmatch(spec.share_scope_path):
+            return "strict_dotted_share_scope_path_required"
+        return None
+
+    @staticmethod
+    def _executed_side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only_by_default": False,
+            "requires_execute_module_federation_get_init": True,
+            "requires_review_approval": True,
+            "container_init_executed": True,
+            "remote_get_called": True,
+            "remote_factory_invoked": False,
+            "remote_code_executed": False,
+            "shared_scope_may_mutate": True,
+            "network_request_may_be_sent": True,
+            "browser_state_mutated": True,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _path_parts(path: str) -> list[str]:
+        parts = [item for item in str(path or "").split(".") if item]
+        if parts and parts[0] == "window":
+            parts = parts[1:]
+        return parts
+
+    @classmethod
+    def _probe_expression(cls, candidate: dict[str, Any], spec: ModuleFederationGetInitProbeSpec) -> str:
+        container_path = json.dumps(str(candidate.get("container_path") or ""), ensure_ascii=False)
+        exposed_name = json.dumps(str(candidate.get("exposed_name") or ""), ensure_ascii=False)
+        share_scope_path = json.dumps(spec.share_scope_path, ensure_ascii=False)
+        container_parts = json.dumps(cls._path_parts(str(candidate.get("container_path") or "")), ensure_ascii=False)
+        share_scope_parts = json.dumps(cls._path_parts(spec.share_scope_path), ensure_ascii=False)
+        max_preview_length = max(1, int(spec.max_preview_length))
+        return f"""
+(async () => {{
+  const marker = "__REVERSE_AGENT_MODULE_FEDERATION_GET_INIT_PROBE__";
+  const containerPath = {container_path};
+  const exposedName = {exposed_name};
+  const shareScopePath = {share_scope_path};
+  const containerParts = {container_parts};
+  const shareScopeParts = {share_scope_parts};
+  const maxPreviewLength = {max_preview_length};
+  const describeError = (error) => String(error && (error.stack || error.message) || error).slice(0, maxPreviewLength);
+  const resolvePath = (parts) => {{
+    try {{
+      let value = window;
+      for (const part of parts) {{
+        if (!part || !/^[A-Za-z_$][\\w$]*$/.test(part)) return {{ ok: false, error: "unsafe_path_segment" }};
+        value = value && value[part];
+      }}
+      return {{ ok: true, value }};
+    }} catch (error) {{
+      return {{ ok: false, error: describeError(error) }};
+    }}
+  }};
+  const keys = (value) => value && typeof value === "object" ? Object.keys(value).map(String).sort() : [];
+  const diffKeys = (before, after) => after.filter((item) => !before.includes(item));
+  const containerResolved = resolvePath(containerParts);
+  if (!containerResolved.ok || !containerResolved.value) {{
+    return {{ marker, attempted: true, ok: false, status: "failed", reason: "container_unavailable", containerPath, exposedName, error: containerResolved.error }};
+  }}
+  const container = containerResolved.value;
+  const shareScopeResolved = resolvePath(shareScopeParts);
+  const shareScope = shareScopeResolved.ok && shareScopeResolved.value && typeof shareScopeResolved.value === "object" ? shareScopeResolved.value : {{}};
+  const beforeSharedScopeKeys = keys(shareScope);
+  const beforeContainerKeys = keys(container);
+  let containerInitCalled = false;
+  let remoteGetCalled = false;
+  let factoryType = "";
+  try {{
+    if (typeof container.init === "function") {{
+      containerInitCalled = true;
+      await container.init(shareScope);
+    }}
+    if (typeof container.get !== "function") {{
+      return {{
+        marker,
+        attempted: true,
+        ok: false,
+        status: "failed",
+        reason: "container_get_missing",
+        containerPath,
+        exposedName,
+        containerInitCalled,
+        remoteGetCalled: false,
+        remoteFactoryInvoked: false,
+        beforeSharedScopeKeys,
+        afterSharedScopeKeys: keys(shareScope),
+        addedSharedScopeKeys: diffKeys(beforeSharedScopeKeys, keys(shareScope)),
+        beforeContainerKeys,
+        afterContainerKeys: keys(container)
+      }};
+    }}
+    remoteGetCalled = true;
+    const factory = await container.get(exposedName);
+    factoryType = typeof factory;
+    const afterSharedScopeKeys = keys(shareScope);
+    const afterContainerKeys = keys(container);
+    return {{
+      marker,
+      attempted: true,
+      ok: true,
+      status: "success",
+      containerPath,
+      exposedName,
+      shareScopePath,
+      containerInitCalled,
+      remoteGetCalled,
+      remoteFactoryInvoked: false,
+      remoteCodeExecuted: false,
+      factoryType,
+      beforeSharedScopeKeys,
+      afterSharedScopeKeys,
+      addedSharedScopeKeys: diffKeys(beforeSharedScopeKeys, afterSharedScopeKeys),
+      beforeContainerKeys,
+      afterContainerKeys,
+      addedContainerKeys: diffKeys(beforeContainerKeys, afterContainerKeys),
+      reviewRequiredBeforeFactoryInvocation: true
+    }};
+  }} catch (error) {{
+    return {{
+      marker,
+      attempted: true,
+      ok: false,
+      status: "failed",
+      reason: "module_federation_get_init_probe_error",
+      containerPath,
+      exposedName,
+      containerInitCalled,
+      remoteGetCalled,
+      remoteFactoryInvoked: false,
+      error: describeError(error),
+      beforeSharedScopeKeys,
+      afterSharedScopeKeys: keys(shareScope),
+      addedSharedScopeKeys: diffKeys(beforeSharedScopeKeys, keys(shareScope)),
+      beforeContainerKeys,
+      afterContainerKeys: keys(container)
+    }};
+  }}
+}})()
+"""
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 

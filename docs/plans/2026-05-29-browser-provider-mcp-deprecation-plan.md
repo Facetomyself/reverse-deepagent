@@ -1210,3 +1210,17 @@ The provider-specific production readiness catalog now includes `browserless_cdp
 Boundary: this closes the first real hosted CDP provider package baseline, but it does not manage Browserless accounts, create paid sessions, validate geoip/proxy policy, certify stealth behavior, ship vendor SDK integration, make provider smoke implicit, or replace explicit review-gated runtime smoke evidence. Additional vendor providers, provider-specific readiness evidence, and deeper native-web parity remain follow-ups; Android / iOS / mini-program full runtime chains remain deferred.
 
 Validation target: `tests.test_browser_provider_plugin_browserless_cdp` and `tests.test_browser_smoke_matrix`, plus existing BrowserProvider matrix / doctor / package plugin regressions.
+
+### Step 131 execution record: Review-gated Module Federation get/init probe baseline
+
+Status: implemented as an explicit review-gated Module Federation `init/get` probe baseline, not default recon behavior, remote factory invocation, remote module body execution, arbitrary federation traversal, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`ModuleFederationGetInitProbeManager` now reuses the existing get/init plan normalization and only runs when `execute_module_federation_get_init=true` (or its documented aliases) and `review_approved=true` are both present. Without the execute flag it returns the existing review plan; without review approval it blocks with `review_approval_required`; if an existing function-path candidate is available it blocks with `prefer_existing_function_path_candidate` so the safer `hook-function` path stays preferred.
+
+The reviewed probe resolves only strict dotted container and share-scope paths, calls `container.init(shareScope)` when present, calls `container.get(exposedName)`, records factory type plus shared-scope / container key diffs, and writes `virtual://workspace/module-federation-get-init-result.json` alongside the plan artifact. It deliberately keeps `remoteFactoryInvoked=false` and `remoteCodeExecuted=false`; the hook review tool treats a successful probe as a warning requiring `review_module_federation_get_init_probe_before_factory_invocation`.
+
+Native Web recognizes the probe through the existing `module-federation-get-init` protection family plus explicit execute / approval context flags. Workspace contract, backend artifact manifest category mapping, coordinator payload extraction, native-web artifact metadata, and hook subagent review are registered under `workspace_module_federation_get_init_result`.
+
+Boundary: this may mutate browser state, shared scope, and network state because `container.init` / `container.get` can run container code, so it is never part of default recon and remains explicit-review-only. It does not invoke returned factories, does not execute remote module bodies, does not recursively traverse remotes, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Remote factory invocation / remote module body analysis remains a follow-up capability-gated step.
+
+Validation: `tests.test_module_hooks`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, `tests.test_coordinator`, and `tests.test_hook_subagent` targeted tests passed locally.

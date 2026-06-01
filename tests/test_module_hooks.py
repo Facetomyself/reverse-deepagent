@@ -9,6 +9,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleDiscoverySpec,
     ModuleFederationGetInitPlanManager,
     ModuleFederationGetInitPlanSpec,
+    ModuleFederationGetInitProbeManager,
+    ModuleFederationGetInitProbeSpec,
     ModuleHookManager,
     ModuleHookSpec,
 )
@@ -120,6 +122,39 @@ class AsyncChunkLoadPage:
                 "afterCacheCount": 0,
                 "addedCacheKeys": [],
                 "moduleFactoryInvoked": False,
+            }
+        raise AssertionError(f"unexpected expression: {expression}")
+
+
+class ModuleFederationProbePage:
+    url = "https://example.test/app"
+
+    def __init__(self) -> None:
+        self.expressions: list[str] = []
+
+    def evaluate(self, expression):
+        self.expressions.append(expression)
+        if "__REVERSE_AGENT_MODULE_FEDERATION_GET_INIT_PROBE__" in expression:
+            return {
+                "marker": "__REVERSE_AGENT_MODULE_FEDERATION_GET_INIT_PROBE__",
+                "attempted": True,
+                "ok": True,
+                "status": "success",
+                "containerPath": "window.remoteApp",
+                "exposedName": "./sign",
+                "shareScopePath": "window.__webpack_share_scopes__.default",
+                "containerInitCalled": True,
+                "remoteGetCalled": True,
+                "remoteFactoryInvoked": False,
+                "remoteCodeExecuted": False,
+                "factoryType": "function",
+                "beforeSharedScopeKeys": [],
+                "afterSharedScopeKeys": ["default"],
+                "addedSharedScopeKeys": ["default"],
+                "beforeContainerKeys": ["get", "init"],
+                "afterContainerKeys": ["get", "init"],
+                "addedContainerKeys": [],
+                "reviewRequiredBeforeFactoryInvocation": True,
             }
         raise AssertionError(f"unexpected expression: {expression}")
 
@@ -275,6 +310,103 @@ class ModuleFederationGetInitPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.reason, "no_module_federation_candidates")
         self.assertEqual(result.plan["status"], "blocked")
         self.assertEqual(result.plan["next_action"], "provide_module_federation_candidates_from_module_discovery")
+
+
+class ModuleFederationGetInitProbeManagerTests(unittest.TestCase):
+    def test_module_federation_get_init_probe_plans_without_execute_flag(self) -> None:
+        page = ModuleFederationProbePage()
+        spec = ModuleFederationGetInitProbeSpec.from_context(
+            {
+                "container_path": "window.remoteApp",
+                "exposed_name": "./sign",
+            }
+        )
+
+        result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertEqual(result.plan["status"], "ready_for_review")
+        self.assertFalse(result.execution["attempted"])
+        self.assertEqual(page.expressions, [])
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["container_init_executed"])
+        self.assertFalse(result.side_effect_policy["remote_get_called"])
+
+    def test_module_federation_get_init_probe_blocks_without_review_approval(self) -> None:
+        page = ModuleFederationProbePage()
+        spec = ModuleFederationGetInitProbeSpec.from_context(
+            {
+                "container_path": "window.remoteApp",
+                "exposed_name": "./sign",
+                "execute_module_federation_get_init": True,
+            }
+        )
+
+        result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.execution["attempted"])
+        self.assertEqual(page.expressions, [])
+
+    def test_module_federation_get_init_probe_blocks_function_path_candidate(self) -> None:
+        page = ModuleFederationProbePage()
+        spec = ModuleFederationGetInitProbeSpec.from_context(
+            {
+                "module_federation_candidates": [
+                    {
+                        "kind": "module-federation",
+                        "runtime_path": "window.remoteApp",
+                        "module_id": "./sign",
+                        "export_names": ["sign"],
+                        "hook_paths": ["window.remoteApp.__reverseAgentExposes[\"./sign\"].sign"],
+                        "discovery_source": "module_federation",
+                    }
+                ],
+                "execute_module_federation_get_init": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "prefer_existing_function_path_candidate")
+        self.assertFalse(result.execution["attempted"])
+        self.assertEqual(page.expressions, [])
+
+    def test_module_federation_get_init_probe_executes_reviewed_get_init_without_factory(self) -> None:
+        page = ModuleFederationProbePage()
+        spec = ModuleFederationGetInitProbeSpec.from_context(
+            {
+                "module_federation_candidates": [
+                    {
+                        "kind": "module-federation",
+                        "runtime_path": "window.remoteApp",
+                        "module_id": "./sign",
+                        "export_names": [],
+                        "hook_paths": [],
+                        "discovery_source": "module_federation",
+                    }
+                ],
+                "execute_module_federation_get_init": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(len(page.expressions), 1)
+        self.assertIn("__REVERSE_AGENT_MODULE_FEDERATION_GET_INIT_PROBE__", page.expressions[0])
+        self.assertTrue(result.execution["containerInitCalled"])
+        self.assertTrue(result.execution["remoteGetCalled"])
+        self.assertFalse(result.execution["remoteFactoryInvoked"])
+        self.assertEqual(result.execution["factoryType"], "function")
+        self.assertTrue(result.side_effect_policy["container_init_executed"])
+        self.assertTrue(result.side_effect_policy["remote_get_called"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
 
 
 class ModuleDiscoveryManagerTests(unittest.TestCase):
