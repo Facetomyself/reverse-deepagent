@@ -175,6 +175,37 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["async_chunk_module_diff_hook_candidate_count"], 1)
         self.assertEqual(result["review_required_items"][0]["async_chunk_module_diff_status"], "planned")
 
+
+    def test_review_hook_artifacts_suppresses_async_chunk_diff_review_after_module_hook_install(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_load_result": {
+                "status": "success",
+                "execution": {"attempted": True, "ok": True, "addedRegistryKeys": ["731"]},
+            },
+            "async_chunk_module_diff": {
+                "status": "planned",
+                "matched_module_count": 1,
+                "candidate_count": 1,
+            },
+            "module_hooks": {
+                "status": "success",
+                "installed": {"window.__webpack_require__(731).sign": True},
+            },
+            "module_hook_timeline": {
+                "status": "success",
+                "events": [
+                    {"type": "module_export_call", "payload": {"moduleId": "731", "exportName": "sign"}}
+                ],
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertNotIn("async_chunk_module_diff_requires_review", result["warnings"])
+        self.assertEqual(result["summary"]["installed_module_hook_count"], 1)
+        self.assertEqual(result["next_action"], "hook_review_passed")
+
     def test_review_hook_artifacts_warns_for_module_federation_get_init_probe_result(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

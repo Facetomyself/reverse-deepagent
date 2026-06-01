@@ -12,6 +12,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadSpec,
     AsyncChunkModuleDiffManager,
     AsyncChunkModuleDiffSpec,
+    AsyncChunkModuleHookManager,
+    AsyncChunkModuleHookSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1664,6 +1666,89 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
             )
+        if self._is_async_chunk_module_hook_request(protection_name, context):
+            spec = AsyncChunkModuleHookSpec.from_context(context)
+            result = AsyncChunkModuleHookManager().install(page, spec)
+            module_result = result.module_hook_result
+            installed_count = len(module_result.installed) if module_result else 0
+            missing_count = len(module_result.missing) if module_result else 0
+            event_count = len(module_result.events) if module_result else 0
+            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+            verification = [
+                f"async_chunk_module_hook_status={result.status}",
+                f"async_chunk_module_hook_reason={result.reason or ''}",
+                f"async_chunk_module_hook_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"async_chunk_module_hook_installed_count={installed_count}",
+                f"async_chunk_module_hook_missing_count={missing_count}",
+                f"async_chunk_module_hook_event_count={event_count}",
+                f"async_chunk_module_hook_candidate_source={candidate.get('source', '')}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if module_result and module_result.trigger:
+                verification.append(f"trigger_attempted={module_result.trigger.get('attempted', False)}")
+                if module_result.trigger.get("error"):
+                    verification.append(f"trigger_error={module_result.trigger['error']}")
+            if module_result and module_result.error:
+                verification.append(f"module_hook_error={module_result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-hooks.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed async chunk module export hook install result.",
+                    metadata={
+                        "status": result.status,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "module_id": candidate.get("module_id") or candidate.get("moduleId") or "<missing>",
+                        "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                        "require_path": candidate.get("runtime_path") or candidate.get("runtimePath") or "<missing>",
+                        "hook_path": candidate.get("hook_path") or candidate.get("hookPath") or "<missing>",
+                        "source": "async_chunk_module_diff",
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/module-hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed async chunk module export hook timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "module_id": candidate.get("module_id") or candidate.get("moduleId") or "<missing>",
+                        "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                        "hook_path": candidate.get("hook_path") or candidate.get("hookPath") or "<missing>",
+                        "source": "async_chunk_module_diff",
+                    },
+                ),
+            ]
+            if result.status == "success":
+                status = ExecutionStatus.SUCCESS
+                next_action = "inspect_async_chunk_module_hook_events" if event_count else "invoke_hooked_async_chunk_module_export_or_wait_for_events"
+            elif result.status == "partial":
+                status = ExecutionStatus.PARTIAL
+                next_action = "adjust_async_chunk_module_hook_target"
+            elif result.reason == "review_approval_required":
+                status = ExecutionStatus.PARTIAL
+                next_action = "approve_async_chunk_module_hook_candidate"
+            elif result.reason == "review_async_chunk_module_diff_hook_candidates":
+                status = ExecutionStatus.PARTIAL
+                next_action = "review_async_chunk_module_diff_hook_candidates"
+            else:
+                status = ExecutionStatus.FAILED if result.status in {"failed", "unsupported"} else ExecutionStatus.PARTIAL
+                next_action = "inspect_async_chunk_module_hook_failure"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"hook_async_chunk_module_export:{candidate.get('module_id') or candidate.get('moduleId')}:{candidate.get('export_name') or candidate.get('exportName')}"]
+                    if installed_count
+                    else []
+                ),
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
         if self._is_async_chunk_module_diff_request(protection_name, context):
             spec = AsyncChunkModuleDiffSpec.from_context(context)
             result = AsyncChunkModuleDiffManager().plan(spec)
@@ -2421,6 +2506,28 @@ class NativeWebRuntime(WebReverseRuntime):
                 "chunkCandidate",
                 "chunk_id",
                 "chunkId",
+            )
+        )
+
+    @staticmethod
+    def _is_async_chunk_module_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "async-chunk-module-hook",
+            "async-chunk-hook-module",
+            "hook-async-chunk-module",
+            "reviewed-async-chunk-module-hook",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "execute_async_chunk_module_hook",
+                "executeAsyncChunkModuleHook",
+                "hook_async_chunk_module",
+                "hookAsyncChunkModule",
+                "reviewed_async_chunk_module_hook",
+                "reviewedAsyncChunkModuleHook",
             )
         )
 

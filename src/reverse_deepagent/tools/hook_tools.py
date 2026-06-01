@@ -154,7 +154,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         async_chunk_diff_status = _nested_status(async_chunk_module_diff, "diff")
         if _status(async_chunk_result) == "success" and not async_chunk_module_diff:
             warnings.append("async_chunk_module_diff_required")
-        if async_chunk_module_diff and (
+        if async_chunk_module_diff and installed_module_count == 0 and (
             _status(async_chunk_module_diff) in {"ready_for_review", "planned"}
             or async_chunk_diff_status == "ready_for_review"
         ):
