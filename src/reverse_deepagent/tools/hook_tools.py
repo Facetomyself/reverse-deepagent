@@ -40,6 +40,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         async_chunk_plan = _object_alias(payload, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan")
         async_chunk_result = _object_alias(payload, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult")
         async_chunk_module_diff = _object_alias(payload, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff")
+        async_chunk_traversal_graph = _object_alias(payload, "async_chunk_traversal_graph", "async-chunk-traversal-graph", "asyncChunkTraversalGraph")
+        async_chunk_traversal_workflow_plan = _object_alias(payload, "async_chunk_traversal_workflow_plan", "async-chunk-traversal-workflow-plan", "asyncChunkTraversalWorkflowPlan")
         custom_loader_traversal_plan = _object_alias(
             payload,
             "custom_loader_traversal_plan",
@@ -158,6 +160,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
+                async_chunk_traversal_graph,
+                async_chunk_traversal_workflow_plan,
                 custom_loader_traversal_plan,
                 custom_loader_traversal_graph,
                 custom_loader_traversal_workflow_plan,
@@ -185,6 +189,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("async_chunk_load_failed")
         if _status(async_chunk_module_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_module_diff_blocked")
+        if _status(async_chunk_traversal_graph) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_traversal_graph_blocked")
+        if _status(async_chunk_traversal_workflow_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_traversal_workflow_plan_blocked")
         if _status(custom_loader_traversal_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_traversal_plan_blocked")
         if _status(custom_loader_traversal_graph) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -207,6 +215,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("custom_loader_execution_failed")
         if _status(custom_loader_module_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_module_diff_blocked")
+        async_chunk_traversal_graph_status = _nested_status(async_chunk_traversal_graph, "graph")
+        async_chunk_traversal_workflow_plan_status = _nested_status(async_chunk_traversal_workflow_plan, "workflow_plan")
         custom_loader_plan_status = _nested_status(custom_loader_traversal_plan, "plan")
         custom_loader_graph_status = _nested_status(custom_loader_traversal_graph, "graph")
         custom_loader_traversal_workflow_plan_status = _nested_status(custom_loader_traversal_workflow_plan, "workflow_plan")
@@ -313,6 +323,16 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             or async_chunk_diff_status == "ready_for_review"
         ):
             warnings.append("async_chunk_module_diff_requires_review")
+        if async_chunk_traversal_graph and not async_chunk_traversal_workflow_plan and (
+            _status(async_chunk_traversal_graph) == "ready_for_review"
+            or async_chunk_traversal_graph_status == "ready_for_review"
+        ):
+            warnings.append("async_chunk_traversal_graph_requires_review")
+        if async_chunk_traversal_workflow_plan and (
+            _status(async_chunk_traversal_workflow_plan) == "ready_for_review"
+            or async_chunk_traversal_workflow_plan_status == "ready_for_review"
+        ):
+            warnings.append("async_chunk_traversal_workflow_plan_requires_review")
         if missing_count:
             warnings.append("hook_targets_missing")
         if installed_function_count + installed_module_count + source_logpoint_count > 0 and timeline_event_count == 0:
@@ -341,6 +361,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or async_chunk_diff_status,
+                "async_chunk_traversal_graph_status": _status(async_chunk_traversal_graph) or async_chunk_traversal_graph_status,
+                "async_chunk_traversal_graph_queue_count": _intish(async_chunk_traversal_graph.get("queue_count") or _nested_get(async_chunk_traversal_graph, "graph", "queue_count")),
+                "async_chunk_traversal_graph_loaded_chunk_count": _intish(async_chunk_traversal_graph.get("loaded_chunk_count") or _nested_get(async_chunk_traversal_graph, "graph", "loaded_chunk_count")),
+                "async_chunk_traversal_workflow_plan_status": _status(async_chunk_traversal_workflow_plan) or async_chunk_traversal_workflow_plan_status,
+                "async_chunk_traversal_workflow_planned_step_count": _intish(async_chunk_traversal_workflow_plan.get("planned_step_count") or _nested_get(async_chunk_traversal_workflow_plan, "workflow_plan", "planned_step_count")),
+                "async_chunk_traversal_workflow_next_action": _nested_get(async_chunk_traversal_workflow_plan, "workflow_plan", "next_action") or async_chunk_traversal_workflow_plan.get("next_action"),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or custom_loader_plan_status,
                 "custom_loader_traversal_graph_status": _status(custom_loader_traversal_graph) or custom_loader_graph_status,
                 "custom_loader_traversal_graph_queue_count": _intish(custom_loader_traversal_graph.get("queue_count") or _nested_get(custom_loader_traversal_graph, "graph", "queue_count")),
@@ -417,6 +443,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
+                async_chunk_traversal_graph,
+                async_chunk_traversal_workflow_plan,
                 custom_loader_traversal_plan,
                 custom_loader_traversal_graph,
                 custom_loader_traversal_workflow_plan,
@@ -602,6 +630,10 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "revise_custom_loader_traversal_graph_inputs"
     if "custom_loader_traversal_plan_blocked" in blockers:
         return "choose_supported_async_chunk_or_static_source_path"
+    if "async_chunk_traversal_workflow_plan_blocked" in blockers:
+        return "revise_async_chunk_traversal_workflow_plan_inputs"
+    if "async_chunk_traversal_graph_blocked" in blockers:
+        return "revise_async_chunk_traversal_graph_inputs"
     if "async_chunk_load_plan_blocked" in blockers:
         return "choose_supported_async_chunk_candidate"
     if "async_chunk_load_failed" in blockers:
@@ -630,6 +662,10 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_custom_loader_traversal_workflow_plan"
     if "custom_loader_traversal_graph_requires_review" in warnings:
         return "review_custom_loader_traversal_graph_queue"
+    if "async_chunk_traversal_workflow_plan_requires_review" in warnings:
+        return "review_async_chunk_traversal_workflow_plan"
+    if "async_chunk_traversal_graph_requires_review" in warnings:
+        return "review_async_chunk_traversal_graph_queue"
     if "custom_loader_continuation_workflow_required" in warnings:
         return "plan_custom_loader_continuation_workflow"
     if "custom_loader_continuation_workflow_requires_review" in warnings:
@@ -672,6 +708,8 @@ def _review_required_items(
     async_chunk_plan: dict[str, Any],
     async_chunk_result: dict[str, Any],
     async_chunk_module_diff: dict[str, Any],
+    async_chunk_traversal_graph: dict[str, Any],
+    async_chunk_traversal_workflow_plan: dict[str, Any],
     custom_loader_traversal_plan: dict[str, Any],
     custom_loader_traversal_graph: dict[str, Any],
     custom_loader_traversal_workflow_plan: dict[str, Any],
@@ -701,6 +739,8 @@ def _review_required_items(
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),
+                "async_chunk_traversal_graph_status": _status(async_chunk_traversal_graph) or _nested_status(async_chunk_traversal_graph, "graph"),
+                "async_chunk_traversal_workflow_plan_status": _status(async_chunk_traversal_workflow_plan) or _nested_status(async_chunk_traversal_workflow_plan, "workflow_plan"),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or _nested_status(custom_loader_traversal_plan, "plan"),
                 "custom_loader_traversal_graph_status": _status(custom_loader_traversal_graph) or _nested_status(custom_loader_traversal_graph, "graph"),
                 "custom_loader_traversal_workflow_plan_status": _status(custom_loader_traversal_workflow_plan) or _nested_status(custom_loader_traversal_workflow_plan, "workflow_plan"),
@@ -721,6 +761,8 @@ def _review_required_items(
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
                 "async_chunk_load_error": str(async_chunk_result.get("error") or async_chunk_plan.get("error") or ""),
                 "async_chunk_module_diff_error": str(async_chunk_module_diff.get("error") or ""),
+                "async_chunk_traversal_graph_error": str(async_chunk_traversal_graph.get("error") or ""),
+                "async_chunk_traversal_workflow_plan_error": str(async_chunk_traversal_workflow_plan.get("error") or ""),
                 "custom_loader_traversal_error": str(custom_loader_traversal_plan.get("error") or ""),
                 "custom_loader_traversal_graph_error": str(custom_loader_traversal_graph.get("error") or ""),
                 "custom_loader_traversal_workflow_plan_error": str(custom_loader_traversal_workflow_plan.get("error") or ""),

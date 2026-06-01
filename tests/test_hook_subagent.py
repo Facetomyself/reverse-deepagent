@@ -78,6 +78,54 @@ class HookSubagentTests(unittest.TestCase):
         self.assertFalse(result["summary"]["async_chunk_load_execution_attempted"])
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_async_chunk_traversal_graph(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_traversal_graph": {
+                "status": "ready_for_review",
+                "graph": {
+                    "status": "ready_for_review",
+                    "queue_count": 1,
+                    "loaded_chunk_count": 0,
+                    "next_action": "review_async_chunk_traversal_graph_queue",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_traversal_graph_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_async_chunk_traversal_graph_queue")
+        self.assertEqual(result["summary"]["async_chunk_traversal_graph_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["async_chunk_traversal_graph_queue_count"], 1)
+        self.assertEqual(result["summary"]["async_chunk_traversal_graph_loaded_chunk_count"], 0)
+        self.assertEqual(result["review_required_items"][0]["async_chunk_traversal_graph_status"], "ready_for_review")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_hook_artifacts_warns_for_async_chunk_traversal_workflow_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_traversal_workflow_plan": {
+                "status": "ready_for_review",
+                "workflow_plan": {
+                    "status": "ready_for_review",
+                    "planned_step_count": 1,
+                    "next_action": "review_async_chunk_traversal_workflow_plan",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_traversal_workflow_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_async_chunk_traversal_workflow_plan")
+        self.assertEqual(result["summary"]["async_chunk_traversal_workflow_plan_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["async_chunk_traversal_workflow_planned_step_count"], 1)
+        self.assertEqual(result["review_required_items"][0]["async_chunk_traversal_workflow_plan_status"], "ready_for_review")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_review_hook_artifacts_warns_for_custom_loader_traversal_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

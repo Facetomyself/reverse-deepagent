@@ -8,6 +8,10 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
+    AsyncChunkTraversalGraphManager,
+    AsyncChunkTraversalGraphSpec,
+    AsyncChunkTraversalWorkflowPlanManager,
+    AsyncChunkTraversalWorkflowPlanSpec,
     CustomLoaderExecutionManager,
     CustomLoaderContinuationExecutionManager,
     CustomLoaderContinuationExecutionSpec,
@@ -2115,6 +2119,131 @@ class ModuleDiscoveryManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "successful_async_chunk_load_required")
         self.assertFalse(result.side_effect_policy["module_factory_invoked"])
+
+
+class AsyncChunkTraversalGraphManagerTests(unittest.TestCase):
+    def _chunk_graph(self) -> dict[str, Any]:
+        return {
+            "status": "success",
+            "candidate_count": 2,
+            "candidates": [
+                {
+                    "edge_type": "runtime-async-chunk",
+                    "loader_kind": "webpack-runtime",
+                    "chunk_id": "731",
+                    "target": "/assets/731.js",
+                    "runtime_path": "window.__webpack_require__",
+                    "discovery_source": "runtime_chunk_graph",
+                },
+                {
+                    "edge_type": "dynamic-import",
+                    "loader_kind": "es-dynamic-import",
+                    "chunk_id": "./chunks/sign-panel.js",
+                    "target": "./chunks/sign-panel.js",
+                    "discovery_source": "script_inventory",
+                },
+            ],
+        }
+
+    def test_builds_review_queue_from_chunk_graph_without_execution(self) -> None:
+        spec = AsyncChunkTraversalGraphSpec.from_context({"async_chunk_traversal_graph": True, "chunk_graph": self._chunk_graph()})
+
+        result = AsyncChunkTraversalGraphManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.graph["schema_version"], "reverse-deepagent.async-chunk-traversal-graph.v1")
+        self.assertEqual(result.graph["node_count"], 2)
+        self.assertEqual(result.graph["queue_count"], 1)
+        self.assertEqual(result.graph["review_queue"][0]["chunk_id"], "731")
+        self.assertEqual(result.graph["nodes"][1]["queue_status"], "redirect_to_dedicated_gate")
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+
+    def test_marks_loaded_chunk_as_complete_when_supported_candidate_loaded(self) -> None:
+        spec = AsyncChunkTraversalGraphSpec.from_context(
+            {
+                "chunk_graph": self._chunk_graph(),
+                "async_chunk_load_result": {
+                    "status": "success",
+                    "execution": {"attempted": True, "ok": True, "chunkId": "731", "addedRegistryKeys": ["731"]},
+                },
+            }
+        )
+
+        result = AsyncChunkTraversalGraphManager().plan(spec)
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.graph["queue_count"], 0)
+        self.assertEqual(result.graph["loaded_chunk_count"], 1)
+        self.assertEqual(result.graph["next_action"], "async_chunk_traversal_graph_complete_or_provide_new_candidates")
+
+    def test_blocks_without_chunk_graph(self) -> None:
+        result = AsyncChunkTraversalGraphManager().plan(
+            AsyncChunkTraversalGraphSpec.from_context({"async_chunk_traversal_graph": True})
+        )
+
+        self.assertEqual(result.status, "unsupported")
+        self.assertEqual(result.reason, "missing_async_chunk_graph")
+
+
+class AsyncChunkTraversalWorkflowPlanManagerTests(unittest.TestCase):
+    def _graph(self, *, status: str = "ready_for_review", queue: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        if queue is None:
+            queue = [
+                {
+                    "node_id": "async-chunk-node-0",
+                    "candidate_index": 0,
+                    "chunk_id": "731",
+                    "target": "/assets/731.js",
+                    "loader_kind": "webpack-runtime",
+                    "edge_type": "runtime-async-chunk",
+                    "runtime_path": "window.__webpack_require__",
+                    "queue_status": "ready_for_review",
+                }
+            ]
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-traversal-graph.v1",
+            "status": status,
+            "graph_id": "async-chunk-traversal-graph",
+            "queue_count": len(queue),
+            "review_queue": queue,
+            "loaded_chunk_count": 0,
+        }
+
+    def test_builds_workflow_plan_from_graph_queue_without_execution(self) -> None:
+        spec = AsyncChunkTraversalWorkflowPlanSpec.from_context(
+            {"async_chunk_traversal_workflow_plan": True, "async_chunk_traversal_graph": self._graph()}
+        )
+
+        result = AsyncChunkTraversalWorkflowPlanManager().plan(spec)
+
+        plan = result.workflow_plan
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(plan["schema_version"], "reverse-deepagent.async-chunk-traversal-workflow-plan.v1")
+        self.assertEqual(plan["planned_step_count"], 1)
+        self.assertEqual(plan["planned_steps"][0]["chunk_id"], "731")
+        self.assertEqual(plan["next_action"], "review_async_chunk_traversal_workflow_plan")
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_blocks_without_graph(self) -> None:
+        result = AsyncChunkTraversalWorkflowPlanManager().plan(
+            AsyncChunkTraversalWorkflowPlanSpec.from_context({"async_chunk_traversal_workflow_plan": True})
+        )
+
+        self.assertEqual(result.status, "unsupported")
+        self.assertEqual(result.reason, "missing_async_chunk_traversal_graph")
+
+    def test_marks_complete_when_graph_complete(self) -> None:
+        result = AsyncChunkTraversalWorkflowPlanManager().plan(
+            AsyncChunkTraversalWorkflowPlanSpec.from_context({"async_chunk_traversal_graph": self._graph(status="complete", queue=[])})
+        )
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.workflow_plan["planned_step_count"], 0)
+        self.assertEqual(result.workflow_plan["next_action"], "async_chunk_traversal_graph_complete_or_provide_new_candidates")
 
 
 class CustomLoaderModuleDiffManagerTests(unittest.TestCase):

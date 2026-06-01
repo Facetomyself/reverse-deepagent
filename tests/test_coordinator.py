@@ -189,6 +189,20 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native async chunk traversal graph",
+                    kind=EvidenceKind.NOTE,
+                    source="async_chunk_traversal_graph",
+                    details={"status": "ready_for_review", "queue_count": 1, "node_count": 2},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native async chunk traversal workflow plan",
+                    kind=EvidenceKind.NOTE,
+                    source="async_chunk_traversal_workflow_plan",
+                    details={"status": "ready_for_review", "planned_step_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map fetch plan",
                     kind=EvidenceKind.NOTE,
                     source="source_map_fetch_plan",
@@ -350,6 +364,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
         self.assertEqual(payloads["async-chunk-module-diff.json"]["candidate_count"], 1)
+        self.assertEqual(payloads["async-chunk-traversal-graph.json"]["queue_count"], 1)
+        self.assertEqual(payloads["async-chunk-traversal-workflow-plan.json"]["planned_step_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-plan.json"]["candidate_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-graph.json"]["queue_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-workflow-plan.json"]["planned_step_count"], 1)
@@ -387,6 +403,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_execution_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_module_diff"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_module_diff"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_graph"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_workflow_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_factory_invoke_result"), "trace")

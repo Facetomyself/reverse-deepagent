@@ -10,6 +10,10 @@ from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventC
 from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadManager,
     AsyncChunkLoadSpec,
+    AsyncChunkTraversalGraphManager,
+    AsyncChunkTraversalGraphSpec,
+    AsyncChunkTraversalWorkflowPlanManager,
+    AsyncChunkTraversalWorkflowPlanSpec,
     AsyncChunkModuleDiffManager,
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
@@ -2233,6 +2237,106 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
             )
+        if self._is_async_chunk_traversal_workflow_plan_request(protection_name, context):
+            spec = AsyncChunkTraversalWorkflowPlanSpec.from_context(context)
+            result = AsyncChunkTraversalWorkflowPlanManager().plan(spec)
+            workflow_plan = result.workflow_plan if isinstance(result.workflow_plan, dict) else {}
+            verification = [
+                f"async_chunk_traversal_workflow_plan_status={result.status}",
+                f"async_chunk_traversal_workflow_plan_reason={result.reason or ''}",
+                f"async_chunk_traversal_workflow_plan_planned_step_count={workflow_plan.get('planned_step_count', 0)}",
+                f"async_chunk_traversal_workflow_plan_source_graph_queue_count={workflow_plan.get('source_graph_queue_count', 0)}",
+                f"async_chunk_traversal_workflow_plan_manual_checkpoint_required={result.side_effect_policy.get('manual_checkpoint_required', True)}",
+                f"async_chunk_traversal_workflow_plan_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-traversal-workflow-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only async chunk traversal workflow plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_plan_status": workflow_plan.get("status"),
+                        "planned_step_count": workflow_plan.get("planned_step_count", 0),
+                        "source_graph_queue_count": workflow_plan.get("source_graph_queue_count", 0),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_async_chunk_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "review_async_chunk_traversal_workflow_plan")
+            elif result.status in {"blocked", "complete"}:
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_async_chunk_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "provide_async_chunk_traversal_graph_with_queue")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_async_chunk_traversal_workflow_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_async_chunk_traversal_graph_request(protection_name, context):
+            spec = AsyncChunkTraversalGraphSpec.from_context(context)
+            result = AsyncChunkTraversalGraphManager().plan(spec)
+            graph = result.graph if isinstance(result.graph, dict) else {}
+            verification = [
+                f"async_chunk_traversal_graph_status={result.status}",
+                f"async_chunk_traversal_graph_reason={result.reason or ''}",
+                f"async_chunk_traversal_graph_node_count={graph.get('node_count', 0)}",
+                f"async_chunk_traversal_graph_edge_count={graph.get('edge_count', 0)}",
+                f"async_chunk_traversal_graph_queue_count={graph.get('queue_count', 0)}",
+                f"async_chunk_traversal_graph_loaded_chunk_count={graph.get('loaded_chunk_count', 0)}",
+                f"async_chunk_traversal_graph_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-traversal-graph.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only async chunk traversal graph and queue.",
+                    metadata={
+                        "status": result.status,
+                        "graph_status": graph.get("status"),
+                        "node_count": graph.get("node_count", 0),
+                        "queue_count": graph.get("queue_count", 0),
+                        "loaded_chunk_count": graph.get("loaded_chunk_count", 0),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_async_chunk_traversal_graph"]
+                next_action = graph.get("next_action", "review_async_chunk_traversal_graph_queue")
+            elif result.status in {"blocked", "complete"}:
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_async_chunk_traversal_graph"]
+                next_action = graph.get("next_action", "provide_async_chunk_graph_with_candidates")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_async_chunk_traversal_graph_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
         if self._is_async_chunk_load_request(protection_name, context):
             spec = AsyncChunkLoadSpec.from_context(context)
             result = AsyncChunkLoadManager().plan_or_execute(page, spec)
@@ -3483,12 +3587,13 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_custom_loader_traversal_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if normalized.startswith("async-chunk-") or normalized in {"deep-async-chunk-traversal", "plan-async-chunk-deep-traversal"}:
+            return False
         if normalized in {
             "custom-loader-traversal",
             "custom-loader-traversal-plan",
             "loader-traversal-plan",
             "custom-loader-plan",
-            "deep-async-chunk-traversal",
         }:
             return True
         return any(
@@ -3506,6 +3611,53 @@ class NativeWebRuntime(WebReverseRuntime):
                 "loaderCandidates",
                 "chunk_graph",
                 "chunkGraph",
+            )
+        )
+
+    @staticmethod
+    def _is_async_chunk_traversal_graph_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "async-chunk-traversal-graph",
+            "async-chunk-graph-queue",
+            "plan-async-chunk-deep-traversal",
+            "async-chunk-deep-traversal-graph",
+            "deep-async-chunk-traversal",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "async_chunk_traversal_graph",
+                "asyncChunkTraversalGraph",
+                "async-chunk-traversal-graph",
+                "async_chunk_graph_queue",
+                "asyncChunkGraphQueue",
+                "plan_async_chunk_deep_traversal",
+                "planAsyncChunkDeepTraversal",
+            )
+        )
+
+    @staticmethod
+    def _is_async_chunk_traversal_workflow_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "async-chunk-traversal-workflow-plan",
+            "async-chunk-deep-traversal-workflow",
+            "plan-async-chunk-traversal-workflow",
+            "async-chunk-multi-step-traversal-plan",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "async_chunk_traversal_workflow_plan",
+                "asyncChunkTraversalWorkflowPlan",
+                "async-chunk-traversal-workflow-plan",
+                "async_chunk_deep_traversal_workflow",
+                "asyncChunkDeepTraversalWorkflow",
+                "plan_async_chunk_traversal_workflow",
+                "planAsyncChunkTraversalWorkflow",
             )
         )
 

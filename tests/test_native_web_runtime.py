@@ -1049,6 +1049,88 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/async-chunk-load-result.json")
         self.assertFalse(result.artifacts[1].metadata["execution_attempted"])
 
+    def test_native_web_runtime_plans_async_chunk_traversal_graph_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "async-chunk-traversal-graph",
+            {
+                "chunk_graph": {
+                    "status": "success",
+                    "candidate_count": 2,
+                    "candidates": [
+                        {
+                            "edge_type": "runtime-async-chunk",
+                            "loader_kind": "webpack-runtime",
+                            "chunk_id": "731",
+                            "target": "/assets/731.js",
+                            "runtime_path": "window.__webpack_require__",
+                        },
+                        {
+                            "edge_type": "dynamic-import",
+                            "loader_kind": "es-dynamic-import",
+                            "chunk_id": "./chunks/sign-panel.js",
+                            "target": "./chunks/sign-panel.js",
+                        },
+                    ],
+                }
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_async_chunk_traversal_graph"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertIn("async_chunk_traversal_graph_status=ready_for_review", result.verification)
+        self.assertIn("async_chunk_traversal_graph_node_count=2", result.verification)
+        self.assertIn("async_chunk_traversal_graph_queue_count=1", result.verification)
+        self.assertIn("async_chunk_traversal_graph_automatic_recursive_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_async_chunk_traversal_graph_queue")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/async-chunk-traversal-graph.json")
+        self.assertEqual(result.artifacts[0].metadata["queue_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+
+    def test_native_web_runtime_plans_async_chunk_traversal_workflow_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "async-chunk-traversal-workflow-plan",
+            {
+                "async_chunk_traversal_graph": {
+                    "schema_version": "reverse-deepagent.async-chunk-traversal-graph.v1",
+                    "status": "ready_for_review",
+                    "graph_id": "async-chunk-traversal-graph",
+                    "queue_count": 1,
+                    "review_queue": [
+                        {
+                            "node_id": "async-chunk-node-0",
+                            "candidate_index": 0,
+                            "chunk_id": "731",
+                            "target": "/assets/731.js",
+                            "loader_kind": "webpack-runtime",
+                            "edge_type": "runtime-async-chunk",
+                            "runtime_path": "window.__webpack_require__",
+                            "queue_status": "ready_for_review",
+                        }
+                    ],
+                }
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_async_chunk_traversal_workflow"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertIn("async_chunk_traversal_workflow_plan_status=ready_for_review", result.verification)
+        self.assertIn("async_chunk_traversal_workflow_plan_planned_step_count=1", result.verification)
+        self.assertIn("async_chunk_traversal_workflow_plan_automatic_recursive_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_async_chunk_traversal_workflow_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/async-chunk-traversal-workflow-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["planned_step_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+
     def test_native_web_runtime_plans_custom_loader_traversal_without_execution(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

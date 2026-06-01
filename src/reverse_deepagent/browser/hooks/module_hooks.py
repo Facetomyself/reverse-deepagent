@@ -4373,6 +4373,526 @@ class ModuleFederationExportHookInstallManager:
 
 
 @dataclass(slots=True)
+class AsyncChunkTraversalGraphSpec:
+    """Review-only graph / queue planner for deeper webpack async-chunk traversal."""
+
+    chunk_graph: dict[str, Any] = field(default_factory=dict)
+    async_chunk_load_result: dict[str, Any] = field(default_factory=dict)
+    async_chunk_module_diff: dict[str, Any] = field(default_factory=dict)
+    previous_traversal_graph: dict[str, Any] = field(default_factory=dict)
+    max_queue_size: int = 20
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkTraversalGraphSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("async_chunk_traversal_graph")
+            or context.get("asyncChunkTraversalGraph")
+            or context.get("async-chunk-traversal-graph")
+            or context.get("async_chunk_graph_queue")
+            or context.get("asyncChunkGraphQueue")
+            or context.get("plan_async_chunk_deep_traversal")
+            or context.get("planAsyncChunkDeepTraversal")
+        )
+        chunk_graph = (
+            context.get("chunk_graph")
+            or context.get("chunkGraph")
+            or context.get("async_chunk_graph")
+            or context.get("asyncChunkGraph")
+        )
+        module_discovery = context.get("module_discovery") or context.get("moduleDiscovery")
+        if not isinstance(chunk_graph, dict) and isinstance(module_discovery, dict):
+            chunk_graph = module_discovery.get("chunk_graph") or module_discovery.get("chunkGraph")
+        if isinstance(chunk_graph, dict) and isinstance(chunk_graph.get("chunk_graph"), dict):
+            chunk_graph = chunk_graph["chunk_graph"]
+        if not isinstance(chunk_graph, dict):
+            return None if not requested else cls()
+        return cls(
+            chunk_graph=dict(chunk_graph),
+            async_chunk_load_result=cls._object_alias(
+                context,
+                "async_chunk_load_result",
+                "async-chunk-load-result",
+                "asyncChunkLoadResult",
+            ),
+            async_chunk_module_diff=cls._object_alias(
+                context,
+                "async_chunk_module_diff",
+                "async-chunk-module-diff",
+                "asyncChunkModuleDiff",
+            ),
+            previous_traversal_graph=cls._object_alias(
+                context,
+                "previous_async_chunk_traversal_graph",
+                "previousAsyncChunkTraversalGraph",
+                "async_chunk_traversal_graph_previous",
+                "asyncChunkTraversalGraphPrevious",
+            ),
+            max_queue_size=max(1, int(context.get("max_queue_size", context.get("maxQueueSize", 20)) or 20)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+    @staticmethod
+    def _object_alias(context: dict[str, Any], *keys: str) -> dict[str, Any]:
+        for key in keys:
+            value = context.get(key)
+            if isinstance(value, dict):
+                return dict(value)
+        return {}
+
+
+@dataclass(slots=True)
+class AsyncChunkTraversalGraphResult:
+    status: str
+    graph: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "graph": self.graph,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class AsyncChunkTraversalGraphManager:
+    """Build a review-only async chunk traversal graph and bounded queue."""
+
+    SUPPORTED_LOADER_KINDS = {"webpack-runtime", "webpack-require"}
+    DYNAMIC_IMPORT_KINDS = {"es-dynamic-import", "worker-importscripts", "import-meta-url"}
+
+    def plan(self, spec: AsyncChunkTraversalGraphSpec | None) -> AsyncChunkTraversalGraphResult:
+        policy = self._side_effect_policy()
+        if spec is None or not spec.chunk_graph:
+            return AsyncChunkTraversalGraphResult(status="unsupported", reason="missing_async_chunk_graph", side_effect_policy=policy)
+        candidates = self._candidate_records(spec.chunk_graph)
+        loaded_chunks = self._loaded_chunk_ids(spec)
+        nodes = [self._node(candidate, index=index, spec=spec, loaded_chunks=loaded_chunks) for index, candidate in enumerate(candidates)]
+        edges = self._edges(nodes)
+        queue = [node for node in nodes if node.get("queue_status") == "ready_for_review"][: spec.max_queue_size]
+        loaded_count = sum(1 for node in nodes if node.get("already_loaded"))
+        supported_count = sum(1 for node in nodes if node.get("execution_supported"))
+        blocked_count = sum(1 for node in nodes if node.get("queue_status") == "blocked")
+        redirect_count = sum(1 for node in nodes if node.get("queue_status") == "redirect_to_dedicated_gate")
+        if queue:
+            status = "ready_for_review"
+            reason = None
+        elif not candidates:
+            status = "blocked"
+            reason = "no_async_chunk_candidates"
+        elif supported_count and loaded_count >= supported_count:
+            status = "complete"
+            reason = None
+        else:
+            status = "blocked"
+            reason = "no_supported_unloaded_async_chunk_candidates"
+        graph = {
+            "schema_version": "reverse-deepagent.async-chunk-traversal-graph.v1",
+            "status": status,
+            "reason": reason,
+            "review_required": True,
+            "graph_id": "async-chunk-traversal-graph",
+            "source_chunk_graph_status": spec.chunk_graph.get("status", ""),
+            "candidate_count": len(candidates),
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "queue_count": len(queue),
+            "loaded_chunk_count": loaded_count,
+            "supported_candidate_count": supported_count,
+            "blocked_count": blocked_count,
+            "redirect_count": redirect_count,
+            "nodes": nodes,
+            "edges": edges,
+            "review_queue": queue,
+            "review_sequence": [
+                "inspect_async_chunk_traversal_graph",
+                "select_one_async_chunk_candidate",
+                "plan_async_chunk_load",
+                "execute_one_reviewed_async_chunk_load",
+                "refresh_async_chunk_module_diff",
+                "optionally_install_reviewed_async_chunk_module_hook",
+                "rerun_module_discovery_and_rebuild_async_chunk_traversal_graph",
+                "stop_before_recursive_async_chunk_traversal",
+            ],
+            "side_effect_policy": policy,
+            "next_action": self._next_action(status=status, reason=reason, queue=queue),
+        }
+        return AsyncChunkTraversalGraphResult(status=status, graph=graph, side_effect_policy=policy, reason=reason)
+
+    @classmethod
+    def _candidate_records(cls, graph: dict[str, Any]) -> list[dict[str, Any]]:
+        candidates = graph.get("candidates")
+        if isinstance(candidates, list):
+            return [dict(item) for item in candidates if isinstance(item, dict)]
+        return []
+
+    @classmethod
+    def _loaded_chunk_ids(cls, spec: AsyncChunkTraversalGraphSpec) -> set[str]:
+        loaded: set[str] = set()
+        for payload in (spec.async_chunk_load_result, spec.async_chunk_module_diff):
+            nested = payload.get("execution") if isinstance(payload.get("execution"), dict) else payload
+            for key in ("chunkId", "chunk_id", "chunk", "target"):
+                value = nested.get(key)
+                if value is not None and str(value).strip():
+                    loaded.add(str(value).strip())
+            for key in ("addedRegistryKeys", "added_registry_keys", "addedCacheKeys", "added_cache_keys"):
+                values = nested.get(key)
+                if isinstance(values, list):
+                    loaded.update(str(item).strip() for item in values if str(item).strip())
+        previous = spec.previous_traversal_graph.get("nodes")
+        if isinstance(previous, list):
+            for node in previous:
+                if isinstance(node, dict) and node.get("already_loaded"):
+                    value = node.get("chunk_id") or node.get("target")
+                    if value is not None and str(value).strip():
+                        loaded.add(str(value).strip())
+        return loaded
+
+    @classmethod
+    def _node(cls, candidate: dict[str, Any], *, index: int, spec: AsyncChunkTraversalGraphSpec, loaded_chunks: set[str]) -> dict[str, Any]:
+        chunk_id = str(candidate.get("chunk_id") or candidate.get("chunkId") or candidate.get("target") or "")[: spec.max_preview_length]
+        target = str(candidate.get("target") or chunk_id)[: spec.max_preview_length]
+        loader_kind = str(candidate.get("loader_kind") or candidate.get("loaderKind") or "webpack-runtime").strip()
+        edge_type = str(candidate.get("edge_type") or candidate.get("edgeType") or "runtime-async-chunk").strip()
+        runtime_path = str(candidate.get("runtime_path") or candidate.get("runtimePath") or "window.__webpack_require__")[: spec.max_preview_length]
+        loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or runtime_path)[: spec.max_preview_length]
+        normalized_kind = loader_kind.lower()
+        normalized_edge = edge_type.lower()
+        execution_supported = normalized_kind in cls.SUPPORTED_LOADER_KINDS
+        already_loaded = chunk_id in loaded_chunks or target in loaded_chunks
+        if already_loaded:
+            queue_status = "already_loaded"
+        elif execution_supported:
+            queue_status = "ready_for_review"
+        elif normalized_kind in cls.DYNAMIC_IMPORT_KINDS or normalized_edge in {"dynamic-import", "worker-importscripts", "asset-url"}:
+            queue_status = "redirect_to_dedicated_gate"
+        else:
+            queue_status = "blocked"
+        blocking_reasons = cls._blocking_reasons(loader_kind=normalized_kind, edge_type=normalized_edge, execution_supported=execution_supported, queue_status=queue_status)
+        return {
+            "node_id": f"async-chunk-node-{index}",
+            "candidate_index": candidate.get("index", index),
+            "chunk_id": chunk_id,
+            "target": target,
+            "loader_kind": loader_kind,
+            "edge_type": edge_type,
+            "runtime_path": runtime_path,
+            "loader_path": loader_path,
+            "discovery_source": candidate.get("discovery_source", candidate.get("discoverySource", "")),
+            "review_action": candidate.get("review_action", candidate.get("reviewAction", "review_async_chunk_before_loading")),
+            "execution_supported": execution_supported,
+            "queue_status": queue_status,
+            "already_loaded": already_loaded,
+            "blocking_reasons": blocking_reasons,
+            "review_requirements": [
+                "review_this_chunk_candidate_before_load",
+                "execute_at_most_one_async_chunk_load",
+                "inspect_module_registry_diff_after_reviewed_load",
+                "stop_before_recursive_async_chunk_traversal",
+            ],
+            "automatic_execution": False,
+        }
+
+    @staticmethod
+    def _blocking_reasons(*, loader_kind: str, edge_type: str, execution_supported: bool, queue_status: str) -> list[str]:
+        if queue_status in {"ready_for_review", "already_loaded"}:
+            return []
+        if loader_kind in AsyncChunkTraversalGraphManager.DYNAMIC_IMPORT_KINDS or edge_type in {"dynamic-import", "worker-importscripts", "asset-url"}:
+            return ["dynamic_import_requires_dedicated_gate"]
+        if "federation" in loader_kind or "federation" in edge_type:
+            return ["module_federation_requires_dedicated_gate"]
+        if not execution_supported:
+            return ["unsupported_loader_kind_for_async_chunk_traversal"]
+        return []
+
+    @staticmethod
+    def _edges(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        edges: list[dict[str, Any]] = []
+        for node in nodes:
+            runtime_path = str(node.get("runtime_path") or "")
+            if runtime_path:
+                edges.append(
+                    {
+                        "from": runtime_path,
+                        "to": node["node_id"],
+                        "edge_type": "runtime_loader_candidate",
+                        "review_required": True,
+                    }
+                )
+        return edges
+
+    @staticmethod
+    def _next_action(*, status: str, reason: str | None, queue: list[dict[str, Any]]) -> str:
+        if status == "ready_for_review" and queue:
+            return "review_async_chunk_traversal_graph_queue"
+        if status == "complete":
+            return "async_chunk_traversal_graph_complete_or_provide_new_candidates"
+        if reason == "no_supported_unloaded_async_chunk_candidates":
+            return "provide_supported_webpack_async_chunk_candidates_or_use_dedicated_gates"
+        return "provide_async_chunk_graph_with_candidates"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "loader_invoked": False,
+            "runtime_loader_executed": False,
+            "chunk_request_sent": False,
+            "module_factory_invoked": False,
+            "module_diff_executed": False,
+            "module_hook_installed": False,
+            "automatic_recursive_traversal": False,
+            "automatic_queue_advance": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
+class AsyncChunkTraversalWorkflowPlanSpec:
+    """Review-only multi-step workflow planner over an async chunk traversal queue."""
+
+    traversal_graph: dict[str, Any] = field(default_factory=dict)
+    max_planned_steps: int = 3
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkTraversalWorkflowPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("async_chunk_traversal_workflow_plan")
+            or context.get("asyncChunkTraversalWorkflowPlan")
+            or context.get("async-chunk-traversal-workflow-plan")
+            or context.get("async_chunk_deep_traversal_workflow")
+            or context.get("asyncChunkDeepTraversalWorkflow")
+            or context.get("plan_async_chunk_traversal_workflow")
+            or context.get("planAsyncChunkTraversalWorkflow")
+        )
+        graph = (
+            context.get("async_chunk_traversal_graph")
+            or context.get("asyncChunkTraversalGraph")
+            or context.get("async-chunk-traversal-graph")
+            or context.get("traversal_graph")
+            or context.get("traversalGraph")
+        )
+        if isinstance(graph, dict) and isinstance(graph.get("graph"), dict):
+            graph = graph["graph"]
+        if not isinstance(graph, dict):
+            return None if not requested else cls()
+        return cls(
+            traversal_graph=dict(graph),
+            max_planned_steps=max(1, int(context.get("max_planned_steps", context.get("maxPlannedSteps", 3)) or 3)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class AsyncChunkTraversalWorkflowPlanResult:
+    status: str
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "workflow_plan": self.workflow_plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class AsyncChunkTraversalWorkflowPlanManager:
+    """Compose bounded review-only workflow steps from an async chunk traversal graph."""
+
+    def plan(self, spec: AsyncChunkTraversalWorkflowPlanSpec | None) -> AsyncChunkTraversalWorkflowPlanResult:
+        policy = self._side_effect_policy()
+        if spec is None or not spec.traversal_graph:
+            return AsyncChunkTraversalWorkflowPlanResult(status="unsupported", reason="missing_async_chunk_traversal_graph", side_effect_policy=policy)
+        graph = spec.traversal_graph
+        graph_status = str(graph.get("status") or "").strip()
+        queue = self._review_queue(graph)
+        if graph_status == "complete":
+            status = "complete"
+            reason = None
+            selected_queue: list[dict[str, Any]] = []
+        elif not queue:
+            status = "blocked"
+            reason = self._blocked_reason(graph)
+            selected_queue = []
+        else:
+            status = "ready_for_review"
+            reason = None
+            selected_queue = queue[: spec.max_planned_steps]
+        planned_steps = [self._planned_step(item, step_index=index, spec=spec) for index, item in enumerate(selected_queue)]
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.async-chunk-traversal-workflow-plan.v1",
+            "status": status,
+            "reason": reason,
+            "plan_id": "async-chunk-traversal-workflow-plan",
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "execute_at_most_one_chunk_load_per_review": True,
+            "source_graph_id": graph.get("graph_id", "async-chunk-traversal-graph"),
+            "source_graph_status": graph_status,
+            "source_graph_queue_count": int(graph.get("queue_count") or len(queue)),
+            "source_graph_loaded_chunk_count": int(graph.get("loaded_chunk_count") or 0),
+            "max_planned_steps": spec.max_planned_steps,
+            "planned_step_count": len(planned_steps),
+            "planned_steps": planned_steps,
+            "workflow_sequence": self._workflow_sequence(),
+            "blocking_reasons": [reason] if reason else [],
+            "next_action": self._next_action(status=status, reason=reason),
+            "side_effect_policy": policy,
+        }
+        return AsyncChunkTraversalWorkflowPlanResult(status=status, workflow_plan=workflow_plan, side_effect_policy=policy, reason=reason)
+
+    @staticmethod
+    def _review_queue(graph: dict[str, Any]) -> list[dict[str, Any]]:
+        queue = graph.get("review_queue")
+        if isinstance(queue, list):
+            return [dict(item) for item in queue if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _blocked_reason(graph: dict[str, Any]) -> str:
+        graph_status = str(graph.get("status") or "").strip()
+        if graph_status in {"blocked", "unsupported", "failed", "failure", "error"}:
+            return "async_chunk_traversal_graph_blocked"
+        return "no_async_chunk_traversal_queue"
+
+    @classmethod
+    def _planned_step(cls, queue_item: dict[str, Any], *, step_index: int, spec: AsyncChunkTraversalWorkflowPlanSpec) -> dict[str, Any]:
+        chunk_id = str(queue_item.get("chunk_id") or queue_item.get("chunkId") or queue_item.get("target") or "")[: spec.max_preview_length]
+        target = str(queue_item.get("target") or chunk_id)[: spec.max_preview_length]
+        runtime_path = str(queue_item.get("runtime_path") or queue_item.get("runtimePath") or "window.__webpack_require__")[: spec.max_preview_length]
+        return {
+            "step_index": step_index,
+            "step_id": f"async-chunk-traversal-step-{step_index}",
+            "queue_node_id": queue_item.get("node_id"),
+            "candidate_index": queue_item.get("candidate_index", queue_item.get("index", step_index)),
+            "chunk_id": chunk_id,
+            "target": target,
+            "loader_kind": queue_item.get("loader_kind"),
+            "edge_type": queue_item.get("edge_type"),
+            "runtime_path": runtime_path,
+            "queue_status": queue_item.get("queue_status"),
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "automatic_execution": False,
+            "execute_at_most_one_chunk_load_per_review": True,
+            "references": {
+                "traversal_graph_artifact": "workspace/async-chunk-traversal-graph.json",
+                "async_chunk_load_plan_artifact": "workspace/async-chunk-load-plan.json",
+                "async_chunk_load_result_artifact": "workspace/async-chunk-load-result.json",
+                "module_diff_artifact": "workspace/async-chunk-module-diff.json",
+                "module_hook_artifact": "workspace/module-hooks.json",
+            },
+            "review_sequence": cls._workflow_sequence(),
+            "next_action": "review_async_chunk_traversal_workflow_step",
+        }
+
+    @staticmethod
+    def _workflow_sequence() -> list[dict[str, Any]]:
+        return [
+            {
+                "order": 1,
+                "action": "select_one_async_chunk_review_queue_candidate",
+                "input_artifact": "workspace/async-chunk-traversal-graph.json",
+                "output_artifact": None,
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 2,
+                "action": "plan_async_chunk_load",
+                "input_artifact": "workspace/async-chunk-traversal-graph.json",
+                "output_artifact": "workspace/async-chunk-load-plan.json",
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 3,
+                "action": "execute_one_reviewed_async_chunk_load",
+                "input_artifact": "workspace/async-chunk-load-plan.json",
+                "output_artifact": "workspace/async-chunk-load-result.json",
+                "review_required": True,
+                "executes_runtime": True,
+                "requires_review_approved": True,
+            },
+            {
+                "order": 4,
+                "action": "run_async_chunk_module_diff_after_reviewed_load",
+                "input_artifact": "workspace/async-chunk-load-result.json",
+                "output_artifact": "workspace/async-chunk-module-diff.json",
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 5,
+                "action": "optionally_install_reviewed_async_chunk_module_hook",
+                "input_artifact": "workspace/async-chunk-module-diff.json",
+                "output_artifact": "workspace/module-hooks.json",
+                "review_required": True,
+                "executes_runtime": True,
+                "requires_review_approved": True,
+            },
+            {
+                "order": 6,
+                "action": "rerun_module_discovery_and_rebuild_async_chunk_traversal_graph",
+                "input_artifact": "workspace/async-chunk-load-result.json",
+                "output_artifact": "workspace/async-chunk-traversal-graph.json",
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 7,
+                "action": "stop_before_recursive_async_chunk_traversal",
+                "input_artifact": "workspace/async-chunk-traversal-graph.json",
+                "output_artifact": None,
+                "review_required": True,
+                "executes_runtime": False,
+            },
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, reason: str | None) -> str:
+        if status == "ready_for_review":
+            return "review_async_chunk_traversal_workflow_plan"
+        if status == "complete":
+            return "async_chunk_traversal_graph_complete_or_provide_new_candidates"
+        if reason == "async_chunk_traversal_graph_blocked":
+            return "revise_async_chunk_traversal_graph_inputs"
+        return "provide_async_chunk_traversal_graph_with_queue"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "execute_at_most_one_chunk_load_per_review": True,
+            "runtime_loader_executed": False,
+            "chunk_request_sent": False,
+            "module_diff_executed": False,
+            "module_hook_installed": False,
+            "module_factory_invoked": False,
+            "automatic_recursive_traversal": False,
+            "automatic_queue_advance": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 
