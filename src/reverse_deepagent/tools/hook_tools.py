@@ -93,6 +93,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "custom-loader-recursive-traversal-followup",
             "customLoaderRecursiveTraversalFollowup",
         )
+        custom_loader_recursive_traversal_execution = _object_alias(
+            payload,
+            "custom_loader_recursive_traversal_execution",
+            "custom-loader-recursive-traversal-execution",
+            "customLoaderRecursiveTraversalExecution",
+        )
         custom_loader_execution_preflight = _object_alias(
             payload,
             "custom_loader_execution_preflight",
@@ -240,6 +246,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("custom_loader_recursive_traversal_plan_blocked")
         if _status(custom_loader_recursive_traversal_followup) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_recursive_traversal_followup_blocked")
+        if _status(custom_loader_recursive_traversal_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("custom_loader_recursive_traversal_execution_blocked")
         if _status(custom_loader_continuation_workflow) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_continuation_workflow_blocked")
         if _status(custom_loader_continuation_journal) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -265,6 +273,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         custom_loader_traversal_loop_execution_status = _nested_status(custom_loader_traversal_loop_execution, "execution")
         custom_loader_recursive_traversal_plan_status = _nested_status(custom_loader_recursive_traversal_plan, "recursive_plan")
         custom_loader_recursive_traversal_followup_status = _nested_status(custom_loader_recursive_traversal_followup, "followup")
+        custom_loader_recursive_traversal_execution_status = _nested_status(custom_loader_recursive_traversal_execution, "execution")
         custom_loader_continuation_workflow_status = _nested_status(custom_loader_continuation_workflow, "workflow")
         custom_loader_continuation_journal_status = _nested_status(custom_loader_continuation_journal, "journal")
         custom_loader_continuation_execution_status = _nested_status(custom_loader_continuation_execution, "execution")
@@ -308,6 +317,11 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             or custom_loader_recursive_traversal_followup_status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"}
         ):
             warnings.append("custom_loader_recursive_traversal_followup_requires_review")
+        if custom_loader_recursive_traversal_execution and (
+            _status(custom_loader_recursive_traversal_execution) in {"ready_for_review", "next_loop_execution_progressed", "next_loop_journal_appended"}
+            or custom_loader_recursive_traversal_execution_status in {"ready_for_review", "next_loop_execution_progressed", "next_loop_journal_appended"}
+        ):
+            warnings.append("custom_loader_recursive_traversal_execution_requires_review")
         if custom_loader_continuation_workflow and not custom_loader_continuation_journal and not custom_loader_execution_preflight and (
             _status(custom_loader_continuation_workflow) in {"ready_for_review", "approved_for_preflight"}
             or custom_loader_continuation_workflow_status in {"ready_for_review", "approved_for_preflight"}
@@ -470,6 +484,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "custom_loader_recursive_traversal_followup_status": _status(custom_loader_recursive_traversal_followup) or custom_loader_recursive_traversal_followup_status,
                 "custom_loader_recursive_traversal_followup_stage_count": len(_listish(_nested_get(custom_loader_recursive_traversal_followup, "followup", "stages") or custom_loader_recursive_traversal_followup.get("stages"))),
                 "custom_loader_recursive_traversal_followup_next_action": _nested_get(custom_loader_recursive_traversal_followup, "followup", "next_action") or custom_loader_recursive_traversal_followup.get("next_action"),
+                "custom_loader_recursive_traversal_execution_status": _status(custom_loader_recursive_traversal_execution) or custom_loader_recursive_traversal_execution_status,
+                "custom_loader_recursive_traversal_execution_stage_count": len(_listish(_nested_get(custom_loader_recursive_traversal_execution, "execution", "stages") or custom_loader_recursive_traversal_execution.get("stages"))),
+                "custom_loader_recursive_traversal_execution_next_action": _nested_get(custom_loader_recursive_traversal_execution, "execution", "next_action") or custom_loader_recursive_traversal_execution.get("next_action"),
                 "custom_loader_continuation_workflow_status": _status(custom_loader_continuation_workflow) or custom_loader_continuation_workflow_status,
                 "custom_loader_continuation_journal_status": _status(custom_loader_continuation_journal) or custom_loader_continuation_journal_status,
                 "custom_loader_continuation_execution_status": _status(custom_loader_continuation_execution) or custom_loader_continuation_execution_status,
@@ -710,6 +727,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "resolve_custom_loader_traversal_loop_execution_blockers"
     if "custom_loader_recursive_traversal_followup_blocked" in blockers:
         return "resolve_custom_loader_recursive_traversal_followup_blockers"
+    if "custom_loader_recursive_traversal_execution_blocked" in blockers:
+        return "resolve_custom_loader_recursive_traversal_execution_blockers"
     if "custom_loader_recursive_traversal_plan_blocked" in blockers:
         return "resolve_custom_loader_recursive_traversal_blockers"
     if "custom_loader_traversal_loop_plan_blocked" in blockers:
@@ -764,6 +783,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_custom_loader_traversal_loop_execution_plan"
     if "custom_loader_recursive_traversal_followup_requires_review" in warnings:
         return "review_custom_loader_recursive_traversal_followup"
+    if "custom_loader_recursive_traversal_execution_requires_review" in warnings:
+        return "review_custom_loader_recursive_traversal_execution"
     if "custom_loader_recursive_traversal_plan_requires_review" in warnings:
         return "review_custom_loader_recursive_traversal_plan"
     if "no_hook_artifacts_provided" in warnings:
