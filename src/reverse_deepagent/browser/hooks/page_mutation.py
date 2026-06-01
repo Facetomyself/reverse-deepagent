@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -282,6 +283,393 @@ class PageMutationAuditManager:
     @staticmethod
     def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
         return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+@dataclass(slots=True)
+class ObjectRootMutationAuditSpec:
+    """Explicit descriptor-safe JS object-root mutation audit request.
+
+    The audit snapshots a strict dotted object root before and after an
+    optional explicit trigger expression. It intentionally avoids prototype
+    traversal and avoids invoking accessor getters while collecting snapshots.
+    """
+
+    root_path: str
+    trigger_expression: str | None = None
+    max_depth: int = 2
+    max_keys: int = 80
+    max_preview_length: int = 240
+    include_descriptors: bool = True
+    include_values: bool = False
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ObjectRootMutationAuditSpec | None":
+        context = context or {}
+        root_path = cls._first_present(
+            context,
+            (
+                "object_root",
+                "objectRoot",
+                "object_root_path",
+                "objectRootPath",
+                "root_path",
+                "rootPath",
+                "js_object_root",
+                "jsObjectRoot",
+            ),
+        )
+        if root_path is None:
+            return None
+        trigger_expression = context.get("trigger_expression", context.get("triggerExpression"))
+        return cls(
+            root_path=str(root_path).strip(),
+            trigger_expression=str(trigger_expression) if trigger_expression else None,
+            max_depth=max(0, int(context.get("max_depth", context.get("maxDepth", 2)) or 2)),
+            max_keys=max(1, int(context.get("max_keys", context.get("maxKeys", 80)) or 80)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            include_descriptors=bool(context.get("include_descriptors", context.get("includeDescriptors", True))),
+            include_values=bool(context.get("include_values", context.get("includeValues", False))),
+        )
+
+    @staticmethod
+    def _first_present(context: dict[str, Any], keys: tuple[str, ...]) -> Any:
+        for key in keys:
+            value = context.get(key)
+            if value is not None and str(value).strip():
+                return value
+        return None
+
+
+@dataclass(slots=True)
+class ObjectRootMutationAuditResult:
+    status: str
+    before: dict[str, Any] = field(default_factory=dict)
+    after: dict[str, Any] = field(default_factory=dict)
+    diff: dict[str, Any] = field(default_factory=dict)
+    trigger: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "before": self.before,
+            "after": self.after,
+            "diff": self.diff,
+            "changed": bool(self.diff.get("changed")),
+            "change_count": int(self.diff.get("change_count") or 0),
+            "trigger": self.trigger,
+            "side_effect_policy": self.side_effect_policy,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class ObjectRootMutationAuditManager:
+    """Descriptor-safe object-root snapshot diff around an explicit trigger."""
+
+    _PATH_RE = re.compile(r"^(?:[A-Za-z_$][\w$]*)(?:\.[A-Za-z_$][\w$]*)*$")
+
+    def audit(self, page: BrowserPage, spec: ObjectRootMutationAuditSpec | None) -> ObjectRootMutationAuditResult:
+        policy = self._side_effect_policy(spec)
+        if spec is None:
+            return ObjectRootMutationAuditResult(status="unsupported", reason="missing_object_root_mutation_audit_spec", side_effect_policy=policy)
+        if not self._is_safe_path(spec.root_path):
+            return ObjectRootMutationAuditResult(
+                status="blocked",
+                reason="unsupported_object_root_path",
+                side_effect_policy=policy,
+            )
+        before = self._snapshot(page, spec)
+        trigger = self._run_trigger(page, spec)
+        after = self._snapshot(page, spec)
+        if before.get("ok") is False or after.get("ok") is False:
+            return ObjectRootMutationAuditResult(
+                status="failed",
+                before=before,
+                after=after,
+                trigger=trigger,
+                side_effect_policy=policy,
+                error=str(before.get("error") or after.get("error") or before.get("reason") or after.get("reason") or "snapshot_failed"),
+            )
+        diff = self._diff_snapshots(before, after)
+        status = "success" if diff.get("changed") else "partial"
+        return ObjectRootMutationAuditResult(status=status, before=before, after=after, diff=diff, trigger=trigger, side_effect_policy=policy)
+
+    @classmethod
+    def _is_safe_path(cls, root_path: str) -> bool:
+        return bool(root_path and cls._PATH_RE.fullmatch(root_path))
+
+    @staticmethod
+    def _snapshot(page: BrowserPage, spec: ObjectRootMutationAuditSpec) -> dict[str, Any]:
+        try:
+            payload = page.evaluate(ObjectRootMutationAuditManager._snapshot_expression(spec))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        if isinstance(payload, dict):
+            return payload
+        return {"ok": False, "error": "non_object_snapshot_payload", "value_type": type(payload).__name__}
+
+    @staticmethod
+    def _run_trigger(page: BrowserPage, spec: ObjectRootMutationAuditSpec) -> dict[str, Any]:
+        if not spec.trigger_expression:
+            return {"attempted": False}
+        try:
+            payload = page.evaluate(spec.trigger_expression)
+            return {"attempted": True, "ok": True, "result": payload if isinstance(payload, dict) else {"value": payload}}
+        except Exception as exc:
+            return {"attempted": True, "ok": False, "error": str(exc)}
+
+    @staticmethod
+    def _snapshot_expression(spec: ObjectRootMutationAuditSpec) -> str:
+        config = {
+            "rootPath": spec.root_path,
+            "maxDepth": spec.max_depth,
+            "maxKeys": spec.max_keys,
+            "maxPreviewLength": spec.max_preview_length,
+            "includeDescriptors": spec.include_descriptors,
+            "includeValues": spec.include_values,
+        }
+        config_json = json.dumps(config, ensure_ascii=False)
+        template = """(() => {
+  const marker = "__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__";
+  const config = __OBJECT_ROOT_MUTATION_AUDIT_CONFIG__;
+  const identifierPattern = /^[A-Za-z_$][\\w$]*$/;
+  const preview = (value) => {
+    try {
+      if (typeof value === "string") return value.slice(0, config.maxPreviewLength);
+      if (typeof value === "function") return String(value).slice(0, config.maxPreviewLength);
+      if (value === undefined) return "undefined";
+      if (typeof value === "symbol") return String(value).slice(0, config.maxPreviewLength);
+      if (typeof value === "bigint") return String(value).slice(0, config.maxPreviewLength);
+      return JSON.stringify(value).slice(0, config.maxPreviewLength);
+    } catch (_) {
+      try { return Object.prototype.toString.call(value).slice(0, config.maxPreviewLength); } catch (__) { return "<unavailable>"; }
+    }
+  };
+  const typeOf = (value) => {
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+  };
+  const descriptorInfo = (descriptor) => {
+    if (!descriptor) return { exists: false };
+    const info = {
+      exists: true,
+      enumerable: !!descriptor.enumerable,
+      configurable: !!descriptor.configurable,
+      hasGetter: typeof descriptor.get === "function",
+      hasSetter: typeof descriptor.set === "function",
+      kind: Object.prototype.hasOwnProperty.call(descriptor, "value") ? "data" : "accessor"
+    };
+    if (Object.prototype.hasOwnProperty.call(descriptor, "writable")) info.writable = !!descriptor.writable;
+    return info;
+  };
+  const ownDescriptor = (owner, key) => {
+    try { return Object.getOwnPropertyDescriptor(owner, key); } catch (_) { return undefined; }
+  };
+  const resolveRoot = () => {
+    const raw = String(config.rootPath || "");
+    const parts = raw.split(".").filter(Boolean);
+    if (!parts.length) return { ok: false, reason: "empty_root_path" };
+    for (const part of parts) {
+      if (!identifierPattern.test(part)) return { ok: false, reason: "unsupported_root_path", part };
+    }
+    let value = globalThis;
+    let start = 0;
+    if (["window", "globalThis", "self"].includes(parts[0])) {
+      start = 1;
+    }
+    for (let index = start; index < parts.length; index += 1) {
+      const part = parts[index];
+      if (value == null || (typeof value !== "object" && typeof value !== "function")) {
+        return { ok: false, reason: "root_path_parent_unavailable", path: parts.slice(0, index).join(".") };
+      }
+      const descriptor = ownDescriptor(value, part);
+      if (!descriptor) return { ok: false, reason: "root_path_property_unavailable", path: parts.slice(0, index + 1).join(".") };
+      if (!Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+        return { ok: false, reason: "root_path_accessor_not_invoked", path: parts.slice(0, index + 1).join(".") };
+      }
+      value = descriptor.value;
+    }
+    return { ok: true, value };
+  };
+  const seen = new WeakSet();
+  const snapshotValue = (value, depth, path) => {
+    const valueType = typeOf(value);
+    const node = { path, type: valueType };
+    if (valueType !== "object" && valueType !== "array" && valueType !== "function") {
+      node.preview = preview(value);
+      if (config.includeValues) node.value = value;
+      return node;
+    }
+    if (typeof Window !== "undefined" && value === window) {
+      node.summary = { host_object: "window" };
+      return node;
+    }
+    if (typeof Node !== "undefined" && value instanceof Node) {
+      node.summary = { host_object: "dom-node", node_name: value.nodeName || "", node_type: value.nodeType || 0 };
+      return node;
+    }
+    if (valueType === "function") {
+      node.name = value.name || "";
+      node.preview = preview(value);
+    }
+    if (valueType === "array") node.length = value.length;
+    if (seen.has(value)) {
+      node.cycle = true;
+      return node;
+    }
+    seen.add(value);
+    if (depth >= config.maxDepth) {
+      node.truncated = true;
+      node.truncation_reason = "max_depth";
+      return node;
+    }
+    let names = [];
+    try { names = Object.getOwnPropertyNames(value); } catch (error) {
+      node.truncated = true;
+      node.truncation_reason = "own_property_names_unavailable";
+      node.error = String(error && error.message || error);
+      return node;
+    }
+    node.own_property_count = names.length;
+    if (names.length > config.maxKeys) {
+      node.truncated = true;
+      node.truncation_reason = "max_keys";
+    }
+    node.children = {};
+    for (const key of names.slice(0, config.maxKeys)) {
+      const descriptor = ownDescriptor(value, key);
+      const childPath = path + "." + key;
+      const child = { path: childPath, key };
+      if (config.includeDescriptors) child.descriptor = descriptorInfo(descriptor);
+      if (!descriptor) {
+        child.type = "unavailable";
+      } else if (Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+        Object.assign(child, snapshotValue(descriptor.value, depth + 1, childPath));
+        child.key = key;
+        if (config.includeDescriptors) child.descriptor = descriptorInfo(descriptor);
+      } else {
+        child.type = "accessor";
+        child.accessor = { hasGetter: typeof descriptor.get === "function", hasSetter: typeof descriptor.set === "function" };
+      }
+      node.children[key] = child;
+    }
+    return node;
+  };
+  try {
+    const root = resolveRoot();
+    if (!root.ok) return { marker, ok: false, status: "unsupported", root_path: config.rootPath, reason: root.reason, path: root.path || null, part: root.part || null };
+    return {
+      marker,
+      ok: true,
+      status: "success",
+      root_path: config.rootPath,
+      root: snapshotValue(root.value, 0, config.rootPath),
+      side_effect_policy: {
+        default_recon: false,
+        trigger_required_for_mutation: true,
+        getter_invocation: false,
+        prototype_traversal: false,
+        calls_mcp: false,
+        mobile_runtime_used: false
+      }
+    };
+  } catch (error) {
+    return { marker, ok: false, status: "failed", root_path: config.rootPath, error: String(error && error.message || error) };
+  }
+})()"""
+        return template.replace("__OBJECT_ROOT_MUTATION_AUDIT_CONFIG__", config_json)
+
+    @classmethod
+    def _diff_snapshots(cls, before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+        changes: list[dict[str, Any]] = []
+        cls._compare_nodes(changes, before.get("root"), after.get("root"), before.get("root_path") or after.get("root_path") or "root")
+        added_paths = [item["path"] for item in changes if item["category"] == "added"]
+        removed_paths = [item["path"] for item in changes if item["category"] == "removed"]
+        type_changed_paths = [item["path"] for item in changes if item["category"] == "type"]
+        descriptor_changed_paths = [item["path"] for item in changes if item["category"] == "descriptor"]
+        changed_paths = [item["path"] for item in changes if item["category"] in {"value", "summary", "structure", "truncation", "cycle"}]
+        categories = sorted({item["category"] for item in changes})
+        truncated = bool(cls._node_flag(before.get("root"), "truncated") or cls._node_flag(after.get("root"), "truncated"))
+        cycles = bool(cls._node_flag(before.get("root"), "cycle") or cls._node_flag(after.get("root"), "cycle"))
+        return {
+            "changed": bool(changes),
+            "change_count": len(changes),
+            "categories": categories,
+            "added_paths": added_paths,
+            "removed_paths": removed_paths,
+            "changed_paths": changed_paths,
+            "type_changed_paths": type_changed_paths,
+            "descriptor_changed_paths": descriptor_changed_paths,
+            "truncated": truncated,
+            "cycles": cycles,
+            "changes": changes,
+        }
+
+    @classmethod
+    def _compare_nodes(cls, changes: list[dict[str, Any]], before: Any, after: Any, path: str) -> None:
+        if before is None and after is None:
+            return
+        if before is None:
+            changes.append({"path": path, "category": "added", "after": cls._compact_node(after)})
+            return
+        if after is None:
+            changes.append({"path": path, "category": "removed", "before": cls._compact_node(before)})
+            return
+        if not isinstance(before, dict) or not isinstance(after, dict):
+            if before != after:
+                changes.append({"path": path, "category": "value", "before": before, "after": after})
+            return
+        before_type = before.get("type")
+        after_type = after.get("type")
+        if before_type != after_type:
+            changes.append({"path": path, "category": "type", "before": before_type, "after": after_type})
+        for key in ("preview", "value", "length", "name"):
+            if before.get(key) != after.get(key):
+                changes.append({"path": path, "category": "value", "field": key, "before": before.get(key), "after": after.get(key)})
+        if before.get("summary") != after.get("summary"):
+            changes.append({"path": path, "category": "summary", "before": before.get("summary"), "after": after.get("summary")})
+        if before.get("descriptor") != after.get("descriptor"):
+            changes.append({"path": path, "category": "descriptor", "before": before.get("descriptor"), "after": after.get("descriptor")})
+        for key in ("truncated", "truncation_reason", "own_property_count"):
+            if before.get(key) != after.get(key):
+                changes.append({"path": path, "category": "truncation" if key != "own_property_count" else "structure", "field": key, "before": before.get(key), "after": after.get(key)})
+        if before.get("cycle") != after.get("cycle"):
+            changes.append({"path": path, "category": "cycle", "before": before.get("cycle"), "after": after.get("cycle")})
+        before_children = before.get("children") if isinstance(before.get("children"), dict) else {}
+        after_children = after.get("children") if isinstance(after.get("children"), dict) else {}
+        for key in sorted(set(before_children) | set(after_children)):
+            cls._compare_nodes(changes, before_children.get(key), after_children.get(key), f"{path}.{key}")
+
+    @staticmethod
+    def _compact_node(node: Any) -> Any:
+        if not isinstance(node, dict):
+            return node
+        return {key: node.get(key) for key in ("type", "preview", "length", "descriptor", "summary", "truncated", "cycle") if key in node}
+
+    @classmethod
+    def _node_flag(cls, node: Any, key: str) -> bool:
+        if not isinstance(node, dict):
+            return False
+        if bool(node.get(key)):
+            return True
+        children = node.get("children") if isinstance(node.get("children"), dict) else {}
+        return any(cls._node_flag(child, key) for child in children.values())
+
+    @staticmethod
+    def _side_effect_policy(spec: ObjectRootMutationAuditSpec | None) -> dict[str, Any]:
+        return {
+            "default_recon": False,
+            "trigger_required_for_mutation": True,
+            "getter_invocation": False,
+            "prototype_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "root_path": spec.root_path if spec else None,
+        }
 
 
 @dataclass(slots=True)

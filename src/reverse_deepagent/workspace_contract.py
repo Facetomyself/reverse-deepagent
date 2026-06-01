@@ -333,6 +333,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_source_logpoint_timeline", "workspace/source-logpoint-timeline.json", "/workspace/timeline/", "source-logpoint-timeline.json", "trace", ("timeline", "debugger")),
         ("workspace_mutation_audit", "workspace/mutation-audit.json", "/workspace/debugger/", "mutation-audit.json", "trace", ("debugger", "review")),
         ("workspace_page_mutation_audit", "workspace/page-mutation-audit.json", "/workspace/browser/", "page-mutation-audit.json", "trace", ("browser_runtime", "review")),
+        ("workspace_object_root_mutation_audit", "workspace/object-root-mutation-audit.json", "/workspace/browser/", "object-root-mutation-audit.json", "trace", ("browser_runtime", "review")),
         ("workspace_mutation_observer_timeline", "workspace/mutation-observer-timeline.json", "/workspace/timeline/", "mutation-observer-timeline.json", "trace", ("timeline", "browser_runtime")),
         ("workspace_flow_timeline", "workspace/flow-timeline.json", "/workspace/timeline/", "flow-timeline.json", "trace", ("timeline", "review")),
         ("workspace_auto_stitch_conflict_resolutions", "workspace/auto-stitch-conflict-resolutions.json", "/workspace/timeline/", "auto-stitch-conflict-resolutions.json", "trace", ("timeline", "review")),

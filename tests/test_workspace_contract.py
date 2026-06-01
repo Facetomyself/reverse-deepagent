@@ -183,6 +183,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/source-map-fetch-plan.json"].future_path, "/workspace/debugger/source-map-fetch-plan.json")
         self.assertEqual(routes["workspace/source-map-fetch-result.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(routes["workspace/source-map-fetch-result.json"].future_path, "/workspace/debugger/source-map-fetch-result.json")
+        self.assertEqual(routes["workspace/object-root-mutation-audit.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/object-root-mutation-audit.json"].future_path, "/workspace/browser/object-root-mutation-audit.json")
         self.assertEqual(routes["workspace/workspace-contract.json"].future_path, "/workspace/delivery/workspace-contract.json")
         self.assertTrue(all(item.migration_status == "indexed-only" for item in routes.values()))
 

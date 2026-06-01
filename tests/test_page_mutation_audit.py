@@ -1,6 +1,13 @@
 import unittest
 
-from reverse_deepagent.browser.hooks import MutationObserverTimelineManager, MutationObserverTimelineSpec, PageMutationAuditManager, PageMutationAuditSpec
+from reverse_deepagent.browser.hooks import (
+    MutationObserverTimelineManager,
+    MutationObserverTimelineSpec,
+    ObjectRootMutationAuditManager,
+    ObjectRootMutationAuditSpec,
+    PageMutationAuditManager,
+    PageMutationAuditSpec,
+)
 
 
 class PageMutationAuditPage:
@@ -14,6 +21,7 @@ class PageMutationAuditPage:
         self.session_storage_keys = []
         self.cookie_names = ["sid"]
         self.globals = {"window.__token": {"type": "string", "preview": "before"}}
+        self.object_root_mutated = False
 
     def evaluate(self, expression):
         if "__REVERSE_AGENT_MUTATION_OBSERVER_TIMELINE__" in expression:
@@ -61,6 +69,86 @@ class PageMutationAuditPage:
                     "by_type": {"attributes": 1, "childList": 1},
                 },
             }
+        if "__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__" in expression:
+            token_descriptor = {
+                "exists": True,
+                "enumerable": True,
+                "configurable": True,
+                "writable": not self.object_root_mutated,
+                "hasGetter": False,
+                "hasSetter": False,
+                "kind": "data",
+            }
+            children = {
+                "token": {
+                    "path": "window.__appState.token",
+                    "key": "token",
+                    "type": "string",
+                    "preview": "after" if self.object_root_mutated else "before",
+                    "descriptor": token_descriptor,
+                },
+                "accessorSecret": {
+                    "path": "window.__appState.accessorSecret",
+                    "key": "accessorSecret",
+                    "type": "accessor",
+                    "descriptor": {
+                        "exists": True,
+                        "enumerable": True,
+                        "configurable": False,
+                        "hasGetter": True,
+                        "hasSetter": False,
+                        "kind": "accessor",
+                    },
+                    "accessor": {"hasGetter": True, "hasSetter": False},
+                },
+            }
+            if self.object_root_mutated:
+                children["nonce"] = {
+                    "path": "window.__appState.nonce",
+                    "key": "nonce",
+                    "type": "number",
+                    "preview": "7",
+                    "descriptor": {
+                        "exists": True,
+                        "enumerable": True,
+                        "configurable": True,
+                        "writable": True,
+                        "hasGetter": False,
+                        "hasSetter": False,
+                        "kind": "data",
+                    },
+                }
+            else:
+                children["stale"] = {
+                    "path": "window.__appState.stale",
+                    "key": "stale",
+                    "type": "boolean",
+                    "preview": "true",
+                    "descriptor": {
+                        "exists": True,
+                        "enumerable": True,
+                        "configurable": True,
+                        "writable": True,
+                        "hasGetter": False,
+                        "hasSetter": False,
+                        "kind": "data",
+                    },
+                }
+            return {
+                "marker": "__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__",
+                "ok": True,
+                "status": "success",
+                "root_path": "window.__appState",
+                "root": {"path": "window.__appState", "type": "object", "own_property_count": len(children), "children": children},
+                "side_effect_policy": {
+                    "default_recon": False,
+                    "trigger_required_for_mutation": True,
+                    "getter_invocation": False,
+                    "prototype_traversal": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            }
         if "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__" in expression:
             return {
                 "marker": "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__",
@@ -81,6 +169,9 @@ class PageMutationAuditPage:
                 "cookies": {"count": len(self.cookie_names), "names": list(self.cookie_names)},
                 "globals": dict(self.globals),
             }
+        if "mutateObjectRoot()" in expression:
+            self.object_root_mutated = True
+            return "object-mutated"
         if "mutatePage()" in expression:
             self.html_length = 32
             self.text_length = 9
@@ -154,6 +245,84 @@ class PageMutationAuditManagerTests(unittest.TestCase):
         self.assertIn("resolveGlobal", expression)
         self.assertNotIn('Function("return (" + name + ")")', expression)
         self.assertIn("unsupported_global_path", expression)
+
+
+class ObjectRootMutationAuditManagerTests(unittest.TestCase):
+    def test_from_context_accepts_aliases_and_limits(self) -> None:
+        spec = ObjectRootMutationAuditSpec.from_context(
+            {
+                "objectRootPath": "window.__appState",
+                "triggerExpression": "mutateObjectRoot()",
+                "maxDepth": 3,
+                "maxKeys": 12,
+                "maxPreviewLength": 48,
+                "includeDescriptors": True,
+                "includeValues": False,
+            }
+        )
+
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec.root_path, "window.__appState")
+        self.assertEqual(spec.trigger_expression, "mutateObjectRoot()")
+        self.assertEqual(spec.max_depth, 3)
+        self.assertEqual(spec.max_keys, 12)
+        self.assertEqual(spec.max_preview_length, 48)
+        self.assertTrue(spec.include_descriptors)
+        self.assertFalse(spec.include_values)
+
+    def test_audit_diffs_object_root_without_getter_invocation(self) -> None:
+        page = PageMutationAuditPage()
+        spec = ObjectRootMutationAuditSpec.from_context({"root_path": "window.__appState", "trigger_expression": "mutateObjectRoot()"})
+
+        result = ObjectRootMutationAuditManager().audit(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertTrue(result.trigger["ok"])
+        self.assertTrue(result.diff["changed"])
+        self.assertEqual(result.diff["change_count"], 4)
+        self.assertEqual(result.diff["categories"], ["added", "descriptor", "removed", "value"])
+        self.assertEqual(result.diff["added_paths"], ["window.__appState.nonce"])
+        self.assertEqual(result.diff["removed_paths"], ["window.__appState.stale"])
+        self.assertIn("window.__appState.token", result.diff["changed_paths"])
+        self.assertIn("window.__appState.token", result.diff["descriptor_changed_paths"])
+        self.assertFalse(result.side_effect_policy["getter_invocation"])
+        accessor = result.before["root"]["children"]["accessorSecret"]
+        self.assertEqual(accessor["type"], "accessor")
+        self.assertTrue(accessor["descriptor"]["hasGetter"])
+
+    def test_audit_without_trigger_is_partial(self) -> None:
+        page = PageMutationAuditPage()
+        spec = ObjectRootMutationAuditSpec.from_context({"object_root": "window.__appState"})
+
+        result = ObjectRootMutationAuditManager().audit(page, spec)
+
+        self.assertEqual(result.status, "partial")
+        self.assertFalse(result.trigger["attempted"])
+        self.assertFalse(result.diff["changed"])
+        self.assertEqual(result.diff["change_count"], 0)
+
+    def test_blocks_unsafe_root_path(self) -> None:
+        page = PageMutationAuditPage()
+        spec = ObjectRootMutationAuditSpec.from_context({"root_path": "window.__appState[token]", "trigger_expression": "mutateObjectRoot()"})
+
+        result = ObjectRootMutationAuditManager().audit(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "unsupported_object_root_path")
+        self.assertFalse(page.object_root_mutated)
+
+    def test_snapshot_expression_uses_descriptors_without_dynamic_path_eval(self) -> None:
+        spec = ObjectRootMutationAuditSpec.from_context({"root_path": "window.__appState"})
+
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        expression = ObjectRootMutationAuditManager._snapshot_expression(spec)
+        self.assertIn("__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__", expression)
+        self.assertIn("Object.getOwnPropertyDescriptor", expression)
+        self.assertIn("root_path_accessor_not_invoked", expression)
+        self.assertNotIn('Function("return (" + config.rootPath', expression)
+        self.assertIn("prototype_traversal: false", expression)
 
 
 class MutationObserverTimelineManagerTests(unittest.TestCase):

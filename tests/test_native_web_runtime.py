@@ -119,6 +119,7 @@ class FakeRawPage:
         self.page_mutation_session_storage_keys = []
         self.page_mutation_cookie_names = []
         self.page_mutation_globals = {"window.__token": {"type": "string", "preview": "before"}}
+        self.object_root_mutated = False
 
     def on(self, event, handler):
         self.handlers.setdefault(event, []).append(handler)
@@ -194,6 +195,71 @@ class FakeRawPage:
                     "by_type": {"attributes": 1, "childList": 1},
                 },
             }
+        if "__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__" in expression:
+            children = {
+                "token": {
+                    "path": "window.__appState.token",
+                    "key": "token",
+                    "type": "string",
+                    "preview": "after" if self.object_root_mutated else "before",
+                    "descriptor": {
+                        "exists": True,
+                        "enumerable": True,
+                        "configurable": True,
+                        "writable": not self.object_root_mutated,
+                        "hasGetter": False,
+                        "hasSetter": False,
+                        "kind": "data",
+                    },
+                }
+            }
+            if self.object_root_mutated:
+                children["nonce"] = {
+                    "path": "window.__appState.nonce",
+                    "key": "nonce",
+                    "type": "number",
+                    "preview": "9",
+                    "descriptor": {
+                        "exists": True,
+                        "enumerable": True,
+                        "configurable": True,
+                        "writable": True,
+                        "hasGetter": False,
+                        "hasSetter": False,
+                        "kind": "data",
+                    },
+                }
+            else:
+                children["stale"] = {
+                    "path": "window.__appState.stale",
+                    "key": "stale",
+                    "type": "boolean",
+                    "preview": "true",
+                    "descriptor": {
+                        "exists": True,
+                        "enumerable": True,
+                        "configurable": True,
+                        "writable": True,
+                        "hasGetter": False,
+                        "hasSetter": False,
+                        "kind": "data",
+                    },
+                }
+            return {
+                "marker": "__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__",
+                "ok": True,
+                "status": "success",
+                "root_path": "window.__appState",
+                "root": {"path": "window.__appState", "type": "object", "own_property_count": len(children), "children": children},
+                "side_effect_policy": {
+                    "default_recon": False,
+                    "trigger_required_for_mutation": True,
+                    "getter_invocation": False,
+                    "prototype_traversal": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            }
         if "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__" in expression:
             return {
                 "marker": "__REVERSE_AGENT_PAGE_MUTATION_AUDIT__",
@@ -222,6 +288,9 @@ class FakeRawPage:
                 "cookies": {"count": len(self.page_mutation_cookie_names), "names": list(self.page_mutation_cookie_names)},
                 "globals": dict(self.page_mutation_globals),
             }
+        if "mutateNativeObjectRoot()" in expression:
+            self.object_root_mutated = True
+            return "object-mutated"
         if "mutateNativePage()" in expression:
             self.page_mutation_html_length = 44
             self.page_mutation_text_length = 12
@@ -1521,6 +1590,34 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/closure-function-candidates.json")
         self.assertEqual(result.artifacts[1].metadata["candidate_count"], 1)
         self.assertFalse(result.artifacts[1].metadata["hook_supported"])
+
+
+    def test_native_web_runtime_apply_minimal_protection_audits_object_root_mutation(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "object-root-mutation-audit",
+            {
+                "root_path": "window.__appState",
+                "trigger_expression": "mutateNativeObjectRoot()",
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["audit_object_root_mutation"])
+        self.assertIn("object_root_mutation_audit_status=success", result.verification)
+        self.assertIn("object_root_mutation_audit_root_path=window.__appState", result.verification)
+        self.assertIn("object_root_mutation_audit_changed=True", result.verification)
+        self.assertIn("object_root_mutation_audit_change_count=4", result.verification)
+        self.assertIn("object_root_mutation_audit_getter_invocation=False", result.verification)
+        self.assertEqual(result.next_action, "inspect_object_root_mutation_audit")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/object-root-mutation-audit.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "success")
+        self.assertEqual(result.artifacts[0].metadata["root_path"], "window.__appState")
+        self.assertTrue(result.artifacts[0].metadata["changed"])
+        self.assertEqual(result.artifacts[0].metadata["change_count"], 4)
+        self.assertEqual(result.artifacts[0].metadata["categories"], ["added", "descriptor", "removed", "value"])
+        self.assertFalse(result.artifacts[0].metadata["getter_invocation"])
 
     def test_native_web_runtime_apply_minimal_protection_audits_page_mutation(self) -> None:
         provider = FakeProvider()

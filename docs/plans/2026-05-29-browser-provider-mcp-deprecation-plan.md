@@ -1160,3 +1160,15 @@ Tests cover plan-only behavior, blocked execution without review approval, appro
 - Native Web：`apply_minimal_protection("source-map-fetch", ...)` 会输出 `virtual://workspace/source-map-fetch-plan.json` 与 `virtual://workspace/source-map-fetch-result.json` artifact refs；workspace contract / coordinator payload extraction / artifact category 已登记。
 - Boundary：这是 URL fetch metadata baseline，不是完整 source-map consumer；仍不做 bundler-specific symbol scoping、webpack module-internal hook discovery、凭据化浏览器 fetch 或自动 logpoint remap 重新安装。
 - 验证：`tests.test_source_maps`、`tests.test_source_logpoints`、`tests.test_native_web_runtime`、`tests.test_workspace_contract`、`tests.test_coordinator` 定向通过。
+
+### Step 127 execution record: Scoped object-root mutation audit baseline
+
+Status: implemented as an explicit descriptor-safe object-root mutation audit baseline, not a full JS heap diff, arbitrary object graph traversal, closure-state audit, default recon behavior, browser-provider lifecycle change, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`ObjectRootMutationAuditManager` / `ObjectRootMutationAuditSpec` now snapshots a strict dotted JS object root such as `window.__INITIAL_STATE__`, `window.__webpack_require__.c`, or `window.app.store` before and after an optional explicit trigger expression. Snapshot collection uses `Object.getOwnPropertyDescriptor`, avoids prototype traversal, avoids accessor getter invocation, bounds traversal with max depth / max keys / max preview, summarizes host objects, and reports added / removed / changed / type-changed / descriptor-changed paths plus truncation / cycle indicators. Unsafe root paths with brackets, calls, assignments, or non-identifier segments are blocked before the trigger runs.
+
+Native Web now recognizes `object-root-mutation-audit`, `object-mutation-audit`, `js-object-mutation-audit`, `object-graph-diff`, and root-path context aliases. It emits `virtual://workspace/object-root-mutation-audit.json`; workspace contract, backend artifact manifest category mapping, and coordinator payload extraction are registered under `workspace_object_root_mutation_audit`.
+
+Boundary: this runs only on explicit protection requests and never during default recon. It does not invoke getters during snapshot collection, does not traverse prototypes, does not evaluate dynamic root-path code, does not call MCP, does not start a browser beyond the already selected runtime, does not inspect arbitrary JS heap objects, does not hook closure internals, and does not touch Android / iOS / mini-program full runtime chains.
+
+Validation: `tests.test_page_mutation_audit`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, and `tests.test_coordinator` targeted tests passed locally.

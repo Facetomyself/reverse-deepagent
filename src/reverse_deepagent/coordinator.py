@@ -935,6 +935,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_source_logpoint_timeline": "trace",
     "workspace_mutation_audit": "trace",
     "workspace_page_mutation_audit": "trace",
+    "workspace_object_root_mutation_audit": "trace",
     "workspace_mutation_observer_timeline": "trace",
     "workspace_breakpoints": "trace",
     "workspace_debugger_paused": "trace",
@@ -1655,6 +1656,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-logpoints.json"] = evidence.details
         elif evidence.source == "source_logpoint_timeline":
             payloads["source-logpoint-timeline.json"] = evidence.details
+        elif evidence.source == "object_root_mutation_audit":
+            payloads["object-root-mutation-audit.json"] = evidence.details
         elif evidence.source == "breakpoint_manager":
             payloads["breakpoints.json"] = evidence.details
         elif evidence.source == "debugger_paused":

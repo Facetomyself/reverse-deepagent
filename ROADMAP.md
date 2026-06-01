@@ -40,7 +40,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Module discovery, runtime module cache / registry introspection, custom object runtime, module federation function-path candidate baseline, read-only async chunk graph / loader metadata baseline, and review-gated webpack async chunk load plan / explicit execution evidence baseline.
 - Closure-scope function discovery baseline without automatic closure wrapper replacement.
 - Source-level logpoints and Source Map exact / bias / sourceRoot / indexed-section remap baseline, with source-map `names` metadata, URL-like source equivalence, nested indexed-section stack metadata, and review-gated credentialless external Source Map / indexed-section URL fetch metadata baseline.
-- Page mutation audit and MutationObserver timeline baselines.
+- Page mutation audit, descriptor-safe scoped object-root mutation audit, and MutationObserver timeline baselines.
 - Same-process paused-session continuation and durable inspect-only paused-session snapshots.
 
 ### DeepAgents workspace and subagents
@@ -100,7 +100,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 - Execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.
 - Opt-in wrapper replacement for closure-internal functions beyond paused-callframe evidence.
 - Bundler-specific symbol scoping and full source-map consumer semantics beyond the current local remap plus review-gated credentialless URL fetch metadata baseline.
-- Scoped JS heap / object-root mutation audit and object graph diff.
+- Deeper JS heap / object graph diff beyond the current descriptor-safe scoped object-root mutation audit baseline.
 
 ### Strategy and rebuild quality
 

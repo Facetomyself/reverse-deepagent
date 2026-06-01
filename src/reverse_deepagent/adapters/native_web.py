@@ -25,6 +25,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleHookSpec,
     MutationObserverTimelineManager,
     MutationObserverTimelineSpec,
+    ObjectRootMutationAuditManager,
+    ObjectRootMutationAuditSpec,
     PageMutationAuditManager,
     PageMutationAuditSpec,
     PausedSessionActionSpec,
@@ -782,6 +784,59 @@ class NativeWebRuntime(WebReverseRuntime):
                 status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED,
                 artifacts=artifact_paths,
                 next_action="inspect_mutation_observer_timeline" if record_count else "trigger_dom_mutation_or_adjust_observer_scope",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_object_root_mutation_audit_request(protection_name, context):
+            spec = ObjectRootMutationAuditSpec.from_context(context)
+            result = ObjectRootMutationAuditManager().audit(page, spec)
+            change_count = int(result.diff.get("change_count") or 0)
+            categories = result.diff.get("categories") if isinstance(result.diff.get("categories"), list) else []
+            root_path = spec.root_path if spec else "<missing>"
+            verification = [
+                f"object_root_mutation_audit_status={result.status}",
+                f"object_root_mutation_audit_root_path={root_path}",
+                f"object_root_mutation_audit_changed={bool(result.diff.get('changed'))}",
+                f"object_root_mutation_audit_change_count={change_count}",
+                f"object_root_mutation_audit_categories={categories}",
+                f"object_root_mutation_audit_getter_invocation={result.side_effect_policy.get('getter_invocation', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"object_root_mutation_audit_reason={result.reason}")
+            if result.error:
+                verification.append(f"object_root_mutation_audit_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/object-root-mutation-audit.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime descriptor-safe object-root before/after mutation audit.",
+                    metadata={
+                        "status": result.status,
+                        "root_path": root_path,
+                        "changed": bool(result.diff.get("changed")),
+                        "change_count": change_count,
+                        "categories": categories,
+                        "getter_invocation": result.side_effect_policy.get("getter_invocation", False),
+                    },
+                )
+            ]
+            if result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = "provide_safe_dotted_object_root_path"
+            else:
+                status = ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED
+                next_action = "inspect_object_root_mutation_audit" if change_count else "provide_trigger_or_expand_object_snapshot_scope"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["audit_object_root_mutation"] if result.trigger.get("attempted") else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
             )
         if self._is_page_mutation_audit_request(protection_name, context):
@@ -1680,6 +1735,34 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_object_root_mutation_audit_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "object-root-mutation-audit",
+            "object-mutation-audit",
+            "js-object-mutation-audit",
+            "object-graph-diff",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "object_root_mutation_audit",
+                "objectRootMutationAudit",
+                "object_mutation_audit",
+                "objectMutationAudit",
+                "object_root",
+                "objectRoot",
+                "object_root_path",
+                "objectRootPath",
+                "root_path",
+                "rootPath",
+                "js_object_root",
+                "jsObjectRoot",
             )
         )
 
