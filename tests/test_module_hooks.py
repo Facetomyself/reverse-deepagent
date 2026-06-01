@@ -14,6 +14,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkTraversalWorkflowPlanSpec,
     AsyncChunkTraversalWorkflowExecutionManager,
     AsyncChunkTraversalWorkflowExecutionSpec,
+    AsyncChunkTraversalLoopPlanManager,
+    AsyncChunkTraversalLoopPlanSpec,
     CustomLoaderExecutionManager,
     CustomLoaderContinuationExecutionManager,
     CustomLoaderContinuationExecutionSpec,
@@ -2342,6 +2344,65 @@ class AsyncChunkTraversalWorkflowExecutionManagerTests(unittest.TestCase):
     def test_blocks_without_workflow_plan(self) -> None:
         result = AsyncChunkTraversalWorkflowExecutionManager().execute(
             AsyncChunkLoadPage(), AsyncChunkTraversalWorkflowExecutionSpec.from_context({"async_chunk_traversal_workflow_execution": True})
+        )
+
+        self.assertEqual(result.status, "unsupported")
+        self.assertEqual(result.reason, "missing_async_chunk_traversal_workflow_plan")
+
+
+class AsyncChunkTraversalLoopPlanManagerTests(unittest.TestCase):
+    def _workflow_plan(self) -> dict[str, Any]:
+        return AsyncChunkTraversalWorkflowExecutionManagerTests()._workflow_plan()
+
+    def test_plans_bounded_loop_without_executing_runtime(self) -> None:
+        spec = AsyncChunkTraversalLoopPlanSpec.from_context(
+            {
+                "async_chunk_traversal_loop_plan": True,
+                "async_chunk_traversal_workflow_plan": self._workflow_plan(),
+                "max_loop_iterations": 2,
+            }
+        )
+
+        result = AsyncChunkTraversalLoopPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.loop_plan["schema_version"], "reverse-deepagent.async-chunk-traversal-loop-plan.v1")
+        self.assertEqual(result.loop_plan["planned_iteration_count"], 1)
+        self.assertEqual(result.loop_plan["iterations"][0]["chunk_id"], "731")
+        self.assertEqual(result.loop_plan["next_action"], "review_async_chunk_traversal_loop_plan")
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_loop_execution"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_latest_execution_requires_graph_rebuild_checkpoint(self) -> None:
+        spec = AsyncChunkTraversalLoopPlanSpec.from_context(
+            {
+                "async_chunk_traversal_loop_plan": True,
+                "async_chunk_traversal_workflow_plan": self._workflow_plan(),
+                "async_chunk_traversal_workflow_execution": {
+                    "execution": {
+                        "status": "module_diff_ready",
+                        "selected_candidate_index": 0,
+                    }
+                },
+            }
+        )
+
+        result = AsyncChunkTraversalLoopPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.loop_plan["latest_workflow_execution_status"], "module_diff_ready")
+        self.assertEqual(
+            result.loop_plan["next_action"],
+            "rerun_module_discovery_and_rebuild_async_chunk_traversal_graph_before_next_loop_iteration",
+        )
+        self.assertFalse(result.loop_plan["loop_checkpoint_policy"]["automatic_queue_advance"])
+
+    def test_blocks_without_workflow_plan(self) -> None:
+        result = AsyncChunkTraversalLoopPlanManager().plan(
+            AsyncChunkTraversalLoopPlanSpec.from_context({"async_chunk_traversal_loop_plan": True})
         )
 
         self.assertEqual(result.status, "unsupported")
