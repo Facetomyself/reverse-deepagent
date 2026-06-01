@@ -449,6 +449,7 @@ The following items used to be listed as broad follow-ups and now have conservat
 - Generated rebuild review hints derived from runtime-context diff classifications, including volatile, session-bound, missing-field, type-drift, and object-drift risk hints.
 - Plan-only protected-flow triage hook planner for WASM / VM / obfuscation / anti-debug / dynamic-secret markers, including workspace routes for `protection-triage-hooks.json`, `wasm-runtime-candidates.json`, and `vm-dispatcher-candidates.json`.
 - Provider-neutral strategy evidence scoring baseline for review-only `evidence_score` payloads across strategy detection and rebuild plans; it does not change readiness, execute replay, start browsers, or call MCP.
+- External hosted CDP reference BrowserProvider package for allocation / attach / release lifecycle contract testing; metadata listing remains side-effect-free, `start()` is explicit allocation + CDP attach, and `stop()` releases only owned reference allocations idempotently.
 - Workspace artifact reader, read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, delivery source compatibility audit, workspace migration readiness report, limited dual-write pilot plan, resolver compatibility metrics, and consumer adoption audit baselines exposed through `read_workspace_artifact`, `audit_workspace_artifact_consumers`, `assess_workspace_migration_readiness`, `plan_workspace_dual_write_pilot`, `build_rebuild_delivery`, `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_artifacts`, `review_rebuild_artifacts`, `evaluate_delivery_review_gate`, and `execute_local_delivery`; they consume or classify artifact keys, legacy paths, future paths, virtual URIs, artifact-root-relative fallback paths, legacy / future / external `source_path` usage, limited dual-write pilot readiness, low-risk pilot candidates, foldered-canonical blockers, and explicit filesystem boundaries without moving artifacts or bypassing delivery gates.
 
 These baselines are intentionally review-gated, read-only, or pure-analysis-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, automatic browser context collection, or automatic external publication.
@@ -457,7 +458,7 @@ These baselines are intentionally review-gated, read-only, or pure-analysis-only
 
 The remaining Web-first work should continue behind provider / runtime / artifact contracts instead of leaking raw CDP or provider details into the coordinator:
 
-- Production third-party BrowserProvider plugin implementations beyond the functional fixture provider, such as vendor anti-detect browsers or hosted browser services.
+- Real third-party BrowserProvider plugin implementations beyond the functional fixture, hosted-CDP template, and hosted-CDP reference packages, such as vendor anti-detect browsers or hosted browser services.
 - Compatibility rule evolution for newly added provider capability flags.
 - Cross-process live CDP paused execution continuation.
 - Arbitrary custom loader traversal, async chunk graph analysis, and execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.
