@@ -103,6 +103,44 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["custom_loader_traversal_blocked_execution_count"], 1)
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_custom_loader_preflight_ready_to_execute(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_execution_preflight": {
+                "status": "ready_for_execution_review",
+                "preflight": {"status": "ready_for_execution_review"},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("custom_loader_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "execute_custom_loader_with_review_approval")
+        self.assertEqual(result["summary"]["custom_loader_execution_preflight_status"], "ready_for_execution_review")
+
+    def test_review_hook_artifacts_suppresses_custom_loader_review_after_execution_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_traversal_plan": {
+                "status": "planned",
+                "plan": {"status": "ready_for_review", "candidate_count": 1, "ready_for_review_count": 1},
+            },
+            "custom_loader_execution_result": {
+                "status": "success",
+                "execution": {"attempted": True, "loaderInvoked": True, "addedRegistryKeys": ["884"]},
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertNotIn("custom_loader_traversal_requires_review", result["warnings"])
+        self.assertNotIn("custom_loader_execution_requires_review", result["warnings"])
+        self.assertEqual(result["summary"]["custom_loader_execution_result_status"], "success")
+        self.assertTrue(result["summary"]["custom_loader_execution_attempted"])
+        self.assertTrue(result["summary"]["custom_loader_execution_loader_invoked"])
+        self.assertEqual(result["summary"]["custom_loader_execution_added_registry_key_count"], 1)
+
     def test_review_hook_artifacts_warns_for_module_federation_get_init_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

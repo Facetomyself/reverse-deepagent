@@ -8,8 +8,10 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
+    CustomLoaderExecutionManager,
     CustomLoaderExecutionPreflightManager,
     CustomLoaderExecutionPreflightSpec,
+    CustomLoaderExecutionSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -135,6 +137,39 @@ class AsyncChunkLoadPage:
                 "afterCacheCount": 0,
                 "addedCacheKeys": [],
                 "moduleFactoryInvoked": False,
+            }
+        raise AssertionError(f"unexpected expression: {expression}")
+
+
+class CustomLoaderExecutionPage:
+    url = "https://example.test/app"
+
+    def __init__(self) -> None:
+        self.executions: list[str] = []
+
+    def evaluate(self, expression):
+        if "__REVERSE_AGENT_CUSTOM_LOADER_EXECUTION__" in expression:
+            self.executions.append("window.__customLoader.load")
+            return {
+                "marker": "__REVERSE_AGENT_CUSTOM_LOADER_EXECUTION__",
+                "attempted": True,
+                "ok": True,
+                "status": "success",
+                "loaderPath": "window.__customLoader.load",
+                "loaderInvoked": True,
+                "beforeRegistryCount": 1,
+                "afterRegistryCount": 2,
+                "addedRegistryKeys": ["884"],
+                "removedRegistryKeys": [],
+                "changedRegistryKeys": [],
+                "beforeCacheCount": 0,
+                "afterCacheCount": 1,
+                "addedCacheKeys": ["884"],
+                "removedCacheKeys": [],
+                "changedCacheKeys": [],
+                "before": {"registryKeys": ["1"], "cacheKeys": []},
+                "after": {"registryKeys": ["1", "884"], "cacheKeys": ["884"]},
+                "result": {"type": "object", "keys": ["moduleId"], "preview": '{"moduleId":"884"}'},
             }
         raise AssertionError(f"unexpected expression: {expression}")
 
@@ -383,6 +418,86 @@ class CustomLoaderExecutionPreflightManagerTests(unittest.TestCase):
         self.assertIn("unsupported_loader_kind_for_custom_execution_preflight", result.preflight["blocking_reasons"])
         self.assertIn("strict_dotted_loader_path_required", result.preflight["blocking_reasons"])
         self.assertIn("dynamic_import_requires_dedicated_gate", result.preflight["blocking_reasons"])
+
+
+class CustomLoaderExecutionManagerTests(unittest.TestCase):
+    def _preflight(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-execution-preflight.v1",
+            "status": "ready_for_execution_review",
+            "selected_candidate": {
+                "index": 0,
+                "classification": "arbitrary_custom_loader",
+                "loader_kind": "custom-loader",
+                "edge_type": "custom-loader-candidate",
+                "loader_path": "window.__customLoader.load",
+                "target": "window.__customLoader.load",
+            },
+            "blocking_reasons": [],
+        }
+
+    def test_blocks_without_review_approval(self) -> None:
+        spec = CustomLoaderExecutionSpec.from_context({"custom_loader_execution_preflight": self._preflight()})
+
+        result = CustomLoaderExecutionManager().execute(CustomLoaderExecutionPage(), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_blocks_when_preflight_not_ready(self) -> None:
+        preflight = self._preflight()
+        preflight["status"] = "blocked"
+        preflight["blocking_reasons"] = ["strict_dotted_loader_path_required"]
+        spec = CustomLoaderExecutionSpec.from_context({"custom_loader_execution_preflight": preflight, "review_approved": True})
+
+        result = CustomLoaderExecutionManager().execute(CustomLoaderExecutionPage(), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "custom_loader_preflight_not_ready")
+
+    def test_executes_reviewed_custom_loader_and_records_registry_diff(self) -> None:
+        page = CustomLoaderExecutionPage()
+        spec = CustomLoaderExecutionSpec.from_context(
+            {
+                "custom_loader_execution_preflight": self._preflight(),
+                "review_approved": True,
+                "loader_arguments": [{"chunk": "884"}],
+            }
+        )
+
+        result = CustomLoaderExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(page.executions, ["window.__customLoader.load"])
+        self.assertTrue(result.side_effect_policy["loader_invoked"])
+        self.assertTrue(result.side_effect_policy["custom_loader_executed"])
+        self.assertFalse(result.side_effect_policy["dynamic_import_executed"])
+        self.assertFalse(result.side_effect_policy["module_federation_get_init_executed"])
+        self.assertEqual(result.execution["addedRegistryKeys"], ["884"])
+        self.assertEqual(result.execution["addedCacheKeys"], ["884"])
+        self.assertEqual(result.execution["result"]["type"], "object")
+
+    def test_blocks_dynamic_import_and_webpack_candidates(self) -> None:
+        for loader_kind, edge_type, reason in (
+            ("dynamic-import", "dynamic-import", "dynamic_import_requires_dedicated_gate"),
+            ("webpack-runtime", "runtime-async-chunk", "use_async_chunk_load_for_webpack_loader"),
+        ):
+            preflight = self._preflight()
+            preflight["selected_candidate"] = {
+                "classification": "arbitrary_custom_loader",
+                "loader_kind": loader_kind,
+                "edge_type": edge_type,
+                "loader_path": "window.__customLoader.load",
+            }
+            spec = CustomLoaderExecutionSpec.from_context({"custom_loader_execution_preflight": preflight, "review_approved": True})
+
+            result = CustomLoaderExecutionManager().execute(CustomLoaderExecutionPage(), spec)
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.reason, reason)
 
 
 class ModuleFederationGetInitPlanManagerTests(unittest.TestCase):

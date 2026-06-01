@@ -14,8 +14,10 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
+    CustomLoaderExecutionManager,
     CustomLoaderExecutionPreflightManager,
     CustomLoaderExecutionPreflightSpec,
+    CustomLoaderExecutionSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1625,6 +1627,69 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_execution_request(protection_name, context):
+            spec = CustomLoaderExecutionSpec.from_context(context)
+            result = CustomLoaderExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+            loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or execution.get("loaderPath") or "")
+            verification = [
+                f"custom_loader_execution_status={result.status}",
+                f"custom_loader_execution_reason={result.reason or ''}",
+                f"custom_loader_execution_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"custom_loader_execution_ok={execution.get('ok', False)}",
+                f"custom_loader_execution_added_registry_key_count={len(execution.get('addedRegistryKeys') or [])}",
+                f"custom_loader_execution_added_cache_key_count={len(execution.get('addedCacheKeys') or [])}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"custom_loader_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-execution-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed custom loader execution evidence.",
+                    metadata={
+                        "status": result.status,
+                        "execution_attempted": execution.get("attempted", False),
+                        "execution_ok": execution.get("ok", False),
+                        "loader_path": loader_path,
+                        "loader_invoked": result.side_effect_policy.get("loader_invoked", False),
+                        "added_registry_key_count": len(execution.get("addedRegistryKeys") or []),
+                        "added_cache_key_count": len(execution.get("addedCacheKeys") or []),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                    },
+                )
+            ]
+            if result.status == "success":
+                status = ExecutionStatus.SUCCESS
+                next_action = "inspect_custom_loader_execution_result_or_refresh_module_diff"
+                applied_actions = [f"execute_custom_loader:{loader_path or '<missing>'}"]
+            elif result.reason == "review_approval_required":
+                status = ExecutionStatus.PARTIAL
+                next_action = "approve_custom_loader_execution"
+                applied_actions = []
+            elif result.reason in {"missing_custom_loader_execution_preflight", "custom_loader_preflight_not_ready"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = "run_custom_loader_execution_preflight"
+                applied_actions = []
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = "inspect_custom_loader_execution_request"
+                applied_actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_execution_failure"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
         if self._is_custom_loader_execution_preflight_request(protection_name, context):
             spec = CustomLoaderExecutionPreflightSpec.from_context(context)
             result = CustomLoaderExecutionPreflightManager().preflight(spec)
@@ -2630,6 +2695,37 @@ class NativeWebRuntime(WebReverseRuntime):
                 "module_federation_factory_invoke_result",
                 "moduleFederationFactoryInvokeResult",
                 "module-federation-factory-invoke-result",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-execution",
+            "execute-custom-loader",
+            "reviewed-custom-loader-execution",
+            "custom-loader-execute",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_execution",
+                "customLoaderExecution",
+                "execute_custom_loader",
+                "executeCustomLoader",
+                "reviewed_custom_loader_execution",
+                "reviewedCustomLoaderExecution",
+            )
+        ) and any(
+            key in context
+            for key in (
+                "custom_loader_execution_preflight",
+                "customLoaderExecutionPreflight",
+                "custom-loader-execution-preflight",
+                "custom_loader_preflight",
+                "customLoaderPreflight",
             )
         )
 

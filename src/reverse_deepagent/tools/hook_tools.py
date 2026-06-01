@@ -46,6 +46,18 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "custom-loader-traversal-plan",
             "customLoaderTraversalPlan",
         )
+        custom_loader_execution_preflight = _object_alias(
+            payload,
+            "custom_loader_execution_preflight",
+            "custom-loader-execution-preflight",
+            "customLoaderExecutionPreflight",
+        )
+        custom_loader_execution_result = _object_alias(
+            payload,
+            "custom_loader_execution_result",
+            "custom-loader-execution-result",
+            "customLoaderExecutionResult",
+        )
         module_federation_get_init_plan = _object_alias(
             payload,
             "module_federation_get_init_plan",
@@ -99,6 +111,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_result,
                 async_chunk_module_diff,
                 custom_loader_traversal_plan,
+                custom_loader_execution_preflight,
+                custom_loader_execution_result,
                 module_federation_get_init_plan,
                 module_federation_get_init_result,
                 module_federation_factory_invoke_result,
@@ -117,12 +131,22 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("async_chunk_module_diff_blocked")
         if _status(custom_loader_traversal_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_traversal_plan_blocked")
+        if _status(custom_loader_execution_preflight) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("custom_loader_execution_preflight_blocked")
+        if _status(custom_loader_execution_result) in {"failed", "failure", "error", "unsupported"}:
+            blockers.append("custom_loader_execution_failed")
         custom_loader_plan_status = _nested_status(custom_loader_traversal_plan, "plan")
+        custom_loader_preflight_status = _nested_status(custom_loader_execution_preflight, "preflight")
         if custom_loader_traversal_plan and (
             _status(custom_loader_traversal_plan) in {"ready_for_review", "planned"}
             or custom_loader_plan_status == "ready_for_review"
-        ):
+        ) and not custom_loader_execution_preflight and not custom_loader_execution_result:
             warnings.append("custom_loader_traversal_requires_review")
+        if custom_loader_execution_preflight and not custom_loader_execution_result and (
+            _status(custom_loader_execution_preflight) == "ready_for_execution_review"
+            or custom_loader_preflight_status == "ready_for_execution_review"
+        ):
+            warnings.append("custom_loader_execution_requires_review")
         if _status(module_federation_get_init_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("module_federation_get_init_plan_blocked")
         if _status(module_federation_get_init_result) in {"failed", "failure", "error", "unsupported"}:
@@ -188,9 +212,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or async_chunk_diff_status,
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or custom_loader_plan_status,
+                "custom_loader_execution_preflight_status": _status(custom_loader_execution_preflight) or custom_loader_preflight_status,
+                "custom_loader_execution_result_status": _status(custom_loader_execution_result),
                 "custom_loader_traversal_candidate_count": _intish(custom_loader_traversal_plan.get("candidate_count") or _nested_get(custom_loader_traversal_plan, "plan", "candidate_count")),
                 "custom_loader_traversal_ready_for_review_count": _intish(custom_loader_traversal_plan.get("ready_for_review_count") or _nested_get(custom_loader_traversal_plan, "plan", "ready_for_review_count")),
                 "custom_loader_traversal_blocked_execution_count": _intish(custom_loader_traversal_plan.get("blocked_execution_count") or _nested_get(custom_loader_traversal_plan, "plan", "blocked_execution_count")),
+                "custom_loader_execution_attempted": bool(custom_loader_execution_result.get("execution", {}).get("attempted") if isinstance(custom_loader_execution_result.get("execution"), dict) else custom_loader_execution_result.get("execution_attempted", False)),
+                "custom_loader_execution_loader_invoked": bool(custom_loader_execution_result.get("execution", {}).get("loaderInvoked") if isinstance(custom_loader_execution_result.get("execution"), dict) else custom_loader_execution_result.get("loader_invoked", False)),
+                "custom_loader_execution_added_registry_key_count": len(_listish(custom_loader_execution_result.get("addedRegistryKeys") or custom_loader_execution_result.get("added_registry_keys") or _nested_get(custom_loader_execution_result, "execution", "addedRegistryKeys"))),
                 "module_federation_get_init_plan_status": _status(module_federation_get_init_plan) or federation_plan_status,
                 "module_federation_get_init_result_status": _status(module_federation_get_init_result),
                 "module_federation_factory_invoke_result_status": _status(module_federation_factory_invoke_result),
@@ -232,6 +261,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_result,
                 async_chunk_module_diff,
                 custom_loader_traversal_plan,
+                custom_loader_execution_preflight,
+                custom_loader_execution_result,
                 module_federation_get_init_plan,
                 module_federation_get_init_result,
                 module_federation_factory_invoke_result,
@@ -386,6 +417,10 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "inspect_module_federation_factory_invoke_failure"
     if "module_federation_export_hook_plan_blocked" in blockers:
         return "inspect_remote_export_shapes_before_hooking"
+    if "custom_loader_execution_failed" in blockers:
+        return "inspect_custom_loader_execution_failure"
+    if "custom_loader_execution_preflight_blocked" in blockers:
+        return "resolve_custom_loader_preflight_blockers"
     if "custom_loader_traversal_plan_blocked" in blockers:
         return "choose_supported_async_chunk_or_static_source_path"
     if "async_chunk_load_plan_blocked" in blockers:
@@ -406,6 +441,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_module_federation_export_hook_plan"
     if "custom_loader_traversal_requires_review" in warnings:
         return "review_custom_loader_traversal_plan"
+    if "custom_loader_execution_requires_review" in warnings:
+        return "execute_custom_loader_with_review_approval"
     if "async_chunk_load_requires_review" in warnings:
         return "review_async_chunk_load_plan_before_execution"
     if "async_chunk_module_diff_required" in warnings:
@@ -433,6 +470,8 @@ def _review_required_items(
     async_chunk_result: dict[str, Any],
     async_chunk_module_diff: dict[str, Any],
     custom_loader_traversal_plan: dict[str, Any],
+    custom_loader_execution_preflight: dict[str, Any],
+    custom_loader_execution_result: dict[str, Any],
     module_federation_get_init_plan: dict[str, Any],
     module_federation_get_init_result: dict[str, Any],
     module_federation_factory_invoke_result: dict[str, Any],
@@ -452,6 +491,8 @@ def _review_required_items(
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or _nested_status(custom_loader_traversal_plan, "plan"),
+                "custom_loader_execution_preflight_status": _status(custom_loader_execution_preflight) or _nested_status(custom_loader_execution_preflight, "preflight"),
+                "custom_loader_execution_result_status": _status(custom_loader_execution_result),
                 "module_federation_get_init_plan_status": _status(module_federation_get_init_plan) or _nested_status(module_federation_get_init_plan, "plan"),
                 "module_federation_get_init_result_status": _status(module_federation_get_init_result),
                 "module_federation_factory_invoke_result_status": _status(module_federation_factory_invoke_result),
@@ -462,6 +503,7 @@ def _review_required_items(
                 "async_chunk_load_error": str(async_chunk_result.get("error") or async_chunk_plan.get("error") or ""),
                 "async_chunk_module_diff_error": str(async_chunk_module_diff.get("error") or ""),
                 "custom_loader_traversal_error": str(custom_loader_traversal_plan.get("error") or ""),
+                "custom_loader_execution_error": str(custom_loader_execution_result.get("error") or custom_loader_execution_preflight.get("error") or ""),
                 "module_federation_get_init_error": str(module_federation_get_init_result.get("error") or module_federation_get_init_plan.get("error") or ""),
                 "module_federation_factory_error": str(module_federation_factory_invoke_result.get("error") or ""),
                 "module_federation_export_hook_error": str(module_federation_export_hook_plan.get("error") or ""),

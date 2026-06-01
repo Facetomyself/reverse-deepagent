@@ -639,6 +639,300 @@ class CustomLoaderExecutionPreflightManager:
 
 
 @dataclass(slots=True)
+class CustomLoaderExecutionSpec:
+    """Review-approved single custom loader execution request from a preflight payload."""
+
+    preflight: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    review_approved: bool = False
+    loader_arguments: list[Any] = field(default_factory=list)
+    capture_result: bool = True
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderExecutionSpec | None":
+        context = context or {}
+        preflight = (
+            context.get("custom_loader_execution_preflight")
+            or context.get("custom-loader-execution-preflight")
+            or context.get("customLoaderExecutionPreflight")
+            or context.get("custom_loader_preflight")
+            or context.get("customLoaderPreflight")
+            or context.get("preflight")
+        )
+        if not isinstance(preflight, dict):
+            return None
+        selected = (
+            context.get("selected_custom_loader_candidate")
+            or context.get("selectedCustomLoaderCandidate")
+            or context.get("selected_loader_candidate")
+            or context.get("selectedLoaderCandidate")
+            or context.get("selected_candidate")
+            or context.get("selectedCandidate")
+            or context.get("loader_candidate")
+            or context.get("loaderCandidate")
+        )
+        loader_arguments_value = context.get("loader_arguments", context.get("loaderArguments"))
+        loader_argument_value = context.get("loader_argument", context.get("loaderArgument"))
+        if isinstance(loader_arguments_value, list):
+            loader_arguments = list(loader_arguments_value)
+        elif loader_arguments_value is not None:
+            loader_arguments = [loader_arguments_value]
+        elif loader_argument_value is not None:
+            loader_arguments = [loader_argument_value]
+        else:
+            loader_arguments = []
+        return cls(
+            preflight=dict(preflight),
+            selected_candidate=dict(selected) if isinstance(selected, dict) else {},
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))),
+            loader_arguments=loader_arguments,
+            capture_result=bool(context.get("capture_result", context.get("captureResult", True))),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class CustomLoaderExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "selected_candidate": self.selected_candidate,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class CustomLoaderExecutionManager:
+    """Execute exactly one reviewed arbitrary custom loader and record registry/cache diffs."""
+
+    def execute(self, page: BrowserPage, spec: CustomLoaderExecutionSpec | None) -> CustomLoaderExecutionResult:
+        if spec is None:
+            return CustomLoaderExecutionResult(status="unsupported", reason="missing_custom_loader_execution_preflight", side_effect_policy=self._blocked_side_effect_policy())
+        if not spec.review_approved:
+            return CustomLoaderExecutionResult(status="blocked", reason="review_approval_required", side_effect_policy=self._blocked_side_effect_policy())
+        preflight = self._preflight_payload(spec.preflight)
+        if not preflight:
+            return CustomLoaderExecutionResult(status="blocked", reason="missing_custom_loader_execution_preflight", side_effect_policy=self._blocked_side_effect_policy(review_approved=spec.review_approved))
+        if str(preflight.get("status") or "") != "ready_for_execution_review":
+            return CustomLoaderExecutionResult(status="blocked", reason="custom_loader_preflight_not_ready", side_effect_policy=self._blocked_side_effect_policy(review_approved=spec.review_approved))
+        candidate = self._selected_candidate(spec, preflight)
+        readiness_error = self._execution_readiness_error(candidate)
+        if readiness_error:
+            return CustomLoaderExecutionResult(status="blocked", selected_candidate=candidate, reason=readiness_error, side_effect_policy=self._blocked_side_effect_policy(review_approved=spec.review_approved))
+        try:
+            payload = page.evaluate(self._execution_expression(candidate, spec))
+        except Exception as exc:
+            return CustomLoaderExecutionResult(
+                status="failed",
+                selected_candidate=candidate,
+                execution={"attempted": True, "ok": False, "error": str(exc)},
+                side_effect_policy=self._executed_side_effect_policy(loader_invoked=True),
+                error=str(exc),
+            )
+        execution = payload if isinstance(payload, dict) else {"attempted": True, "ok": False, "result": payload}
+        status = "success" if execution.get("ok") else "failed"
+        return CustomLoaderExecutionResult(
+            status=status,
+            execution=execution,
+            selected_candidate=candidate,
+            side_effect_policy=self._executed_side_effect_policy(loader_invoked=bool(execution.get("loaderInvoked", execution.get("attempted", False)))),
+            reason=str(execution.get("reason")) if execution.get("reason") else None,
+            error=str(execution.get("error")) if execution.get("error") else None,
+        )
+
+    @staticmethod
+    def _preflight_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        nested = payload.get("preflight") if isinstance(payload.get("preflight"), dict) else None
+        return dict(nested or payload)
+
+    @staticmethod
+    def _selected_candidate(spec: CustomLoaderExecutionSpec, preflight: dict[str, Any]) -> dict[str, Any]:
+        if spec.selected_candidate:
+            return dict(spec.selected_candidate)
+        candidate = preflight.get("selected_candidate") or preflight.get("selectedCandidate")
+        return dict(candidate) if isinstance(candidate, dict) else {}
+
+    @staticmethod
+    def _execution_readiness_error(candidate: dict[str, Any]) -> str | None:
+        if not candidate:
+            return "missing_selected_custom_loader_candidate"
+        loader_kind = str(candidate.get("loader_kind") or candidate.get("loaderKind") or "custom-loader").strip().lower()
+        classification = str(candidate.get("classification") or "").strip().lower()
+        edge_type = str(candidate.get("edge_type") or candidate.get("edgeType") or "").strip().lower()
+        loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or "").strip()
+        if loader_kind in CustomLoaderTraversalPlanManager.DYNAMIC_IMPORT_KINDS or edge_type == "dynamic-import":
+            return "dynamic_import_requires_dedicated_gate"
+        if loader_kind in CustomLoaderTraversalPlanManager.FEDERATION_KINDS or "federation" in edge_type:
+            return "module_federation_requires_dedicated_gate"
+        if loader_kind in CustomLoaderTraversalPlanManager.WEBPACK_KINDS:
+            return "use_async_chunk_load_for_webpack_loader"
+        if classification not in {"arbitrary_custom_loader", "", "custom_loader"}:
+            return "unsupported_custom_loader_candidate"
+        if not loader_path or not JS_DOTTED_PATH_RE.fullmatch(loader_path):
+            return "strict_dotted_loader_path_required"
+        return None
+
+    @staticmethod
+    def _path_parts(path: str) -> list[str]:
+        parts = [item for item in str(path or "").split(".") if item]
+        if parts and parts[0] == "window":
+            parts = parts[1:]
+        return parts
+
+    @staticmethod
+    def _blocked_side_effect_policy(*, review_approved: bool = False) -> dict[str, Any]:
+        return {
+            "requires_review_approval": True,
+            "review_approved": review_approved,
+            "loader_invoked": False,
+            "custom_loader_executed": False,
+            "runtime_loader_executed": False,
+            "chunk_request_may_be_sent": False,
+            "dynamic_import_executed": False,
+            "module_factory_invoked": False,
+            "module_federation_get_init_executed": False,
+            "browser_state_mutated": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _executed_side_effect_policy(*, loader_invoked: bool) -> dict[str, Any]:
+        return {
+            "requires_review_approval": True,
+            "review_approved": True,
+            "loader_invoked": loader_invoked,
+            "custom_loader_executed": loader_invoked,
+            "runtime_loader_executed": loader_invoked,
+            "chunk_request_may_be_sent": loader_invoked,
+            "dynamic_import_executed": False,
+            "module_factory_invoked": False,
+            "module_federation_get_init_executed": False,
+            "browser_state_mutated": loader_invoked,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @classmethod
+    def _execution_expression(cls, candidate: dict[str, Any], spec: CustomLoaderExecutionSpec) -> str:
+        loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or "").strip()
+        loader_path_json = json.dumps(loader_path, ensure_ascii=False)
+        loader_parts_json = json.dumps(cls._path_parts(loader_path), ensure_ascii=False)
+        loader_args_json = json.dumps(spec.loader_arguments, ensure_ascii=False, default=str)
+        capture_result = "true" if spec.capture_result else "false"
+        max_preview_length = max(1, int(spec.max_preview_length))
+        return f"""
+(async () => {{
+  const marker = "__REVERSE_AGENT_CUSTOM_LOADER_EXECUTION__";
+  const loaderPath = {loader_path_json};
+  const loaderPathParts = {loader_parts_json};
+  const loaderArguments = {loader_args_json};
+  const captureResult = {capture_result};
+  const maxPreviewLength = {max_preview_length};
+  const describeError = (error) => String(error && (error.stack || error.message) || error).slice(0, maxPreviewLength);
+  const previewValue = (value) => {{
+    const type = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    const preview = (() => {{
+      try {{
+        if (type === "function") return String(value).slice(0, maxPreviewLength);
+        if (type === "object" || type === "array") return JSON.stringify(value).slice(0, maxPreviewLength);
+        return String(value).slice(0, maxPreviewLength);
+      }} catch (error) {{
+        return describeError(error);
+      }}
+    }})();
+    const keys = value && typeof value === "object" ? Object.keys(value).map(String).sort().slice(0, 30) : [];
+    return {{
+      type,
+      constructorName: value && value.constructor && value.constructor.name || "",
+      name: type === "function" ? value.name || "" : "",
+      keys,
+      preview
+    }};
+  }};
+  const resolvePath = (parts) => {{
+    try {{
+      let value = window;
+      for (const part of parts) {{
+        if (!part || !/^[A-Za-z_$][\\w$]*$/.test(part)) return {{ ok: false, error: "unsafe_loader_path_segment" }};
+        value = value && value[part];
+      }}
+      return {{ ok: true, value }};
+    }} catch (error) {{
+      return {{ ok: false, error: describeError(error) }};
+    }}
+  }};
+  const sortedKeys = (value) => value && typeof value === "object" ? Object.keys(value).map(String).sort() : [];
+  const snapshotRuntime = () => {{
+    const req = window && window.__webpack_require__;
+    return {{
+      registryKeys: req && req.m && typeof req.m === "object" ? sortedKeys(req.m) : [],
+      cacheKeys: req && req.c && typeof req.c === "object" ? sortedKeys(req.c) : []
+    }};
+  }};
+  const diffAdded = (before, after) => after.filter((item) => !before.includes(item)).slice(0, 100);
+  const diffRemoved = (before, after) => before.filter((item) => !after.includes(item)).slice(0, 100);
+  const finish = (ok, reason, value, error) => {{
+    const after = snapshotRuntime();
+    return {{
+      marker,
+      attempted: true,
+      ok,
+      status: ok ? "success" : "failed",
+      reason,
+      error: error || "",
+      loaderPath,
+      loaderInvoked: reason !== "custom_loader_not_function" && reason !== "loader_path_unavailable",
+      beforeRegistryCount: before.registryKeys.length,
+      afterRegistryCount: after.registryKeys.length,
+      addedRegistryKeys: diffAdded(before.registryKeys, after.registryKeys),
+      removedRegistryKeys: diffRemoved(before.registryKeys, after.registryKeys),
+      changedRegistryKeys: [],
+      beforeCacheCount: before.cacheKeys.length,
+      afterCacheCount: after.cacheKeys.length,
+      addedCacheKeys: diffAdded(before.cacheKeys, after.cacheKeys),
+      removedCacheKeys: diffRemoved(before.cacheKeys, after.cacheKeys),
+      changedCacheKeys: [],
+      before,
+      after,
+      result: captureResult && ok ? previewValue(value) : {{}}
+    }};
+  }};
+  const before = snapshotRuntime();
+  const resolved = resolvePath(loaderPathParts);
+  if (!resolved.ok) return finish(false, "loader_path_unavailable", undefined, resolved.error);
+  const loader = resolved.value;
+  if (typeof loader !== "function") return finish(false, "custom_loader_not_function", loader, "");
+  try {{
+    const result = loader.apply(null, loaderArguments);
+    if (result && typeof result.then === "function") {{
+      try {{
+        return finish(true, "", await result, "");
+      }} catch (error) {{
+        return finish(false, "custom_loader_threw", undefined, describeError(error));
+      }}
+    }}
+    return finish(true, "", result, "");
+  }} catch (error) {{
+    return finish(false, "custom_loader_threw", undefined, describeError(error));
+  }}
+}})()
+"""
+
+
+@dataclass(slots=True)
 class ModuleFederationGetInitPlanSpec:
     """Plan-only Module Federation container init/get analysis request."""
 

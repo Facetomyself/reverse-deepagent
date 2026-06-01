@@ -110,6 +110,7 @@ class FakeRawPage:
         self.module_hook_installed = False
         self.module_hook_events = []
         self.async_chunk_loads = []
+        self.custom_loader_executions = []
         self.module_federation_get_init_probes = []
         self.module_federation_factory_invocations = []
         self.external_source = ""
@@ -329,6 +330,27 @@ class FakeRawPage:
                 "afterCacheCount": 0,
                 "addedCacheKeys": [],
                 "moduleFactoryInvoked": False,
+            }
+        if "__REVERSE_AGENT_CUSTOM_LOADER_EXECUTION__" in expression:
+            self.custom_loader_executions.append("window.__customLoader.load")
+            return {
+                "marker": "__REVERSE_AGENT_CUSTOM_LOADER_EXECUTION__",
+                "attempted": True,
+                "ok": True,
+                "status": "success",
+                "loaderPath": "window.__customLoader.load",
+                "loaderInvoked": True,
+                "beforeRegistryCount": 1,
+                "afterRegistryCount": 2,
+                "addedRegistryKeys": ["884"],
+                "removedRegistryKeys": [],
+                "changedRegistryKeys": [],
+                "beforeCacheCount": 0,
+                "afterCacheCount": 1,
+                "addedCacheKeys": ["884"],
+                "removedCacheKeys": [],
+                "changedCacheKeys": [],
+                "result": {"type": "object", "keys": ["moduleId"], "preview": '{"moduleId":"884"}'},
             }
         if "__REVERSE_AGENT_MODULE_FEDERATION_GET_INIT_PROBE__" in expression:
             self.module_federation_get_init_probes.append("./token")
@@ -1128,6 +1150,70 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.applied_actions, ["preflight_custom_loader_execution"])
         self.assertIn("custom_loader_execution_preflight_status=blocked", result.verification)
         self.assertEqual(result.next_action, "resolve_custom_loader_preflight_blockers")
+
+    def test_native_web_runtime_executes_reviewed_custom_loader_after_preflight(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        preflight = {
+            "schema_version": "reverse-deepagent.custom-loader-execution-preflight.v1",
+            "status": "ready_for_execution_review",
+            "selected_candidate": {
+                "index": 0,
+                "classification": "arbitrary_custom_loader",
+                "loader_kind": "custom-loader",
+                "edge_type": "custom-loader-candidate",
+                "loader_path": "window.__customLoader.load",
+                "target": "window.__customLoader.load",
+            },
+            "blocking_reasons": [],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "custom-loader-execution",
+            {
+                "custom_loader_execution_preflight": preflight,
+                "review_approved": True,
+                "loader_arguments": [{"chunk": "884"}],
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(page.custom_loader_executions, ["window.__customLoader.load"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertEqual(result.applied_actions, ["execute_custom_loader:window.__customLoader.load"])
+        self.assertIn("custom_loader_execution_status=success", result.verification)
+        self.assertIn("custom_loader_execution_loader_invoked=True", result.verification)
+        self.assertIn("custom_loader_execution_added_registry_key_count=1", result.verification)
+        self.assertEqual(result.next_action, "inspect_custom_loader_execution_result_or_refresh_module_diff")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-execution-result.json")
+        self.assertTrue(result.artifacts[0].metadata["execution_ok"])
+        self.assertEqual(result.artifacts[0].metadata["added_registry_key_count"], 1)
+
+    def test_native_web_runtime_blocks_custom_loader_execution_without_review(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-execution",
+            {
+                "custom_loader_execution_preflight": {
+                    "schema_version": "reverse-deepagent.custom-loader-execution-preflight.v1",
+                    "status": "ready_for_execution_review",
+                    "selected_candidate": {
+                        "classification": "arbitrary_custom_loader",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "loader_path": "window.__customLoader.load",
+                    },
+                },
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertEqual(result.next_action, "approve_custom_loader_execution")
+        self.assertIn("custom_loader_execution_status=blocked", result.verification)
 
     def test_native_web_runtime_plans_module_federation_get_init_without_execution(self) -> None:
         provider = FakeProvider()
