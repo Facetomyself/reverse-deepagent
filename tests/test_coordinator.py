@@ -299,6 +299,53 @@ class CoordinatorTests(unittest.TestCase):
             self.assertIsNone(output.chrome_launch)
             self.assertIsNone(output.chrome_stop)
 
+    def test_web_pipeline_can_attach_browser_provider_smoke_evidence(self) -> None:
+        smoke_payload = {
+            "schema_version": "reverse-deepagent.browser-provider-smoke.v1",
+            "artifact_key": "workspace_browser_provider_smoke",
+            "mode": "metadata-only",
+            "ok": True,
+            "requested_provider_id": "playwright-chromium",
+            "resolved_provider_id": "playwright-chromium",
+            "side_effect_policy": {
+                "provider_factories_invoked": False,
+                "starts_browser": False,
+                "probes_cdp_endpoint": False,
+                "calls_mcp": False,
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "artifacts"
+            output = run_reverse_pipeline(
+                task_text="https://example.com/search 找 sign 入口，并给出下一步建议",
+                artifact_root=root,
+                runtime_kind="mock",
+                browser_provider_smoke=smoke_payload,
+            )
+
+            smoke_path = root / "workspace" / "browser-provider-smoke.json"
+            self.assertEqual(output.artifacts["workspace_browser_provider_smoke"], str(smoke_path))
+            self.assertTrue(smoke_path.exists())
+            self.assertEqual(json.loads(smoke_path.read_text(encoding="utf-8")), smoke_payload)
+
+            manifest = json.loads(Path(output.artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
+            manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
+            self.assertIn("workspace_browser_provider_smoke", manifest_by_key)
+            smoke_entry = manifest_by_key["workspace_browser_provider_smoke"]
+            self.assertEqual(smoke_entry["path"], str(smoke_path))
+            self.assertEqual(smoke_entry["category"], "runtime-context")
+            self.assertEqual(smoke_entry["kind"], "json")
+            smoke_alias = smoke_entry["metadata"]["workspace_alias"]
+            self.assertEqual(smoke_alias["canonical_path"], "workspace/browser-provider-smoke.json")
+            self.assertEqual(smoke_alias["future_path"], "/workspace/browser/browser-provider-smoke.json")
+            self.assertEqual(smoke_alias["virtual_uri"], "virtual://workspace/browser/browser-provider-smoke.json")
+            self.assertTrue(smoke_alias["canonical_path_remains_authoritative"])
+            self.assertEqual(smoke_alias["migration_status"], "manifest-alias-only")
+
+            index = json.loads(Path(output.artifacts["index"]).read_text(encoding="utf-8"))
+            self.assertEqual(index["workspace"]["browser_provider_smoke"], str(smoke_path))
+            self.assertEqual(index["browser_provider_smoke"], smoke_payload)
+
 
 if __name__ == "__main__":
     unittest.main()

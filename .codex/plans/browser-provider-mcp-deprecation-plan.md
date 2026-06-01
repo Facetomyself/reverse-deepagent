@@ -1675,3 +1675,13 @@ Status: implemented as a workspace evidence capture CLI for BrowserProvider smok
 Boundary: metadata-only smoke remains side-effect-free by default. Real launch smoke requires explicit `--launch-browser-smoke`; this still does not make BrowserProvider matrix listing allocate sessions, does not certify a vendor provider, does not manage proxy / geoip accounts, does not start MCP, and does not touch Android / iOS / mini-program full runtime chains. Real third-party provider packages and deeper provider-specific readiness evidence remain follow-ups.
 
 Tests cover metadata-only artifact writing without invoking provider factory, explicit fake launch smoke evidence writing, module CLI JSON output, and existing BrowserProvider / doctor regressions.
+
+### Step 124 execution record: BrowserProvider smoke evidence Web pipeline attachment
+
+Status: implemented as an explicit reviewed-evidence attachment path for the Web pipeline, not an automatic smoke generator, provider certification system, browser launcher, CDP endpoint probe, or MCP bridge.
+
+`reverse-agent-demo` now accepts `--browser-provider-smoke-json <path>`. The CLI reads the supplied UTF-8 JSON object and passes it to `run_reverse_pipeline(...)`; the coordinator writes it as `workspace/browser-provider-smoke.json`, includes `workspace_browser_provider_smoke` in the backend artifact manifest with the existing `/workspace/browser/browser-provider-smoke.json` alias metadata, and mirrors the payload in `exports/artifact-index.json` under `browser_provider_smoke`. The path is Web-pipeline only and does not change `reverse-agent-platform`.
+
+Boundary: this only attaches existing reviewed smoke evidence. It does not call `reverse-agent-browser-provider-smoke`, invoke provider factories, import optional browser SDKs, check availability, launch browsers, probe CDP endpoints, start or call MCP, make BrowserProvider runtime smoke implicit, or touch Android / iOS / mini-program full runtime chains. Real provider smoke evidence is still generated only through explicit smoke commands such as `reverse-agent-browser-provider-smoke --launch-browser-smoke`.
+
+Tests cover coordinator artifact / manifest / artifact-index attachment and console CLI JSON loading / parameter forwarding, alongside existing BrowserProvider smoke CLI and matrix regressions.

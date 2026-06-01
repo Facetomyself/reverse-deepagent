@@ -776,6 +776,7 @@ def write_outputs(
     runtime_capabilities: RuntimeBackendCapabilities | None = None,
     enable_workspace_dual_write: bool = False,
     workspace_dual_write_artifact_keys: Iterable[str] | None = None,
+    browser_provider_smoke: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Persist the standard workspace/report/export artifact set."""
 
@@ -826,6 +827,16 @@ def write_outputs(
     output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
     if "rebuild_plan" in rebuild_artifact_paths:
         output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
+    browser_provider_smoke_path: Path | None = None
+    if browser_provider_smoke is not None:
+        browser_provider_smoke_path = _write_workspace_json(
+            base_dir,
+            "workspace_browser_provider_smoke",
+            browser_provider_smoke,
+            workspace_resolver,
+            workspace_write_records,
+        )
+        output_paths["workspace_browser_provider_smoke"] = str(browser_provider_smoke_path)
     if enable_workspace_dual_write:
         dual_write_plan_path = base_dir / "workspace" / "workspace-dual-write-plan.json"
         output_paths["workspace_dual_write_plan"] = str(dual_write_plan_path)
@@ -859,6 +870,9 @@ def write_outputs(
         "backend_artifact_manifest": str(manifest_path),
         "rebuild_result": rebuild_result.model_dump(mode="json"),
     }
+    if browser_provider_smoke_path is not None:
+        artifact_index["workspace"]["browser_provider_smoke"] = str(browser_provider_smoke_path)
+        artifact_index["browser_provider_smoke"] = browser_provider_smoke
     if enable_workspace_dual_write:
         dual_write_plan = _workspace_dual_write_plan_payload(
             workspace_write_records,
@@ -1394,6 +1408,7 @@ def run_reverse_pipeline(
     runtime: WebReverseRuntime | None = None,
     enable_workspace_dual_write: bool = False,
     workspace_dual_write_artifact_keys: Iterable[str] | None = None,
+    browser_provider_smoke: dict[str, Any] | None = None,
     **runtime_kwargs: Any,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
@@ -1452,6 +1467,7 @@ def run_reverse_pipeline(
         runtime_capabilities=runtime_capabilities,
         enable_workspace_dual_write=enable_workspace_dual_write,
         workspace_dual_write_artifact_keys=workspace_dual_write_artifact_keys,
+        browser_provider_smoke=browser_provider_smoke,
     )
     return ReversePipelineOutput(
         final_result=final_result,

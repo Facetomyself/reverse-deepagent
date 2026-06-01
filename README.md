@@ -152,6 +152,18 @@ reverse-agent-browser-provider-smoke \
   --artifact-root "<repo-root>/artifacts/browser-provider-smoke-cloak"
 ```
 
+如果要把已经生成并审阅过的 smoke 证据附加到一次 Web pipeline 输出里，可把该 JSON 显式传给 `reverse-agent-demo`：
+
+```bash
+reverse-agent-demo \
+  --runtime native-web \
+  --browser cloakbrowser \
+  --browser-provider-smoke-json "<repo-root>/artifacts/browser-provider-smoke-cloak/workspace/browser-provider-smoke.json" \
+  --artifact-root "<repo-root>/artifacts/native-web-with-provider-smoke"
+```
+
+`--browser-provider-smoke-json` 只读取现有 UTF-8 JSON object，并把它写入本次 pipeline 的 `workspace/browser-provider-smoke.json`、`exports/artifact-index.json` 和 `workspace/backend-artifact-manifest.json`；它不会生成 smoke、不会调用 provider factory、不会检查 availability、不会启动浏览器、不会探测 CDP 端点，也不会调用 MCP。
+
 仓库还提供四个外部 BrowserProvider package：[`packages/reverse-deepagent-browser-provider-template/`](packages/reverse-deepagent-browser-provider-template/) 是通用 copy-and-replace 模板，声明 `template-browser` entry point 并故意让 `start()` / `connect()` 报 unavailable，证明 metadata-only 注册不会启动浏览器、探测 CDP 或调用 provider factory；[`packages/reverse-deepagent-browser-provider-hosted-cdp-template/`](packages/reverse-deepagent-browser-provider-hosted-cdp-template/) 是托管浏览器服务 / hosted CDP 接入模板，声明 `hosted-cdp-template` entry point，metadata-only 路径不分配远端会话，显式传入 `browser_url` 时可复用 `RemoteCDPProvider` 做 contract smoke；[`packages/reverse-deepagent-browser-provider-hosted-cdp-reference/`](packages/reverse-deepagent-browser-provider-hosted-cdp-reference/) 是 hosted CDP reference provider，声明 `hosted-cdp-reference` entry point，用 in-memory reference allocator 建模 allocation / attach / release lifecycle、idempotent stop、secret-safe metadata 和 launch smoke，可作为真实 browser-service / anti-detect browser / enterprise browser pool provider 的生产形态参考，但仍不是 vendor SDK；[`packages/reverse-deepagent-browser-provider-fixture/`](packages/reverse-deepagent-browser-provider-fixture/) 是可运行 fixture provider，声明 `fixture-browser` entry point，能返回 provider-neutral in-memory session/page，用于 CI、doctor 风格 launch smoke 和第三方插件 contract 验证。接入自定义浏览器、反检测浏览器或托管 CDP 服务时，优先做外部 package，而不是把新 provider 硬编码进 core runtime。
 
 ExternalDeliveryProvider doctor 示例，默认只读取 provider registration metadata，不调用 provider factory，不上传、不推送、不发布，也不依赖 MCP / Chrome：

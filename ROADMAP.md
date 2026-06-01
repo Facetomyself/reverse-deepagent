@@ -22,7 +22,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Playwright Chromium provider.
 - Remote CDP provider.
 - CloakBrowser optional provider skeleton, launch / persistent-context / connect baseline, manual smoke path, and explicit workspace smoke evidence capture path.
-- Browser provider doctor mode, side-effect-free provider matrix, and `reverse-agent-browser-provider-smoke` workspace evidence CLI with metadata-only default and explicit launch smoke mode.
+- Browser provider doctor mode, side-effect-free provider matrix, `reverse-agent-browser-provider-smoke` workspace evidence CLI with metadata-only default / explicit launch smoke mode, and `reverse-agent-demo --browser-provider-smoke-json` attachment of reviewed existing smoke evidence into Web pipeline manifests.
 - BrowserProvider production readiness metadata baseline that classifies provider rows as `production-ready`, `review-required`, or `metadata-incomplete` without invoking provider factories, probing CDP, launching browsers, or calling MCP.
 - Provider-specific production readiness rule catalog scaffold, currently covering Playwright Chromium, Remote CDP, CloakBrowser, and hosted-CDP reference lifecycle metadata contracts without invoking provider factories or probing endpoints.
 - Extensible BrowserProvider capability compatibility rule catalog for CDP/debugger/network/lifecycle plus proxy, humanize, mobile emulation, and extension capability checks.
