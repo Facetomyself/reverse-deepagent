@@ -24,6 +24,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_plan_workspace_dual_write_pilot_tool,
     make_record_workspace_dual_write_pilot_result_tool,
     make_read_workspace_artifact_tool,
+    make_review_workspace_dual_write_pilot_workflow_tool,
 )
 from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool
 from reverse_deepagent.tools.route_tools import DEFAULT_JS_REVERSE_SKILL_ROOT, route_reverse_task
@@ -122,6 +123,7 @@ def build_reverse_agent(
         make_audit_workspace_artifact_consumers_tool(),
         make_assess_workspace_migration_readiness_tool(effective_artifact_root),
         make_plan_workspace_dual_write_pilot_tool(effective_artifact_root),
+        make_review_workspace_dual_write_pilot_workflow_tool(effective_artifact_root),
         make_record_workspace_dual_write_pilot_result_tool(effective_artifact_root),
         make_build_rebuild_delivery_tool(effective_artifact_root),
         *(extra_tools or []),

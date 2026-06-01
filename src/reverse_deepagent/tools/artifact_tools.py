@@ -129,6 +129,46 @@ def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path)
     return plan_workspace_dual_write_pilot
 
 
+def make_review_workspace_dual_write_pilot_workflow_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a review-first workflow tool for limited workspace dual-write pilots."""
+
+    root = Path(default_artifact_root)
+
+    def review_workspace_dual_write_pilot_workflow(
+        artifact_root: str | None = None,
+        delivery_source_audit_json: str | None = None,
+        readiness_report_json: str | None = None,
+        artifact_keys_json: str | None = None,
+        max_artifacts: int = 12,
+        pilot_plan_json: str | None = None,
+        workspace_dual_write_plan_json: str | None = None,
+        workspace_dual_write_plan_artifact_ref: str | None = "workspace_dual_write_plan",
+        write_result: bool = False,
+    ) -> dict[str, Any]:
+        """Prepare and optionally verify a reviewed dual-write pilot workflow."""
+
+        return review_workspace_dual_write_pilot_workflow_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            delivery_source_audit_json=delivery_source_audit_json,
+            readiness_report_json=readiness_report_json,
+            artifact_keys_json=artifact_keys_json,
+            max_artifacts=max_artifacts,
+            pilot_plan_json=pilot_plan_json,
+            workspace_dual_write_plan_json=workspace_dual_write_plan_json,
+            workspace_dual_write_plan_artifact_ref=workspace_dual_write_plan_artifact_ref,
+            write_result=write_result,
+        )
+
+    review_workspace_dual_write_pilot_workflow.__name__ = "review_workspace_dual_write_pilot_workflow"
+    review_workspace_dual_write_pilot_workflow.__doc__ = (
+        "Compose workspace migration readiness, limited dual-write pilot planning, and optional observed-result verification "
+        "into a single review workflow. It does not run the pipeline, enable dual-write, migrate paths, change canonical paths, "
+        "start browsers, call MCP, or touch mobile runtimes. When write_result=true it only writes the pilot result audit artifact."
+    )
+    return review_workspace_dual_write_pilot_workflow
+
+
 def make_record_workspace_dual_write_pilot_result_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a tool that inspects or records a limited workspace dual-write pilot result."""
 
@@ -530,6 +570,135 @@ def plan_workspace_dual_write_pilot_payload(
     }
 
 
+def review_workspace_dual_write_pilot_workflow_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    delivery_source_audit_json: str | None = None,
+    readiness_report_json: str | None = None,
+    artifact_keys_json: str | None = None,
+    max_artifacts: int = 12,
+    pilot_plan_json: str | None = None,
+    workspace_dual_write_plan_json: str | None = None,
+    workspace_dual_write_plan_artifact_ref: str | None = "workspace_dual_write_plan",
+    write_result: bool = False,
+) -> dict[str, Any]:
+    """Compose readiness, pilot planning, and optional result verification."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    readiness_report = _parse_readiness_report(readiness_report_json)
+    if readiness_report is None:
+        readiness_report = assess_workspace_migration_readiness_payload(
+            default_artifact_root=effective_root,
+            delivery_source_audit_json=delivery_source_audit_json,
+        )
+    pilot_plan, pilot_plan_error = _parse_json_object(pilot_plan_json, field_name="pilot_plan_json")
+    if pilot_plan is None:
+        if pilot_plan_error:
+            pilot_plan = _malformed_dual_write_pilot_plan(
+                artifact_root=effective_root,
+                error=pilot_plan_error,
+                readiness_report=readiness_report,
+            )
+        else:
+            pilot_plan = plan_workspace_dual_write_pilot_payload(
+                default_artifact_root=effective_root,
+                readiness_report_json=json.dumps(readiness_report, sort_keys=True),
+                artifact_keys_json=artifact_keys_json,
+                max_artifacts=max_artifacts,
+            )
+
+    pilot_result = record_workspace_dual_write_pilot_result_payload(
+        default_artifact_root=effective_root,
+        pilot_plan_json=json.dumps(pilot_plan, sort_keys=True),
+        workspace_dual_write_plan_json=workspace_dual_write_plan_json,
+        workspace_dual_write_plan_artifact_ref=workspace_dual_write_plan_artifact_ref,
+        write_result=write_result,
+    )
+    status = _workspace_dual_write_workflow_status(readiness_report, pilot_plan, pilot_result)
+    blocking_reasons = _workspace_dual_write_workflow_blocking_reasons(readiness_report, pilot_plan, pilot_result, status)
+    warnings = _workspace_dual_write_workflow_warnings(pilot_result)
+    candidate_keys = [str(item.get("artifact_key")) for item in pilot_plan.get("candidate_artifacts", []) if item.get("artifact_key")]
+    return {
+        "schema_version": "reverse-deepagent.workspace-dual-write-pilot-workflow.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "readiness_status": readiness_report.get("status") or "unknown",
+            "readiness_limited_dual_write_status": _readiness_limited_dual_write_status(readiness_report),
+            "pilot_plan_status": pilot_plan.get("status") or "unknown",
+            "pilot_result_status": pilot_result.get("status") or "unknown",
+            "selected_artifact_count": len(candidate_keys),
+            "blocking_reason_count": len(blocking_reasons),
+            "warning_count": len(warnings),
+            "review_required": True,
+            "write_result_requested": bool(write_result),
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "readiness_report": readiness_report,
+        "pilot_plan": pilot_plan,
+        "pilot_result": pilot_result,
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
+        "recommended_next_actions": _workspace_dual_write_workflow_next_actions(status, pilot_result),
+        "review_workflow": _workspace_dual_write_review_workflow(
+            candidate_keys=candidate_keys,
+            result_status=str(pilot_result.get("status") or "unknown"),
+            workflow_status=status,
+            write_result=write_result,
+        ),
+        "side_effect_policy": {
+            "read_only": not bool(write_result),
+            "files_inspected": True,
+            "artifacts_written": bool(write_result),
+            "creates_directories": bool(write_result),
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _malformed_dual_write_pilot_plan(
+    *,
+    artifact_root: Path,
+    error: str,
+    readiness_report: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "reverse-deepagent.workspace-dual-write-pilot-plan.v1",
+        "status": "blocked",
+        "artifact_root": str(artifact_root),
+        "summary": {
+            "candidate_count": 0,
+            "readiness_limited_dual_write_status": _readiness_limited_dual_write_status(readiness_report),
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "readiness_summary": _compact_readiness_summary(readiness_report),
+        "candidate_artifacts": [],
+        "blocking_reasons": ["pilot_plan_json_malformed"],
+        "error": error,
+        "recommended_next_actions": ["fix_pilot_plan_json_or_omit_it_to_use_default_plan"],
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
 def record_workspace_dual_write_pilot_result_payload(
     *,
     default_artifact_root: str | Path,
@@ -873,6 +1042,133 @@ def _dual_write_pilot_result_next_actions(status: str, blockers: list[str], warn
     if not actions:
         actions.append("review_pilot_result_before_foldered_canonical_migration")
     return actions
+
+
+def _workspace_dual_write_workflow_status(
+    readiness_report: dict[str, Any],
+    pilot_plan: dict[str, Any],
+    pilot_result: dict[str, Any],
+) -> str:
+    if _readiness_limited_dual_write_status(readiness_report) != "ready_for_review":
+        return "blocked"
+    if pilot_plan.get("status") == "blocked":
+        return "blocked"
+    result_status = str(pilot_result.get("status") or "unknown")
+    if result_status == "verified":
+        return "verified"
+    if result_status == "partial":
+        return "partial"
+    if result_status == "blocked":
+        return "blocked"
+    if result_status == "not_run":
+        return "ready_for_review"
+    return "ready_for_review"
+
+
+def _workspace_dual_write_workflow_blocking_reasons(
+    readiness_report: dict[str, Any],
+    pilot_plan: dict[str, Any],
+    pilot_result: dict[str, Any],
+    status: str,
+) -> list[str]:
+    reasons: list[str] = []
+    if _readiness_limited_dual_write_status(readiness_report) != "ready_for_review":
+        reasons.append("workspace_migration_readiness_not_ready_for_dual_write_pilot")
+    for reason in pilot_plan.get("blocking_reasons") or []:
+        reasons.append(f"pilot_plan:{reason}")
+    if status in {"blocked", "partial"}:
+        for reason in pilot_result.get("blocking_reasons") or []:
+            reasons.append(f"pilot_result:{reason}")
+    return list(dict.fromkeys(reasons))
+
+
+def _workspace_dual_write_workflow_warnings(pilot_result: dict[str, Any]) -> list[str]:
+    return [f"pilot_result:{item}" for item in pilot_result.get("warnings") or []]
+
+
+def _workspace_dual_write_workflow_next_actions(status: str, pilot_result: dict[str, Any]) -> list[str]:
+    actions: list[str] = []
+    if status == "ready_for_review":
+        actions.append("review_pilot_plan_then_run_explicit_scoped_dual_write_pipeline")
+    if status in {"verified", "partial"}:
+        actions.append("review_pilot_result_before_expanding_dual_write_scope")
+    if status == "verified":
+        actions.append("consider_next_low_risk_artifact_scope_after_review")
+    if status == "blocked":
+        actions.append("resolve_workflow_blockers_before_running_dual_write_pilot")
+    for action in pilot_result.get("recommended_next_actions") or []:
+        if action not in actions:
+            actions.append(action)
+    return actions
+
+
+def _workspace_dual_write_review_workflow(
+    *,
+    candidate_keys: list[str],
+    result_status: str,
+    workflow_status: str,
+    write_result: bool,
+) -> dict[str, Any]:
+    key_arg = ",".join(candidate_keys)
+    if workflow_status == "blocked":
+        commands = [
+            {
+                "step": "resolve_workflow_blockers",
+                "description": "Resolve readiness, pilot plan, or verification blockers before running a scoped dual-write pipeline.",
+                "requires_review": True,
+                "runs_inside_this_tool": False,
+            }
+        ]
+    else:
+        commands = [
+            {
+                "step": "run_explicit_scoped_dual_write_pipeline",
+                "description": "Run the normal pipeline separately with reviewed low-risk artifact keys only.",
+                "flags": [
+                    "--enable-workspace-dual-write",
+                    "--workspace-dual-write-artifact-keys",
+                    key_arg,
+                ],
+                "requires_review": True,
+                "runs_inside_this_tool": False,
+            },
+            {
+                "step": "verify_observed_dual_write_output",
+                "description": "Call this workflow again after the pipeline writes workspace/workspace-dual-write-plan.json, or pass workspace_dual_write_plan_json directly.",
+                "tool": "review_workspace_dual_write_pilot_workflow",
+                "suggested_arguments": {
+                    "artifact_keys_json": json.dumps(candidate_keys),
+                    "workspace_dual_write_plan_artifact_ref": "workspace_dual_write_plan",
+                    "write_result": False,
+                },
+                "requires_review": True,
+            },
+            {
+                "step": "record_verified_pilot_result",
+                "description": "Only after reviewing the verification payload, call with write_result=true to write the audit artifact.",
+                "tool": "review_workspace_dual_write_pilot_workflow",
+                "suggested_arguments": {
+                    "artifact_keys_json": json.dumps(candidate_keys),
+                    "workspace_dual_write_plan_artifact_ref": "workspace_dual_write_plan",
+                    "write_result": True,
+                },
+                "requires_review": True,
+                "already_requested": bool(write_result),
+            },
+        ]
+    return {
+        "requires_explicit_pipeline_run": workflow_status != "blocked",
+        "requires_review_before_expansion": True,
+        "requires_result_review_before_writing_audit": True,
+        "workflow_status": workflow_status,
+        "result_verification_status": result_status,
+        "selected_artifact_keys": candidate_keys,
+        "recommended_commands": commands,
+        "does_not_run_pipeline": True,
+        "does_not_enable_dual_write": True,
+        "does_not_migrate_paths": True,
+        "legacy_canonical_path_remains_authoritative": True,
+    }
 
 
 def _parse_readiness_report(readiness_report_json: str | None) -> dict[str, Any] | None:

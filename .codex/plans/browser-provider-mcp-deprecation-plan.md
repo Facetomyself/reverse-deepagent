@@ -1613,3 +1613,15 @@ The first provider-specific readiness rule covers `hosted-cdp-reference`: it ver
 Boundary: this is a scaffold and one reference lifecycle rule. It does not implement real third-party vendor readiness rules, proxy / geoip validation, anti-detect behavior verification, hosted account allocation, runtime smoke automation, or broader BrowserProvider certification. Additional provider-specific compatibility / readiness rules remain follow-up work when real provider packages introduce new capability flags or lifecycle policies.
 
 Tests cover production readiness rule catalog serialization, metadata matrix rule export, hosted-CDP reference rule pass behavior, provider-specific drift warning behavior, and existing BrowserProvider matrix / plugin regressions.
+
+### Step 118 execution record: Workspace dual-write pilot workflow review baseline
+
+Status: implemented as a review-first workspace dual-write pilot workflow helper, not a pipeline runner, default dual-write rollout, foldered-canonical migration, or delivery gate relaxation.
+
+The coordinator now exposes `review_workspace_dual_write_pilot_workflow`, backed by `review_workspace_dual_write_pilot_workflow_payload(...)`. The workflow composes `assess_workspace_migration_readiness`, `plan_workspace_dual_write_pilot`, and optional `record_workspace_dual_write_pilot_result` verification into a `reverse-deepagent.workspace-dual-write-pilot-workflow.v1` payload. It returns the readiness report, reviewed pilot plan, optional pilot result, aggregate blocking reasons / warnings, and a `review_workflow` section with explicit scoped dual-write pipeline and result-recording follow-up steps.
+
+When no observed `workspace/workspace-dual-write-plan.json` is available, the workflow stays `ready_for_review` as long as readiness and plan checks pass, instead of pretending a pilot has already run. When observed scoped dual-write output is supplied or resolvable through `workspace_dual_write_plan_artifact_ref`, the workflow can report `verified`, `partial`, or `blocked` based on legacy / future file existence, sha256 equality, out-of-scope writes, and risk classification. `write_result=true` only delegates the existing audit writer to create `workspace/workspace-dual-write-pilot-result.json` after review.
+
+Boundary: this does not run the pipeline, does not enable dual-write, does not migrate physical workspace paths, does not change canonical paths, does not execute delivery, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Broader dual-write expansion and foldered-canonical migration remain follow-ups that must be informed by reviewed workflow evidence.
+
+Tests cover review-plan output without file writes, verified observed scoped output, explicit audit-artifact writing, tool factory behavior, coordinator tool exposure, and existing workspace / rebuild regressions.
