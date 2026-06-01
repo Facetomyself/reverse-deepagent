@@ -119,7 +119,7 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["next_action"], "execute_custom_loader_with_review_approval")
         self.assertEqual(result["summary"]["custom_loader_execution_preflight_status"], "ready_for_execution_review")
 
-    def test_review_hook_artifacts_suppresses_custom_loader_review_after_execution_result(self) -> None:
+    def test_review_hook_artifacts_warns_for_reviewed_custom_loader_execution_without_module_diff(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
             "custom_loader_traversal_plan": {
@@ -128,7 +128,7 @@ class HookSubagentTests(unittest.TestCase):
             },
             "custom_loader_execution_result": {
                 "status": "success",
-                "execution": {"attempted": True, "loaderInvoked": True, "addedRegistryKeys": ["884"]},
+                "execution": {"attempted": True, "ok": True, "loaderInvoked": True, "addedRegistryKeys": ["884"]},
             },
         }
 
@@ -136,10 +136,68 @@ class HookSubagentTests(unittest.TestCase):
 
         self.assertNotIn("custom_loader_traversal_requires_review", result["warnings"])
         self.assertNotIn("custom_loader_execution_requires_review", result["warnings"])
+        self.assertIn("custom_loader_module_diff_required", result["warnings"])
+        self.assertEqual(result["next_action"], "run_custom_loader_module_diff_after_reviewed_execution")
         self.assertEqual(result["summary"]["custom_loader_execution_result_status"], "success")
         self.assertTrue(result["summary"]["custom_loader_execution_attempted"])
         self.assertTrue(result["summary"]["custom_loader_execution_loader_invoked"])
         self.assertEqual(result["summary"]["custom_loader_execution_added_registry_key_count"], 1)
+
+    def test_review_hook_artifacts_warns_for_custom_loader_module_diff_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_execution_result": {
+                "status": "success",
+                "execution": {"attempted": True, "ok": True, "loaderInvoked": True, "addedRegistryKeys": ["884"]},
+            },
+            "custom_loader_module_diff": {
+                "status": "planned",
+                "matched_module_count": 1,
+                "candidate_count": 1,
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("custom_loader_module_diff_requires_review", result["warnings"])
+        self.assertNotIn("custom_loader_module_diff_required", result["warnings"])
+        self.assertEqual(result["next_action"], "review_custom_loader_module_diff_hook_candidates")
+        self.assertEqual(result["summary"]["custom_loader_module_diff_status"], "planned")
+        self.assertEqual(result["summary"]["custom_loader_module_diff_matched_module_count"], 1)
+        self.assertEqual(result["summary"]["custom_loader_module_diff_hook_candidate_count"], 1)
+        self.assertEqual(result["review_required_items"][0]["custom_loader_module_diff_status"], "planned")
+
+    def test_review_hook_artifacts_suppresses_custom_loader_module_diff_review_after_module_hook_install(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_execution_result": {
+                "status": "success",
+                "execution": {"attempted": True, "ok": True, "loaderInvoked": True, "addedRegistryKeys": ["884"]},
+            },
+            "custom_loader_module_diff": {
+                "status": "planned",
+                "matched_module_count": 1,
+                "candidate_count": 1,
+            },
+            "module_hooks": {
+                "status": "success",
+                "installed": {"window.__webpack_require__(884).sign": True},
+            },
+            "module_hook_timeline": {
+                "status": "success",
+                "events": [
+                    {"type": "module_export_call", "payload": {"moduleId": "884", "exportName": "sign"}}
+                ],
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertNotIn("custom_loader_module_diff_required", result["warnings"])
+        self.assertNotIn("custom_loader_module_diff_requires_review", result["warnings"])
+        self.assertEqual(result["summary"]["installed_module_hook_count"], 1)
+        self.assertEqual(result["next_action"], "hook_review_passed")
 
     def test_review_hook_artifacts_warns_for_module_federation_get_init_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()

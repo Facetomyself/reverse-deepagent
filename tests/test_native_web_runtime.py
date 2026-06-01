@@ -1323,6 +1323,54 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["automatic_hook_installation"])
 
 
+    def test_native_web_runtime_plans_custom_loader_module_diff_after_reviewed_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-module-diff",
+            {
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "execution": {
+                        "attempted": True,
+                        "ok": True,
+                        "loaderInvoked": True,
+                        "loaderPath": "window.__customLoader.load",
+                        "addedRegistryKeys": ["884"],
+                        "addedCacheKeys": ["884"],
+                    },
+                },
+                "module_discovery": {
+                    "modules": [
+                        {
+                            "module_id": "884",
+                            "runtime_path": "window.__webpack_require__",
+                            "export_names": ["sign"],
+                            "export_types": {"sign": "function"},
+                        }
+                    ]
+                },
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_module_diff"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_module_diff_status=planned", result.verification)
+        self.assertIn("custom_loader_module_diff_added_registry_key_count=1", result.verification)
+        self.assertIn("custom_loader_module_diff_matched_module_count=1", result.verification)
+        self.assertIn("custom_loader_module_diff_hook_candidate_count=1", result.verification)
+        self.assertIn("custom_loader_module_diff_automatic_hook_installation=False", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_module_diff_hook_candidates")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-module-diff.json")
+        self.assertEqual(result.artifacts[0].metadata["loader_path"], "window.__customLoader.load")
+        self.assertEqual(result.artifacts[0].metadata["added_registry_key_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["matched_module_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_hook_installation"])
+
+
     def test_native_web_runtime_installs_reviewed_async_chunk_module_hook(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

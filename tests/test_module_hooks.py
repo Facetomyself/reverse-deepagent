@@ -12,6 +12,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderExecutionPreflightManager,
     CustomLoaderExecutionPreflightSpec,
     CustomLoaderExecutionSpec,
+    CustomLoaderModuleDiffManager,
+    CustomLoaderModuleDiffSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -1295,6 +1297,85 @@ class ModuleDiscoveryManagerTests(unittest.TestCase):
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "successful_async_chunk_load_required")
+        self.assertFalse(result.side_effect_policy["module_factory_invoked"])
+
+
+class CustomLoaderModuleDiffManagerTests(unittest.TestCase):
+    def test_custom_loader_module_diff_recommends_hook_candidates_after_reviewed_execution(self) -> None:
+        spec = CustomLoaderModuleDiffSpec.from_context(
+            {
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "execution": {
+                        "attempted": True,
+                        "ok": True,
+                        "loaderInvoked": True,
+                        "loaderPath": "window.__customLoader.load",
+                        "addedRegistryKeys": ["884"],
+                        "addedCacheKeys": ["884"],
+                    },
+                },
+                "module_discovery": {
+                    "modules": [
+                        {
+                            "module_id": "884",
+                            "runtime_path": "window.__webpack_require__",
+                            "export_names": ["sign"],
+                            "export_types": {"sign": "function"},
+                        },
+                        {
+                            "module_id": "100",
+                            "runtime_path": "window.__webpack_require__",
+                            "export_names": ["other"],
+                        },
+                    ]
+                },
+            }
+        )
+
+        result = CustomLoaderModuleDiffManager().plan(spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertEqual(result.diff["schema_version"], "reverse-deepagent.custom-loader-module-diff.v1")
+        self.assertEqual(result.diff["status"], "ready_for_review")
+        self.assertEqual(result.diff["source"], "custom_loader_execution_result")
+        self.assertEqual(result.diff["loader_path"], "window.__customLoader.load")
+        self.assertEqual(result.diff["added_registry_keys"], ["884"])
+        self.assertEqual(result.diff["added_cache_keys"], ["884"])
+        self.assertEqual(result.diff["matched_module_count"], 1)
+        self.assertEqual(result.diff["candidate_count"], 1)
+        candidate = result.diff["hook_candidates"][0]
+        self.assertEqual(candidate["kind"], "custom-loader-module-export")
+        self.assertEqual(candidate["hook_kind"], "module-export")
+        self.assertEqual(candidate["source"], "custom_loader_module_diff")
+        self.assertEqual(candidate["module_id"], "884")
+        self.assertEqual(candidate["export_name"], "sign")
+        self.assertEqual(candidate["hook_path"], "window.__webpack_require__(884).sign")
+        self.assertEqual(candidate["recommended_follow_up"], "hook_module_export_after_custom_loader_review")
+        self.assertFalse(result.diff["automatic_hook_installation"])
+        self.assertFalse(result.diff["module_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["executes_custom_loader"])
+        self.assertFalse(result.side_effect_policy["loads_chunk"])
+        self.assertFalse(result.side_effect_policy["installs_hooks"])
+        self.assertFalse(result.side_effect_policy["evaluates_javascript"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_custom_loader_module_diff_blocks_without_successful_execution(self) -> None:
+        spec = CustomLoaderModuleDiffSpec.from_context(
+            {
+                "custom_loader_execution_result": {
+                    "status": "blocked",
+                    "execution": {"attempted": False, "ok": False, "loaderInvoked": False},
+                }
+            }
+        )
+
+        result = CustomLoaderModuleDiffManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "successful_custom_loader_execution_required")
+        self.assertFalse(result.side_effect_policy["executes_custom_loader"])
         self.assertFalse(result.side_effect_policy["module_factory_invoked"])
 
 

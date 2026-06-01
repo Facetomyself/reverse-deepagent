@@ -185,6 +185,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/custom-loader-execution-preflight.json"].future_path, "/workspace/runtime/custom-loader-execution-preflight.json")
         self.assertEqual(routes["workspace/custom-loader-execution-result.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/custom-loader-execution-result.json"].future_path, "/workspace/runtime/custom-loader-execution-result.json")
+        self.assertEqual(routes["workspace/custom-loader-module-diff.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/custom-loader-module-diff.json"].future_path, "/workspace/hooks/custom-loader-module-diff.json")
         self.assertEqual(routes["workspace/module-federation-get-init-plan.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/module-federation-get-init-plan.json"].future_path, "/workspace/runtime/module-federation-get-init-plan.json")
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].virtual_folder, "/workspace/runtime/")

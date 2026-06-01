@@ -932,6 +932,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_custom_loader_traversal_plan": "triage",
     "workspace_custom_loader_execution_preflight": "triage",
     "workspace_custom_loader_execution_result": "trace",
+    "workspace_custom_loader_module_diff": "triage",
     "workspace_module_federation_get_init_plan": "triage",
     "workspace_module_federation_get_init_result": "trace",
     "workspace_module_federation_factory_invoke_result": "trace",
@@ -1662,6 +1663,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["custom-loader-execution-preflight.json"] = evidence.details
         elif evidence.source == "custom_loader_execution_result":
             payloads["custom-loader-execution-result.json"] = evidence.details
+        elif evidence.source == "custom_loader_module_diff":
+            payloads["custom-loader-module-diff.json"] = evidence.details
         elif evidence.source == "module_federation_get_init_plan":
             payloads["module-federation-get-init-plan.json"] = evidence.details
         elif evidence.source == "module_federation_get_init_result":

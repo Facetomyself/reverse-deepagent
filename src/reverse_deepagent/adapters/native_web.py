@@ -18,6 +18,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderExecutionPreflightManager,
     CustomLoaderExecutionPreflightSpec,
     CustomLoaderExecutionSpec,
+    CustomLoaderModuleDiffManager,
+    CustomLoaderModuleDiffSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1987,6 +1989,45 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=diff.get("next_action", "rerun_module_discovery_after_chunk_load"),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_module_diff_request(protection_name, context):
+            spec = CustomLoaderModuleDiffSpec.from_context(context)
+            result = CustomLoaderModuleDiffManager().plan(spec)
+            diff = result.diff if isinstance(result.diff, dict) else {}
+            verification = [
+                f"custom_loader_module_diff_status={result.status}",
+                f"custom_loader_module_diff_added_registry_key_count={len(diff.get('added_registry_keys') or [])}",
+                f"custom_loader_module_diff_matched_module_count={diff.get('matched_module_count', 0)}",
+                f"custom_loader_module_diff_hook_candidate_count={diff.get('candidate_count', 0)}",
+                f"custom_loader_module_diff_automatic_hook_installation={diff.get('automatic_hook_installation', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"custom_loader_module_diff_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-module-diff.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader module diff and hook candidate refresh.",
+                    metadata={
+                        "status": result.status,
+                        "loader_path": diff.get("loader_path"),
+                        "added_registry_key_count": len(diff.get("added_registry_keys") or []),
+                        "matched_module_count": diff.get("matched_module_count", 0),
+                        "candidate_count": diff.get("candidate_count", 0),
+                        "review_required": diff.get("review_required", True),
+                        "automatic_hook_installation": diff.get("automatic_hook_installation", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["plan_custom_loader_module_diff"] if result.status == "planned" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=diff.get("next_action", "rerun_module_discovery_after_custom_loader_execution"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
         if self._is_module_discovery_request(protection_name, context):
             discovery_context = {**context, "discover_modules": True}
             spec = ModuleDiscoverySpec.from_context(discovery_context)
@@ -2851,6 +2892,26 @@ class NativeWebRuntime(WebReverseRuntime):
                 "asyncChunkModuleDiff",
                 "async_chunk_hook_candidates",
                 "asyncChunkHookCandidates",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_module_diff_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-module-diff",
+            "custom-loader-hook-candidates",
+            "custom-loader-execution-module-diff",
+            "custom-loader-execution-diff",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_module_diff",
+                "customLoaderModuleDiff",
+                "custom_loader_hook_candidates",
+                "customLoaderHookCandidates",
             )
         )
 
