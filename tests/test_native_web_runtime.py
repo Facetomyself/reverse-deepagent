@@ -1334,6 +1334,47 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["traversal_graph_rebuilt"])
         self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
 
+    def test_native_web_runtime_plans_custom_loader_traversal_loop_without_running_loader(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "plan_id": "native-traversal-workflow-plan",
+            "source_graph_id": "custom-loader-traversal-graph",
+            "planned_steps": [
+                {
+                    "step_index": 0,
+                    "candidate_index": 0,
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "custom-loader-traversal-loop-plan",
+            {"custom_loader_traversal_workflow_plan": workflow_plan, "max_loop_iterations": 2},
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_traversal_loop"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_traversal_loop_plan_status=ready_for_review", result.verification)
+        self.assertIn("custom_loader_traversal_loop_plan_iteration_count=1", result.verification)
+        self.assertIn("custom_loader_traversal_loop_plan_automatic_loop_execution=False", result.verification)
+        self.assertIn("custom_loader_traversal_loop_plan_automatic_recursive_traversal=False", result.verification)
+        self.assertIn("custom_loader_traversal_loop_plan_traversal_graph_rebuilt=False", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_traversal_loop_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-loop-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["planned_iteration_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["bounded_loop"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_loop_execution"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+
     def test_native_web_runtime_executes_one_reviewed_custom_loader_traversal_workflow_step(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

@@ -28,6 +28,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalWorkflowPlanSpec,
     CustomLoaderTraversalWorkflowExecutionManager,
     CustomLoaderTraversalWorkflowExecutionSpec,
+    CustomLoaderTraversalLoopPlanManager,
+    CustomLoaderTraversalLoopPlanSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -746,6 +748,59 @@ class CustomLoaderTraversalWorkflowExecutionManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "custom_loader_continuation_workflow_required")
         self.assertFalse(result.side_effect_policy["loader_invoked"])
+
+
+class CustomLoaderTraversalLoopPlanManagerTests(unittest.TestCase):
+    def _workflow_plan(self) -> dict[str, Any]:
+        return CustomLoaderTraversalWorkflowExecutionManagerTests()._workflow_plan()
+
+    def test_plans_bounded_loop_without_executing_runtime(self) -> None:
+        spec = CustomLoaderTraversalLoopPlanSpec.from_context(
+            {
+                "custom_loader_traversal_workflow_plan": self._workflow_plan(),
+                "max_loop_iterations": 2,
+            }
+        )
+
+        result = CustomLoaderTraversalLoopPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.loop_plan["schema_version"], "reverse-deepagent.custom-loader-traversal-loop-plan.v1")
+        self.assertEqual(result.loop_plan["planned_iteration_count"], 1)
+        self.assertEqual(result.loop_plan["max_loop_iterations"], 2)
+        self.assertTrue(result.loop_plan["bounded_loop"])
+        self.assertEqual(result.loop_plan["next_action"], "review_custom_loader_traversal_loop_plan")
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertTrue(result.side_effect_policy["bounded_loop"])
+        self.assertFalse(result.side_effect_policy["automatic_loop_execution"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+
+    def test_journal_appended_execution_requires_graph_rebuild_checkpoint(self) -> None:
+        result = CustomLoaderTraversalLoopPlanManager().plan(
+            CustomLoaderTraversalLoopPlanSpec.from_context(
+                {
+                    "custom_loader_traversal_workflow_plan": self._workflow_plan(),
+                    "custom_loader_traversal_workflow_execution": {"status": "journal_appended"},
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.loop_plan["latest_workflow_execution_status"], "journal_appended")
+        self.assertEqual(result.loop_plan["next_action"], "rebuild_custom_loader_traversal_graph_before_next_loop_iteration")
+        self.assertTrue(result.loop_plan["loop_checkpoint_policy"]["rebuild_graph_before_next_iteration"])
+        self.assertFalse(result.loop_plan["loop_checkpoint_policy"]["automatic_queue_advance"])
+
+    def test_blocks_without_workflow_plan(self) -> None:
+        result = CustomLoaderTraversalLoopPlanManager().plan(
+            CustomLoaderTraversalLoopPlanSpec.from_context({"custom_loader_traversal_loop_plan": True})
+        )
+
+        self.assertEqual(result.status, "unsupported")
+        self.assertEqual(result.reason, "missing_custom_loader_traversal_workflow_plan")
+        self.assertTrue(result.side_effect_policy["plan_only"])
 
 
 
