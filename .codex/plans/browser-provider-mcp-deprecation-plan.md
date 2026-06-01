@@ -1655,3 +1655,13 @@ Status: implemented as a read-only module-discovery enhancement, not arbitrary c
 Boundary: this does not call custom loaders, does not request chunk URLs, does not execute module factories, does not execute module federation `get/init`, does not install hooks automatically, does not start browsers beyond the explicit runtime already in use, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Execution-style loader traversal and actual async chunk loading remain capability-gated follow-ups.
 
 Tests cover script-inventory chunk edges, runtime chunk metadata normalization, side-effect policy invariants, native-web verification strings, module-registry artifact metadata, and existing module discovery / native-web regressions.
+
+### Step 122 execution record: Workspace dual-write pilot smoke follow-through
+
+Status: implemented as a pure-Python reviewed scoped dual-write pilot smoke CLI, not default dual-write rollout, foldered-canonical migration, browser startup, MCP usage, or high-risk delivery / transaction artifact migration.
+
+`reverse-agent-workspace-dual-write-smoke` now runs the mock Web pipeline with explicit `enable_workspace_dual_write=True` and reviewed `--artifact-keys` scope, then feeds the observed `workspace/workspace-dual-write-plan.json` into `review_workspace_dual_write_pilot_workflow`. By default it writes the explicit audit result `workspace/workspace-dual-write-pilot-result.json`; `--no-write-result` keeps workflow verification read-only. The JSON payload reports selected artifact keys, pipeline status, workflow status, result artifact metadata, and a side-effect boundary showing `runtime=mock`, no browser startup, no MCP call, no canonical path change, and no path migration.
+
+Boundary: this is a reproducible smoke / evidence generator for low-risk scoped pilots. It does not make dual-write default, does not expand scope automatically, does not migrate canonical paths, does not move or delete legacy artifacts, does not run delivery, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Broader dual-write rollout and foldered-canonical migration remain follow-ups that must use reviewed smoke / workflow evidence.
+
+Tests cover the direct Python helper writing a verified pilot result and the `python -m reverse_deepagent.workspace_dual_write_smoke --no-write-result` read-only verification path.

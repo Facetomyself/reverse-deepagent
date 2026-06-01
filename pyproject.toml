@@ -47,6 +47,7 @@ reverse-agent-fixture-smoke = "reverse_deepagent.fixture_smoke:main_fixture_smok
 reverse-agent-platform = "reverse_deepagent.cli:main_platform"
 reverse-agent-openai-smoke = "reverse_deepagent.openai_smoke:main"
 reverse-agent-doctor = "reverse_deepagent.doctor:main"
+reverse-agent-workspace-dual-write-smoke = "reverse_deepagent.workspace_dual_write_smoke:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
