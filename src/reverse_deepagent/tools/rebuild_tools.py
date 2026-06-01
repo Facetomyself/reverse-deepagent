@@ -17,21 +17,44 @@ def make_build_rebuild_delivery_tool(default_artifact_root: str | Path) -> Rebui
     root = Path(default_artifact_root)
 
     def build_rebuild_delivery(
-        task_card_json: str,
-        final_result_json: str,
+        task_card_json: str | None = None,
+        final_result_json: str | None = None,
         artifact_root: str | None = None,
+        task_card_artifact_ref: str | None = None,
+        final_result_artifact_ref: str | None = None,
     ) -> dict[str, Any]:
         """Generate rebuild-plan and delivery files from a validated final result."""
 
-        task_card = TaskCard.model_validate_json(task_card_json)
-        final_result = FinalResult.model_validate_json(final_result_json)
         target_root = Path(artifact_root) if artifact_root else root
-        return write_rebuild_bundle(target_root, task_card, final_result).model_dump(mode="json")
+        task_card_payload, task_card_artifact_read = _loads_build_input_object_or_artifact(
+            task_card_json,
+            artifact_ref=task_card_artifact_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="task_card_json",
+            artifact_field_name="task_card_artifact_ref",
+        )
+        final_result_payload, final_result_artifact_read = _loads_build_input_object_or_artifact(
+            final_result_json,
+            artifact_ref=final_result_artifact_ref,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            field_name="final_result_json",
+            artifact_field_name="final_result_artifact_ref",
+        )
+        task_card = TaskCard.model_validate(task_card_payload)
+        final_result = FinalResult.model_validate(final_result_payload)
+        result = write_rebuild_bundle(target_root, task_card, final_result).model_dump(mode="json")
+        result["artifact_input"] = {
+            "task_card": summarize_workspace_artifact_read(task_card_artifact_read),
+            "final_result": summarize_workspace_artifact_read(final_result_artifact_read),
+        }
+        return result
 
     build_rebuild_delivery.__name__ = "build_rebuild_delivery"
     build_rebuild_delivery.__doc__ = (
         "Generate rebuild-plan.json plus sign_rebuild.py, replay_demo.py, scrapy_middleware.py, and a runnable Scrapy project. "
-        "Inputs must be JSON strings generated from TaskCard and FinalResult. "
+        "Inputs can be JSON strings generated from TaskCard and FinalResult, or task_card_artifact_ref / final_result_artifact_ref workspace refs. "
         "artifact_root is optional; when omitted, the agent default artifact root is used."
     )
     return build_rebuild_delivery
@@ -164,6 +187,27 @@ def _loads_object_or_artifact(
     if payload is None:
         raise ValueError(f"{field_name} or {artifact_field_name} is required")
     return _loads_object(payload, field_name=field_name), None
+
+
+def _loads_build_input_object_or_artifact(
+    payload: str | None,
+    *,
+    artifact_ref: str | None,
+    artifact_root: str | None,
+    default_artifact_root: Path,
+    field_name: str,
+    artifact_field_name: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if payload and artifact_ref:
+        raise ValueError(f"{field_name} and {artifact_field_name} are mutually exclusive")
+    return _loads_object_or_artifact(
+        payload,
+        artifact_ref=artifact_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=default_artifact_root,
+        field_name=field_name,
+        artifact_field_name=artifact_field_name,
+    )
 
 
 def _loads_optional_object_or_artifact(

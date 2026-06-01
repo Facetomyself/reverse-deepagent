@@ -142,9 +142,10 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
         by_id = {item["consumer_id"]: item for item in payload["consumers"]}
         self.assertEqual(by_id["coordinator.read_workspace_artifact"]["resolver_status"], "resolver-ready")
         self.assertEqual(by_id["delivery.execute_local_delivery.artifacts_json"]["resolver_status"], "partial")
-        self.assertEqual(by_id["rebuild.build_rebuild_delivery"]["resolver_status"], "candidate")
+        self.assertEqual(by_id["rebuild.build_rebuild_delivery"]["resolver_status"], "resolver-ready")
         self.assertEqual(by_id["delivery.execute_delivery_recovery"]["resolver_status"], "explicit-filesystem-boundary")
-        self.assertIn("rebuild.build_rebuild_delivery", {item["consumer_id"] for item in payload["follow_up_candidates"]})
+        self.assertNotIn("rebuild.build_rebuild_delivery", {item["consumer_id"] for item in payload["follow_up_candidates"]})
+        self.assertIn("delivery.execute_local_delivery.artifacts_json", {item["consumer_id"] for item in payload["follow_up_candidates"]})
         self.assertNotIn("delivery.execute_delivery_recovery", {item["consumer_id"] for item in payload["follow_up_candidates"]})
         self.assertGreaterEqual(payload["summary"]["explicit_filesystem_boundary_count"], 4)
 

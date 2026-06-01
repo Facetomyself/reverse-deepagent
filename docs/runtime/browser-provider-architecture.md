@@ -228,7 +228,7 @@ This subagent owns risk / warning review hints, evidence-level review requiremen
 
 ## 5.7 Rebuild Subagent baseline
 
-`rebuild` is now an implemented DeepAgents subagent boundary for rebuild generation and rebuild artifact review. It owns `build_rebuild_delivery` plus `review_rebuild_artifacts`; the former writes `workspace/rebuild-plan.json` and generated rebuild files under the configured artifact root, while the latter is read-only and summarizes RebuildResult / rebuild-plan readiness, generated files, review hints, runtime-assisted recommendations, declared outputs, and next actions.
+`rebuild` is now an implemented DeepAgents subagent boundary for rebuild generation and rebuild artifact review. It owns `build_rebuild_delivery` plus `review_rebuild_artifacts`; the former can read TaskCard / FinalResult either from JSON strings or workspace artifact refs, then writes `workspace/rebuild-plan.json` and generated rebuild files under the configured artifact root, while the latter is read-only and summarizes RebuildResult / rebuild-plan readiness, generated files, review hints, runtime-assisted recommendations, declared outputs, and next actions.
 
 This split leaves the `delivery` subagent focused on local delivery, backend manifest mutation, recovery, transaction commit, and external delivery provider requests. Rebuild can generate and review pure / context-aware / Scrapy replay artifacts, but it does not execute local delivery, mutate manifests, publish external releases, or bypass review gates.
 
@@ -240,7 +240,7 @@ The resolver introduces an opt-in dual-write writer seam. `WorkspacePathResolver
 
 `read_workspace_artifact` is the shared resolver consumer exposed to the coordinator and read-only review / rebuild / timeline / hook / debugger subagents. It can read by artifact key, legacy path, future `/workspace/<area>/...` path, `virtual://workspace/...` URI, or artifact-root-relative fallback while reporting checked paths, `resolver_metrics`, and a read-only side-effect policy. The metrics classify ref shape, hit path kind, legacy / future path checks, future fallback, direct fallback, canonical-path authority, and missing state for migration-readiness review. The specialized read-only review helpers for flow timeline, hook artifacts, debugger artifacts, rebuild artifacts, and delivery review gate can also accept artifact-ref inputs directly and return compact `artifact_input` diagnostics. `execute_local_delivery` additionally accepts `source_artifact_ref` / `artifact_ref` in its artifact list, resolves the reviewed source path before constructing `DeliveryArtifact`, and then delegates to the unchanged dry-run / explicit-apply delivery gates. These resolver paths do not enable dual-write, change canonical paths, start browsers, or call MCP.
 
-`audit_workspace_artifact_consumers` exposes a side-effect-free adoption matrix for the coordinator. It distinguishes resolver-ready review helpers, partial delivery artifact-source adoption, candidate JSON handoffs such as rebuild generation inputs, explicit filesystem safety boundaries such as backend manifest recovery / rollback paths, and non-workspace transaction roots. This audit is intentionally not a migration executor; it prevents resolver expansion from crossing apply-time safety gates by accident.
+`audit_workspace_artifact_consumers` exposes a side-effect-free adoption matrix for the coordinator. It distinguishes resolver-ready review helpers and rebuild generation inputs, partial delivery artifact-source adoption, explicit filesystem safety boundaries such as backend manifest recovery / rollback paths, and non-workspace transaction roots. This audit is intentionally not a migration executor; it prevents resolver expansion from crossing apply-time safety gates by accident.
 
 ## 5.9 BrowserProvider plugin package template
 
@@ -437,7 +437,7 @@ The following items used to be listed as broad follow-ups and now have conservat
 - Generated rebuild review hints derived from runtime-context diff classifications, including volatile, session-bound, missing-field, type-drift, and object-drift risk hints.
 - Plan-only protected-flow triage hook planner for WASM / VM / obfuscation / anti-debug / dynamic-secret markers, including workspace routes for `protection-triage-hooks.json`, `wasm-runtime-candidates.json`, and `vm-dispatcher-candidates.json`.
 - Provider-neutral strategy evidence scoring baseline for review-only `evidence_score` payloads across strategy detection and rebuild plans; it does not change readiness, execute replay, start browsers, or call MCP.
-- Workspace artifact reader, read-only review-helper artifact-ref resolver, delivery artifact-list resolver, resolver compatibility metrics, and consumer adoption audit baselines exposed through `read_workspace_artifact`, `audit_workspace_artifact_consumers`, `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_artifacts`, `review_rebuild_artifacts`, `evaluate_delivery_review_gate`, and `execute_local_delivery`; they consume or classify artifact keys, legacy paths, future paths, virtual URIs, artifact-root-relative fallback paths, and explicit filesystem boundaries without moving artifacts or bypassing delivery gates.
+- Workspace artifact reader, read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, resolver compatibility metrics, and consumer adoption audit baselines exposed through `read_workspace_artifact`, `audit_workspace_artifact_consumers`, `build_rebuild_delivery`, `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_artifacts`, `review_rebuild_artifacts`, `evaluate_delivery_review_gate`, and `execute_local_delivery`; they consume or classify artifact keys, legacy paths, future paths, virtual URIs, artifact-root-relative fallback paths, and explicit filesystem boundaries without moving artifacts or bypassing delivery gates.
 
 These baselines are intentionally review-gated, read-only, or pure-analysis-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, automatic browser context collection, or automatic external publication.
 
@@ -458,7 +458,7 @@ The remaining Web-first work should continue behind provider / runtime / artifac
 - Advanced adaptive provider retry policy, retry budgets, provider-specific rate-limit behavior, and partial-failure recovery.
 - Additional external distributed lock providers beyond local-file / SQLite / Redis when a deployment actually needs them.
 - More complete cross-request timeline conflict resolution and reviewer UX.
-- Targeted adoption for audited workspace resolver candidate consumers and compatibility-informed migration planning before any foldered-canonical migration pilot.
+- Remaining targeted adoption for audited partial workspace resolver consumers and compatibility-informed migration planning before any foldered-canonical migration pilot.
 
 ### Explicitly deferred automation
 

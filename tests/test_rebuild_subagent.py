@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 
 from reverse_deepagent.agent import build_reverse_agent
-from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ExecutionStatus, RebuildResult
+from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ExecutionStatus, FinalResult, RebuildResult, ReverseMode, ReverseStage, TaskCard
 from reverse_deepagent.subagents.rebuild import REBUILD_SUBAGENT_DESCRIPTION, REBUILD_SUBAGENT_NAME, build_rebuild_subagent, load_rebuild_prompt
-from reverse_deepagent.tools.rebuild_tools import make_review_rebuild_artifacts_tool
+from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool, make_review_rebuild_artifacts_tool
 
 
 class ToolFriendlyFakeModel:
@@ -114,6 +114,53 @@ class RebuildSubagentTests(unittest.TestCase):
             self.assertEqual(result["summary"]["entrypoint"], "buildSign")
             self.assertEqual(result["artifact_input"]["rebuild_plan"]["artifact_ref"], "workspace_rebuild_plan")
             self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_build_rebuild_delivery_reads_task_and_final_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            task_card = TaskCard(
+                target_url_or_file="https://example.test/app",
+                target_param_or_api="sign",
+                goal="生成 rebuild",
+                boundaries="unit test",
+            )
+            final_result = FinalResult(
+                task_card=task_card,
+                mode=ReverseMode.FIND_ENTRY,
+                stage=ReverseStage.FINAL,
+                status=ExecutionStatus.PARTIAL,
+                next_action="manual_port_or_expand_source_context",
+            )
+            (workspace / "task-card.json").write_text(task_card.model_dump_json(), encoding="utf-8")
+            (workspace / "final-result.json").write_text(final_result.model_dump_json(), encoding="utf-8")
+
+            result = make_build_rebuild_delivery_tool(artifact_root)(
+                task_card_artifact_ref="workspace_task_card",
+                final_result_artifact_ref="virtual://workspace/delivery/final-result.json",
+            )
+
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["artifact_input"]["task_card"]["artifact_ref"], "workspace_task_card")
+            self.assertEqual(result["artifact_input"]["final_result"]["resolver_metrics"]["artifact_ref_kind"], "virtual-uri")
+            self.assertTrue((workspace / "rebuild-plan.json").exists())
+            self.assertTrue((artifact_root / "rebuild" / "README.md").exists())
+
+    def test_build_rebuild_delivery_rejects_ambiguous_json_and_artifact_ref(self) -> None:
+        task_card = TaskCard(
+            target_url_or_file="https://example.test/app",
+            target_param_or_api="sign",
+            goal="生成 rebuild",
+            boundaries="unit test",
+        )
+
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            make_build_rebuild_delivery_tool("artifacts")(
+                task_card_json=task_card.model_dump_json(),
+                task_card_artifact_ref="workspace_task_card",
+                final_result_json="{}",
+            )
 
     def test_build_rebuild_subagent_exposes_build_and_review_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

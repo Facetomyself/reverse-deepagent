@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-107 is implemented through the workspace consumer adoption audit baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-108 is implemented through the rebuild generation artifact-ref input adoption baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -967,8 +967,20 @@ Status: implemented as a read-only consumer matrix for workspace artifact-ref ad
 
 `reverse_deepagent.tools.artifact_tools` now exposes `audit_workspace_artifact_consumers_payload(...)` and `make_audit_workspace_artifact_consumers_tool(...)`. The audit classifies known workspace and path consumers as `resolver-ready`, `partial`, `candidate`, `explicit-filesystem-boundary`, or `non-workspace-input`, with owner, tool, input names, current support, rationale, and next action.
 
-The default coordinator toolset now includes `audit_workspace_artifact_consumers`, giving the agent a side-effect-free way to inspect remaining adoption candidates before proposing alias expansion. Current follow-up candidates include `execute_local_delivery` source path usage monitoring and optional artifact-ref inputs for `build_rebuild_delivery`; delivery resume / transition / recovery / rollback backend-manifest paths and review approval roots are explicitly marked as filesystem safety boundaries.
+The default coordinator toolset now includes `audit_workspace_artifact_consumers`, giving the agent a side-effect-free way to inspect remaining adoption candidates before proposing alias expansion. Current follow-up candidates include `execute_local_delivery` source path usage monitoring; `build_rebuild_delivery` artifact-ref inputs are closed by Step 108; delivery resume / transition / recovery / rollback backend-manifest paths and review approval roots are explicitly marked as filesystem safety boundaries.
 
 Boundary: this is an audit surface only. It does not inspect files, write artifacts, create directories, enable dual-write, migrate paths, start browsers, call MCP, execute delivery, mutate manifests, record approvals, or touch Android / iOS / mini-program full runtime chains. It is intended to prevent accidental resolver expansion across apply-time safety gates while guiding later targeted adoption.
 
 Tests cover the audit payload, side-effect policy, candidate / partial / explicit-boundary classification, and coordinator smoke compatibility.
+
+### Step 108 execution record: Rebuild generation artifact-ref input adoption baseline
+
+Status: implemented as resolver-backed input loading for rebuild generation, not delivery execution, manifest mutation, physical workspace migration, or review-gate bypass.
+
+`build_rebuild_delivery(...)` now accepts `task_card_artifact_ref` and `final_result_artifact_ref` in addition to the existing `task_card_json` and `final_result_json` string inputs. The new artifact-ref inputs are mutually exclusive with their JSON-string counterparts and are loaded through the shared workspace resolver, so callers can pass `workspace_task_card`, `workspace_final`, legacy paths, future paths, or `virtual://workspace/...` URIs.
+
+The tool still writes only the existing rebuild outputs under `artifact_root/rebuild` and `workspace/rebuild-plan.json`. Its return payload now includes compact `artifact_input` diagnostics for the task card and final result reads, including resolver metrics when artifact refs are used. The workspace consumer audit now marks `rebuild.build_rebuild_delivery` as `resolver-ready` instead of `candidate`.
+
+Boundary: this does not execute local delivery, external delivery, replay scripts, Scrapy, backend manifest mutation, transaction commit, rollback, recovery, approval recording, dual-write expansion, physical migration, browser startup, MCP calls, or Android / iOS / mini-program full runtime chains.
+
+Tests cover artifact-ref based rebuild generation, artifact input diagnostics, ambiguous JSON plus artifact-ref rejection, updated consumer audit classification, and existing rebuild / workspace regressions.
