@@ -1443,6 +1443,80 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.next_action, "approve_async_chunk_module_hook_candidate")
         self.assertFalse(result.artifacts[0].metadata["review_approved"])
 
+    def test_native_web_runtime_installs_reviewed_custom_loader_module_hook(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-module-hook",
+            {
+                "custom_loader_module_diff": {
+                    "status": "planned",
+                    "diff": {
+                        "status": "ready_for_review",
+                        "hook_candidates": [
+                            {
+                                "kind": "custom-loader-module-export",
+                                "hook_kind": "module-export",
+                                "module_id": "731",
+                                "export_name": "sign",
+                                "runtime_path": "window.__webpack_require__",
+                                "hook_path": "window.__webpack_require__(731).sign",
+                                "source": "custom_loader_module_diff",
+                            }
+                        ],
+                    },
+                },
+                "selected_hook_candidate": {"module_id": "731", "export_name": "sign"},
+                "review_approved": True,
+                "trigger_expression": "window.__webpack_require__(731).sign('sign', 1700000000000)",
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["hook_custom_loader_module_export:731:sign"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_module_hook_status=success", result.verification)
+        self.assertIn("custom_loader_module_hook_review_approved=True", result.verification)
+        self.assertIn("custom_loader_module_hook_installed_count=1", result.verification)
+        self.assertIn("custom_loader_module_hook_event_count=2", result.verification)
+        self.assertEqual(result.next_action, "inspect_custom_loader_module_hook_events")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-hooks.json")
+        self.assertEqual(result.artifacts[0].metadata["source"], "custom_loader_module_diff")
+        self.assertTrue(result.artifacts[0].metadata["review_approved"])
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/module-hook-timeline.json")
+
+    def test_native_web_runtime_blocks_custom_loader_module_hook_without_review(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-module-hook",
+            {
+                "custom_loader_module_diff": {
+                    "status": "planned",
+                    "diff": {
+                        "status": "ready_for_review",
+                        "hook_candidates": [
+                            {
+                                "hook_kind": "module-export",
+                                "module_id": "731",
+                                "export_name": "sign",
+                                "runtime_path": "window.__webpack_require__",
+                                "source": "custom_loader_module_diff",
+                            }
+                        ],
+                    },
+                },
+                "selected_hook_candidate": {"module_id": "731", "export_name": "sign"},
+            },
+        )
+
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("custom_loader_module_hook_reason=review_approval_required", result.verification)
+        self.assertEqual(result.next_action, "approve_custom_loader_module_hook_candidate")
+        self.assertFalse(result.artifacts[0].metadata["review_approved"])
+
     def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

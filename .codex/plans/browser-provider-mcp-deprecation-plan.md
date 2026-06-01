@@ -1868,3 +1868,15 @@ Status: implemented as a side-effect-free post-custom-loader-execution module di
 Boundary: this baseline does not execute custom loaders, load chunks, evaluate JavaScript, invoke module factories, install hooks, perform recursive traversal, call MCP, or touch Android / iOS / mini-program full runtime chains. Review-approved custom-loader module hook follow-through and deeper custom-loader traversal remain capability-gated follow-ups.
 
 Tests cover manager-level diff / candidate generation and blocked missing-successful-execution behavior, native-web protection metadata, workspace route aliasing, coordinator payload extraction / category mapping, hook subagent review warnings, and warning suppression once a module hook is already installed.
+
+### Step 140 execution record: Review-approved custom loader module hook follow-through baseline
+
+Status: implemented as an explicit review-approved custom-loader module export hook installation baseline, not automatic hook installation, deeper custom-loader traversal, custom-loader re-execution, module factory invocation, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`CustomLoaderModuleHookManager` now consumes `custom_loader_module_diff` / `custom-loader-module-diff` evidence produced by the review-only diff baseline. It selects a reviewed `custom-loader-module-export` candidate by `selected_hook_candidate` or `candidate_index`, requires `review_approved=true`, verifies the candidate comes from `custom_loader_module_diff` and uses `hook_kind=module-export`, then delegates wrapper installation to the existing `ModuleHookManager`. This keeps trigger handling, argument / result capture, missing-target reporting, and timeline snapshots on the established `module-hooks.json` / `module-hook-timeline.json` artifact surfaces instead of creating a parallel custom-loader hook implementation.
+
+`native-web` exposes this through explicit `custom-loader-module-hook` / `custom-loader-hook-module` / `hook-custom-loader-module` / `reviewed-custom-loader-module-hook` protection names and explicit context flags such as `hook_custom_loader_module`. Without review approval it returns `next_action=approve_custom_loader_module_hook_candidate`; with approval and a valid candidate it records `hook_custom_loader_module_export:<module_id>:<export_name>` and returns `virtual://workspace/module-hooks.json` plus `virtual://workspace/module-hook-timeline.json` metadata linked back to `source=custom_loader_module_diff`.
+
+Boundary: this closes the post-diff reviewed hook follow-through only. It does not re-execute custom loaders, rerun module discovery, load chunks, invoke module factories, install hooks automatically from a diff plan, recursively traverse custom-loader graphs, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper custom-loader traversal remains a capability-gated follow-up.
+
+Tests cover manager-level approval blocking / candidate provenance / delegated install behavior, native-web reviewed route metadata and no-approval blocking, and existing module hook / custom-loader diff regressions.

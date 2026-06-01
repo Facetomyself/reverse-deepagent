@@ -14,6 +14,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderExecutionSpec,
     CustomLoaderModuleDiffManager,
     CustomLoaderModuleDiffSpec,
+    CustomLoaderModuleHookManager,
+    CustomLoaderModuleHookSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -1458,6 +1460,89 @@ class AsyncChunkModuleHookManagerTests(unittest.TestCase):
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "candidate_not_from_async_chunk_module_diff")
+
+
+class CustomLoaderModuleHookManagerTests(unittest.TestCase):
+    def _diff_payload(self) -> dict:
+        return {
+            "status": "planned",
+            "diff": {
+                "status": "ready_for_review",
+                "hook_candidates": [
+                    {
+                        "kind": "custom-loader-module-export",
+                        "hook_kind": "module-export",
+                        "module_id": "731",
+                        "export_name": "sign",
+                        "runtime_path": "window.__webpack_require__",
+                        "hook_path": "window.__webpack_require__(731).sign",
+                        "requires_review_approval": True,
+                        "automatic_hook_installation": False,
+                        "source": "custom_loader_module_diff",
+                    }
+                ],
+            },
+        }
+
+    def test_blocks_without_review_approval(self) -> None:
+        spec = CustomLoaderModuleHookSpec.from_context(
+            {
+                "custom_loader_module_diff": self._diff_payload(),
+                "selected_hook_candidate": {"module_id": "731", "export_name": "sign"},
+            }
+        )
+
+        result = CustomLoaderModuleHookManager().install(ModuleHookPage(), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.side_effect_policy["review_approved"])
+        self.assertFalse(result.side_effect_policy["installs_hooks"])
+        self.assertFalse(result.side_effect_policy["executes_custom_loader"])
+
+    def test_installs_reviewed_candidate_by_delegating_to_module_hook_manager(self) -> None:
+        page = ModuleHookPage()
+        spec = CustomLoaderModuleHookSpec.from_context(
+            {
+                "custom_loader_module_diff": self._diff_payload(),
+                "selected_hook_candidate": {"module_id": "731", "export_name": "sign"},
+                "review_approved": True,
+                "trigger_expression": "window.__webpack_require__(731).sign('sign', 1700000000000)",
+            }
+        )
+
+        result = CustomLoaderModuleHookManager().install(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertTrue(result.side_effect_policy["review_approved"])
+        self.assertTrue(result.side_effect_policy["installs_hooks"])
+        self.assertTrue(result.side_effect_policy["delegates_to_module_hook_manager"])
+        self.assertFalse(result.side_effect_policy["executes_custom_loader"])
+        self.assertEqual(result.selected_candidate["source"], "custom_loader_module_diff")
+        self.assertIsNotNone(result.module_hook_result)
+        assert result.module_hook_result is not None
+        self.assertEqual(result.module_hook_result.installed[0]["hookPath"], "window.__webpack_require__(731).sign")
+        self.assertEqual(result.module_hook_result.events[0]["type"], "module_export_call")
+
+    def test_blocks_candidate_not_from_custom_loader_module_diff(self) -> None:
+        spec = CustomLoaderModuleHookSpec.from_context(
+            {
+                "custom_loader_module_diff": self._diff_payload(),
+                "selected_hook_candidate": {
+                    "module_id": "999",
+                    "export_name": "other",
+                    "runtime_path": "window.__webpack_require__",
+                    "hook_kind": "module-export",
+                    "source": "manual_candidate",
+                },
+                "review_approved": True,
+            }
+        )
+
+        result = CustomLoaderModuleHookManager().install(ModuleHookPage(), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "candidate_not_from_custom_loader_module_diff")
 
 
 

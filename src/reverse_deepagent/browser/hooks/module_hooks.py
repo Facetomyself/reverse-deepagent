@@ -2966,6 +2966,155 @@ class AsyncChunkModuleHookManager:
         }
 
 
+@dataclass(slots=True)
+class CustomLoaderModuleHookSpec:
+    """Review-approved hook install request derived from custom-loader module diff candidates."""
+
+    custom_loader_module_diff: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    review_approved: bool = False
+    candidate_index: int | None = None
+    capture_args: bool = True
+    capture_result: bool = True
+    max_preview_length: int = 240
+    trigger_expression: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderModuleHookSpec | None":
+        context = context or {}
+        diff = (
+            context.get("custom_loader_module_diff")
+            or context.get("custom-loader-module-diff")
+            or context.get("customLoaderModuleDiff")
+        )
+        if not isinstance(diff, dict):
+            return None
+        index_value = context.get("candidate_index", context.get("candidateIndex"))
+        candidate_index: int | None = None
+        if index_value is not None:
+            try:
+                candidate_index = int(index_value)
+            except (TypeError, ValueError):
+                candidate_index = None
+        selected = (
+            context.get("selected_hook_candidate")
+            or context.get("selectedHookCandidate")
+            or context.get("hook_candidate")
+            or context.get("hookCandidate")
+        )
+        return cls(
+            custom_loader_module_diff=dict(diff),
+            selected_candidate=dict(selected) if isinstance(selected, dict) else {},
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            candidate_index=candidate_index,
+            capture_args=bool(context.get("capture_args", context.get("captureArgs", True))),
+            capture_result=bool(context.get("capture_result", context.get("captureResult", True))),
+            max_preview_length=int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240),
+            trigger_expression=str(context.get("trigger_expression", context.get("triggerExpression"))) if context.get("trigger_expression", context.get("triggerExpression")) else None,
+        )
+
+
+@dataclass(slots=True)
+class CustomLoaderModuleHookResult:
+    status: str
+    module_hook_result: ModuleHookResult | None = None
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "module_hook_result": self.module_hook_result.to_dict() if self.module_hook_result else {},
+            "selected_candidate": self.selected_candidate,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class CustomLoaderModuleHookManager:
+    """Install reviewed hooks from custom-loader module diff candidates by delegating to ModuleHookManager."""
+
+    def install(self, page: BrowserPage, spec: CustomLoaderModuleHookSpec | None) -> CustomLoaderModuleHookResult:
+        policy = self._side_effect_policy(review_approved=bool(spec and spec.review_approved))
+        if spec is None:
+            return CustomLoaderModuleHookResult(status="unsupported", reason="missing_custom_loader_module_diff", side_effect_policy=policy)
+        candidate = self._select_candidate(spec)
+        if not candidate:
+            return CustomLoaderModuleHookResult(status="blocked", reason="review_custom_loader_module_diff_hook_candidates", side_effect_policy=policy)
+        if not spec.review_approved:
+            return CustomLoaderModuleHookResult(status="blocked", selected_candidate=candidate, reason="review_approval_required", side_effect_policy=policy)
+        if str(candidate.get("source") or "") != "custom_loader_module_diff":
+            return CustomLoaderModuleHookResult(status="blocked", selected_candidate=candidate, reason="candidate_not_from_custom_loader_module_diff", side_effect_policy=policy)
+        if str(candidate.get("hook_kind") or candidate.get("hookKind") or "") != "module-export":
+            return CustomLoaderModuleHookResult(status="blocked", selected_candidate=candidate, reason="unsupported_custom_loader_hook_kind", side_effect_policy=policy)
+        module_spec = ModuleHookSpec.from_context(
+            {
+                "module_id": candidate.get("module_id") or candidate.get("moduleId"),
+                "export_name": candidate.get("export_name") or candidate.get("exportName"),
+                "require_path": candidate.get("runtime_path") or candidate.get("runtimePath") or "window.__webpack_require__",
+                "function_name": candidate.get("function_name") or candidate.get("functionName") or candidate.get("export_name") or candidate.get("exportName"),
+                "capture_args": spec.capture_args,
+                "capture_result": spec.capture_result,
+                "max_preview_length": spec.max_preview_length,
+                "trigger_expression": spec.trigger_expression,
+            }
+        )
+        if module_spec is None:
+            return CustomLoaderModuleHookResult(status="blocked", selected_candidate=candidate, reason="candidate_missing_module_or_export", side_effect_policy=policy)
+        result = ModuleHookManager().install(page, module_spec)
+        status = "success" if result.status == "success" else "partial" if result.status == "partial" else "failed"
+        return CustomLoaderModuleHookResult(status=status, module_hook_result=result, selected_candidate=candidate, side_effect_policy=policy)
+
+    @classmethod
+    def _select_candidate(cls, spec: CustomLoaderModuleHookSpec) -> dict[str, Any]:
+        candidates = cls._candidates(spec.custom_loader_module_diff)
+        if spec.candidate_index is not None and 0 <= spec.candidate_index < len(candidates):
+            return dict(candidates[spec.candidate_index])
+        if spec.selected_candidate:
+            selected_module = str(spec.selected_candidate.get("module_id") or spec.selected_candidate.get("moduleId") or "")
+            selected_export = str(spec.selected_candidate.get("export_name") or spec.selected_candidate.get("exportName") or "")
+            selected_hook_path = str(spec.selected_candidate.get("hook_path") or spec.selected_candidate.get("hookPath") or "")
+            for candidate in candidates:
+                module_id = str(candidate.get("module_id") or candidate.get("moduleId") or "")
+                export_name = str(candidate.get("export_name") or candidate.get("exportName") or "")
+                hook_path = str(candidate.get("hook_path") or candidate.get("hookPath") or "")
+                if selected_hook_path and hook_path == selected_hook_path:
+                    return dict(candidate)
+                if selected_module and selected_export and module_id == selected_module and export_name == selected_export:
+                    return dict(candidate)
+            merged = dict(spec.selected_candidate)
+            merged.setdefault("source", "selected_hook_candidate")
+            return merged
+        if len(candidates) == 1:
+            return dict(candidates[0])
+        return {}
+
+    @staticmethod
+    def _candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        if isinstance(payload.get("diff"), dict):
+            payload = payload["diff"]
+        value = payload.get("hook_candidates") or payload.get("hookCandidates") or []
+        return [dict(item) for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+    @staticmethod
+    def _side_effect_policy(*, review_approved: bool) -> dict[str, Any]:
+        return {
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": review_approved,
+            "loads_chunk": False,
+            "executes_custom_loader": False,
+            "installs_hooks": review_approved,
+            "delegates_to_module_hook_manager": True,
+            "evaluates_javascript": review_approved,
+            "module_factory_invoked": False,
+            "automatic_hook_installation": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
 class ModuleDiscoveryManager:
     """Best-effort webpack-like module discovery from runtime and source text."""
 
