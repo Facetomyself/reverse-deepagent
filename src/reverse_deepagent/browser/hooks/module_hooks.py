@@ -1138,6 +1138,293 @@ class CustomLoaderContinuationJournalManager:
 
 
 @dataclass(slots=True)
+class CustomLoaderContinuationExecutionSpec:
+    """Explicit one-step orchestration over continuation workflow evidence."""
+
+    workflow: dict[str, Any] = field(default_factory=dict)
+    preflight: dict[str, Any] = field(default_factory=dict)
+    execution_result: dict[str, Any] = field(default_factory=dict)
+    module_diff: dict[str, Any] = field(default_factory=dict)
+    module_hook_result: dict[str, Any] = field(default_factory=dict)
+    existing_journal: dict[str, Any] = field(default_factory=dict)
+    module_discovery: dict[str, Any] = field(default_factory=dict)
+    modules: list[dict[str, Any]] = field(default_factory=list)
+    run_preflight: bool = False
+    execute_custom_loader: bool = False
+    run_module_diff: bool = False
+    install_module_hook: bool = False
+    append_journal: bool = False
+    review_approved: bool = False
+    candidate_index: int | None = None
+    loader_arguments: list[Any] = field(default_factory=list)
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderContinuationExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("custom_loader_continuation_execution")
+            or context.get("customLoaderContinuationExecution")
+            or context.get("custom-loader-continuation-execution")
+            or context.get("execute_custom_loader_continuation_step")
+            or context.get("executeCustomLoaderContinuationStep")
+        )
+        workflow = (
+            context.get("custom_loader_continuation_workflow")
+            or context.get("custom-loader-continuation-workflow")
+            or context.get("customLoaderContinuationWorkflow")
+            or context.get("continuation_workflow")
+            or context.get("continuationWorkflow")
+        )
+        if isinstance(workflow, dict) and isinstance(workflow.get("workflow"), dict):
+            workflow = workflow["workflow"]
+        if not isinstance(workflow, dict):
+            return None if not requested else cls()
+        index_value = context.get("candidate_index", context.get("candidateIndex", workflow.get("selected_candidate_index")))
+        candidate_index: int | None = None
+        if index_value is not None:
+            try:
+                candidate_index = int(index_value)
+            except (TypeError, ValueError):
+                candidate_index = None
+        loader_arguments_value = context.get("loader_arguments", context.get("loaderArguments"))
+        loader_argument_value = context.get("loader_argument", context.get("loaderArgument"))
+        if isinstance(loader_arguments_value, list):
+            loader_arguments = list(loader_arguments_value)
+        elif loader_arguments_value is not None:
+            loader_arguments = [loader_arguments_value]
+        elif loader_argument_value is not None:
+            loader_arguments = [loader_argument_value]
+        else:
+            loader_arguments = []
+        modules = context.get("modules", context.get("module_candidates", context.get("moduleCandidates", [])))
+        return cls(
+            workflow=dict(workflow),
+            preflight=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_execution_preflight", "custom-loader-execution-preflight", "customLoaderExecutionPreflight"),
+            execution_result=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_execution_result", "custom-loader-execution-result", "customLoaderExecutionResult"),
+            module_diff=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_module_diff", "custom-loader-module-diff", "customLoaderModuleDiff"),
+            module_hook_result=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_module_hook_result", "custom-loader-module-hook-result", "customLoaderModuleHookResult", "module_hooks", "module-hooks"),
+            existing_journal=CustomLoaderContinuationJournalSpec._object_alias(context, "custom_loader_continuation_journal", "custom-loader-continuation-journal", "customLoaderContinuationJournal"),
+            module_discovery=CustomLoaderContinuationJournalSpec._object_alias(context, "module_discovery", "moduleDiscovery", "module_registry", "moduleRegistry"),
+            modules=[dict(item) for item in modules if isinstance(item, dict)] if isinstance(modules, list) else [],
+            run_preflight=bool(context.get("run_preflight") or context.get("runPreflight") or context.get("execute_preflight") or context.get("executePreflight")),
+            execute_custom_loader=bool(context.get("execute_custom_loader") or context.get("executeCustomLoader")),
+            run_module_diff=bool(context.get("run_module_diff") or context.get("runModuleDiff") or context.get("refresh_module_diff") or context.get("refreshModuleDiff")),
+            install_module_hook=bool(context.get("install_module_hook") or context.get("installModuleHook") or context.get("hook_custom_loader_module") or context.get("hookCustomLoaderModule")),
+            append_journal=bool(context.get("append_journal") or context.get("appendJournal") or context.get("append_custom_loader_continuation_journal") or context.get("appendCustomLoaderContinuationJournal")),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            candidate_index=candidate_index,
+            loader_arguments=loader_arguments,
+        )
+
+
+@dataclass(slots=True)
+class CustomLoaderContinuationExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class CustomLoaderContinuationExecutionManager:
+    """Run at most one explicitly reviewed custom-loader continuation workflow step."""
+
+    def execute(self, page: BrowserPage, spec: CustomLoaderContinuationExecutionSpec | None) -> CustomLoaderContinuationExecutionResult:
+        if spec is None or not spec.workflow:
+            return CustomLoaderContinuationExecutionResult(status="unsupported", reason="missing_custom_loader_continuation_workflow", side_effect_policy=self._side_effect_policy())
+        stages: list[dict[str, Any]] = []
+        preflight_payload = dict(spec.preflight)
+        execution_payload = dict(spec.execution_result)
+        diff_payload = dict(spec.module_diff)
+        hook_payload = dict(spec.module_hook_result)
+        journal_payload: dict[str, Any] = {}
+        if spec.run_preflight:
+            preflight_context = dict(spec.workflow.get("preflight_input") if isinstance(spec.workflow.get("preflight_input"), dict) else {})
+            preflight_context["review_approved"] = spec.review_approved
+            if spec.candidate_index is not None:
+                preflight_context["candidate_index"] = spec.candidate_index
+            preflight_result = CustomLoaderExecutionPreflightManager().preflight(CustomLoaderExecutionPreflightSpec.from_context(preflight_context))
+            preflight_payload = preflight_result.to_dict()
+            stages.append(self._stage("preflight", preflight_result.status, preflight_result.reason, side_effect=False))
+        elif preflight_payload:
+            stages.append(self._stage("preflight", str(preflight_payload.get("status") or "observed"), None, side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("preflight", "pending", None, side_effect=False))
+        if spec.execute_custom_loader:
+            if not self._preflight_ready(preflight_payload):
+                stages.append(self._stage("custom_loader_execution", "blocked", "custom_loader_preflight_not_ready", side_effect=True))
+            else:
+                execution_result = CustomLoaderExecutionManager().execute(
+                    page,
+                    CustomLoaderExecutionSpec.from_context(
+                        {
+                            "custom_loader_execution_preflight": preflight_payload,
+                            "review_approved": spec.review_approved,
+                            "loader_arguments": spec.loader_arguments,
+                        }
+                    ),
+                )
+                execution_payload = execution_result.to_dict()
+                stages.append(self._stage("custom_loader_execution", execution_result.status, execution_result.reason, side_effect=True))
+        elif execution_payload:
+            stages.append(self._stage("custom_loader_execution", str(execution_payload.get("status") or "observed"), None, side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("custom_loader_execution", "pending", None, side_effect=True))
+        if spec.run_module_diff:
+            if not self._execution_success(execution_payload):
+                stages.append(self._stage("custom_loader_module_diff", "blocked", "successful_custom_loader_execution_required", side_effect=False))
+            else:
+                diff_result = CustomLoaderModuleDiffManager().plan(
+                    CustomLoaderModuleDiffSpec.from_context(
+                        {
+                            "custom_loader_execution_result": execution_payload,
+                            "module_discovery": spec.module_discovery,
+                            "modules": spec.modules,
+                        }
+                    )
+                )
+                diff_payload = diff_result.to_dict()
+                stages.append(self._stage("custom_loader_module_diff", diff_result.status, diff_result.reason, side_effect=False))
+        elif diff_payload:
+            stages.append(self._stage("custom_loader_module_diff", str(diff_payload.get("status") or "observed"), None, side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("custom_loader_module_diff", "pending", None, side_effect=False))
+        if spec.install_module_hook:
+            if not self._diff_ready(diff_payload):
+                stages.append(self._stage("custom_loader_module_hook", "blocked", "custom_loader_module_diff_not_ready", side_effect=True))
+            else:
+                hook_result = CustomLoaderModuleHookManager().install(
+                    page,
+                    CustomLoaderModuleHookSpec.from_context(
+                        {
+                            "custom_loader_module_diff": diff_payload,
+                            "candidate_index": spec.candidate_index,
+                            "review_approved": spec.review_approved,
+                        }
+                    ),
+                )
+                hook_payload = hook_result.to_dict()
+                stages.append(self._stage("custom_loader_module_hook", hook_result.status, hook_result.reason, side_effect=True))
+        elif hook_payload:
+            stages.append(self._stage("custom_loader_module_hook", str(hook_payload.get("status") or "observed"), None, side_effect=False, observed=True))
+        else:
+            stages.append(self._stage("custom_loader_module_hook", "pending", None, side_effect=True))
+        if spec.append_journal:
+            journal_result = CustomLoaderContinuationJournalManager().plan_or_append(
+                CustomLoaderContinuationJournalSpec(
+                    workflow=spec.workflow,
+                    existing_journal=spec.existing_journal,
+                    preflight=preflight_payload,
+                    execution_result=execution_payload,
+                    module_diff=diff_payload,
+                    module_hook_result=hook_payload,
+                    review_approved=spec.review_approved,
+                    write_journal=True,
+                )
+            )
+            journal_payload = journal_result.to_dict()
+            stages.append(self._stage("continuation_journal", journal_result.status, journal_result.reason, side_effect=False))
+        status = self._status(stages, preflight_payload, execution_payload, diff_payload, hook_payload, journal_payload)
+        execution = {
+            "schema_version": "reverse-deepagent.custom-loader-continuation-execution.v1",
+            "status": status,
+            "workflow_id": spec.workflow.get("workflow_id"),
+            "selected_candidate_index": spec.workflow.get("selected_candidate_index"),
+            "review_approved": bool(spec.review_approved),
+            "stages": stages,
+            "preflight": preflight_payload,
+            "custom_loader_execution_result": execution_payload,
+            "custom_loader_module_diff": diff_payload,
+            "custom_loader_module_hook_result": hook_payload,
+            "custom_loader_continuation_journal": journal_payload,
+            "next_action": self._next_action(status),
+        }
+        return CustomLoaderContinuationExecutionResult(status=status, execution=execution, side_effect_policy=self._side_effect_policy(spec=spec, stages=stages), reason=self._reason(stages))
+
+    @staticmethod
+    def _stage(name: str, status: str, reason: str | None, *, side_effect: bool, observed: bool = False) -> dict[str, Any]:
+        return {"stage": name, "status": status, "reason": reason or "", "side_effect": side_effect, "observed_input": observed}
+
+    @staticmethod
+    def _preflight_ready(payload: dict[str, Any]) -> bool:
+        preflight = payload.get("preflight") if isinstance(payload.get("preflight"), dict) else payload
+        return str(preflight.get("status") or "") == "ready_for_execution_review"
+
+    @staticmethod
+    def _execution_success(payload: dict[str, Any]) -> bool:
+        execution = payload.get("execution") if isinstance(payload.get("execution"), dict) else payload
+        return payload.get("status") == "success" or execution.get("ok") is True
+
+    @staticmethod
+    def _diff_ready(payload: dict[str, Any]) -> bool:
+        diff = payload.get("diff") if isinstance(payload.get("diff"), dict) else payload
+        return str(diff.get("status") or payload.get("status") or "") in {"ready_for_review", "planned"}
+
+    @classmethod
+    def _status(cls, stages: list[dict[str, Any]], preflight: dict[str, Any], execution: dict[str, Any], diff: dict[str, Any], hook: dict[str, Any], journal: dict[str, Any]) -> str:
+        if any(item["status"] in {"failed", "error"} for item in stages):
+            return "failed"
+        if any(item["status"] in {"blocked", "unsupported"} for item in stages):
+            return "blocked"
+        if journal and (journal.get("status") == "journal_appended" or journal.get("journal", {}).get("status") == "journal_appended"):
+            return "journal_appended"
+        if hook:
+            return "module_hook_recorded"
+        if cls._diff_ready(diff):
+            return "module_diff_ready"
+        if cls._execution_success(execution):
+            return "execution_complete"
+        if cls._preflight_ready(preflight):
+            return "preflight_ready"
+        return "ready_for_review"
+
+    @staticmethod
+    def _reason(stages: list[dict[str, Any]]) -> str | None:
+        for item in stages:
+            if item["status"] in {"blocked", "failed", "error", "unsupported"} and item.get("reason"):
+                return str(item["reason"])
+        return None
+
+    @staticmethod
+    def _next_action(status: str) -> str:
+        return {
+            "preflight_ready": "execute_custom_loader_with_review_approval",
+            "execution_complete": "run_custom_loader_module_diff_after_reviewed_execution",
+            "module_diff_ready": "review_custom_loader_module_diff_hook_candidates",
+            "module_hook_recorded": "append_custom_loader_continuation_journal",
+            "journal_appended": "plan_next_custom_loader_continuation",
+            "blocked": "resolve_custom_loader_continuation_execution_blockers",
+            "failed": "inspect_custom_loader_continuation_execution_failure",
+        }.get(status, "review_custom_loader_continuation_execution_plan")
+
+    @staticmethod
+    def _side_effect_policy(spec: CustomLoaderContinuationExecutionSpec | None = None, stages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        stages = stages or []
+        return {
+            "plan_only": not any(item["status"] not in {"pending", "observed"} and (item["stage"] != "preflight" or item["status"] != "ready_for_execution_review") for item in stages),
+            "review_approved": bool(spec and spec.review_approved),
+            "preflight_executed": bool(spec and spec.run_preflight),
+            "loader_invoked": bool(spec and spec.execute_custom_loader and any(item["stage"] == "custom_loader_execution" and item["status"] == "success" for item in stages)),
+            "custom_loader_executed": bool(spec and spec.execute_custom_loader and any(item["stage"] == "custom_loader_execution" and item["status"] == "success" for item in stages)),
+            "module_diff_executed": bool(spec and spec.run_module_diff),
+            "module_hook_installed": bool(spec and spec.install_module_hook and any(item["stage"] == "custom_loader_module_hook" and item["status"] == "success" for item in stages)),
+            "writes_journal": bool(spec and spec.append_journal and any(item["stage"] == "continuation_journal" and item["status"] == "journal_appended" for item in stages)),
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class CustomLoaderExecutionPreflightSpec:
     """Side-effect-free preflight for a reviewed custom loader execution candidate."""
 

@@ -9,6 +9,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
     CustomLoaderExecutionManager,
+    CustomLoaderContinuationExecutionManager,
+    CustomLoaderContinuationExecutionSpec,
     CustomLoaderContinuationJournalManager,
     CustomLoaderContinuationJournalSpec,
     CustomLoaderContinuationWorkflowManager,
@@ -609,6 +611,125 @@ class CustomLoaderContinuationJournalManagerTests(unittest.TestCase):
         self.assertIn("review_approval_required", unapproved.journal["blocking_reasons"])
         self.assertEqual(duplicate.status, "blocked")
         self.assertIn("custom_loader_continuation_journal_duplicate_entry", duplicate.journal["blocking_reasons"])
+
+
+class CustomLoaderContinuationExecutionManagerTests(unittest.TestCase):
+    def _traversal_plan(self) -> dict[str, Any]:
+        return {
+            "status": "planned",
+            "candidates": [
+                {
+                    "index": 0,
+                    "status": "ready_for_review",
+                    "classification": "arbitrary_custom_loader",
+                    "loader_kind": "custom-loader",
+                    "edge_type": "custom-loader-candidate",
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "continuation_supported": True,
+                }
+            ],
+        }
+
+    def _workflow(self, *, review_approved: bool = True) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-continuation-workflow.v1",
+            "workflow_id": "unit-continuation-execution",
+            "status": "approved_for_preflight" if review_approved else "ready_for_review",
+            "review_required": True,
+            "review_approved": review_approved,
+            "selected_candidate_index": 0,
+            "selected_candidate": self._traversal_plan()["candidates"][0],
+            "preflight_input": {
+                "custom_loader_traversal_plan": self._traversal_plan(),
+                "candidate_index": 0,
+                "expected_loader_path": "window.__customLoader.load",
+                "review_approved": review_approved,
+            },
+        }
+
+    def test_plan_only_does_not_execute_runtime_stages(self) -> None:
+        spec = CustomLoaderContinuationExecutionSpec.from_context(
+            {"custom_loader_continuation_workflow": self._workflow()}
+        )
+
+        result = CustomLoaderContinuationExecutionManager().execute(CustomLoaderExecutionPage(), spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.execution["schema_version"], "reverse-deepagent.custom-loader-continuation-execution.v1")
+        self.assertFalse(result.side_effect_policy["preflight_executed"])
+        self.assertFalse(result.side_effect_policy["custom_loader_executed"])
+        self.assertFalse(result.side_effect_policy["module_diff_executed"])
+        self.assertFalse(result.side_effect_policy["module_hook_installed"])
+        self.assertFalse(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_run_preflight_only_keeps_loader_uninvoked(self) -> None:
+        page = CustomLoaderExecutionPage()
+        spec = CustomLoaderContinuationExecutionSpec.from_context(
+            {
+                "custom_loader_continuation_workflow": self._workflow(),
+                "run_preflight": True,
+                "review_approved": True,
+            }
+        )
+
+        result = CustomLoaderContinuationExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "preflight_ready")
+        self.assertEqual(page.executions, [])
+        self.assertTrue(result.side_effect_policy["preflight_executed"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertEqual(result.execution["preflight"]["status"], "ready_for_execution_review")
+        self.assertEqual(result.execution["next_action"], "execute_custom_loader_with_review_approval")
+
+    def test_blocks_loader_execution_without_ready_preflight(self) -> None:
+        spec = CustomLoaderContinuationExecutionSpec.from_context(
+            {
+                "custom_loader_continuation_workflow": self._workflow(),
+                "execute_custom_loader": True,
+                "review_approved": True,
+            }
+        )
+
+        result = CustomLoaderContinuationExecutionManager().execute(CustomLoaderExecutionPage(), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "custom_loader_preflight_not_ready")
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+
+    def test_reviewed_one_step_execution_can_refresh_diff_and_append_journal(self) -> None:
+        page = CustomLoaderExecutionPage()
+        spec = CustomLoaderContinuationExecutionSpec.from_context(
+            {
+                "custom_loader_continuation_workflow": self._workflow(),
+                "run_preflight": True,
+                "execute_custom_loader": True,
+                "run_module_diff": True,
+                "append_journal": True,
+                "review_approved": True,
+                "module_discovery": {"status": "success"},
+                "modules": [
+                    {
+                        "module_id": "884",
+                        "export_names": ["sign"],
+                        "runtime_path": "window.__webpack_require__",
+                    }
+                ],
+            }
+        )
+
+        result = CustomLoaderContinuationExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "journal_appended")
+        self.assertEqual(page.executions, ["window.__customLoader.load"])
+        self.assertTrue(result.side_effect_policy["custom_loader_executed"])
+        self.assertTrue(result.side_effect_policy["module_diff_executed"])
+        self.assertTrue(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertEqual(result.execution["custom_loader_module_diff"]["status"], "planned")
+        self.assertEqual(result.execution["custom_loader_continuation_journal"]["status"], "journal_appended")
 
 
 class CustomLoaderExecutionPreflightManagerTests(unittest.TestCase):

@@ -147,6 +147,28 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["custom_loader_continuation_journal_record_count"], 0)
         self.assertFalse(result["summary"]["custom_loader_continuation_journal_writes_journal"])
 
+    def test_review_hook_artifacts_warns_for_custom_loader_continuation_execution(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_continuation_execution": {
+                "status": "ready_for_review",
+                "execution": {
+                    "status": "ready_for_review",
+                    "stages": [{"stage": "preflight", "status": "pending"}],
+                    "next_action": "review_custom_loader_continuation_execution_plan",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("custom_loader_continuation_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_custom_loader_continuation_execution_plan")
+        self.assertEqual(result["summary"]["custom_loader_continuation_execution_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["custom_loader_continuation_execution_stage_count"], 1)
+        self.assertEqual(result["summary"]["custom_loader_continuation_execution_next_action"], "review_custom_loader_continuation_execution_plan")
+
     def test_review_hook_artifacts_warns_for_custom_loader_preflight_ready_to_execute(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

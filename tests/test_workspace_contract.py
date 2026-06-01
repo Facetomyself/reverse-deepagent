@@ -185,6 +185,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/custom-loader-continuation-workflow.json"].future_path, "/workspace/runtime/custom-loader-continuation-workflow.json")
         self.assertEqual(routes["workspace/custom-loader-continuation-journal.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/custom-loader-continuation-journal.json"].future_path, "/workspace/runtime/custom-loader-continuation-journal.json")
+        self.assertEqual(routes["workspace/custom-loader-continuation-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-continuation-execution.json"].future_path, "/workspace/runtime/custom-loader-continuation-execution.json")
         self.assertEqual(routes["workspace/custom-loader-execution-preflight.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/custom-loader-execution-preflight.json"].future_path, "/workspace/runtime/custom-loader-execution-preflight.json")
         self.assertEqual(routes["workspace/custom-loader-execution-result.json"].virtual_folder, "/workspace/runtime/")
