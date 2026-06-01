@@ -146,6 +146,8 @@ def _console_script_status() -> dict[str, Any]:
         "reverse-agent-demo": shutil.which("reverse-agent-demo"),
         "reverse-agent-fixture-smoke": shutil.which("reverse-agent-fixture-smoke"),
         "reverse-agent-openai-smoke": shutil.which("reverse-agent-openai-smoke"),
+        "reverse-agent-workspace-dual-write-smoke": shutil.which("reverse-agent-workspace-dual-write-smoke"),
+        "reverse-agent-browser-provider-smoke": shutil.which("reverse-agent-browser-provider-smoke"),
         "reverse-agent-doctor": shutil.which("reverse-agent-doctor"),
     }
     local_bin = DEFAULT_REPO_ROOT / ".venv/bin"

@@ -178,6 +178,8 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(payload["mcp"]["command"]["exists"])
         self.assertTrue(payload["browser_provider"]["ok"])
         self.assertIn("reverse-agent-demo", payload["console_scripts"]["repo_venv_scripts"])
+        self.assertIn("reverse-agent-browser-provider-smoke", payload["console_scripts"]["repo_venv_scripts"])
+        self.assertIn("reverse-agent-workspace-dual-write-smoke", payload["console_scripts"]["repo_venv_scripts"])
 
     def test_doctor_help_does_not_require_chrome_or_mcp(self) -> None:
         result = subprocess.run(

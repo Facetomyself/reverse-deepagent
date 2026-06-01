@@ -21,8 +21,8 @@ These items have baseline implementations and tests. Some are intentionally cons
 - BrowserProvider contract and registry.
 - Playwright Chromium provider.
 - Remote CDP provider.
-- CloakBrowser optional provider skeleton, launch / persistent-context / connect baseline, and manual smoke path.
-- Browser provider doctor mode and side-effect-free provider matrix.
+- CloakBrowser optional provider skeleton, launch / persistent-context / connect baseline, manual smoke path, and explicit workspace smoke evidence capture path.
+- Browser provider doctor mode, side-effect-free provider matrix, and `reverse-agent-browser-provider-smoke` workspace evidence CLI with metadata-only default and explicit launch smoke mode.
 - BrowserProvider production readiness metadata baseline that classifies provider rows as `production-ready`, `review-required`, or `metadata-incomplete` without invoking provider factories, probing CDP, launching browsers, or calling MCP.
 - Provider-specific production readiness rule catalog scaffold, currently covering Playwright Chromium, Remote CDP, CloakBrowser, and hosted-CDP reference lifecycle metadata contracts without invoking provider factories or probing endpoints.
 - Extensible BrowserProvider capability compatibility rule catalog for CDP/debugger/network/lifecycle plus proxy, humanize, mobile emulation, and extension capability checks.
@@ -93,7 +93,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Browser / CDP / hook depth
 
-- Real third-party BrowserProvider plugins beyond the functional fixture, hosted-CDP template, and hosted-CDP reference packages, such as concrete vendor anti-detect browsers or hosted browser services; new providers should preserve the reference allocation / attach / release lifecycle and fill the production readiness metadata contract before runtime smoke is accepted.
+- Real third-party BrowserProvider plugins beyond the functional fixture, hosted-CDP template, and hosted-CDP reference packages, such as concrete vendor anti-detect browsers or hosted browser services; new providers should preserve the reference allocation / attach / release lifecycle, fill the production readiness metadata contract, and provide `workspace/browser-provider-smoke.json` evidence before runtime smoke is accepted.
 - Additional provider-specific compatibility / readiness rules when real third-party provider plugins introduce new capability flags or lifecycle policies beyond the built-in provider baseline.
 - Cross-process live CDP paused execution continuation.
 - Execution-style arbitrary custom loader traversal and async chunk loading beyond the read-only chunk graph baseline.

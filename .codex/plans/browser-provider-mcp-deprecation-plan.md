@@ -1665,3 +1665,13 @@ Status: implemented as a pure-Python reviewed scoped dual-write pilot smoke CLI,
 Boundary: this is a reproducible smoke / evidence generator for low-risk scoped pilots. It does not make dual-write default, does not expand scope automatically, does not migrate canonical paths, does not move or delete legacy artifacts, does not run delivery, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Broader dual-write rollout and foldered-canonical migration remain follow-ups that must use reviewed smoke / workflow evidence.
 
 Tests cover the direct Python helper writing a verified pilot result and the `python -m reverse_deepagent.workspace_dual_write_smoke --no-write-result` read-only verification path.
+
+### Step 123 execution record: BrowserProvider smoke evidence CLI
+
+Status: implemented as a workspace evidence capture CLI for BrowserProvider smoke, not an implicit browser launcher, provider certification system, vendor SDK integration, endpoint probe, or MCP path.
+
+`reverse-agent-browser-provider-smoke` now writes `workspace/browser-provider-smoke.json` with schema `reverse-deepagent.browser-provider-smoke.v1`. Default mode resolves BrowserProvider registration metadata through `BrowserProviderRegistry` and `browser_provider_metadata_matrix_payload(...)`, so it does not invoke provider factories, import optional SDKs, check availability, launch browsers, probe CDP endpoints, or call MCP. Explicit `--include-availability` calls `provider.is_available()`, and explicit `--launch-browser-smoke` runs the existing normalized `browser_provider_smoke_row(...)` lifecycle and records the smoke page evidence under the same workspace artifact. The payload records requested / resolved provider id, mode, provider row, next action, artifact key/path, and side-effect policy.
+
+Boundary: metadata-only smoke remains side-effect-free by default. Real launch smoke requires explicit `--launch-browser-smoke`; this still does not make BrowserProvider matrix listing allocate sessions, does not certify a vendor provider, does not manage proxy / geoip accounts, does not start MCP, and does not touch Android / iOS / mini-program full runtime chains. Real third-party provider packages and deeper provider-specific readiness evidence remain follow-ups.
+
+Tests cover metadata-only artifact writing without invoking provider factory, explicit fake launch smoke evidence writing, module CLI JSON output, and existing BrowserProvider / doctor regressions.

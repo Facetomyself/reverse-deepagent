@@ -197,7 +197,7 @@ The default matrix path is metadata-only and side-effect free: it reads provider
 reverse-agent-doctor --browser-provider-matrix
 ```
 
-Single-provider doctor checks keep the existing `browser_provider` shape and add `browser_provider.smoke_matrix`; explicit `--launch-browser-smoke` is still the only path that can open a real provider session. Future runtime artifacts can use `workspace/browser-provider-smoke.json`; the workspace contract already indexes that path as `/workspace/browser/browser-provider-smoke.json` without migrating existing outputs.
+Single-provider doctor checks keep the existing `browser_provider` shape and add `browser_provider.smoke_matrix`; explicit `--launch-browser-smoke` is still the only path that can open a real provider session. `reverse-agent-browser-provider-smoke` now writes the same single-provider evidence shape to `workspace/browser-provider-smoke.json`: default mode is registry metadata-only and does not invoke provider factories, while `--include-availability` / `--launch-browser-smoke` are explicit side-effect knobs. The workspace contract indexes that path as `/workspace/browser/browser-provider-smoke.json` without migrating existing outputs.
 
 ## 5.2 Browser Runtime Subagent baseline
 
@@ -524,7 +524,7 @@ Current implementation status:
 | BrowserProvider capability schema | Implemented | `src/reverse_deepagent/browser/capabilities.py` |
 | BrowserProvider / BrowserSession / BrowserPage Protocols | Implemented | `src/reverse_deepagent/browser/base.py` |
 | BrowserProvider registry | Implemented | `src/reverse_deepagent/browser/registry.py` |
-| BrowserProvider smoke matrix / lifecycle | Baseline implemented | `src/reverse_deepagent/browser/smoke.py`, `tests/test_browser_smoke_matrix.py`; doctor supports `--browser-provider-matrix` without launching browsers or probing remote endpoints |
+| BrowserProvider smoke matrix / lifecycle | Baseline implemented | `src/reverse_deepagent/browser/smoke.py`, `src/reverse_deepagent/browser_provider_smoke.py`, `tests/test_browser_smoke_matrix.py`, `tests/test_browser_provider_smoke_cli.py`; doctor supports `--browser-provider-matrix` without launching browsers or probing remote endpoints, and `reverse-agent-browser-provider-smoke` writes workspace evidence with metadata-only default / explicit launch smoke |
 | Native collectors | Baseline implemented | `src/reverse_deepagent/browser/collectors/` |
 | DeepAgents workspace contract | Indexed-only contract + manifest-only folder alias baseline implemented | `src/reverse_deepagent/workspace_contract.py`, `tests/test_workspace_contract.py`; emits `workspace/workspace-contract.json` and adds `metadata.workspace_alias` to backend manifest entries without migrating existing flat workspace paths |
 | Playwright provider | Skeleton implemented | `src/reverse_deepagent/browser/providers/playwright_chromium.py` |
