@@ -217,6 +217,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native module federation export hook plan",
+                    kind=EvidenceKind.NOTE,
+                    source="module_federation_export_hook_plan",
+                    details={"status": "planned", "hookable_candidate_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map fetch result",
                     kind=EvidenceKind.DYNAMIC,
                     source="source_map_fetch_result",
@@ -269,6 +276,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["module-federation-get-init-plan.json"]["container_count"], 1)
         self.assertEqual(payloads["module-federation-get-init-result.json"]["execution"]["remoteFactoryInvoked"], False)
         self.assertEqual(payloads["module-federation-factory-invoke-result.json"]["factory_execution"]["remoteFactoryInvoked"], True)
+        self.assertEqual(payloads["module-federation-export-hook-plan.json"]["hookable_candidate_count"], 1)
         self.assertEqual(payloads["async-chunk-load-result.json"]["addedRegistryKeys"], ["731"])
         self.assertEqual(payloads["source-map-fetch-plan.json"]["source_map_url_redacted"], "https://example.test/app.js.map")
         self.assertEqual(payloads["source-map-fetch-result.json"]["byte_count"], 128)
@@ -284,6 +292,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_factory_invoke_result"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_module_federation_export_hook_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_fetch_plan"), "triage")

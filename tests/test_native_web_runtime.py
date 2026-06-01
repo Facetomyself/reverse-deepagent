@@ -1178,6 +1178,44 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].metadata["export_count"], 1)
         self.assertEqual(result.artifacts[1].metadata["module_type"], "object")
 
+    def test_native_web_runtime_plans_module_federation_export_hooks_from_factory_result(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "module-federation-export-hook-plan",
+            {
+                "module_federation_factory_invoke_result": {
+                    "status": "success",
+                    "factory_execution": {
+                        "remoteFactoryInvoked": True,
+                        "remoteCodeExecuted": True,
+                        "containerPath": "window.remoteOther",
+                        "exposedName": "./token",
+                        "moduleType": "object",
+                        "exportNames": ["token"],
+                        "exportPreviews": {"token": {"type": "function", "name": "token"}},
+                    },
+                }
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_module_federation_export_hooks"])
+        self.assertEqual(page.module_federation_get_init_probes, [])
+        self.assertEqual(page.module_federation_factory_invocations, [])
+        self.assertIn("module_federation_export_hook_plan_status=planned", result.verification)
+        self.assertIn("module_federation_export_hook_candidate_count=1", result.verification)
+        self.assertIn("module_federation_export_hook_hookable_candidate_count=1", result.verification)
+        self.assertIn("module_federation_export_hook_automatic_hook_installation=False", result.verification)
+        self.assertIn("module_federation_export_hook_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_module_federation_export_hook_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-export-hook-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["hookable_candidate_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_hook_installation"])
+        self.assertFalse(result.artifacts[0].metadata["recursive_federation_traversal"])
+
     def test_native_web_runtime_apply_minimal_protection_builds_flow_timeline(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

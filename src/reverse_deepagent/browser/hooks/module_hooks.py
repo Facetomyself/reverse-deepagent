@@ -1381,6 +1381,138 @@ class ModuleFederationFactoryInvokeManager:
 
 
 @dataclass(slots=True)
+class ModuleFederationExportHookPlanSpec:
+    """Review-only hook selection request derived from a remote factory invocation result."""
+
+    factory_invoke_result: dict[str, Any] = field(default_factory=dict)
+    max_candidates: int = 30
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationExportHookPlanSpec | None":
+        context = context or {}
+        payload = (
+            context.get("module_federation_factory_invoke_result")
+            or context.get("module-federation-factory-invoke-result")
+            or context.get("moduleFederationFactoryInvokeResult")
+            or context.get("factory_invoke_result")
+            or context.get("factoryInvokeResult")
+        )
+        if not isinstance(payload, dict):
+            return None
+        return cls(
+            factory_invoke_result=dict(payload),
+            max_candidates=max(1, int(context.get("max_candidates", context.get("maxCandidates", 30)) or 30)),
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationExportHookPlanResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class ModuleFederationExportHookPlanManager:
+    """Build a review-only hook recommendation plan for reviewed remote exports."""
+
+    def plan(self, spec: ModuleFederationExportHookPlanSpec | None) -> ModuleFederationExportHookPlanResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return ModuleFederationExportHookPlanResult(status="unsupported", reason="missing_factory_invoke_result", side_effect_policy=policy)
+        factory_execution = self._factory_execution(spec.factory_invoke_result)
+        if not factory_execution:
+            return ModuleFederationExportHookPlanResult(status="blocked", reason="missing_factory_execution", side_effect_policy=policy)
+        if not factory_execution.get("remoteFactoryInvoked") or not factory_execution.get("remoteCodeExecuted"):
+            return ModuleFederationExportHookPlanResult(status="blocked", reason="remote_factory_execution_required", side_effect_policy=policy)
+        export_names = [str(item) for item in factory_execution.get("exportNames") or [] if str(item)]
+        export_previews = factory_execution.get("exportPreviews") if isinstance(factory_execution.get("exportPreviews"), dict) else {}
+        candidates = [
+            self._candidate_for_export(factory_execution, export_name, export_previews.get(export_name) if isinstance(export_previews.get(export_name), dict) else {})
+            for export_name in export_names[: spec.max_candidates]
+        ]
+        hookable_count = sum(1 for candidate in candidates if candidate.get("hookable"))
+        plan = {
+            "schema_version": "reverse-deepagent.module-federation-export-hook-plan.v1",
+            "status": "ready_for_review" if hookable_count else "blocked",
+            "source": "module_federation_factory_invoke_result",
+            "container_path": factory_execution.get("containerPath", ""),
+            "exposed_name": factory_execution.get("exposedName", ""),
+            "module_type": factory_execution.get("moduleType", ""),
+            "export_count": len(export_names),
+            "candidate_count": len(candidates),
+            "hookable_candidate_count": hookable_count,
+            "candidates": candidates,
+            "review_required": True,
+            "automatic_hook_installation": False,
+            "recursive_federation_traversal": False,
+            "next_action": "review_module_federation_export_hook_plan" if hookable_count else "inspect_remote_export_shapes_before_hooking",
+        }
+        return ModuleFederationExportHookPlanResult(
+            status="planned" if hookable_count else "blocked",
+            plan=plan,
+            side_effect_policy=policy,
+            reason=None if hookable_count else "no_hookable_remote_exports",
+        )
+
+    @staticmethod
+    def _factory_execution(payload: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(payload.get("factory_execution"), dict):
+            return payload["factory_execution"]
+        if isinstance(payload.get("factoryExecution"), dict):
+            return payload["factoryExecution"]
+        if payload.get("remoteFactoryInvoked") is not None or payload.get("exportNames") is not None:
+            return payload
+        return {}
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "installs_hooks": False,
+            "invokes_remote_factory": False,
+            "executes_remote_code": False,
+            "recursive_federation_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @classmethod
+    def _candidate_for_export(cls, execution: dict[str, Any], export_name: str, preview: dict[str, Any]) -> dict[str, Any]:
+        export_type = str(preview.get("type") or "unknown")
+        container_path = str(execution.get("containerPath") or "")
+        exposed_name = str(execution.get("exposedName") or "")
+        hook_kind = "remote-export-wrapper" if export_type == "function" else "manual-inspection"
+        hookable = export_type == "function"
+        blocking_reasons = [] if hookable else [f"unsupported_remote_export_type:{export_type}"]
+        return {
+            "kind": "module-federation-remote-export",
+            "export_name": export_name,
+            "export_type": export_type,
+            "function_name": str(preview.get("name") or export_name),
+            "container_path": container_path,
+            "exposed_name": exposed_name,
+            "hook_kind": hook_kind,
+            "hookable": hookable,
+            "recommended_follow_up": "hook_module_federation_remote_export" if hookable else "inspect_remote_export_shape",
+            "requires_review_approval": True,
+            "automatic_hook_installation": False,
+            "recursive_federation_traversal": False,
+            "blocking_reasons": blocking_reasons,
+            "preview": {key: preview[key] for key in ("type", "name", "constructorName", "keys", "preview") if key in preview},
+        }
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 

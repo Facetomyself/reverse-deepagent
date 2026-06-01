@@ -213,6 +213,37 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["module_federation_factory_export_count"], 1)
         self.assertEqual(result["review_required_items"][0]["module_federation_factory_invoke_result_status"], "success")
 
+    def test_review_hook_artifacts_warns_for_module_federation_export_hook_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_factory_invoke_result": {
+                "status": "success",
+                "factory_execution": {
+                    "attempted": True,
+                    "ok": True,
+                    "remoteFactoryInvoked": True,
+                    "remoteCodeExecuted": True,
+                    "exportNames": ["sign"],
+                },
+            },
+            "module_federation_export_hook_plan": {
+                "status": "planned",
+                "candidate_count": 1,
+                "hookable_candidate_count": 1,
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_export_hook_plan_requires_review", result["warnings"])
+        self.assertNotIn("module_federation_factory_exports_require_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_export_hook_plan")
+        self.assertEqual(result["summary"]["module_federation_export_hook_plan_status"], "planned")
+        self.assertEqual(result["summary"]["module_federation_export_hook_candidate_count"], 1)
+        self.assertEqual(result["summary"]["module_federation_export_hook_hookable_candidate_count"], 1)
+        self.assertEqual(result["review_required_items"][0]["module_federation_export_hook_plan_status"], "planned")
+
 
     def test_review_hook_artifacts_reads_artifact_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

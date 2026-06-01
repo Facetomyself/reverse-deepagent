@@ -63,6 +63,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "module-federation-factory-invoke-result",
             "moduleFederationFactoryInvokeResult",
         )
+        module_federation_export_hook_plan = _object_alias(
+            payload,
+            "module_federation_export_hook_plan",
+            "module-federation-export-hook-plan",
+            "moduleFederationExportHookPlan",
+        )
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -94,6 +100,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_get_init_plan,
                 module_federation_get_init_result,
                 module_federation_factory_invoke_result,
+                module_federation_export_hook_plan,
             )
         ) + sum(bool(items) for items in (module_candidates, function_candidates))
         if not artifact_count:
@@ -118,6 +125,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("module_federation_get_init_probe_failed")
         if _status(module_federation_factory_invoke_result) in {"failed", "failure", "error", "unsupported"}:
             blockers.append("module_federation_factory_invoke_failed")
+        if _status(module_federation_export_hook_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("module_federation_export_hook_plan_blocked")
         federation_plan_status = _nested_status(module_federation_get_init_plan, "plan")
         if module_federation_get_init_plan and (
             _status(module_federation_get_init_plan) in {"ready_for_review", "planned"}
@@ -128,8 +137,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         if _status(module_federation_get_init_result) == "success" and not federation_execution.get("remoteFactoryInvoked", False):
             warnings.append("module_federation_get_init_probe_requires_factory_review")
         federation_factory_execution = module_federation_factory_invoke_result.get("factory_execution") if isinstance(module_federation_factory_invoke_result.get("factory_execution"), dict) else {}
-        if _status(module_federation_factory_invoke_result) == "success" and federation_factory_execution.get("remoteFactoryInvoked", False):
+        export_hook_plan_status = _nested_status(module_federation_export_hook_plan, "plan")
+        if _status(module_federation_factory_invoke_result) == "success" and federation_factory_execution.get("remoteFactoryInvoked", False) and not module_federation_export_hook_plan:
             warnings.append("module_federation_factory_exports_require_review")
+        if module_federation_export_hook_plan and (
+            _status(module_federation_export_hook_plan) in {"ready_for_review", "planned"}
+            or export_hook_plan_status == "ready_for_review"
+        ):
+            warnings.append("module_federation_export_hook_plan_requires_review")
         if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
             warnings.append("async_chunk_load_requires_review")
         if missing_count:
@@ -166,6 +181,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "module_federation_get_init_plan_status": _status(module_federation_get_init_plan) or federation_plan_status,
                 "module_federation_get_init_result_status": _status(module_federation_get_init_result),
                 "module_federation_factory_invoke_result_status": _status(module_federation_factory_invoke_result),
+                "module_federation_export_hook_plan_status": _status(module_federation_export_hook_plan) or export_hook_plan_status,
                 "module_federation_get_init_candidate_count": _intish(module_federation_get_init_plan.get("candidate_count") or _nested_get(module_federation_get_init_plan, "plan", "candidate_count")),
                 "module_federation_get_init_container_count": _intish(module_federation_get_init_plan.get("container_count") or _nested_get(module_federation_get_init_plan, "plan", "container_count")),
                 "module_federation_get_init_exposed_module_count": _intish(module_federation_get_init_plan.get("exposed_module_count") or _nested_get(module_federation_get_init_plan, "plan", "exposed_module_count")),
@@ -179,6 +195,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "module_federation_factory_remote_factory_invoked": bool(federation_factory_execution.get("remoteFactoryInvoked") or module_federation_factory_invoke_result.get("remote_factory_invoked", False)),
                 "module_federation_factory_remote_code_executed": bool(federation_factory_execution.get("remoteCodeExecuted") or module_federation_factory_invoke_result.get("remote_code_executed", False)),
                 "module_federation_factory_export_count": len(_listish(federation_factory_execution.get("exportNames") or module_federation_factory_invoke_result.get("export_names"))),
+                "module_federation_export_hook_candidate_count": _intish(module_federation_export_hook_plan.get("candidate_count") or _nested_get(module_federation_export_hook_plan, "plan", "candidate_count")),
+                "module_federation_export_hook_hookable_candidate_count": _intish(module_federation_export_hook_plan.get("hookable_candidate_count") or _nested_get(module_federation_export_hook_plan, "plan", "hookable_candidate_count")),
                 "async_chunk_load_execution_attempted": bool(async_chunk_result.get("execution", {}).get("attempted") if isinstance(async_chunk_result.get("execution"), dict) else async_chunk_result.get("execution_attempted", False)),
                 "async_chunk_load_added_registry_key_count": len(_listish(async_chunk_result.get("addedRegistryKeys") or async_chunk_result.get("added_registry_keys"))),
                 "timeline_event_count": timeline_event_count,
@@ -201,6 +219,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_get_init_plan,
                 module_federation_get_init_result,
                 module_federation_factory_invoke_result,
+                module_federation_export_hook_plan,
             ),
             "side_effect_policy": {
                 "read_only": True,
@@ -349,6 +368,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "inspect_module_federation_get_init_probe_failure"
     if "module_federation_factory_invoke_failed" in blockers:
         return "inspect_module_federation_factory_invoke_failure"
+    if "module_federation_export_hook_plan_blocked" in blockers:
+        return "inspect_remote_export_shapes_before_hooking"
     if "custom_loader_traversal_plan_blocked" in blockers:
         return "choose_supported_async_chunk_or_static_source_path"
     if "async_chunk_load_plan_blocked" in blockers:
@@ -363,6 +384,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_module_federation_get_init_probe_before_factory_invocation"
     if "module_federation_factory_exports_require_review" in warnings:
         return "review_module_federation_factory_exports_before_hooking"
+    if "module_federation_export_hook_plan_requires_review" in warnings:
+        return "review_module_federation_export_hook_plan"
     if "custom_loader_traversal_requires_review" in warnings:
         return "review_custom_loader_traversal_plan"
     if "async_chunk_load_requires_review" in warnings:
@@ -390,6 +413,7 @@ def _review_required_items(
     module_federation_get_init_plan: dict[str, Any],
     module_federation_get_init_result: dict[str, Any],
     module_federation_factory_invoke_result: dict[str, Any],
+    module_federation_export_hook_plan: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for code in blockers + warnings:
@@ -407,6 +431,7 @@ def _review_required_items(
                 "module_federation_get_init_plan_status": _status(module_federation_get_init_plan) or _nested_status(module_federation_get_init_plan, "plan"),
                 "module_federation_get_init_result_status": _status(module_federation_get_init_result),
                 "module_federation_factory_invoke_result_status": _status(module_federation_factory_invoke_result),
+                "module_federation_export_hook_plan_status": _status(module_federation_export_hook_plan) or _nested_status(module_federation_export_hook_plan, "plan"),
                 "function_hook_error": str(function_hooks.get("error") or ""),
                 "module_hook_error": str(module_hooks.get("error") or ""),
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
@@ -414,6 +439,7 @@ def _review_required_items(
                 "custom_loader_traversal_error": str(custom_loader_traversal_plan.get("error") or ""),
                 "module_federation_get_init_error": str(module_federation_get_init_result.get("error") or module_federation_get_init_plan.get("error") or ""),
                 "module_federation_factory_error": str(module_federation_factory_invoke_result.get("error") or ""),
+                "module_federation_export_hook_error": str(module_federation_export_hook_plan.get("error") or ""),
             }
         )
     return items

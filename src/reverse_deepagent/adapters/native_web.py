@@ -12,6 +12,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
+    ModuleFederationExportHookPlanManager,
+    ModuleFederationExportHookPlanSpec,
     ModuleFederationFactoryInvokeManager,
     ModuleFederationFactoryInvokeSpec,
     ModuleFederationGetInitPlanManager,
@@ -1274,6 +1276,44 @@ class NativeWebRuntime(WebReverseRuntime):
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_get_init_request(protection_name, context):
+            if self._is_module_federation_export_hook_plan_request(protection_name, context):
+                spec = ModuleFederationExportHookPlanSpec.from_context(context)
+                result = ModuleFederationExportHookPlanManager().plan(spec)
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                verification = [
+                    f"module_federation_export_hook_plan_status={result.status}",
+                    f"module_federation_export_hook_candidate_count={plan.get('candidate_count', 0)}",
+                    f"module_federation_export_hook_hookable_candidate_count={plan.get('hookable_candidate_count', 0)}",
+                    f"module_federation_export_hook_automatic_hook_installation={plan.get('automatic_hook_installation', False)}",
+                    f"module_federation_export_hook_recursive_federation_traversal={plan.get('recursive_federation_traversal', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if result.reason:
+                    verification.append(f"module_federation_export_hook_plan_reason={result.reason}")
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-export-hook-plan.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-only Module Federation remote export hook selection plan.",
+                        metadata={
+                            "status": result.status,
+                            "candidate_count": plan.get("candidate_count", 0),
+                            "hookable_candidate_count": plan.get("hookable_candidate_count", 0),
+                            "review_required": plan.get("review_required", True),
+                            "automatic_hook_installation": plan.get("automatic_hook_installation", False),
+                            "recursive_federation_traversal": plan.get("recursive_federation_traversal", False),
+                        },
+                    )
+                ]
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=["plan_module_federation_export_hooks"] if result.status == "planned" else [],
+                    verification=verification,
+                    status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
+                    artifacts=artifact_paths,
+                    next_action=plan.get("next_action", "inspect_remote_export_shapes_before_hooking"),
+                    confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+                )
             if self._is_module_federation_factory_invoke_request(context):
                 spec = ModuleFederationFactoryInvokeSpec.from_context(context)
                 result = ModuleFederationFactoryInvokeManager().plan_or_invoke(page, spec)
@@ -2212,6 +2252,10 @@ class NativeWebRuntime(WebReverseRuntime):
             "federation-get-init-plan",
             "module-federation-plan",
             "federation-analysis-plan",
+            "module-federation-export-hook-plan",
+            "module-federation-export-hooks",
+            "remote-export-hook-plan",
+            "remote-export-hooks",
         }:
             return True
         return any(
@@ -2265,6 +2309,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "executeRemoteFactory",
                 "invoke_remote_factory",
                 "invokeRemoteFactory",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_export_hook_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "module-federation-export-hook-plan",
+            "module-federation-export-hooks",
+            "remote-export-hook-plan",
+            "remote-export-hooks",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "module_federation_export_hook_plan",
+                "moduleFederationExportHookPlan",
+                "remote_export_hook_plan",
+                "remoteExportHookPlan",
+                "module_federation_factory_invoke_result",
+                "moduleFederationFactoryInvokeResult",
+                "module-federation-factory-invoke-result",
             )
         )
 

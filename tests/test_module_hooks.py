@@ -7,6 +7,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
     ModuleFederationFactoryInvokeSpec,
+    ModuleFederationExportHookPlanManager,
+    ModuleFederationExportHookPlanSpec,
     ModuleDiscoveryManager,
     ModuleDiscoverySpec,
     ModuleFederationGetInitPlanManager,
@@ -533,6 +535,68 @@ class ModuleFederationFactoryInvokeManagerTests(unittest.TestCase):
         self.assertTrue(result.side_effect_policy["remote_code_executed"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+
+class ModuleFederationExportHookPlanManagerTests(unittest.TestCase):
+    def test_module_federation_export_hook_plan_recommends_function_exports_without_installing_hooks(self) -> None:
+        spec = ModuleFederationExportHookPlanSpec.from_context(
+            {
+                "module_federation_factory_invoke_result": {
+                    "status": "success",
+                    "factory_execution": {
+                        "remoteFactoryInvoked": True,
+                        "remoteCodeExecuted": True,
+                        "containerPath": "window.remoteApp",
+                        "exposedName": "./sign",
+                        "moduleType": "object",
+                        "exportNames": ["sign", "version"],
+                        "exportPreviews": {
+                            "sign": {"type": "function", "name": "sign", "preview": "function sign() {}"},
+                            "version": {"type": "string", "preview": "1.0.0"},
+                        },
+                    },
+                }
+            }
+        )
+
+        result = ModuleFederationExportHookPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertEqual(result.plan["status"], "ready_for_review")
+        self.assertEqual(result.plan["candidate_count"], 2)
+        self.assertEqual(result.plan["hookable_candidate_count"], 1)
+        self.assertEqual(result.plan["next_action"], "review_module_federation_export_hook_plan")
+        self.assertTrue(result.plan["review_required"])
+        self.assertFalse(result.plan["automatic_hook_installation"])
+        self.assertFalse(result.plan["recursive_federation_traversal"])
+        hookable = result.plan["candidates"][0]
+        self.assertEqual(hookable["export_name"], "sign")
+        self.assertEqual(hookable["hook_kind"], "remote-export-wrapper")
+        self.assertTrue(hookable["hookable"])
+        unsupported = result.plan["candidates"][1]
+        self.assertFalse(unsupported["hookable"])
+        self.assertIn("unsupported_remote_export_type:string", unsupported["blocking_reasons"])
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["installs_hooks"])
+        self.assertFalse(result.side_effect_policy["invokes_remote_factory"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_module_federation_export_hook_plan_blocks_without_factory_execution(self) -> None:
+        spec = ModuleFederationExportHookPlanSpec.from_context(
+            {
+                "module_federation_factory_invoke_result": {
+                    "status": "planned",
+                    "factory_execution": {"remoteFactoryInvoked": False, "remoteCodeExecuted": False},
+                }
+            }
+        )
+
+        result = ModuleFederationExportHookPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "remote_factory_execution_required")
+        self.assertFalse(result.side_effect_policy["executes_remote_code"])
 
 
 class ModuleDiscoveryManagerTests(unittest.TestCase):
