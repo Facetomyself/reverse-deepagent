@@ -16,6 +16,8 @@ The project keeps the Web / JS reverse-engineering path as the mainline:
 
 These items have baseline implementations and tests. Some are intentionally conservative and remain review-only, dry-run-only, or explicit-approval-only.
 
+- Runtime documentation governance baseline that splits the native-web capability description into implemented baseline, explicit reviewed execution surfaces, active Web-first gaps, and explicitly deferred automation / non-Web chains.
+
 ### Web runtime and browser provider baseline
 
 - BrowserProvider contract and registry.
@@ -90,7 +92,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 ### Documentation and governance
 
 - Keep `ROADMAP.md`, `.codex/plans/`, README, AGENTS, and runtime docs aligned after each architecture-level change.
-- Split long future-work paragraphs into completed baseline, active remaining work, and explicitly deferred automation.
+- Keep long runtime and delivery status sections split into implemented baseline, active remaining work, and explicitly deferred automation as new architecture-level changes land.
 
 ### Browser / CDP / hook depth
 

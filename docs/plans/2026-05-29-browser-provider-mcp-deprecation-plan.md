@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-153 is implemented through the review-gated bounded custom-loader traversal loop execution baseline after the review-only bounded custom-loader traversal loop plan baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-154 is implemented through the review-gated bounded custom-loader traversal loop execution baseline after the review-only bounded custom-loader traversal loop plan baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -1491,3 +1491,12 @@ Status: implemented as a review-gated bounded custom-loader traversal loop execu
 Boundary: this closes only the reviewed one-iteration bounded custom-loader loop execution surface after loop planning. It does not automatically advance to the next graph queue item, does not rebuild the traversal graph automatically, does not replan the workflow automatically, does not recurse until exhaustion, does not bypass continuation workflow / preflight / review gates, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Deeper recursive custom-loader traversal remains capability-gated follow-up work.
 
 Tests cover manager-level plan-only / reviewed one-iteration preflight+loader+module-diff+journal / missing loop-plan behavior, native-web route metadata and reviewed execution behavior, workspace route aliasing, coordinator payload extraction / category mapping, hook-subagent review wiring, compileall, and existing module / native-web regressions.
+### Step 154 execution record: Runtime documentation future-work split baseline
+
+Status: implemented as a documentation-governance cleanup for the native-web runtime capability sections, not a runtime behavior change, new browser provider, recursive traversal executor, mobile runtime chain, or automatic delivery / rollback feature.
+
+README and the BrowserProvider runtime architecture document now split the previous long native-web capability paragraph into implemented baseline, explicit review-gated execution surfaces, active Web-first gaps, and explicitly deferred automation / non-Web chains. The split keeps `native-web + BrowserProvider` as the Web mainline, keeps `legacy-mcp` as compatibility only, preserves Android / iOS / mini-program full runtime chains as deferred, and makes the remaining non-mobile gaps easier to audit before deeper custom-loader / async-chunk recursion work.
+
+Boundary: this is documentation-only governance work. It does not change artifact schemas, execute browser actions, alter provider registration, move workspace canonical paths, add MCP dependencies, or claim deeper recursive custom-loader / async-chunk / federation traversal is implemented.
+
+Validation covers `git diff --check` and manual diff review of the README / runtime architecture split.
