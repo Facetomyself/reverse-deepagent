@@ -941,6 +941,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_custom_loader_traversal_loop_plan": "triage",
     "workspace_custom_loader_traversal_loop_execution": "audit",
     "workspace_custom_loader_recursive_traversal_plan": "triage",
+    "workspace_custom_loader_recursive_traversal_followup": "audit",
     "workspace_custom_loader_continuation_workflow": "triage",
     "workspace_custom_loader_continuation_journal": "audit",
     "workspace_custom_loader_continuation_execution": "audit",
@@ -1695,6 +1696,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["custom-loader-traversal-loop-execution.json"] = evidence.details
         elif evidence.source == "custom_loader_recursive_traversal_plan":
             payloads["custom-loader-recursive-traversal-plan.json"] = evidence.details
+        elif evidence.source == "custom_loader_recursive_traversal_followup":
+            payloads["custom-loader-recursive-traversal-followup.json"] = evidence.details
         elif evidence.source == "custom_loader_continuation_workflow":
             payloads["custom-loader-continuation-workflow.json"] = evidence.details
         elif evidence.source == "custom_loader_continuation_journal":

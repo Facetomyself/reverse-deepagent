@@ -44,6 +44,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalLoopExecutionSpec,
     CustomLoaderRecursiveTraversalPlanManager,
     CustomLoaderRecursiveTraversalPlanSpec,
+    CustomLoaderRecursiveTraversalFollowupManager,
+    CustomLoaderRecursiveTraversalFollowupSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -965,6 +967,107 @@ class CustomLoaderRecursiveTraversalPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "custom_loader_loop_execution_not_ready_for_recursion")
         self.assertEqual(result.recursive_plan["next_action"], "resolve_custom_loader_recursive_traversal_blockers")
+
+
+class CustomLoaderRecursiveTraversalFollowupManagerTests(unittest.TestCase):
+    def _recursive_plan(self, status: str = "ready_for_graph_rebuild") -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-recursive-traversal-plan.v1",
+            "plan_id": "custom-loader-recursive-traversal-plan",
+            "status": status,
+            "next_action": "rebuild_custom_loader_traversal_graph_before_next_recursive_loop",
+        }
+
+    def _loop_execution(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-loop-execution.v1",
+            "status": "journal_appended",
+            "execution": {"status": "journal_appended"},
+            "next_action": "rebuild_custom_loader_traversal_graph_and_replan_workflow_before_next_loop_iteration",
+        }
+
+    def test_plan_only_followup_requires_manual_review_without_side_effects(self) -> None:
+        spec = CustomLoaderRecursiveTraversalFollowupSpec.from_context(
+            {
+                "custom_loader_recursive_traversal_followup": True,
+                "custom_loader_recursive_traversal_plan": self._recursive_plan(),
+            }
+        )
+
+        result = CustomLoaderRecursiveTraversalFollowupManager().follow_up(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.followup["schema_version"], "reverse-deepagent.custom-loader-recursive-traversal-followup.v1")
+        self.assertEqual(result.followup["next_action"], "review_custom_loader_recursive_traversal_followup_plan")
+        self.assertTrue(result.followup["manual_checkpoint_required"])
+        self.assertTrue(result.side_effect_policy["plan_only_by_default"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["workflow_replanned"])
+        self.assertFalse(result.side_effect_policy["loop_plan_created"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_reviewed_followup_rebuilds_graph_replans_workflow_and_plans_next_loop(self) -> None:
+        spec = CustomLoaderRecursiveTraversalFollowupSpec.from_context(
+            {
+                "custom_loader_recursive_traversal_followup": True,
+                "custom_loader_recursive_traversal_plan": self._recursive_plan(),
+                "custom_loader_traversal_plan": CustomLoaderTraversalGraphManagerTests()._traversal_plan(),
+                "custom_loader_continuation_journal": {
+                    "journal": {
+                        "records": [
+                            {
+                                "candidate_fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                            }
+                        ]
+                    }
+                },
+                "custom_loader_traversal_loop_execution": self._loop_execution(),
+                "rebuild_graph": True,
+                "replan_workflow": True,
+                "plan_next_loop": True,
+                "review_approved": True,
+                "max_loop_iterations": 2,
+            }
+        )
+
+        result = CustomLoaderRecursiveTraversalFollowupManager().follow_up(spec)
+
+        self.assertEqual(result.status, "next_loop_plan_ready")
+        self.assertEqual(result.followup["next_action"], "review_next_custom_loader_traversal_loop_plan_before_execution")
+        self.assertEqual(result.followup["custom_loader_traversal_graph"]["status"], "ready_for_review")
+        self.assertEqual(result.followup["custom_loader_traversal_workflow_plan"]["status"], "ready_for_review")
+        self.assertEqual(result.followup["custom_loader_traversal_loop_plan"]["status"], "ready_for_review")
+        self.assertTrue(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertTrue(result.side_effect_policy["workflow_replanned"])
+        self.assertTrue(result.side_effect_policy["loop_plan_created"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["automatic_loop_execution"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_blocks_checkpoint_actions_without_review_approval(self) -> None:
+        result = CustomLoaderRecursiveTraversalFollowupManager().follow_up(
+            CustomLoaderRecursiveTraversalFollowupSpec.from_context(
+                {
+                    "custom_loader_recursive_traversal_followup": True,
+                    "custom_loader_recursive_traversal_plan": self._recursive_plan(),
+                    "custom_loader_traversal_plan": CustomLoaderTraversalGraphManagerTests()._traversal_plan(),
+                    "rebuild_graph": True,
+                    "review_approved": False,
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(result.followup["next_action"], "resolve_custom_loader_recursive_traversal_followup_blockers")
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
 
 
 

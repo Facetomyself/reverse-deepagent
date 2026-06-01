@@ -1070,7 +1070,7 @@ print(capabilities.model_dump(mode="json"))
 - 调试与 callframe：`workspace/debugger-paused.json`、`workspace/callframes.json`、`workspace/debugger-session.json`、`workspace/debugger-timeline.json`，显式 callframe evaluation 时补充 `workspace/callframe-evaluations.json` 和 `workspace/mutation-audit.json`。
 - Hook：全局函数 wrapper、webpack-like module export wrapper、remote federation export wrapper follow-through、source-level logpoint，以及对应 hook timeline artifact。
 - Module discovery：webpack-like `require.c` / `require.m` 只读 introspection、custom object runtime、module federation exposed-module function-path candidate、只读 async chunk graph / loader metadata。
-- Custom-loader / async-chunk：review-only traversal plan、graph / queue、workflow plan、review-gated one-step workflow execution、bounded loop plan、review-gated bounded loop execution、custom-loader recursive traversal follow-up plan、module diff refresh 和 reviewed module hook follow-through。
+- Custom-loader / async-chunk：review-only traversal plan、graph / queue、workflow plan、review-gated one-step workflow execution、bounded loop plan、review-gated bounded loop execution、custom-loader recursive traversal follow-up plan、review-gated recursive follow-up checkpoint、module diff refresh 和 reviewed module hook follow-through。
 - Federation：review-only `get/init` plan、review-gated `init/get` probe、review-gated remote factory invoke、review-only export hook plan、review-approved export hook install。
 - Source map：generated bundle offset、Source Map exact / bias / `sourceRoot` / indexed section / `names` / URL equivalence / nested indexed-section remap，以及 review-gated credentialless source-map fetch metadata。
 - Mutation audit：page-level mutation audit、descriptor-safe object-root mutation audit、MutationObserver timeline；这些都围绕显式 trigger 工作，不做默认全局监听。
@@ -1089,7 +1089,7 @@ print(capabilities.model_dump(mode="json"))
 
 - cross-process live CDP paused execution continuation。
 - 任意闭包内部函数 automatic wrapper hook。
-- deeper recursive custom-loader traversal execution，超过当前 bounded continuation / workflow / loop / one-step execution / recursive follow-up planning baseline。
+- deeper recursive custom-loader traversal execution，超过当前 bounded continuation / workflow / loop / one-step execution / recursive follow-up planning / reviewed follow-up checkpoint baseline。
 - deeper recursive async chunk traversal，超过当前 reviewed workflow / bounded loop / chunk load / module diff baseline。
 - deeper federation traversal，超过当前 reviewed factory invoke、export hook plan 和 reviewed export hook install baseline。
 - full source-map consumer semantics / bundler-specific symbol scoping，超过当前 remap 与 credentialless URL fetch metadata baseline。

@@ -50,6 +50,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalLoopExecutionSpec,
     CustomLoaderRecursiveTraversalPlanManager,
     CustomLoaderRecursiveTraversalPlanSpec,
+    CustomLoaderRecursiveTraversalFollowupManager,
+    CustomLoaderRecursiveTraversalFollowupSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1781,6 +1783,70 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_recursive_traversal_followup_request(protection_name, context):
+            spec = CustomLoaderRecursiveTraversalFollowupSpec.from_context(context)
+            result = CustomLoaderRecursiveTraversalFollowupManager().follow_up(spec)
+            followup = result.followup if isinstance(result.followup, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = followup.get("stages") if isinstance(followup.get("stages"), list) else []
+            verification = [
+                f"custom_loader_recursive_traversal_followup_status={result.status}",
+                f"custom_loader_recursive_traversal_followup_reason={result.reason or ''}",
+                f"custom_loader_recursive_traversal_followup_stage_count={len(stages)}",
+                f"custom_loader_recursive_traversal_followup_review_approved={policy.get('review_approved', False)}",
+                f"custom_loader_recursive_traversal_followup_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"custom_loader_recursive_traversal_followup_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"custom_loader_recursive_traversal_followup_loop_plan_created={policy.get('loop_plan_created', False)}",
+                f"custom_loader_recursive_traversal_followup_loader_invoked={policy.get('loader_invoked', False)}",
+                f"custom_loader_recursive_traversal_followup_writes_journal={policy.get('writes_journal', False)}",
+                f"custom_loader_recursive_traversal_followup_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-recursive-traversal-followup.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated custom loader recursive traversal checkpoint follow-up.",
+                    metadata={
+                        "status": result.status,
+                        "followup_status": followup.get("status"),
+                        "stage_count": len(stages),
+                        "next_action": followup.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "loop_plan_created": policy.get("loop_plan_created", False),
+                        "loader_invoked": policy.get("loader_invoked", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_custom_loader_recursive_traversal_followup_checkpoint"] if any(
+                    policy.get(flag, False) for flag in ("traversal_graph_rebuilt", "workflow_replanned", "loop_plan_created")
+                ) else ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "review_custom_loader_recursive_traversal_followup_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "resolve_custom_loader_recursive_traversal_followup_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = followup.get("next_action", "inspect_custom_loader_recursive_traversal_followup_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"} else ConfidenceLevel.LOW,
             )
         if self._is_custom_loader_traversal_loop_plan_request(protection_name, context):
             spec = CustomLoaderTraversalLoopPlanSpec.from_context(context)
@@ -3889,6 +3955,22 @@ class NativeWebRuntime(WebReverseRuntime):
     def _is_custom_loader_recursive_traversal_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {
+            "custom-loader-recursive-traversal-followup",
+            "execute-custom-loader-recursive-traversal-followup",
+            "custom-loader-recursive-traversal-checkpoint",
+            "reviewed-custom-loader-recursive-traversal-followup",
+        } or any(
+            key in context
+            for key in (
+                "custom_loader_recursive_traversal_followup",
+                "customLoaderRecursiveTraversalFollowup",
+                "custom-loader-recursive-traversal-followup",
+                "execute_custom_loader_recursive_traversal_followup",
+                "executeCustomLoaderRecursiveTraversalFollowup",
+            )
+        ):
+            return False
+        if normalized in {
             "custom-loader-recursive-traversal-plan",
             "custom-loader-traversal-recursion-plan",
             "plan-custom-loader-recursive-traversal",
@@ -3905,6 +3987,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 "customLoaderTraversalRecursionPlan",
                 "plan_custom_loader_recursive_traversal",
                 "planCustomLoaderRecursiveTraversal",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_recursive_traversal_followup_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-recursive-traversal-followup",
+            "execute-custom-loader-recursive-traversal-followup",
+            "custom-loader-recursive-traversal-checkpoint",
+            "reviewed-custom-loader-recursive-traversal-followup",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_recursive_traversal_followup",
+                "customLoaderRecursiveTraversalFollowup",
+                "custom-loader-recursive-traversal-followup",
+                "execute_custom_loader_recursive_traversal_followup",
+                "executeCustomLoaderRecursiveTraversalFollowup",
             )
         )
 

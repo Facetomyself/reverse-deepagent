@@ -1789,6 +1789,89 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["bounded_recursion"])
         self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
 
+    def test_native_web_runtime_executes_reviewed_custom_loader_recursive_traversal_followup(self) -> None:
+        runtime = NativeWebRuntime(browser_provider=FakeProvider())
+
+        result = runtime.apply_minimal_protection(
+            "execute-custom-loader-recursive-traversal-followup",
+            {
+                "custom_loader_recursive_traversal_plan": {
+                    "schema_version": "reverse-deepagent.custom-loader-recursive-traversal-plan.v1",
+                    "plan_id": "custom-loader-recursive-traversal-plan",
+                    "status": "ready_for_graph_rebuild",
+                },
+                "custom_loader_traversal_plan": {
+                    "schema_version": "reverse-deepagent.custom-loader-traversal-plan.v1",
+                    "status": "ready_for_review",
+                    "candidates": [
+                        {
+                            "index": 0,
+                            "status": "ready_for_review",
+                            "classification": "arbitrary_custom_loader",
+                            "loader_kind": "custom-loader",
+                            "edge_type": "custom-loader-candidate",
+                            "loader_path": "window.__customLoader.load",
+                            "target": "window.__customLoader.load",
+                            "chunk_id": "custom-sign",
+                            "depth": 1,
+                            "continuation_supported": True,
+                            "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                        },
+                        {
+                            "index": 1,
+                            "status": "ready_for_review",
+                            "classification": "arbitrary_custom_loader",
+                            "loader_kind": "custom-loader",
+                            "edge_type": "custom-loader-candidate",
+                            "loader_path": "window.__customLoader.loadChild",
+                            "target": "window.__customLoader.loadChild",
+                            "chunk_id": "custom-sign-child",
+                            "parent_loader_path": "window.__customLoader.load",
+                            "depth": 2,
+                            "continuation_supported": True,
+                        },
+                    ],
+                },
+                "custom_loader_continuation_journal": {
+                    "journal": {
+                        "records": [
+                            {
+                                "candidate_fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                            }
+                        ]
+                    }
+                },
+                "custom_loader_traversal_loop_execution": {
+                    "schema_version": "reverse-deepagent.custom-loader-traversal-loop-execution.v1",
+                    "status": "journal_appended",
+                    "execution": {"status": "journal_appended"},
+                },
+                "rebuild_graph": True,
+                "replan_workflow": True,
+                "plan_next_loop": True,
+                "review_approved": True,
+                "max_loop_iterations": 2,
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_custom_loader_recursive_traversal_followup_checkpoint"])
+        self.assertIn("custom_loader_recursive_traversal_followup_status=next_loop_plan_ready", result.verification)
+        self.assertIn("custom_loader_recursive_traversal_followup_traversal_graph_rebuilt=True", result.verification)
+        self.assertIn("custom_loader_recursive_traversal_followup_workflow_replanned=True", result.verification)
+        self.assertIn("custom_loader_recursive_traversal_followup_loop_plan_created=True", result.verification)
+        self.assertIn("custom_loader_recursive_traversal_followup_loader_invoked=False", result.verification)
+        self.assertIn("custom_loader_recursive_traversal_followup_writes_journal=False", result.verification)
+        self.assertIn("custom_loader_recursive_traversal_followup_automatic_recursive_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_next_custom_loader_traversal_loop_plan_before_execution")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-recursive-traversal-followup.json")
+        self.assertTrue(result.artifacts[0].metadata["traversal_graph_rebuilt"])
+        self.assertTrue(result.artifacts[0].metadata["workflow_replanned"])
+        self.assertTrue(result.artifacts[0].metadata["loop_plan_created"])
+        self.assertFalse(result.artifacts[0].metadata["loader_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["writes_journal"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+
     def test_native_web_runtime_executes_one_reviewed_custom_loader_traversal_workflow_step(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
