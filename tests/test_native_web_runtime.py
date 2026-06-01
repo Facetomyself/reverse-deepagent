@@ -1296,6 +1296,115 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["planned_step_count"], 0)
 
 
+    def test_native_web_runtime_plans_custom_loader_traversal_workflow_execution_without_running_loader(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "plan_id": "native-traversal-workflow-plan",
+            "source_graph_id": "custom-loader-traversal-graph",
+            "planned_steps": [
+                {
+                    "step_index": 0,
+                    "candidate_index": 0,
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "custom-loader-traversal-workflow-execution",
+            {"custom_loader_traversal_workflow_plan": workflow_plan},
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_custom_loader_traversal_workflow_step"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_traversal_workflow_execution_status=ready_for_review", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_execution_loader_invoked=False", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_execution_automatic_recursive_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_traversal_workflow_execution_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-workflow-execution.json")
+        self.assertFalse(result.artifacts[0].metadata["loader_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["traversal_graph_rebuilt"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+
+    def test_native_web_runtime_executes_one_reviewed_custom_loader_traversal_workflow_step(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        traversal_plan = {
+            "status": "planned",
+            "candidates": [
+                {
+                    "index": 0,
+                    "status": "ready_for_review",
+                    "classification": "arbitrary_custom_loader",
+                    "loader_kind": "custom-loader",
+                    "edge_type": "custom-loader-candidate",
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "continuation_supported": True,
+                }
+            ],
+        }
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "plan_id": "native-traversal-workflow-plan",
+            "source_graph_id": "custom-loader-traversal-graph",
+            "planned_steps": [
+                {
+                    "step_index": 0,
+                    "candidate_index": 0,
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-custom-loader-traversal-workflow",
+            {
+                "custom_loader_traversal_workflow_plan": workflow_plan,
+                "custom_loader_traversal_plan": traversal_plan,
+                "plan_continuation_workflow": True,
+                "run_preflight": True,
+                "execute_custom_loader": True,
+                "run_module_diff": True,
+                "append_journal": True,
+                "review_approved": True,
+                "module_discovery": {"status": "success"},
+                "modules": [{"module_id": "884", "export_names": ["sign"], "runtime_path": "window.__webpack_require__"}],
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_custom_loader_traversal_workflow_step"])
+        self.assertEqual(page.custom_loader_executions, ["window.__customLoader.load"])
+        self.assertIn("custom_loader_traversal_workflow_execution_status=journal_appended", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_execution_continuation_workflow_planned=True", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_execution_preflight_executed=True", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_execution_loader_invoked=True", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_execution_writes_journal=True", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_execution_traversal_graph_rebuilt=False", result.verification)
+        self.assertEqual(result.next_action, "rebuild_custom_loader_traversal_graph_and_stop_before_next_review")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-workflow-execution.json")
+        self.assertTrue(result.artifacts[0].metadata["loader_invoked"])
+        self.assertTrue(result.artifacts[0].metadata["writes_journal"])
+        self.assertFalse(result.artifacts[0].metadata["traversal_graph_rebuilt"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+
+
+
     def test_native_web_runtime_plans_custom_loader_continuation_workflow_without_execution(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

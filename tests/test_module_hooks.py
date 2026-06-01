@@ -26,6 +26,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalGraphSpec,
     CustomLoaderTraversalWorkflowPlanManager,
     CustomLoaderTraversalWorkflowPlanSpec,
+    CustomLoaderTraversalWorkflowExecutionManager,
+    CustomLoaderTraversalWorkflowExecutionSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -616,6 +618,134 @@ class CustomLoaderTraversalWorkflowPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "complete")
         self.assertEqual(result.workflow_plan["planned_step_count"], 0)
         self.assertEqual(result.workflow_plan["next_action"], "custom_loader_traversal_graph_complete_or_provide_new_candidates")
+
+
+
+class CustomLoaderTraversalWorkflowExecutionManagerTests(unittest.TestCase):
+    def _traversal_plan(self) -> dict[str, Any]:
+        return {
+            "status": "planned",
+            "candidates": [
+                {
+                    "index": 0,
+                    "status": "ready_for_review",
+                    "classification": "arbitrary_custom_loader",
+                    "loader_kind": "custom-loader",
+                    "edge_type": "custom-loader-candidate",
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "continuation_supported": True,
+                }
+            ],
+        }
+
+    def _workflow_plan(self) -> dict[str, Any]:
+        graph = CustomLoaderTraversalWorkflowPlanManagerTests()._graph(
+            queue=[
+                {
+                    "node_id": "custom-loader-node-0",
+                    "candidate_index": 0,
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "depth": 1,
+                    "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                    "queue_status": "ready_for_review",
+                }
+            ]
+        )
+        return CustomLoaderTraversalWorkflowPlanManager().plan(
+            CustomLoaderTraversalWorkflowPlanSpec.from_context({"custom_loader_traversal_graph": graph})
+        ).workflow_plan
+
+    def test_plan_only_selects_one_workflow_step_without_execution(self) -> None:
+        page = CustomLoaderExecutionPage()
+        spec = CustomLoaderTraversalWorkflowExecutionSpec.from_context(
+            {"custom_loader_traversal_workflow_plan": self._workflow_plan()}
+        )
+
+        result = CustomLoaderTraversalWorkflowExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.execution["schema_version"], "reverse-deepagent.custom-loader-traversal-workflow-execution.v1")
+        self.assertEqual(result.execution["selected_candidate_index"], 0)
+        self.assertEqual(page.executions, [])
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["continuation_workflow_planned"])
+        self.assertFalse(result.side_effect_policy["preflight_executed"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_plans_continuation_workflow_without_invoking_loader(self) -> None:
+        page = CustomLoaderExecutionPage()
+        spec = CustomLoaderTraversalWorkflowExecutionSpec.from_context(
+            {
+                "custom_loader_traversal_workflow_plan": self._workflow_plan(),
+                "custom_loader_traversal_plan": self._traversal_plan(),
+                "plan_continuation_workflow": True,
+                "review_approved": True,
+            }
+        )
+
+        result = CustomLoaderTraversalWorkflowExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "continuation_workflow_approved")
+        self.assertEqual(page.executions, [])
+        self.assertTrue(result.side_effect_policy["continuation_workflow_planned"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        workflow = result.execution["custom_loader_continuation_workflow"]
+        self.assertEqual(workflow["status"], "approved_for_preflight")
+        self.assertEqual(workflow["selected_candidate_index"], 0)
+        self.assertEqual(result.execution["next_action"], "run_custom_loader_execution_preflight_for_selected_traversal_step")
+
+    def test_executes_one_reviewed_traversal_workflow_step_and_stops_before_recursion(self) -> None:
+        page = CustomLoaderExecutionPage()
+        spec = CustomLoaderTraversalWorkflowExecutionSpec.from_context(
+            {
+                "custom_loader_traversal_workflow_plan": self._workflow_plan(),
+                "custom_loader_traversal_plan": self._traversal_plan(),
+                "plan_continuation_workflow": True,
+                "run_preflight": True,
+                "execute_custom_loader": True,
+                "run_module_diff": True,
+                "append_journal": True,
+                "review_approved": True,
+                "module_discovery": {"status": "success"},
+                "modules": [{"module_id": "884", "export_names": ["sign"], "runtime_path": "window.__webpack_require__"}],
+            }
+        )
+
+        result = CustomLoaderTraversalWorkflowExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "journal_appended")
+        self.assertEqual(page.executions, ["window.__customLoader.load"])
+        self.assertTrue(result.side_effect_policy["preflight_executed"])
+        self.assertTrue(result.side_effect_policy["loader_invoked"])
+        self.assertTrue(result.side_effect_policy["module_diff_executed"])
+        self.assertTrue(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertEqual(result.execution["next_action"], "rebuild_custom_loader_traversal_graph_and_stop_before_next_review")
+        self.assertEqual(result.execution["custom_loader_continuation_execution"]["status"], "journal_appended")
+
+    def test_blocks_execution_flags_without_continuation_workflow(self) -> None:
+        result = CustomLoaderTraversalWorkflowExecutionManager().execute(
+            CustomLoaderExecutionPage(),
+            CustomLoaderTraversalWorkflowExecutionSpec.from_context(
+                {
+                    "custom_loader_traversal_workflow_plan": self._workflow_plan(),
+                    "run_preflight": True,
+                    "review_approved": True,
+                }
+            ),
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "custom_loader_continuation_workflow_required")
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
 
 
 

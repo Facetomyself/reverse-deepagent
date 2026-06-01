@@ -301,6 +301,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native custom loader traversal workflow execution",
+                    kind=EvidenceKind.HOOK,
+                    source="custom_loader_traversal_workflow_execution",
+                    details={"status": "journal_appended", "stage_count": 3},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint timeline",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoint_timeline",
@@ -339,6 +346,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["custom-loader-traversal-plan.json"]["candidate_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-graph.json"]["queue_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-workflow-plan.json"]["planned_step_count"], 1)
+        self.assertEqual(payloads["custom-loader-traversal-workflow-execution.json"]["stage_count"], 3)
         self.assertEqual(payloads["custom-loader-continuation-workflow.json"]["selected_candidate_index"], 1)
         self.assertEqual(payloads["custom-loader-continuation-journal.json"]["record_count"], 1)
         self.assertEqual(payloads["custom-loader-continuation-execution.json"]["stage_count"], 5)

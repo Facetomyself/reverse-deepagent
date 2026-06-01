@@ -153,6 +153,37 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
 
+    def test_review_hook_artifacts_warns_for_custom_loader_traversal_workflow_execution(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_traversal_workflow_execution": {
+                "status": "ready_for_review",
+                "execution": {
+                    "status": "ready_for_review",
+                    "stage_count": 3,
+                    "stages": [
+                        {"stage": "select_traversal_workflow_step", "status": "selected"},
+                        {"stage": "plan_continuation_workflow", "status": "pending"},
+                        {"stage": "stop_before_recursive_traversal", "status": "stopped"},
+                    ],
+                    "next_action": "review_custom_loader_traversal_workflow_execution_plan",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("custom_loader_traversal_workflow_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_custom_loader_traversal_workflow_execution_plan")
+        self.assertEqual(result["summary"]["custom_loader_traversal_workflow_execution_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["custom_loader_traversal_workflow_execution_stage_count"], 3)
+        self.assertEqual(result["summary"]["custom_loader_traversal_workflow_execution_next_action"], "review_custom_loader_traversal_workflow_execution_plan")
+        self.assertEqual(result["review_required_items"][0]["custom_loader_traversal_workflow_execution_status"], "ready_for_review")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+
+
     def test_review_hook_artifacts_warns_for_custom_loader_continuation_workflow(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
