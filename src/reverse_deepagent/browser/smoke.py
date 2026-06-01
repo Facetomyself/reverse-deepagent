@@ -8,7 +8,7 @@ from reverse_deepagent.browser.base import BrowserProvider
 
 BROWSER_SMOKE_MATRIX_VERSION = "2026-05-31.lifecycle-baseline"
 BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION = "2026-05-31.metadata-compatibility-v1"
-BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-01.production-readiness-v2"
+BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-01.production-readiness-v3"
 DEFAULT_BROWSER_PROVIDER_MATRIX: tuple[str, ...] = (
     "playwright-chromium",
     "cloakbrowser",
@@ -126,6 +126,91 @@ class BrowserProviderProductionReadinessRule:
 
 
 BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionReadinessRule, ...] = (
+    BrowserProviderProductionReadinessRule(
+        rule_id="playwright_chromium_lifecycle_declared",
+        severity="warning",
+        provider_ids=("playwright-chromium",),
+        transports=("playwright",),
+        requires_all=(
+            "supports_launch",
+            "supports_connect",
+            "supports_persistent_context",
+            "supports_cdp",
+            "supports_playwright_api",
+            "managed_browser",
+        ),
+        metadata_equals=(
+            ("readiness_tier", "review-required"),
+            ("health_check_mode", "explicit-availability-or-launch-smoke"),
+            ("profile_lifecycle", "temporary-context-or-user-data-dir"),
+            ("session_recovery", "connect-over-cdp-or-launch-new-session"),
+        ),
+        message=(
+            "playwright-chromium should declare launch/connect/persistent-context/CDP lifecycle support "
+            "and the reviewed availability-or-launch-smoke metadata used by the native browser baseline"
+        ),
+    ),
+    BrowserProviderProductionReadinessRule(
+        rule_id="remote_cdp_attach_contract_declared",
+        severity="warning",
+        provider_ids=("remote-cdp",),
+        transports=("remote-cdp",),
+        requires_all=(
+            "supports_connect",
+            "supports_cdp",
+            "supports_request_initiator",
+            "supports_script_source",
+            "supports_websocket_frames",
+            "supports_breakpoints",
+            "supports_runtime_eval",
+        ),
+        metadata_equals=(
+            ("readiness_tier", "review-required"),
+            ("health_check_mode", "explicit-endpoint-probe"),
+            ("profile_lifecycle", "external-browser-owned"),
+            ("session_recovery", "connect-existing-endpoint"),
+        ),
+        message=(
+            "remote-cdp should declare attach-only CDP lifecycle support and explicit endpoint-probe "
+            "metadata without implying browser ownership or launch control"
+        ),
+    ),
+    BrowserProviderProductionReadinessRule(
+        rule_id="cloakbrowser_production_lifecycle_declared",
+        severity="warning",
+        provider_ids=("cloakbrowser",),
+        transports=("cloakbrowser-playwright",),
+        requires_all=(
+            "supports_launch",
+            "supports_connect",
+            "supports_persistent_context",
+            "supports_cdp",
+            "supports_playwright_api",
+            "supports_proxy",
+            "supports_stealth",
+            "supports_humanize",
+            "supports_extensions",
+            "supports_mobile_emulation",
+            "supports_network_events",
+            "supports_response_body",
+            "supports_request_initiator",
+            "supports_script_source",
+            "supports_websocket_frames",
+            "supports_breakpoints",
+            "supports_runtime_eval",
+            "managed_browser",
+        ),
+        metadata_equals=(
+            ("readiness_tier", "production-ready"),
+            ("health_check_mode", "optional-sdk-or-connect-endpoint"),
+            ("profile_lifecycle", "persistent-context-supported"),
+            ("session_recovery", "connect-over-cdp-or-persistent-context"),
+        ),
+        message=(
+            "cloakbrowser should keep production lifecycle metadata aligned with its launch, persistent-context, "
+            "connect, stealth, humanize, proxy, and CDP capability contract"
+        ),
+    ),
     BrowserProviderProductionReadinessRule(
         rule_id="hosted_cdp_reference_lifecycle_declared",
         severity="warning",

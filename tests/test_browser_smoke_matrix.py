@@ -1,6 +1,7 @@
 import unittest
 
 from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
+from reverse_deepagent.browser.providers import CloakBrowserProvider, PlaywrightChromiumProvider, RemoteCDPProvider
 from reverse_deepagent.browser.smoke import (
     BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
     BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
@@ -128,12 +129,47 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
     def test_production_readiness_rule_catalog_is_serializable_and_provider_specific(self) -> None:
         rules = list_browser_provider_production_readiness_rules()
         rule_ids = {rule["rule_id"] for rule in rules}
+        self.assertIn("playwright_chromium_lifecycle_declared", rule_ids)
+        self.assertIn("remote_cdp_attach_contract_declared", rule_ids)
+        self.assertIn("cloakbrowser_production_lifecycle_declared", rule_ids)
         self.assertIn("hosted_cdp_reference_lifecycle_declared", rule_ids)
+        playwright_rule = next(rule for rule in rules if rule["rule_id"] == "playwright_chromium_lifecycle_declared")
+        self.assertEqual(playwright_rule["provider_ids"], ["playwright-chromium"])
+        self.assertEqual(playwright_rule["transports"], ["playwright"])
+        self.assertIn("supports_persistent_context", playwright_rule["requires_all"])
+        remote_rule = next(rule for rule in rules if rule["rule_id"] == "remote_cdp_attach_contract_declared")
+        self.assertEqual(remote_rule["provider_ids"], ["remote-cdp"])
+        self.assertEqual(remote_rule["metadata_equals"]["profile_lifecycle"], "external-browser-owned")
+        cloak_rule = next(rule for rule in rules if rule["rule_id"] == "cloakbrowser_production_lifecycle_declared")
+        self.assertEqual(cloak_rule["provider_ids"], ["cloakbrowser"])
+        self.assertIn("supports_stealth", cloak_rule["requires_all"])
         hosted_rule = next(rule for rule in rules if rule["rule_id"] == "hosted_cdp_reference_lifecycle_declared")
         self.assertEqual(hosted_rule["severity"], "warning")
         self.assertEqual(hosted_rule["provider_ids"], ["hosted-cdp-reference"])
         self.assertIn("supports_launch", hosted_rule["requires_all"])
         self.assertEqual(hosted_rule["metadata_equals"]["session_recovery"], "session-id-reattach-or-endpoint-connect")
+
+    def test_builtin_provider_specific_readiness_rules_pass_without_runtime_side_effects(self) -> None:
+        providers = [
+            PlaywrightChromiumProvider(),
+            RemoteCDPProvider(),
+            CloakBrowserProvider(),
+        ]
+
+        for provider in providers:
+            with self.subTest(provider_id=provider.provider_id):
+                readiness = browser_provider_production_readiness(provider.describe().model_dump(mode="json"))
+                checks = {item["check_id"]: item for item in readiness["checks"]}
+                provider_specific = [
+                    item
+                    for item in checks.values()
+                    if str(item["check_id"]).startswith("provider_specific:")
+                ]
+                self.assertGreaterEqual(len(provider_specific), 1)
+                self.assertTrue(all(item["status"] == "pass" for item in provider_specific))
+                self.assertFalse(readiness["side_effect_policy"]["provider_factory_invoked"])
+                self.assertFalse(readiness["side_effect_policy"]["availability_checked"])
+                self.assertFalse(readiness["side_effect_policy"]["starts_browser"])
 
     def test_provider_specific_readiness_rule_warns_on_drift(self) -> None:
         readiness = browser_provider_production_readiness(
