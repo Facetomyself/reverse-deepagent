@@ -201,6 +201,278 @@ class ModuleDiscoveryResult:
 
 
 @dataclass(slots=True)
+class CustomLoaderTraversalPlanSpec:
+    """Plan-only custom loader / non-webpack async traversal request."""
+
+    candidates: list[dict[str, Any]] = field(default_factory=list)
+    traversal_depth: int = 1
+    max_candidates: int = 20
+    max_preview_length: int = 240
+    review_approved: bool = False
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderTraversalPlanSpec | None":
+        context = context or {}
+        candidates = cls._candidate_records(context)
+        if not candidates:
+            candidate = cls._single_candidate_from_context(context)
+            if candidate:
+                candidates.append(candidate)
+        traversal_requested = bool(
+            context.get("custom_loader_traversal")
+            or context.get("customLoaderTraversal")
+            or context.get("loader_traversal_plan")
+            or context.get("loaderTraversalPlan")
+        )
+        if not candidates and not traversal_requested:
+            return None
+        return cls(
+            candidates=cls._dedupe_candidates(candidates, max_candidates=int(context.get("max_candidates", context.get("maxCandidates", 20)) or 20)),
+            traversal_depth=max(0, int(context.get("traversal_depth", context.get("traversalDepth", 1)) or 1)),
+            max_candidates=max(1, int(context.get("max_candidates", context.get("maxCandidates", 20)) or 20)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))),
+        )
+
+    @classmethod
+    def _candidate_records(cls, context: dict[str, Any]) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for key in (
+            "custom_loader_candidate",
+            "customLoaderCandidate",
+            "custom_loader_candidates",
+            "customLoaderCandidates",
+            "loader_candidates",
+            "loaderCandidates",
+            "chunk_candidates",
+            "chunkCandidates",
+        ):
+            records.extend(cls._list_of_dicts(context.get(key)))
+            value = context.get(key)
+            if isinstance(value, dict):
+                records.append(value)
+        chunk_graph = context.get("chunk_graph", context.get("chunkGraph"))
+        if isinstance(chunk_graph, dict):
+            records.extend(cls._list_of_dicts(chunk_graph.get("candidates")))
+            records.extend(cls._list_of_dicts(chunk_graph.get("customLoaderCandidates")))
+            records.extend(cls._list_of_dicts(chunk_graph.get("loaderCandidates")))
+        return [dict(item) for item in records]
+
+    @staticmethod
+    def _single_candidate_from_context(context: dict[str, Any]) -> dict[str, Any] | None:
+        chunk_id = context.get("chunk_id", context.get("chunkId"))
+        target = context.get("target", context.get("chunk_target", context.get("chunkTarget")))
+        loader_path = context.get("loader_path", context.get("loaderPath"))
+        loader_kind = context.get("loader_kind", context.get("loaderKind"))
+        if chunk_id is None and target is None and loader_path is None and loader_kind is None:
+            return None
+        return {
+            "chunk_id": str(chunk_id or target or loader_path or "").strip(),
+            "target": str(target or loader_path or chunk_id or "").strip(),
+            "loader_path": str(loader_path or target or "").strip(),
+            "loader_kind": str(loader_kind or "custom-loader").strip() or "custom-loader",
+            "edge_type": str(context.get("edge_type", context.get("edgeType", "custom-loader-candidate")) or "custom-loader-candidate"),
+            "runtime_path": str(context.get("runtime_path", context.get("runtimePath", "")) or ""),
+            "discovery_source": str(context.get("discovery_source", context.get("discoverySource", "explicit_context")) or "explicit_context"),
+        }
+
+    @staticmethod
+    def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _dedupe_candidates(candidates: list[dict[str, Any]], *, max_candidates: int) -> list[dict[str, Any]]:
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for candidate in candidates:
+            key = (
+                str(candidate.get("edge_type") or candidate.get("edgeType") or ""),
+                str(candidate.get("loader_kind") or candidate.get("loaderKind") or ""),
+                str(candidate.get("target") or candidate.get("chunk_id") or candidate.get("chunkId") or ""),
+                str(candidate.get("runtime_path") or candidate.get("runtimePath") or candidate.get("loader_path") or candidate.get("loaderPath") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+            if len(deduped) >= max_candidates:
+                break
+        return deduped
+
+
+@dataclass(slots=True)
+class CustomLoaderTraversalPlanResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "side_effect_policy": self.side_effect_policy,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class CustomLoaderTraversalPlanManager:
+    """Build a reviewable traversal plan without executing arbitrary loaders."""
+
+    WEBPACK_KINDS = {"webpack-runtime", "webpack-require"}
+    DYNAMIC_IMPORT_KINDS = {"es-dynamic-import", "dynamic-import"}
+    FEDERATION_KINDS = {"module-federation", "federation-container", "federation-remote"}
+
+    def plan(self, spec: CustomLoaderTraversalPlanSpec | None) -> CustomLoaderTraversalPlanResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return CustomLoaderTraversalPlanResult(status="unsupported", reason="missing_custom_loader_traversal_request", side_effect_policy=policy)
+        planned_candidates = [self._candidate_plan(item, index=index, spec=spec) for index, item in enumerate(spec.candidates)]
+        summary = self._summary(planned_candidates)
+        plan = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-plan.v1",
+            "status": "ready_for_review" if planned_candidates else "blocked",
+            "review_required": True,
+            "review_approved_input_ignored": bool(spec.review_approved),
+            "traversal_depth": spec.traversal_depth,
+            "candidate_count": len(planned_candidates),
+            "custom_candidate_count": summary["custom_candidate_count"],
+            "blocked_execution_count": summary["blocked_execution_count"],
+            "ready_for_review_count": summary["ready_for_review_count"],
+            "candidates": planned_candidates,
+            "approval_requirements": [
+                "confirm_loader_candidate_origin",
+                "classify_loader_side_effects",
+                "review_network_request_scope",
+                "review_module_factory_execution_risk",
+                "prefer_webpack_async_chunk_load_when_loader_kind_is_supported",
+            ],
+            "side_effect_policy": policy,
+            "next_action": "review_custom_loader_traversal_plan" if planned_candidates else "provide_custom_loader_candidates_from_chunk_graph",
+        }
+        return CustomLoaderTraversalPlanResult(status="planned" if planned_candidates else "blocked", plan=plan, side_effect_policy=policy, reason=None if planned_candidates else "no_custom_loader_candidates")
+
+    @classmethod
+    def _candidate_plan(cls, candidate: dict[str, Any], *, index: int, spec: CustomLoaderTraversalPlanSpec) -> dict[str, Any]:
+        loader_kind = str(candidate.get("loader_kind") or candidate.get("loaderKind") or "custom-loader") or "custom-loader"
+        edge_type = str(candidate.get("edge_type") or candidate.get("edgeType") or "custom-loader-candidate") or "custom-loader-candidate"
+        chunk_id = str(candidate.get("chunk_id") or candidate.get("chunkId") or candidate.get("target") or "")[: spec.max_preview_length]
+        target = str(candidate.get("target") or candidate.get("url") or candidate.get("href") or chunk_id)[: spec.max_preview_length]
+        loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or target)[: spec.max_preview_length]
+        runtime_path = str(candidate.get("runtime_path") or candidate.get("runtimePath") or "")[: spec.max_preview_length]
+        classification = cls._classify(loader_kind, edge_type=edge_type)
+        return {
+            "index": index,
+            "status": classification["status"],
+            "risk_level": classification["risk_level"],
+            "classification": classification["classification"],
+            "chunk_id": chunk_id,
+            "target": target,
+            "loader_path": loader_path,
+            "loader_kind": loader_kind,
+            "edge_type": edge_type,
+            "runtime_path": runtime_path,
+            "discovery_source": str(candidate.get("discovery_source") or candidate.get("discoverySource") or "unknown"),
+            "execution_supported": False,
+            "traversal_supported": False,
+            "automatic_execution": False,
+            "recommended_follow_up": classification["recommended_follow_up"],
+            "blocking_reasons": classification["blocking_reasons"],
+            "review_requirements": classification["review_requirements"],
+            "side_effect_policy": {
+                "would_call_loader_if_executed": True,
+                "would_request_chunk_if_executed": classification["would_request_chunk"],
+                "would_execute_dynamic_import_if_executed": classification["dynamic_import"],
+                "would_execute_module_federation_get_init_if_executed": classification["federation"],
+                "module_factory_may_execute_if_followed": True,
+                "executed_now": False,
+                "chunk_request_sent_now": False,
+                "module_factory_invoked_now": False,
+            },
+        }
+
+    @classmethod
+    def _classify(cls, loader_kind: str, *, edge_type: str) -> dict[str, Any]:
+        normalized = loader_kind.strip().lower()
+        edge = edge_type.strip().lower()
+        if normalized in cls.WEBPACK_KINDS:
+            return {
+                "status": "redirect_to_async_chunk_load_baseline",
+                "risk_level": "medium",
+                "classification": "webpack_loader_supported_elsewhere",
+                "recommended_follow_up": "use_async_chunk_load_with_review_approval",
+                "blocking_reasons": ["custom_traversal_not_needed_for_supported_webpack_loader"],
+                "review_requirements": ["use_existing_async_chunk_load_plan", "inspect_registry_diff_after_reviewed_load"],
+                "would_request_chunk": True,
+                "dynamic_import": False,
+                "federation": False,
+            }
+        if normalized in cls.DYNAMIC_IMPORT_KINDS or edge == "dynamic-import":
+            return {
+                "status": "blocked",
+                "risk_level": "high",
+                "classification": "dynamic_import_execution_required",
+                "recommended_follow_up": "inspect_static_chunk_url_or_source_map_before_runtime_import",
+                "blocking_reasons": ["dynamic_import_executes_module_body"],
+                "review_requirements": ["prove_module_body_side_effects_are_safe", "prefer_source_inventory_or_network_metadata"],
+                "would_request_chunk": True,
+                "dynamic_import": True,
+                "federation": False,
+            }
+        if normalized in cls.FEDERATION_KINDS or "federation" in edge:
+            return {
+                "status": "blocked",
+                "risk_level": "high",
+                "classification": "module_federation_get_init_required",
+                "recommended_follow_up": "plan_module_federation_get_init_analysis",
+                "blocking_reasons": ["module_federation_get_init_may_execute_remote_code"],
+                "review_requirements": ["review_shared_scope", "review_remote_container_origin", "avoid_get_init_without_dedicated_gate"],
+                "would_request_chunk": True,
+                "dynamic_import": False,
+                "federation": True,
+            }
+        return {
+            "status": "ready_for_review",
+            "risk_level": "high",
+            "classification": "arbitrary_custom_loader",
+            "recommended_follow_up": "review_loader_contract_before_any_execution",
+            "blocking_reasons": ["arbitrary_loader_execution_not_supported"],
+            "review_requirements": ["identify_loader_contract", "prove_chunk_url_without_calling_loader", "review_network_and_module_factory_side_effects"],
+            "would_request_chunk": True,
+            "dynamic_import": False,
+            "federation": False,
+        }
+
+    @staticmethod
+    def _summary(candidates: list[dict[str, Any]]) -> dict[str, int]:
+        return {
+            "custom_candidate_count": sum(1 for item in candidates if item.get("classification") == "arbitrary_custom_loader"),
+            "blocked_execution_count": sum(1 for item in candidates if item.get("blocking_reasons")),
+            "ready_for_review_count": sum(1 for item in candidates if item.get("status") == "ready_for_review"),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "loader_invoked": False,
+            "runtime_loader_executed": False,
+            "chunk_request_sent": False,
+            "dynamic_import_executed": False,
+            "custom_loader_executed": False,
+            "module_factory_invoked": False,
+            "module_federation_get_init_executed": False,
+            "browser_state_mutated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 

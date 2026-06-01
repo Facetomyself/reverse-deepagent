@@ -948,6 +948,39 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/async-chunk-load-result.json")
         self.assertFalse(result.artifacts[1].metadata["execution_attempted"])
 
+    def test_native_web_runtime_plans_custom_loader_traversal_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-traversal-plan",
+            {
+                "custom_loader_candidates": [
+                    {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "runtime_path": "window.__customLoader",
+                    }
+                ]
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_traversal"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertIn("custom_loader_traversal_plan_status=planned", result.verification)
+        self.assertIn("custom_loader_traversal_candidate_count=1", result.verification)
+        self.assertIn("custom_loader_traversal_ready_for_review_count=1", result.verification)
+        self.assertIn("custom_loader_traversal_blocked_execution_count=1", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_traversal_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["plan_status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["custom_candidate_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+
     def test_native_web_runtime_executes_reviewed_async_chunk_load(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

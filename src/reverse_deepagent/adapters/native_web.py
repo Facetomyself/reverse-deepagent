@@ -10,6 +10,8 @@ from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventC
 from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadManager,
     AsyncChunkLoadSpec,
+    CustomLoaderTraversalPlanManager,
+    CustomLoaderTraversalPlanSpec,
     BreakpointManager,
     BreakpointSpec,
     BrowserHookManager,
@@ -1265,6 +1267,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_traversal_request(protection_name, context):
+            spec = CustomLoaderTraversalPlanSpec.from_context(context)
+            result = CustomLoaderTraversalPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            verification = [
+                f"custom_loader_traversal_plan_status={result.status}",
+                f"custom_loader_traversal_candidate_count={plan.get('candidate_count', 0)}",
+                f"custom_loader_traversal_ready_for_review_count={plan.get('ready_for_review_count', 0)}",
+                f"custom_loader_traversal_blocked_execution_count={plan.get('blocked_execution_count', 0)}",
+                f"custom_loader_traversal_custom_candidate_count={plan.get('custom_candidate_count', 0)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"custom_loader_traversal_reason={result.reason}")
+            if result.error:
+                verification.append(f"custom_loader_traversal_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader traversal plan.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "candidate_count": plan.get("candidate_count", 0),
+                        "ready_for_review_count": plan.get("ready_for_review_count", 0),
+                        "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                        "custom_candidate_count": plan.get("custom_candidate_count", 0),
+                        "review_required": plan.get("review_required", True),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status == "planned":
+                next_action = "review_custom_loader_traversal_plan"
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_traversal"]
+            elif result.status == "blocked":
+                next_action = "provide_custom_loader_candidates_from_chunk_graph"
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal"]
+            else:
+                next_action = "inspect_custom_loader_traversal_request"
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
         if self._is_async_chunk_load_request(protection_name, context):
             spec = AsyncChunkLoadSpec.from_context(context)
             result = AsyncChunkLoadManager().plan_or_execute(page, spec)
@@ -1915,6 +1971,35 @@ class NativeWebRuntime(WebReverseRuntime):
                 "moduleDiscovery",
                 "module_query",
                 "moduleQuery",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_traversal_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-traversal",
+            "custom-loader-traversal-plan",
+            "loader-traversal-plan",
+            "custom-loader-plan",
+            "deep-async-chunk-traversal",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_traversal",
+                "customLoaderTraversal",
+                "loader_traversal_plan",
+                "loaderTraversalPlan",
+                "custom_loader_candidate",
+                "customLoaderCandidate",
+                "custom_loader_candidates",
+                "customLoaderCandidates",
+                "loader_candidates",
+                "loaderCandidates",
+                "chunk_graph",
+                "chunkGraph",
             )
         )
 

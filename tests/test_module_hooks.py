@@ -3,6 +3,8 @@ import unittest
 from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadManager,
     AsyncChunkLoadSpec,
+    CustomLoaderTraversalPlanManager,
+    CustomLoaderTraversalPlanSpec,
     ModuleDiscoveryManager,
     ModuleDiscoverySpec,
     ModuleHookManager,
@@ -118,6 +120,82 @@ class AsyncChunkLoadPage:
                 "moduleFactoryInvoked": False,
             }
         raise AssertionError(f"unexpected expression: {expression}")
+
+
+class CustomLoaderTraversalPlanManagerTests(unittest.TestCase):
+    def test_custom_loader_traversal_plan_accepts_chunk_graph_candidates_without_execution(self) -> None:
+        spec = CustomLoaderTraversalPlanSpec.from_context(
+            {
+                "chunk_graph": {
+                    "customLoaderCandidates": [
+                        {
+                            "chunkId": "custom-sign",
+                            "target": "window.__customLoader.load",
+                            "loaderKind": "custom-loader",
+                            "edgeType": "custom-loader-candidate",
+                            "runtimePath": "window.__customLoader",
+                        },
+                        {
+                            "chunkId": "sign-dynamic",
+                            "target": "import('/assets/sign.js')",
+                            "loaderKind": "dynamic-import",
+                            "edgeType": "dynamic-import",
+                        },
+                        {
+                            "chunkId": "remote-sign",
+                            "target": "window.remoteApp.get('./sign')",
+                            "loaderKind": "module-federation",
+                            "edgeType": "module-federation-expose",
+                        },
+                        {
+                            "chunkId": "731",
+                            "target": "/assets/731.js",
+                            "loaderKind": "webpack-runtime",
+                            "edgeType": "runtime-async-chunk",
+                            "runtimePath": "window.__webpack_require__",
+                        },
+                    ]
+                }
+            }
+        )
+
+        result = CustomLoaderTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["dynamic_import_executed"])
+        self.assertFalse(result.side_effect_policy["module_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["module_federation_get_init_executed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        plan = result.plan
+        self.assertEqual(plan["schema_version"], "reverse-deepagent.custom-loader-traversal-plan.v1")
+        self.assertEqual(plan["status"], "ready_for_review")
+        self.assertEqual(plan["candidate_count"], 4)
+        classifications = {item["chunk_id"]: item["classification"] for item in plan["candidates"]}
+        self.assertEqual(classifications["custom-sign"], "arbitrary_custom_loader")
+        self.assertEqual(classifications["sign-dynamic"], "dynamic_import_execution_required")
+        self.assertEqual(classifications["remote-sign"], "module_federation_get_init_required")
+        self.assertEqual(classifications["731"], "webpack_loader_supported_elsewhere")
+        follow_ups = {item["chunk_id"]: item["recommended_follow_up"] for item in plan["candidates"]}
+        self.assertEqual(follow_ups["731"], "use_async_chunk_load_with_review_approval")
+        dynamic = next(item for item in plan["candidates"] if item["chunk_id"] == "sign-dynamic")
+        self.assertIn("dynamic_import_executes_module_body", dynamic["blocking_reasons"])
+        federation = next(item for item in plan["candidates"] if item["chunk_id"] == "remote-sign")
+        self.assertIn("module_federation_get_init_may_execute_remote_code", federation["blocking_reasons"])
+
+    def test_custom_loader_traversal_plan_blocks_empty_explicit_request(self) -> None:
+        spec = CustomLoaderTraversalPlanSpec.from_context({"custom_loader_traversal": True})
+
+        result = CustomLoaderTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "no_custom_loader_candidates")
+        self.assertEqual(result.plan["status"], "blocked")
+        self.assertEqual(result.plan["next_action"], "provide_custom_loader_candidates_from_chunk_graph")
+        self.assertTrue(result.side_effect_policy["plan_only"])
 
 
 class ModuleDiscoveryManagerTests(unittest.TestCase):

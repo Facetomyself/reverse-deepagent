@@ -1172,3 +1172,15 @@ Native Web now recognizes `object-root-mutation-audit`, `object-mutation-audit`,
 Boundary: this runs only on explicit protection requests and never during default recon. It does not invoke getters during snapshot collection, does not traverse prototypes, does not evaluate dynamic root-path code, does not call MCP, does not start a browser beyond the already selected runtime, does not inspect arbitrary JS heap objects, does not hook closure internals, and does not touch Android / iOS / mini-program full runtime chains.
 
 Validation: `tests.test_page_mutation_audit`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, and `tests.test_coordinator` targeted tests passed locally.
+
+### Step 128 execution record: Custom loader traversal plan baseline
+
+Status: implemented as a review-only custom loader / deeper async traversal planning baseline, not arbitrary custom loader execution, dynamic `import()` execution, module factory invocation, module federation `get/init` execution, chunk request, default recon behavior, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`CustomLoaderTraversalPlanManager` now consumes explicit custom loader candidates and module-discovery chunk graph metadata. It classifies arbitrary custom loaders, dynamic imports, module federation candidates, and webpack runtime loaders into a `reverse-deepagent.custom-loader-traversal-plan.v1` review plan. Webpack candidates are redirected to the existing async chunk load baseline; dynamic import and federation candidates stay blocked for execution because they can execute module bodies or remote `get/init` code; arbitrary custom loaders remain ready for manual review only.
+
+Native Web recognizes `custom-loader-traversal`, `custom-loader-traversal-plan`, `loader-traversal-plan`, `custom-loader-plan`, and `deep-async-chunk-traversal` protection requests, plus explicit custom loader / loader candidate context keys. It emits `virtual://workspace/custom-loader-traversal-plan.json`; workspace contract, backend artifact manifest category mapping, coordinator payload extraction, and hook subagent review are registered under `workspace_custom_loader_traversal_plan`.
+
+Boundary: this is plan-only and side-effect-free. It does not invoke custom loaders, execute webpack loaders, request chunk URLs, run dynamic imports, invoke module factories, execute module federation `get/init`, mutate browser state, call MCP, or touch Android / iOS / mini-program full runtime chains. Execution-style arbitrary custom loader traversal, deeper async chunk traversal, and federation execution remain capability-gated follow-ups.
+
+Validation: `tests.test_module_hooks`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, `tests.test_coordinator`, and `tests.test_hook_subagent` targeted tests passed locally.

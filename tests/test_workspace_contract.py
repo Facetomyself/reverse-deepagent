@@ -177,6 +177,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/browser-provider-smoke.json"].virtual_folder, "/workspace/browser/")
         self.assertEqual(routes["workspace/async-chunk-load-plan.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/async-chunk-load-plan.json"].future_path, "/workspace/runtime/async-chunk-load-plan.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-plan.json"].future_path, "/workspace/runtime/custom-loader-traversal-plan.json")
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].future_path, "/workspace/runtime/async-chunk-load-result.json")
         self.assertEqual(routes["workspace/source-map-fetch-plan.json"].virtual_folder, "/workspace/debugger/")

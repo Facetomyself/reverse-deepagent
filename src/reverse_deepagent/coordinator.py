@@ -928,6 +928,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_module_hooks": "hook-timeline",
     "workspace_module_hook_timeline": "hook-timeline",
     "workspace_async_chunk_load_plan": "triage",
+    "workspace_custom_loader_traversal_plan": "triage",
     "workspace_async_chunk_load_result": "trace",
     "workspace_source_map_fetch_plan": "triage",
     "workspace_source_map_fetch_result": "trace",
@@ -1646,6 +1647,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["function-hook-timeline.json"] = evidence.details
         elif evidence.source == "async_chunk_load_plan":
             payloads["async-chunk-load-plan.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_plan":
+            payloads["custom-loader-traversal-plan.json"] = evidence.details
         elif evidence.source == "async_chunk_load_result":
             payloads["async-chunk-load-result.json"] = evidence.details
         elif evidence.source == "source_map_fetch_plan":
