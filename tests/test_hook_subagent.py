@@ -350,6 +350,74 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["custom_loader_traversal_loop_execution_status"], "ready_for_review")
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_async_chunk_recursive_traversal_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_recursive_traversal_plan": {
+                "status": "ready_for_next_loop_review",
+                "recursive_plan": {
+                    "status": "ready_for_next_loop_review",
+                    "next_action": "review_next_async_chunk_traversal_loop_plan",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_recursive_traversal_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_async_chunk_recursive_traversal_plan")
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_plan_status"], "ready_for_next_loop_review")
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_plan_next_action"], "review_next_async_chunk_traversal_loop_plan")
+        self.assertEqual(result["review_required_items"][0]["async_chunk_recursive_traversal_plan_status"], "ready_for_next_loop_review")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_hook_artifacts_warns_for_async_chunk_recursive_traversal_followup(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_recursive_traversal_followup": {
+                "status": "next_loop_plan_ready",
+                "followup": {
+                    "status": "next_loop_plan_ready",
+                    "stages": [{"stage": "plan_next_async_chunk_traversal_loop"}],
+                    "next_action": "review_next_async_chunk_traversal_loop_plan_before_execution",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_recursive_traversal_followup_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_async_chunk_recursive_traversal_followup")
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_followup_status"], "next_loop_plan_ready")
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_followup_stage_count"], 1)
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_followup_next_action"], "review_next_async_chunk_traversal_loop_plan_before_execution")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_hook_artifacts_warns_for_async_chunk_recursive_traversal_execution(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_recursive_traversal_execution": {
+                "status": "next_loop_module_diff_ready",
+                "execution": {
+                    "status": "next_loop_module_diff_ready",
+                    "stages": [{"stage": "execute_next_bounded_async_chunk_loop"}],
+                    "next_action": "plan_next_async_chunk_recursive_traversal_checkpoint",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_recursive_traversal_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_async_chunk_recursive_traversal_execution")
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_execution_status"], "next_loop_module_diff_ready")
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_execution_stage_count"], 1)
+        self.assertEqual(result["summary"]["async_chunk_recursive_traversal_execution_next_action"], "plan_next_async_chunk_recursive_traversal_checkpoint")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_review_hook_artifacts_warns_for_custom_loader_recursive_traversal_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

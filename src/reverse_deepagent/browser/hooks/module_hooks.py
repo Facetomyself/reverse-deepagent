@@ -7058,6 +7058,757 @@ class AsyncChunkTraversalLoopExecutionManager:
 
 
 @dataclass(slots=True)
+class AsyncChunkRecursiveTraversalPlanSpec:
+    """Review-only follow-up planner after a bounded async-chunk loop execution."""
+
+    loop_execution: dict[str, Any] = field(default_factory=dict)
+    latest_traversal_graph: dict[str, Any] = field(default_factory=dict)
+    latest_workflow_plan: dict[str, Any] = field(default_factory=dict)
+    max_recursive_iterations: int = 3
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkRecursiveTraversalPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("async_chunk_recursive_traversal_plan")
+            or context.get("asyncChunkRecursiveTraversalPlan")
+            or context.get("async-chunk-recursive-traversal-plan")
+            or context.get("async_chunk_traversal_recursion_plan")
+            or context.get("asyncChunkTraversalRecursionPlan")
+            or context.get("plan_async_chunk_recursive_traversal")
+            or context.get("planAsyncChunkRecursiveTraversal")
+        )
+        loop_execution = (
+            context.get("async_chunk_traversal_loop_execution")
+            or context.get("asyncChunkTraversalLoopExecution")
+            or context.get("async-chunk-traversal-loop-execution")
+            or context.get("latest_async_chunk_traversal_loop_execution")
+            or context.get("latestAsyncChunkTraversalLoopExecution")
+            or context.get("loop_execution")
+            or context.get("loopExecution")
+        )
+        if isinstance(loop_execution, dict) and isinstance(loop_execution.get("execution"), dict):
+            loop_execution = loop_execution["execution"]
+        graph = (
+            context.get("latest_async_chunk_traversal_graph")
+            or context.get("latestAsyncChunkTraversalGraph")
+            or context.get("async_chunk_traversal_graph")
+            or context.get("asyncChunkTraversalGraph")
+            or context.get("async-chunk-traversal-graph")
+        )
+        if isinstance(graph, dict) and isinstance(graph.get("graph"), dict):
+            graph = graph["graph"]
+        workflow_plan = (
+            context.get("latest_async_chunk_traversal_workflow_plan")
+            or context.get("latestAsyncChunkTraversalWorkflowPlan")
+            or context.get("async_chunk_traversal_workflow_plan")
+            or context.get("asyncChunkTraversalWorkflowPlan")
+            or context.get("async-chunk-traversal-workflow-plan")
+        )
+        if isinstance(workflow_plan, dict) and isinstance(workflow_plan.get("workflow_plan"), dict):
+            workflow_plan = workflow_plan["workflow_plan"]
+        if not isinstance(loop_execution, dict):
+            return None if not requested else cls()
+        return cls(
+            loop_execution=dict(loop_execution),
+            latest_traversal_graph=dict(graph) if isinstance(graph, dict) else {},
+            latest_workflow_plan=dict(workflow_plan) if isinstance(workflow_plan, dict) else {},
+            max_recursive_iterations=max(1, int(context.get("max_recursive_iterations", context.get("maxRecursiveIterations", 3)) or 3)),
+        )
+
+
+@dataclass(slots=True)
+class AsyncChunkRecursiveTraversalPlanResult:
+    status: str
+    recursive_plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "recursive_plan": self.recursive_plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class AsyncChunkRecursiveTraversalPlanManager:
+    """Plan the next reviewed recursion checkpoint after one bounded async loop iteration."""
+
+    EXECUTED_STATUSES = {"module_hook_recorded", "module_diff_ready", "async_chunk_load_success"}
+
+    def plan(self, spec: AsyncChunkRecursiveTraversalPlanSpec | None) -> AsyncChunkRecursiveTraversalPlanResult:
+        policy = self._side_effect_policy(max_recursive_iterations=spec.max_recursive_iterations if spec else 0)
+        if spec is None or not spec.loop_execution:
+            return AsyncChunkRecursiveTraversalPlanResult(status="unsupported", reason="missing_async_chunk_traversal_loop_execution", side_effect_policy=policy)
+
+        loop_status = self._loop_status(spec.loop_execution)
+        graph_status = str(spec.latest_traversal_graph.get("status") or "")
+        workflow_status = str(spec.latest_workflow_plan.get("status") or "")
+        graph_queue_count = self._count(spec.latest_traversal_graph.get("queue_count"), spec.latest_traversal_graph.get("review_queue"))
+        workflow_step_count = self._count(spec.latest_workflow_plan.get("planned_step_count"), spec.latest_workflow_plan.get("planned_steps"))
+
+        if loop_status not in self.EXECUTED_STATUSES:
+            status = "blocked"
+            reason = "async_chunk_loop_execution_not_ready_for_recursion"
+        elif graph_status == "complete" or (spec.latest_traversal_graph and graph_queue_count == 0 and workflow_step_count == 0):
+            status = "complete"
+            reason = None
+        elif spec.latest_traversal_graph and graph_queue_count > 0 and spec.latest_workflow_plan and workflow_step_count > 0:
+            status = "ready_for_next_loop_review"
+            reason = None
+        elif spec.latest_traversal_graph and graph_queue_count > 0:
+            status = "ready_for_workflow_replan"
+            reason = None
+        else:
+            status = "ready_for_graph_rebuild"
+            reason = None
+
+        recursive_plan = {
+            "schema_version": "reverse-deepagent.async-chunk-recursive-traversal-plan.v1",
+            "status": status,
+            "reason": reason,
+            "plan_id": "async-chunk-recursive-traversal-plan",
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "max_recursive_iterations": spec.max_recursive_iterations,
+            "latest_loop_execution_status": loop_status,
+            "latest_loop_execution_next_action": spec.loop_execution.get("next_action"),
+            "latest_graph_status": graph_status,
+            "latest_graph_queue_count": graph_queue_count,
+            "latest_workflow_plan_status": workflow_status,
+            "latest_workflow_planned_step_count": workflow_step_count,
+            "follow_up_steps": self._follow_up_steps(status),
+            "blocking_reasons": [reason] if reason else [],
+            "artifact_refs": {
+                "loop_execution": "workspace/async-chunk-traversal-loop-execution.json",
+                "traversal_graph": "workspace/async-chunk-traversal-graph.json",
+                "workflow_plan": "workspace/async-chunk-traversal-workflow-plan.json",
+                "loop_plan": "workspace/async-chunk-traversal-loop-plan.json",
+            },
+            "side_effect_policy": policy,
+            "next_action": self._next_action(status=status, reason=reason),
+        }
+        return AsyncChunkRecursiveTraversalPlanResult(status=status, recursive_plan=recursive_plan, side_effect_policy=policy, reason=reason)
+
+    @staticmethod
+    def _loop_status(loop_execution: dict[str, Any]) -> str:
+        nested = loop_execution.get("execution") if isinstance(loop_execution.get("execution"), dict) else loop_execution
+        return str(nested.get("status") or loop_execution.get("status") or "")
+
+    @staticmethod
+    def _count(explicit_count: Any, items: Any) -> int:
+        try:
+            return int(explicit_count)
+        except (TypeError, ValueError):
+            return len(items) if isinstance(items, list) else 0
+
+    @staticmethod
+    def _follow_up_steps(status: str) -> list[dict[str, Any]]:
+        steps = [
+            ("verify_reviewed_async_chunk_loop_execution_checkpoint", "workspace/async-chunk-traversal-loop-execution.json", None),
+            ("rebuild_async_chunk_traversal_graph_from_module_discovery_and_load_evidence", "workspace/async-chunk-load-result.json", "workspace/async-chunk-traversal-graph.json"),
+            ("replan_async_chunk_traversal_workflow_from_refreshed_graph", "workspace/async-chunk-traversal-graph.json", "workspace/async-chunk-traversal-workflow-plan.json"),
+            ("plan_next_bounded_async_chunk_traversal_loop", "workspace/async-chunk-traversal-workflow-plan.json", "workspace/async-chunk-traversal-loop-plan.json"),
+            ("stop_before_next_recursive_async_loop_execution_review", "workspace/async-chunk-traversal-loop-plan.json", None),
+        ]
+        if status == "ready_for_workflow_replan":
+            steps = steps[2:]
+        elif status == "ready_for_next_loop_review":
+            steps = steps[3:]
+        elif status == "complete":
+            steps = [("record_async_chunk_recursive_traversal_complete", "workspace/async-chunk-traversal-graph.json", None)]
+        return [
+            {
+                "order": index + 1,
+                "action": action,
+                "input_artifact": input_artifact,
+                "output_artifact": output_artifact,
+                "review_required": True,
+                "executes_runtime": False,
+                "automatic_execution": False,
+            }
+            for index, (action, input_artifact, output_artifact) in enumerate(steps)
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, reason: str | None) -> str:
+        if status == "blocked" and reason:
+            return "resolve_async_chunk_recursive_traversal_blockers"
+        if status == "complete":
+            return "async_chunk_recursive_traversal_complete_or_provide_new_candidates"
+        if status == "ready_for_next_loop_review":
+            return "review_next_async_chunk_traversal_loop_plan"
+        if status == "ready_for_workflow_replan":
+            return "replan_async_chunk_traversal_workflow_before_next_loop"
+        return "rebuild_async_chunk_traversal_graph_before_next_recursive_loop"
+
+    @staticmethod
+    def _side_effect_policy(*, max_recursive_iterations: int) -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "max_recursive_iterations": max_recursive_iterations,
+            "traversal_graph_rebuilt": False,
+            "workflow_replanned": False,
+            "loop_plan_created": False,
+            "runtime_loader_executed": False,
+            "chunk_request_sent": False,
+            "module_diff_executed": False,
+            "module_hook_installed": False,
+            "module_factory_invoked": False,
+            "automatic_loop_execution": False,
+            "automatic_queue_advance": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
+class AsyncChunkRecursiveTraversalFollowupSpec:
+    """Review-gated follow-through for async-chunk recursive traversal checkpoints."""
+
+    recursive_plan: dict[str, Any] = field(default_factory=dict)
+    chunk_graph: dict[str, Any] = field(default_factory=dict)
+    async_chunk_load_result: dict[str, Any] = field(default_factory=dict)
+    async_chunk_module_diff: dict[str, Any] = field(default_factory=dict)
+    loop_execution: dict[str, Any] = field(default_factory=dict)
+    latest_traversal_graph: dict[str, Any] = field(default_factory=dict)
+    latest_workflow_plan: dict[str, Any] = field(default_factory=dict)
+    rebuild_graph: bool = False
+    replan_workflow: bool = False
+    plan_next_loop: bool = False
+    review_approved: bool = False
+    max_loop_iterations: int = 3
+    max_queue_size: int = 20
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkRecursiveTraversalFollowupSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("async_chunk_recursive_traversal_followup")
+            or context.get("asyncChunkRecursiveTraversalFollowup")
+            or context.get("async-chunk-recursive-traversal-followup")
+            or context.get("async_chunk_recursive_traversal_checkpoint")
+            or context.get("asyncChunkRecursiveTraversalCheckpoint")
+            or context.get("async-chunk-recursive-traversal-checkpoint")
+            or context.get("execute_async_chunk_recursive_traversal_followup")
+            or context.get("executeAsyncChunkRecursiveTraversalFollowup")
+        )
+        recursive_plan = (
+            context.get("async_chunk_recursive_traversal_plan")
+            or context.get("asyncChunkRecursiveTraversalPlan")
+            or context.get("async-chunk-recursive-traversal-plan")
+            or context.get("recursive_traversal_plan")
+            or context.get("recursiveTraversalPlan")
+        )
+        if isinstance(recursive_plan, dict) and isinstance(recursive_plan.get("recursive_plan"), dict):
+            recursive_plan = recursive_plan["recursive_plan"]
+        if not isinstance(recursive_plan, dict):
+            return None if not requested else cls()
+        module_discovery = context.get("module_discovery") or context.get("moduleDiscovery")
+        chunk_graph = context.get("chunk_graph") or context.get("chunkGraph") or context.get("async_chunk_graph") or context.get("asyncChunkGraph")
+        if not isinstance(chunk_graph, dict) and isinstance(module_discovery, dict):
+            chunk_graph = module_discovery.get("chunk_graph") or module_discovery.get("chunkGraph")
+        if isinstance(chunk_graph, dict) and isinstance(chunk_graph.get("chunk_graph"), dict):
+            chunk_graph = chunk_graph["chunk_graph"]
+        graph = (
+            context.get("latest_async_chunk_traversal_graph")
+            or context.get("latestAsyncChunkTraversalGraph")
+            or context.get("async_chunk_traversal_graph")
+            or context.get("asyncChunkTraversalGraph")
+            or context.get("async-chunk-traversal-graph")
+        )
+        if isinstance(graph, dict) and isinstance(graph.get("graph"), dict):
+            graph = graph["graph"]
+        workflow_plan = (
+            context.get("latest_async_chunk_traversal_workflow_plan")
+            or context.get("latestAsyncChunkTraversalWorkflowPlan")
+            or context.get("async_chunk_traversal_workflow_plan")
+            or context.get("asyncChunkTraversalWorkflowPlan")
+            or context.get("async-chunk-traversal-workflow-plan")
+        )
+        if isinstance(workflow_plan, dict) and isinstance(workflow_plan.get("workflow_plan"), dict):
+            workflow_plan = workflow_plan["workflow_plan"]
+        loop_execution = (
+            context.get("async_chunk_traversal_loop_execution")
+            or context.get("asyncChunkTraversalLoopExecution")
+            or context.get("async-chunk-traversal-loop-execution")
+            or context.get("loop_execution")
+            or context.get("loopExecution")
+        )
+        if isinstance(loop_execution, dict) and isinstance(loop_execution.get("execution"), dict):
+            loop_execution = loop_execution["execution"]
+        return cls(
+            recursive_plan=dict(recursive_plan),
+            chunk_graph=dict(chunk_graph) if isinstance(chunk_graph, dict) else {},
+            async_chunk_load_result=AsyncChunkTraversalGraphSpec._object_alias(context, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult"),
+            async_chunk_module_diff=AsyncChunkTraversalGraphSpec._object_alias(context, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff"),
+            loop_execution=dict(loop_execution) if isinstance(loop_execution, dict) else {},
+            latest_traversal_graph=dict(graph) if isinstance(graph, dict) else {},
+            latest_workflow_plan=dict(workflow_plan) if isinstance(workflow_plan, dict) else {},
+            rebuild_graph=bool(context.get("rebuild_graph") or context.get("rebuildGraph") or context.get("rebuild_traversal_graph") or context.get("rebuildTraversalGraph")),
+            replan_workflow=bool(context.get("replan_workflow") or context.get("replanWorkflow") or context.get("replan_traversal_workflow") or context.get("replanTraversalWorkflow")),
+            plan_next_loop=bool(context.get("plan_next_loop") or context.get("planNextLoop") or context.get("plan_next_traversal_loop") or context.get("planNextTraversalLoop")),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            max_loop_iterations=max(1, int(context.get("max_loop_iterations", context.get("maxLoopIterations", 3)) or 3)),
+            max_queue_size=max(1, int(context.get("max_queue_size", context.get("maxQueueSize", 20)) or 20)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class AsyncChunkRecursiveTraversalFollowupResult:
+    status: str
+    followup: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "followup": self.followup,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class AsyncChunkRecursiveTraversalFollowupManager:
+    """Advance one reviewed async-chunk recursive checkpoint without loading chunks."""
+
+    def follow_up(self, spec: AsyncChunkRecursiveTraversalFollowupSpec | None) -> AsyncChunkRecursiveTraversalFollowupResult:
+        if spec is None or not spec.recursive_plan:
+            return AsyncChunkRecursiveTraversalFollowupResult(status="unsupported", reason="missing_async_chunk_recursive_traversal_plan", side_effect_policy=self._side_effect_policy())
+        stages: list[dict[str, Any]] = [self._stage("select_async_chunk_recursive_checkpoint", "selected", "", side_effect=False)]
+        graph_result_payload: dict[str, Any] = {}
+        workflow_result_payload: dict[str, Any] = {}
+        loop_plan_result_payload: dict[str, Any] = {}
+        graph = dict(spec.latest_traversal_graph)
+        workflow_plan = dict(spec.latest_workflow_plan)
+
+        if spec.rebuild_graph:
+            if not spec.review_approved:
+                stages.append(self._stage("rebuild_async_chunk_traversal_graph", "blocked", "review_approval_required", side_effect=False))
+            elif not spec.chunk_graph:
+                stages.append(self._stage("rebuild_async_chunk_traversal_graph", "blocked", "missing_async_chunk_graph", side_effect=False))
+            else:
+                graph_result = AsyncChunkTraversalGraphManager().plan(
+                    AsyncChunkTraversalGraphSpec(
+                        chunk_graph=spec.chunk_graph,
+                        async_chunk_load_result=spec.async_chunk_load_result,
+                        async_chunk_module_diff=spec.async_chunk_module_diff,
+                        previous_traversal_graph=spec.latest_traversal_graph,
+                        max_queue_size=spec.max_queue_size,
+                        max_preview_length=spec.max_preview_length,
+                    )
+                )
+                graph_result_payload = graph_result.to_dict()
+                graph = graph_result.graph
+                stages.append(self._stage("rebuild_async_chunk_traversal_graph", graph_result.status, graph_result.reason, side_effect=False))
+        else:
+            stages.append(self._stage("rebuild_async_chunk_traversal_graph", "pending", "", side_effect=False))
+
+        if spec.replan_workflow:
+            if not spec.review_approved:
+                stages.append(self._stage("replan_async_chunk_traversal_workflow", "blocked", "review_approval_required", side_effect=False))
+            elif not graph:
+                stages.append(self._stage("replan_async_chunk_traversal_workflow", "blocked", "async_chunk_traversal_graph_required", side_effect=False))
+            else:
+                workflow_result = AsyncChunkTraversalWorkflowPlanManager().plan(AsyncChunkTraversalWorkflowPlanSpec(traversal_graph=graph))
+                workflow_result_payload = workflow_result.to_dict()
+                workflow_plan = workflow_result.workflow_plan
+                stages.append(self._stage("replan_async_chunk_traversal_workflow", workflow_result.status, workflow_result.reason, side_effect=False))
+        else:
+            stages.append(self._stage("replan_async_chunk_traversal_workflow", "pending", "", side_effect=False))
+
+        if spec.plan_next_loop:
+            if not spec.review_approved:
+                stages.append(self._stage("plan_next_async_chunk_traversal_loop", "blocked", "review_approval_required", side_effect=False))
+            elif not workflow_plan:
+                stages.append(self._stage("plan_next_async_chunk_traversal_loop", "blocked", "async_chunk_traversal_workflow_plan_required", side_effect=False))
+            else:
+                loop_result = AsyncChunkTraversalLoopPlanManager().plan(
+                    AsyncChunkTraversalLoopPlanSpec(
+                        workflow_plan=workflow_plan,
+                        latest_workflow_execution=spec.loop_execution,
+                        latest_traversal_graph=graph,
+                        max_loop_iterations=spec.max_loop_iterations,
+                        max_preview_length=spec.max_preview_length,
+                    )
+                )
+                loop_plan_result_payload = loop_result.to_dict()
+                stages.append(self._stage("plan_next_async_chunk_traversal_loop", loop_result.status, loop_result.reason, side_effect=False))
+        else:
+            stages.append(self._stage("plan_next_async_chunk_traversal_loop", "pending", "", side_effect=False))
+
+        stages.append(self._stage("stop_before_next_recursive_async_loop_execution", "stopped", "manual_checkpoint_required", side_effect=False))
+        status = self._status(stages, loop_plan_result_payload, workflow_result_payload, graph_result_payload)
+        reason = self._reason(stages)
+        followup = {
+            "schema_version": "reverse-deepagent.async-chunk-recursive-traversal-followup.v1",
+            "status": status,
+            "reason": reason,
+            "recursive_plan_id": spec.recursive_plan.get("plan_id"),
+            "review_approved": spec.review_approved,
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "stages": stages,
+            "async_chunk_traversal_graph": graph_result_payload,
+            "async_chunk_traversal_workflow_plan": workflow_result_payload,
+            "async_chunk_traversal_loop_plan": loop_plan_result_payload,
+            "artifact_refs": {
+                "recursive_plan": "workspace/async-chunk-recursive-traversal-plan.json",
+                "traversal_graph": "workspace/async-chunk-traversal-graph.json" if graph_result_payload else "",
+                "workflow_plan": "workspace/async-chunk-traversal-workflow-plan.json" if workflow_result_payload else "",
+                "loop_plan": "workspace/async-chunk-traversal-loop-plan.json" if loop_plan_result_payload else "",
+            },
+            "next_action": self._next_action(status, reason),
+        }
+        return AsyncChunkRecursiveTraversalFollowupResult(status=status, followup=followup, side_effect_policy=self._side_effect_policy(spec=spec, stages=stages), reason=reason)
+
+    @staticmethod
+    def _stage(name: str, status: str, reason: str | None, *, side_effect: bool) -> dict[str, Any]:
+        return {"stage": name, "status": status, "reason": reason or "", "side_effect": side_effect}
+
+    @staticmethod
+    def _status(stages: list[dict[str, Any]], loop_plan_result: dict[str, Any], workflow_result: dict[str, Any], graph_result: dict[str, Any]) -> str:
+        if any(stage["status"] in {"failed", "error"} for stage in stages):
+            return "failed"
+        if any(stage["status"] in {"blocked", "unsupported"} for stage in stages):
+            return "blocked"
+        loop_plan = loop_plan_result.get("loop_plan") if isinstance(loop_plan_result.get("loop_plan"), dict) else {}
+        if loop_plan_result and str(loop_plan_result.get("status") or loop_plan.get("status") or "") in {"ready_for_review", "complete"}:
+            return "next_loop_plan_ready"
+        workflow_plan = workflow_result.get("workflow_plan") if isinstance(workflow_result.get("workflow_plan"), dict) else {}
+        if workflow_result and str(workflow_result.get("status") or workflow_plan.get("status") or "") in {"ready_for_review", "complete"}:
+            return "workflow_replanned"
+        graph = graph_result.get("graph") if isinstance(graph_result.get("graph"), dict) else {}
+        if graph_result and str(graph_result.get("status") or graph.get("status") or "") in {"ready_for_review", "complete"}:
+            return "graph_rebuilt"
+        return "ready_for_review"
+
+    @staticmethod
+    def _reason(stages: list[dict[str, Any]]) -> str | None:
+        for stage in stages:
+            if stage["status"] in {"blocked", "failed", "error", "unsupported"} and stage.get("reason"):
+                return str(stage["reason"])
+        return None
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "next_loop_plan_ready":
+            return "review_next_async_chunk_traversal_loop_plan_before_execution"
+        if status == "workflow_replanned":
+            return "plan_next_async_chunk_traversal_loop"
+        if status == "graph_rebuilt":
+            return "replan_async_chunk_traversal_workflow_before_next_loop"
+        if status == "blocked" and reason:
+            return "resolve_async_chunk_recursive_traversal_followup_blockers"
+        if status == "failed":
+            return "inspect_async_chunk_recursive_traversal_followup_failure"
+        return "review_async_chunk_recursive_traversal_followup_plan"
+
+    @staticmethod
+    def _side_effect_policy(spec: AsyncChunkRecursiveTraversalFollowupSpec | None = None, stages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        stages = stages or []
+        return {
+            "plan_only_by_default": not bool(spec and any((spec.rebuild_graph, spec.replan_workflow, spec.plan_next_loop))),
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": bool(spec and spec.review_approved),
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "traversal_graph_rebuilt": any(stage["stage"] == "rebuild_async_chunk_traversal_graph" and stage["status"] in {"ready_for_review", "complete"} for stage in stages),
+            "workflow_replanned": any(stage["stage"] == "replan_async_chunk_traversal_workflow" and stage["status"] in {"ready_for_review", "complete"} for stage in stages),
+            "loop_plan_created": any(stage["stage"] == "plan_next_async_chunk_traversal_loop" and stage["status"] in {"ready_for_review", "complete"} for stage in stages),
+            "runtime_loader_executed": False,
+            "chunk_request_sent": False,
+            "module_diff_executed": False,
+            "module_hook_installed": False,
+            "module_factory_invoked": False,
+            "automatic_loop_execution": False,
+            "automatic_queue_advance": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
+class AsyncChunkRecursiveTraversalExecutionSpec:
+    """Review-gated execution of one next-loop step from an async recursion checkpoint."""
+
+    recursive_followup: dict[str, Any] = field(default_factory=dict)
+    loop_plan: dict[str, Any] = field(default_factory=dict)
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    async_chunk_load_plan: dict[str, Any] = field(default_factory=dict)
+    async_chunk_load_result: dict[str, Any] = field(default_factory=dict)
+    async_chunk_module_diff: dict[str, Any] = field(default_factory=dict)
+    module_hook_result: dict[str, Any] = field(default_factory=dict)
+    module_discovery: dict[str, Any] = field(default_factory=dict)
+    modules: list[dict[str, Any]] = field(default_factory=list)
+    selected_iteration_index: int | None = None
+    selected_step_index: int | None = None
+    candidate_index: int | None = None
+    plan_async_chunk_load: bool = False
+    execute_async_chunk_load: bool = False
+    run_module_diff: bool = False
+    install_module_hook: bool = False
+    review_approved: bool = False
+    capture_args: bool = True
+    capture_result: bool = True
+    max_preview_length: int = 240
+    trigger_expression: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkRecursiveTraversalExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("async_chunk_recursive_traversal_execution")
+            or context.get("asyncChunkRecursiveTraversalExecution")
+            or context.get("async-chunk-recursive-traversal-execution")
+            or context.get("execute_async_chunk_recursive_traversal")
+            or context.get("executeAsyncChunkRecursiveTraversal")
+            or context.get("execute_async_chunk_recursive_traversal_next_loop")
+            or context.get("executeAsyncChunkRecursiveTraversalNextLoop")
+        )
+        followup = (
+            context.get("async_chunk_recursive_traversal_followup")
+            or context.get("asyncChunkRecursiveTraversalFollowup")
+            or context.get("async-chunk-recursive-traversal-followup")
+            or context.get("recursive_traversal_followup")
+            or context.get("recursiveTraversalFollowup")
+        )
+        if isinstance(followup, dict) and isinstance(followup.get("followup"), dict):
+            followup = followup["followup"]
+        loop_plan = (
+            context.get("async_chunk_traversal_loop_plan")
+            or context.get("asyncChunkTraversalLoopPlan")
+            or context.get("async-chunk-traversal-loop-plan")
+            or context.get("next_async_chunk_traversal_loop_plan")
+            or context.get("nextAsyncChunkTraversalLoopPlan")
+            or context.get("loop_plan")
+            or context.get("loopPlan")
+        )
+        if isinstance(loop_plan, dict) and isinstance(loop_plan.get("loop_plan"), dict):
+            loop_plan = loop_plan["loop_plan"]
+        if not isinstance(loop_plan, dict) and isinstance(followup, dict):
+            loop_result = followup.get("async_chunk_traversal_loop_plan")
+            if isinstance(loop_result, dict) and isinstance(loop_result.get("loop_plan"), dict):
+                loop_plan = loop_result["loop_plan"]
+        if not isinstance(loop_plan, dict):
+            return None if not requested else cls(recursive_followup=dict(followup) if isinstance(followup, dict) else {})
+        workflow_plan = (
+            context.get("async_chunk_traversal_workflow_plan")
+            or context.get("asyncChunkTraversalWorkflowPlan")
+            or context.get("async-chunk-traversal-workflow-plan")
+            or context.get("traversal_workflow_plan")
+            or context.get("traversalWorkflowPlan")
+        )
+        if isinstance(workflow_plan, dict) and isinstance(workflow_plan.get("workflow_plan"), dict):
+            workflow_plan = workflow_plan["workflow_plan"]
+        if not isinstance(workflow_plan, dict) and isinstance(followup, dict):
+            workflow_result = followup.get("async_chunk_traversal_workflow_plan")
+            if isinstance(workflow_result, dict) and isinstance(workflow_result.get("workflow_plan"), dict):
+                workflow_plan = workflow_result["workflow_plan"]
+        modules = context.get("modules", context.get("module_candidates", context.get("moduleCandidates", [])))
+        return cls(
+            recursive_followup=dict(followup) if isinstance(followup, dict) else {},
+            loop_plan=dict(loop_plan),
+            workflow_plan=dict(workflow_plan) if isinstance(workflow_plan, dict) else {},
+            async_chunk_load_plan=AsyncChunkTraversalWorkflowExecutionSpec._object_alias(context, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan"),
+            async_chunk_load_result=AsyncChunkTraversalWorkflowExecutionSpec._object_alias(context, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult"),
+            async_chunk_module_diff=AsyncChunkTraversalWorkflowExecutionSpec._object_alias(context, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff"),
+            module_hook_result=AsyncChunkTraversalWorkflowExecutionSpec._object_alias(context, "async_chunk_module_hook_result", "async-chunk-module-hook-result", "asyncChunkModuleHookResult", "module_hooks", "module-hooks"),
+            module_discovery=AsyncChunkTraversalWorkflowExecutionSpec._object_alias(context, "module_discovery", "moduleDiscovery", "module_registry", "moduleRegistry"),
+            modules=[dict(item) for item in modules if isinstance(item, dict)] if isinstance(modules, list) else [],
+            selected_iteration_index=AsyncChunkTraversalWorkflowExecutionSpec._optional_int(context.get("selected_iteration_index", context.get("selectedIterationIndex", context.get("iteration_index", context.get("iterationIndex"))))),
+            selected_step_index=AsyncChunkTraversalWorkflowExecutionSpec._optional_int(context.get("selected_step_index", context.get("selectedStepIndex", context.get("step_index", context.get("stepIndex"))))),
+            candidate_index=AsyncChunkTraversalWorkflowExecutionSpec._optional_int(context.get("candidate_index", context.get("candidateIndex"))),
+            plan_async_chunk_load=bool(context.get("plan_async_chunk_load") or context.get("planAsyncChunkLoad") or context.get("plan_chunk_load") or context.get("planChunkLoad")),
+            execute_async_chunk_load=bool(context.get("execute_async_chunk_load") or context.get("executeAsyncChunkLoad") or context.get("execute_chunk_load") or context.get("executeChunkLoad")),
+            run_module_diff=bool(context.get("run_module_diff") or context.get("runModuleDiff") or context.get("refresh_module_diff") or context.get("refreshModuleDiff")),
+            install_module_hook=bool(context.get("install_module_hook") or context.get("installModuleHook") or context.get("hook_async_chunk_module") or context.get("hookAsyncChunkModule")),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            capture_args=bool(context.get("capture_args", context.get("captureArgs", True))),
+            capture_result=bool(context.get("capture_result", context.get("captureResult", True))),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            trigger_expression=str(context.get("trigger_expression", context.get("triggerExpression"))) if context.get("trigger_expression", context.get("triggerExpression")) else None,
+        )
+
+
+@dataclass(slots=True)
+class AsyncChunkRecursiveTraversalExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class AsyncChunkRecursiveTraversalExecutionManager:
+    """Execute one reviewed async next-loop checkpoint and stop before deeper recursion."""
+
+    def execute(self, page: BrowserPage, spec: AsyncChunkRecursiveTraversalExecutionSpec | None) -> AsyncChunkRecursiveTraversalExecutionResult:
+        if spec is None or not spec.loop_plan:
+            return AsyncChunkRecursiveTraversalExecutionResult(status="unsupported", reason="missing_async_chunk_traversal_loop_plan", side_effect_policy=self._side_effect_policy())
+        stages: list[dict[str, Any]] = [self._stage("select_async_chunk_recursive_next_loop_checkpoint", "selected", "", side_effect=False)]
+        loop_execution_payload: dict[str, Any] = {}
+        if self._has_loop_execution_flags(spec):
+            if not spec.review_approved:
+                stages.append(self._stage("execute_next_bounded_async_chunk_loop", "blocked", "review_approval_required", side_effect=True))
+            else:
+                loop_result = AsyncChunkTraversalLoopExecutionManager().execute(
+                    page,
+                    AsyncChunkTraversalLoopExecutionSpec(
+                        loop_plan=spec.loop_plan,
+                        workflow_plan=spec.workflow_plan,
+                        async_chunk_load_plan=spec.async_chunk_load_plan,
+                        async_chunk_load_result=spec.async_chunk_load_result,
+                        async_chunk_module_diff=spec.async_chunk_module_diff,
+                        module_hook_result=spec.module_hook_result,
+                        module_discovery=spec.module_discovery,
+                        modules=spec.modules,
+                        selected_iteration_index=spec.selected_iteration_index,
+                        selected_step_index=spec.selected_step_index,
+                        candidate_index=spec.candidate_index,
+                        plan_async_chunk_load=spec.plan_async_chunk_load,
+                        execute_async_chunk_load=spec.execute_async_chunk_load,
+                        run_module_diff=spec.run_module_diff,
+                        install_module_hook=spec.install_module_hook,
+                        review_approved=spec.review_approved,
+                        capture_args=spec.capture_args,
+                        capture_result=spec.capture_result,
+                        max_preview_length=spec.max_preview_length,
+                        trigger_expression=spec.trigger_expression,
+                    ),
+                )
+                loop_execution_payload = loop_result.to_dict()
+                stages.append(self._stage("execute_next_bounded_async_chunk_loop", loop_result.status, loop_result.reason, side_effect=True))
+        else:
+            stages.append(self._stage("execute_next_bounded_async_chunk_loop", "pending", "explicit_stage_flag_required", side_effect=True))
+        stages.append(self._stage("stop_before_next_async_recursive_followup_checkpoint", "stopped", "manual_checkpoint_required", side_effect=False))
+        status = self._status(stages, loop_execution_payload)
+        reason = self._reason(stages)
+        execution = self._execution_payload(spec, loop_execution_payload, stages, status=status, reason=reason)
+        return AsyncChunkRecursiveTraversalExecutionResult(status=status, execution=execution, side_effect_policy=self._side_effect_policy(spec=spec, loop_execution=loop_execution_payload, stages=stages), reason=reason)
+
+    @staticmethod
+    def _has_loop_execution_flags(spec: AsyncChunkRecursiveTraversalExecutionSpec) -> bool:
+        return any((spec.plan_async_chunk_load, spec.execute_async_chunk_load, spec.run_module_diff, spec.install_module_hook))
+
+    @staticmethod
+    def _stage(name: str, status: str, reason: str | None, *, side_effect: bool) -> dict[str, Any]:
+        return {"stage": name, "status": status, "reason": reason or "", "side_effect": side_effect}
+
+    @classmethod
+    def _status(cls, stages: list[dict[str, Any]], loop_execution: dict[str, Any]) -> str:
+        if any(stage["status"] in {"failed", "failure", "error"} for stage in stages):
+            return "failed"
+        if any(stage["status"] in {"blocked", "unsupported"} for stage in stages):
+            return "blocked"
+        nested = loop_execution.get("execution") if isinstance(loop_execution.get("execution"), dict) else {}
+        loop_status = str(loop_execution.get("status") or nested.get("status") or "")
+        if loop_status == "module_hook_recorded":
+            return "next_loop_module_hook_recorded"
+        if loop_status == "module_diff_ready":
+            return "next_loop_module_diff_ready"
+        if loop_status == "async_chunk_load_success":
+            return "next_loop_execution_progressed"
+        return "ready_for_review"
+
+    @staticmethod
+    def _reason(stages: list[dict[str, Any]]) -> str | None:
+        for stage in stages:
+            if stage["status"] in {"blocked", "failed", "failure", "error", "unsupported"} and stage.get("reason"):
+                return str(stage["reason"])
+        return None
+
+    @classmethod
+    def _execution_payload(cls, spec: AsyncChunkRecursiveTraversalExecutionSpec, loop_execution: dict[str, Any], stages: list[dict[str, Any]], *, status: str, reason: str | None) -> dict[str, Any]:
+        nested_loop_execution = loop_execution.get("execution") if isinstance(loop_execution.get("execution"), dict) else {}
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-recursive-traversal-execution.v1",
+            "status": status,
+            "reason": reason,
+            "recursive_followup_id": spec.recursive_followup.get("recursive_plan_id") or spec.recursive_followup.get("plan_id"),
+            "loop_plan_id": spec.loop_plan.get("plan_id"),
+            "source_workflow_plan_id": spec.loop_plan.get("source_workflow_plan_id"),
+            "source_graph_id": spec.loop_plan.get("source_graph_id"),
+            "review_approved": bool(spec.review_approved),
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "execute_at_most_one_loop_iteration_per_review": True,
+            "stages": stages,
+            "async_chunk_traversal_loop_execution": loop_execution,
+            "loop_execution_status": loop_execution.get("status") or nested_loop_execution.get("status"),
+            "artifact_refs": {
+                "recursive_followup": "workspace/async-chunk-recursive-traversal-followup.json",
+                "loop_plan": "workspace/async-chunk-traversal-loop-plan.json",
+                "loop_execution": "workspace/async-chunk-traversal-loop-execution.json" if loop_execution else "",
+                "next_recursive_plan": "workspace/async-chunk-recursive-traversal-plan.json",
+            },
+            "next_action": cls._next_action(status, reason),
+        }
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status in {"next_loop_module_hook_recorded", "next_loop_module_diff_ready", "next_loop_execution_progressed"}:
+            return "plan_next_async_chunk_recursive_traversal_checkpoint"
+        if status == "blocked" and reason:
+            return "resolve_async_chunk_recursive_traversal_execution_blockers"
+        if status == "failed":
+            return "inspect_async_chunk_recursive_traversal_execution_failure"
+        return "review_async_chunk_recursive_traversal_execution_plan"
+
+    @staticmethod
+    def _side_effect_policy(spec: AsyncChunkRecursiveTraversalExecutionSpec | None = None, loop_execution: dict[str, Any] | None = None, stages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        stages = stages or []
+        nested_policy = loop_execution.get("side_effect_policy") if isinstance(loop_execution, dict) and isinstance(loop_execution.get("side_effect_policy"), dict) else {}
+        return {
+            "plan_only_by_default": not bool(spec and any((spec.plan_async_chunk_load, spec.execute_async_chunk_load, spec.run_module_diff, spec.install_module_hook))),
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": bool(spec and spec.review_approved),
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "loop_execution_started": any(stage["stage"] == "execute_next_bounded_async_chunk_loop" and stage["status"] not in {"pending", "blocked"} for stage in stages),
+            "async_chunk_load_planned": bool(nested_policy.get("async_chunk_load_planned", False)),
+            "runtime_loader_executed": bool(nested_policy.get("runtime_loader_executed", False)),
+            "chunk_request_sent": bool(nested_policy.get("chunk_request_sent", False)),
+            "module_diff_executed": bool(nested_policy.get("module_diff_executed", False)),
+            "module_hook_installed": bool(nested_policy.get("module_hook_installed", False)),
+            "traversal_graph_rebuilt": False,
+            "workflow_replanned": False,
+            "automatic_loop_execution": False,
+            "automatic_queue_advance": False,
+            "automatic_recursive_traversal": False,
+            "module_factory_invoked": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 

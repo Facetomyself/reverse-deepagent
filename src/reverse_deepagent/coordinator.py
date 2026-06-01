@@ -933,6 +933,9 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_async_chunk_traversal_workflow_execution": "audit",
     "workspace_async_chunk_traversal_loop_plan": "triage",
     "workspace_async_chunk_traversal_loop_execution": "audit",
+    "workspace_async_chunk_recursive_traversal_plan": "triage",
+    "workspace_async_chunk_recursive_traversal_followup": "audit",
+    "workspace_async_chunk_recursive_traversal_execution": "audit",
     "workspace_async_chunk_module_diff": "triage",
     "workspace_custom_loader_traversal_plan": "triage",
     "workspace_custom_loader_traversal_graph": "triage",
@@ -1681,6 +1684,12 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["async-chunk-traversal-loop-plan.json"] = evidence.details
         elif evidence.source == "async_chunk_traversal_loop_execution":
             payloads["async-chunk-traversal-loop-execution.json"] = evidence.details
+        elif evidence.source == "async_chunk_recursive_traversal_plan":
+            payloads["async-chunk-recursive-traversal-plan.json"] = evidence.details
+        elif evidence.source == "async_chunk_recursive_traversal_followup":
+            payloads["async-chunk-recursive-traversal-followup.json"] = evidence.details
+        elif evidence.source == "async_chunk_recursive_traversal_execution":
+            payloads["async-chunk-recursive-traversal-execution.json"] = evidence.details
         elif evidence.source == "async_chunk_module_diff":
             payloads["async-chunk-module-diff.json"] = evidence.details
         elif evidence.source == "custom_loader_traversal_plan":

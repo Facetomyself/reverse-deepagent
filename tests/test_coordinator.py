@@ -224,6 +224,27 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native async chunk recursive traversal plan",
+                    kind=EvidenceKind.NOTE,
+                    source="async_chunk_recursive_traversal_plan",
+                    details={"status": "ready_for_graph_rebuild", "latest_loop_execution_status": "module_diff_ready"},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native async chunk recursive traversal followup",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="async_chunk_recursive_traversal_followup",
+                    details={"status": "next_loop_plan_ready", "stage_count": 4},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native async chunk recursive traversal execution",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="async_chunk_recursive_traversal_execution",
+                    details={"status": "next_loop_module_diff_ready", "stage_count": 3},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map fetch plan",
                     kind=EvidenceKind.NOTE,
                     source="source_map_fetch_plan",
@@ -438,6 +459,9 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["module-federation-factory-invoke-result.json"]["factory_execution"]["remoteFactoryInvoked"], True)
         self.assertEqual(payloads["module-federation-export-hook-plan.json"]["hookable_candidate_count"], 1)
         self.assertEqual(payloads["async-chunk-load-result.json"]["addedRegistryKeys"], ["731"])
+        self.assertEqual(payloads["async-chunk-recursive-traversal-plan.json"]["status"], "ready_for_graph_rebuild")
+        self.assertEqual(payloads["async-chunk-recursive-traversal-followup.json"]["status"], "next_loop_plan_ready")
+        self.assertEqual(payloads["async-chunk-recursive-traversal-execution.json"]["status"], "next_loop_module_diff_ready")
         self.assertEqual(payloads["source-map-fetch-plan.json"]["source_map_url_redacted"], "https://example.test/app.js.map")
         self.assertEqual(payloads["source-map-fetch-result.json"]["byte_count"], 128)
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
@@ -468,6 +492,9 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_workflow_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_loop_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_traversal_loop_execution"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_recursive_traversal_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_recursive_traversal_followup"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_recursive_traversal_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_factory_invoke_result"), "trace")

@@ -18,6 +18,12 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkTraversalLoopPlanSpec,
     AsyncChunkTraversalLoopExecutionManager,
     AsyncChunkTraversalLoopExecutionSpec,
+    AsyncChunkRecursiveTraversalPlanManager,
+    AsyncChunkRecursiveTraversalPlanSpec,
+    AsyncChunkRecursiveTraversalFollowupManager,
+    AsyncChunkRecursiveTraversalFollowupSpec,
+    AsyncChunkRecursiveTraversalExecutionManager,
+    AsyncChunkRecursiveTraversalExecutionSpec,
     CustomLoaderExecutionManager,
     CustomLoaderContinuationExecutionManager,
     CustomLoaderContinuationExecutionSpec,
@@ -2851,6 +2857,255 @@ class AsyncChunkTraversalLoopExecutionManagerTests(unittest.TestCase):
 
         self.assertEqual(result.status, "unsupported")
         self.assertEqual(result.reason, "missing_async_chunk_traversal_loop_plan")
+
+
+class AsyncChunkRecursiveTraversalPlanManagerTests(unittest.TestCase):
+    def _loop_execution(self, status: str = "module_diff_ready") -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-traversal-loop-execution.v1",
+            "status": status,
+            "next_action": "review_async_chunk_module_diff_then_rebuild_graph",
+        }
+
+    def test_plans_graph_rebuild_after_reviewed_loop_execution(self) -> None:
+        spec = AsyncChunkRecursiveTraversalPlanSpec.from_context(
+            {
+                "async_chunk_recursive_traversal_plan": True,
+                "async_chunk_traversal_loop_execution": self._loop_execution(),
+            }
+        )
+
+        result = AsyncChunkRecursiveTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_graph_rebuild")
+        self.assertEqual(result.recursive_plan["schema_version"], "reverse-deepagent.async-chunk-recursive-traversal-plan.v1")
+        self.assertEqual(result.recursive_plan["next_action"], "rebuild_async_chunk_traversal_graph_before_next_recursive_loop")
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_plans_next_loop_review_after_refreshed_graph_and_workflow(self) -> None:
+        spec = AsyncChunkRecursiveTraversalPlanSpec.from_context(
+            {
+                "async_chunk_recursive_traversal_plan": True,
+                "async_chunk_traversal_loop_execution": self._loop_execution(),
+                "async_chunk_traversal_graph": {"status": "ready_for_review", "queue_count": 1, "review_queue": [{"node_id": "n1"}]},
+                "async_chunk_traversal_workflow_plan": {"status": "ready_for_review", "planned_step_count": 1, "planned_steps": [{"step_index": 0}]},
+            }
+        )
+
+        result = AsyncChunkRecursiveTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_next_loop_review")
+        self.assertEqual(result.recursive_plan["latest_graph_queue_count"], 1)
+        self.assertEqual(result.recursive_plan["latest_workflow_planned_step_count"], 1)
+        self.assertEqual(result.recursive_plan["next_action"], "review_next_async_chunk_traversal_loop_plan")
+        self.assertEqual(result.recursive_plan["follow_up_steps"][0]["action"], "plan_next_bounded_async_chunk_traversal_loop")
+
+    def test_blocks_when_loop_execution_has_not_run(self) -> None:
+        result = AsyncChunkRecursiveTraversalPlanManager().plan(
+            AsyncChunkRecursiveTraversalPlanSpec.from_context(
+                {
+                    "async_chunk_recursive_traversal_plan": True,
+                    "async_chunk_traversal_loop_execution": self._loop_execution(status="ready_for_review"),
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "async_chunk_loop_execution_not_ready_for_recursion")
+        self.assertEqual(result.recursive_plan["next_action"], "resolve_async_chunk_recursive_traversal_blockers")
+
+
+class AsyncChunkRecursiveTraversalFollowupManagerTests(unittest.TestCase):
+    def _recursive_plan(self, status: str = "ready_for_graph_rebuild") -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-recursive-traversal-plan.v1",
+            "plan_id": "async-chunk-recursive-traversal-plan",
+            "status": status,
+            "next_action": "rebuild_async_chunk_traversal_graph_before_next_recursive_loop",
+        }
+
+    def _chunk_graph(self) -> dict[str, Any]:
+        return AsyncChunkTraversalGraphManagerTests()._chunk_graph()
+
+    def _loop_execution(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-traversal-loop-execution.v1",
+            "status": "module_diff_ready",
+            "execution": {"status": "module_diff_ready"},
+            "next_action": "review_async_chunk_module_diff_then_rebuild_graph",
+        }
+
+    def test_plan_only_followup_requires_manual_review_without_side_effects(self) -> None:
+        result = AsyncChunkRecursiveTraversalFollowupManager().follow_up(
+            AsyncChunkRecursiveTraversalFollowupSpec.from_context(
+                {
+                    "async_chunk_recursive_traversal_followup": True,
+                    "async_chunk_recursive_traversal_plan": self._recursive_plan(),
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.followup["schema_version"], "reverse-deepagent.async-chunk-recursive-traversal-followup.v1")
+        self.assertEqual(result.followup["next_action"], "review_async_chunk_recursive_traversal_followup_plan")
+        self.assertTrue(result.side_effect_policy["plan_only_by_default"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["workflow_replanned"])
+        self.assertFalse(result.side_effect_policy["loop_plan_created"])
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_reviewed_followup_rebuilds_graph_replans_workflow_and_plans_next_loop(self) -> None:
+        result = AsyncChunkRecursiveTraversalFollowupManager().follow_up(
+            AsyncChunkRecursiveTraversalFollowupSpec.from_context(
+                {
+                    "async_chunk_recursive_traversal_followup": True,
+                    "async_chunk_recursive_traversal_plan": self._recursive_plan(),
+                    "chunk_graph": self._chunk_graph(),
+                    "async_chunk_traversal_loop_execution": self._loop_execution(),
+                    "rebuild_graph": True,
+                    "replan_workflow": True,
+                    "plan_next_loop": True,
+                    "review_approved": True,
+                    "max_loop_iterations": 2,
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "next_loop_plan_ready")
+        self.assertEqual(result.followup["next_action"], "review_next_async_chunk_traversal_loop_plan_before_execution")
+        self.assertEqual(result.followup["async_chunk_traversal_graph"]["status"], "ready_for_review")
+        self.assertEqual(result.followup["async_chunk_traversal_workflow_plan"]["status"], "ready_for_review")
+        self.assertEqual(result.followup["async_chunk_traversal_loop_plan"]["status"], "ready_for_review")
+        self.assertTrue(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertTrue(result.side_effect_policy["workflow_replanned"])
+        self.assertTrue(result.side_effect_policy["loop_plan_created"])
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_loop_execution"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_blocks_checkpoint_actions_without_review_approval(self) -> None:
+        result = AsyncChunkRecursiveTraversalFollowupManager().follow_up(
+            AsyncChunkRecursiveTraversalFollowupSpec.from_context(
+                {
+                    "async_chunk_recursive_traversal_followup": True,
+                    "async_chunk_recursive_traversal_plan": self._recursive_plan(),
+                    "chunk_graph": self._chunk_graph(),
+                    "rebuild_graph": True,
+                    "review_approved": False,
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(result.followup["next_action"], "resolve_async_chunk_recursive_traversal_followup_blockers")
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+
+
+class AsyncChunkRecursiveTraversalExecutionManagerTests(unittest.TestCase):
+    def _recursive_followup(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-recursive-traversal-followup.v1",
+            "status": "next_loop_plan_ready",
+            "next_action": "review_next_async_chunk_traversal_loop_plan_before_execution",
+            "async_chunk_traversal_loop_plan": {
+                "status": "ready_for_review",
+                "loop_plan": AsyncChunkTraversalLoopExecutionManagerTests()._loop_plan(),
+            },
+            "async_chunk_traversal_workflow_plan": {
+                "status": "ready_for_review",
+                "workflow_plan": AsyncChunkTraversalLoopExecutionManagerTests()._workflow_plan(),
+            },
+        }
+
+    def test_plan_only_next_loop_execution_requires_manual_review_without_loading_chunk(self) -> None:
+        page = AsyncChunkLoadPage()
+        result = AsyncChunkRecursiveTraversalExecutionManager().execute(
+            page,
+            AsyncChunkRecursiveTraversalExecutionSpec.from_context(
+                {
+                    "async_chunk_recursive_traversal_execution": True,
+                    "async_chunk_recursive_traversal_followup": self._recursive_followup(),
+                }
+            ),
+        )
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.execution["schema_version"], "reverse-deepagent.async-chunk-recursive-traversal-execution.v1")
+        self.assertEqual(result.execution["next_action"], "review_async_chunk_recursive_traversal_execution_plan")
+        self.assertFalse(page.executed_chunk_ids)
+        self.assertTrue(result.side_effect_policy["plan_only_by_default"])
+        self.assertFalse(result.side_effect_policy["loop_execution_started"])
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_reviewed_next_loop_execution_runs_one_iteration_and_stops(self) -> None:
+        page = AsyncChunkLoadPage()
+        result = AsyncChunkRecursiveTraversalExecutionManager().execute(
+            page,
+            AsyncChunkRecursiveTraversalExecutionSpec.from_context(
+                {
+                    "async_chunk_recursive_traversal_execution": True,
+                    "async_chunk_recursive_traversal_followup": self._recursive_followup(),
+                    "plan_async_chunk_load": True,
+                    "execute_async_chunk_load": True,
+                    "run_module_diff": True,
+                    "review_approved": True,
+                    "module_discovery": {
+                        "modules": [
+                            {
+                                "module_id": "731",
+                                "runtime_path": "window.__webpack_require__",
+                                "export_names": ["sign"],
+                                "export_types": {"sign": "function"},
+                            }
+                        ]
+                    },
+                }
+            ),
+        )
+
+        self.assertEqual(result.status, "next_loop_module_diff_ready")
+        self.assertEqual(page.executed_chunk_ids, ["731"])
+        self.assertEqual(result.execution["loop_execution_status"], "module_diff_ready")
+        self.assertEqual(result.execution["next_action"], "plan_next_async_chunk_recursive_traversal_checkpoint")
+        self.assertTrue(result.side_effect_policy["loop_execution_started"])
+        self.assertTrue(result.side_effect_policy["runtime_loader_executed"])
+        self.assertTrue(result.side_effect_policy["chunk_request_sent"])
+        self.assertTrue(result.side_effect_policy["module_diff_executed"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["workflow_replanned"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_blocks_next_loop_execution_flags_without_review_approval(self) -> None:
+        result = AsyncChunkRecursiveTraversalExecutionManager().execute(
+            AsyncChunkLoadPage(),
+            AsyncChunkRecursiveTraversalExecutionSpec.from_context(
+                {
+                    "async_chunk_recursive_traversal_execution": True,
+                    "async_chunk_recursive_traversal_followup": self._recursive_followup(),
+                    "execute_async_chunk_load": True,
+                    "review_approved": False,
+                }
+            ),
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(result.execution["next_action"], "resolve_async_chunk_recursive_traversal_execution_blockers")
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
 
 
 class CustomLoaderModuleDiffManagerTests(unittest.TestCase):

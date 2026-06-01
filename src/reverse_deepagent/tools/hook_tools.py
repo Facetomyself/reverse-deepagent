@@ -45,6 +45,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         async_chunk_traversal_workflow_execution = _object_alias(payload, "async_chunk_traversal_workflow_execution", "async-chunk-traversal-workflow-execution", "asyncChunkTraversalWorkflowExecution")
         async_chunk_traversal_loop_plan = _object_alias(payload, "async_chunk_traversal_loop_plan", "async-chunk-traversal-loop-plan", "asyncChunkTraversalLoopPlan")
         async_chunk_traversal_loop_execution = _object_alias(payload, "async_chunk_traversal_loop_execution", "async-chunk-traversal-loop-execution", "asyncChunkTraversalLoopExecution")
+        async_chunk_recursive_traversal_plan = _object_alias(payload, "async_chunk_recursive_traversal_plan", "async-chunk-recursive-traversal-plan", "asyncChunkRecursiveTraversalPlan")
+        async_chunk_recursive_traversal_followup = _object_alias(payload, "async_chunk_recursive_traversal_followup", "async-chunk-recursive-traversal-followup", "asyncChunkRecursiveTraversalFollowup")
+        async_chunk_recursive_traversal_execution = _object_alias(payload, "async_chunk_recursive_traversal_execution", "async-chunk-recursive-traversal-execution", "asyncChunkRecursiveTraversalExecution")
         custom_loader_traversal_plan = _object_alias(
             payload,
             "custom_loader_traversal_plan",
@@ -192,6 +195,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_traversal_workflow_execution,
                 async_chunk_traversal_loop_plan,
                 async_chunk_traversal_loop_execution,
+                async_chunk_recursive_traversal_plan,
+                async_chunk_recursive_traversal_followup,
+                async_chunk_recursive_traversal_execution,
                 custom_loader_traversal_plan,
                 custom_loader_traversal_graph,
                 custom_loader_traversal_workflow_plan,
@@ -230,6 +236,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("async_chunk_traversal_loop_plan_blocked")
         if _status(async_chunk_traversal_loop_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_traversal_loop_execution_blocked")
+        if _status(async_chunk_recursive_traversal_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_recursive_traversal_plan_blocked")
+        if _status(async_chunk_recursive_traversal_followup) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_recursive_traversal_followup_blocked")
+        if _status(async_chunk_recursive_traversal_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_recursive_traversal_execution_blocked")
         if _status(custom_loader_traversal_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_traversal_plan_blocked")
         if _status(custom_loader_traversal_graph) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -265,6 +277,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         async_chunk_traversal_workflow_execution_status = _nested_status(async_chunk_traversal_workflow_execution, "execution")
         async_chunk_traversal_loop_plan_status = _nested_status(async_chunk_traversal_loop_plan, "loop_plan")
         async_chunk_traversal_loop_execution_status = _nested_status(async_chunk_traversal_loop_execution, "execution")
+        async_chunk_recursive_traversal_plan_status = _nested_status(async_chunk_recursive_traversal_plan, "recursive_plan")
+        async_chunk_recursive_traversal_followup_status = _nested_status(async_chunk_recursive_traversal_followup, "followup")
+        async_chunk_recursive_traversal_execution_status = _nested_status(async_chunk_recursive_traversal_execution, "execution")
         custom_loader_plan_status = _nested_status(custom_loader_traversal_plan, "plan")
         custom_loader_graph_status = _nested_status(custom_loader_traversal_graph, "graph")
         custom_loader_traversal_workflow_plan_status = _nested_status(custom_loader_traversal_workflow_plan, "workflow_plan")
@@ -420,6 +435,21 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             or async_chunk_traversal_loop_execution_status in {"ready_for_review", "async_chunk_load_planned"}
         ):
             warnings.append("async_chunk_traversal_loop_execution_requires_review")
+        if async_chunk_recursive_traversal_plan and (
+            _status(async_chunk_recursive_traversal_plan) in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review"}
+            or async_chunk_recursive_traversal_plan_status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review"}
+        ):
+            warnings.append("async_chunk_recursive_traversal_plan_requires_review")
+        if async_chunk_recursive_traversal_followup and (
+            _status(async_chunk_recursive_traversal_followup) in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"}
+            or async_chunk_recursive_traversal_followup_status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"}
+        ):
+            warnings.append("async_chunk_recursive_traversal_followup_requires_review")
+        if async_chunk_recursive_traversal_execution and (
+            _status(async_chunk_recursive_traversal_execution) in {"ready_for_review", "next_loop_execution_progressed", "next_loop_module_diff_ready", "next_loop_module_hook_recorded"}
+            or async_chunk_recursive_traversal_execution_status in {"ready_for_review", "next_loop_execution_progressed", "next_loop_module_diff_ready", "next_loop_module_hook_recorded"}
+        ):
+            warnings.append("async_chunk_recursive_traversal_execution_requires_review")
         if missing_count:
             warnings.append("hook_targets_missing")
         if installed_function_count + installed_module_count + source_logpoint_count > 0 and timeline_event_count == 0:
@@ -463,6 +493,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "async_chunk_traversal_loop_execution_status": _status(async_chunk_traversal_loop_execution) or async_chunk_traversal_loop_execution_status,
                 "async_chunk_traversal_loop_execution_stage_count": len(_listish(_nested_get(async_chunk_traversal_loop_execution, "execution", "stages") or async_chunk_traversal_loop_execution.get("stages"))),
                 "async_chunk_traversal_loop_execution_next_action": _nested_get(async_chunk_traversal_loop_execution, "execution", "next_action") or async_chunk_traversal_loop_execution.get("next_action"),
+                "async_chunk_recursive_traversal_plan_status": _status(async_chunk_recursive_traversal_plan) or async_chunk_recursive_traversal_plan_status,
+                "async_chunk_recursive_traversal_plan_next_action": _nested_get(async_chunk_recursive_traversal_plan, "recursive_plan", "next_action") or async_chunk_recursive_traversal_plan.get("next_action"),
+                "async_chunk_recursive_traversal_followup_status": _status(async_chunk_recursive_traversal_followup) or async_chunk_recursive_traversal_followup_status,
+                "async_chunk_recursive_traversal_followup_stage_count": len(_listish(_nested_get(async_chunk_recursive_traversal_followup, "followup", "stages") or async_chunk_recursive_traversal_followup.get("stages"))),
+                "async_chunk_recursive_traversal_followup_next_action": _nested_get(async_chunk_recursive_traversal_followup, "followup", "next_action") or async_chunk_recursive_traversal_followup.get("next_action"),
+                "async_chunk_recursive_traversal_execution_status": _status(async_chunk_recursive_traversal_execution) or async_chunk_recursive_traversal_execution_status,
+                "async_chunk_recursive_traversal_execution_stage_count": len(_listish(_nested_get(async_chunk_recursive_traversal_execution, "execution", "stages") or async_chunk_recursive_traversal_execution.get("stages"))),
+                "async_chunk_recursive_traversal_execution_next_action": _nested_get(async_chunk_recursive_traversal_execution, "execution", "next_action") or async_chunk_recursive_traversal_execution.get("next_action"),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or custom_loader_plan_status,
                 "custom_loader_traversal_graph_status": _status(custom_loader_traversal_graph) or custom_loader_graph_status,
                 "custom_loader_traversal_graph_queue_count": _intish(custom_loader_traversal_graph.get("queue_count") or _nested_get(custom_loader_traversal_graph, "graph", "queue_count")),
@@ -555,6 +593,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_traversal_workflow_execution,
                 async_chunk_traversal_loop_plan,
                 async_chunk_traversal_loop_execution,
+                async_chunk_recursive_traversal_plan,
+                async_chunk_recursive_traversal_followup,
+                async_chunk_recursive_traversal_execution,
                 custom_loader_traversal_plan,
                 custom_loader_traversal_graph,
                 custom_loader_traversal_workflow_plan,
@@ -735,6 +776,12 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "revise_custom_loader_traversal_loop_inputs"
     if "async_chunk_traversal_loop_execution_blocked" in blockers:
         return "resolve_async_chunk_traversal_loop_execution_blockers"
+    if "async_chunk_recursive_traversal_followup_blocked" in blockers:
+        return "resolve_async_chunk_recursive_traversal_followup_blockers"
+    if "async_chunk_recursive_traversal_execution_blocked" in blockers:
+        return "resolve_async_chunk_recursive_traversal_execution_blockers"
+    if "async_chunk_recursive_traversal_plan_blocked" in blockers:
+        return "resolve_async_chunk_recursive_traversal_blockers"
     if "async_chunk_traversal_loop_plan_blocked" in blockers:
         return "revise_async_chunk_traversal_loop_inputs"
     if "custom_loader_traversal_workflow_execution_blocked" in blockers:
@@ -799,6 +846,12 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_async_chunk_traversal_workflow_execution_plan"
     if "async_chunk_traversal_loop_execution_requires_review" in warnings:
         return "review_async_chunk_traversal_loop_execution_plan"
+    if "async_chunk_recursive_traversal_followup_requires_review" in warnings:
+        return "review_async_chunk_recursive_traversal_followup"
+    if "async_chunk_recursive_traversal_execution_requires_review" in warnings:
+        return "review_async_chunk_recursive_traversal_execution"
+    if "async_chunk_recursive_traversal_plan_requires_review" in warnings:
+        return "review_async_chunk_recursive_traversal_plan"
     if "async_chunk_traversal_loop_plan_requires_review" in warnings:
         return "review_async_chunk_traversal_loop_plan"
     if "async_chunk_traversal_workflow_plan_requires_review" in warnings:
@@ -852,6 +905,9 @@ def _review_required_items(
     async_chunk_traversal_workflow_execution: dict[str, Any],
     async_chunk_traversal_loop_plan: dict[str, Any],
     async_chunk_traversal_loop_execution: dict[str, Any],
+    async_chunk_recursive_traversal_plan: dict[str, Any],
+    async_chunk_recursive_traversal_followup: dict[str, Any],
+    async_chunk_recursive_traversal_execution: dict[str, Any],
     custom_loader_traversal_plan: dict[str, Any],
     custom_loader_traversal_graph: dict[str, Any],
     custom_loader_traversal_workflow_plan: dict[str, Any],
@@ -887,6 +943,9 @@ def _review_required_items(
                 "async_chunk_traversal_workflow_execution_status": _status(async_chunk_traversal_workflow_execution) or _nested_status(async_chunk_traversal_workflow_execution, "execution"),
                 "async_chunk_traversal_loop_plan_status": _status(async_chunk_traversal_loop_plan) or _nested_status(async_chunk_traversal_loop_plan, "loop_plan"),
                 "async_chunk_traversal_loop_execution_status": _status(async_chunk_traversal_loop_execution) or _nested_status(async_chunk_traversal_loop_execution, "execution"),
+                "async_chunk_recursive_traversal_plan_status": _status(async_chunk_recursive_traversal_plan) or _nested_status(async_chunk_recursive_traversal_plan, "recursive_plan"),
+                "async_chunk_recursive_traversal_followup_status": _status(async_chunk_recursive_traversal_followup) or _nested_status(async_chunk_recursive_traversal_followup, "followup"),
+                "async_chunk_recursive_traversal_execution_status": _status(async_chunk_recursive_traversal_execution) or _nested_status(async_chunk_recursive_traversal_execution, "execution"),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or _nested_status(custom_loader_traversal_plan, "plan"),
                 "custom_loader_traversal_graph_status": _status(custom_loader_traversal_graph) or _nested_status(custom_loader_traversal_graph, "graph"),
                 "custom_loader_traversal_workflow_plan_status": _status(custom_loader_traversal_workflow_plan) or _nested_status(custom_loader_traversal_workflow_plan, "workflow_plan"),
@@ -913,6 +972,9 @@ def _review_required_items(
                 "async_chunk_traversal_workflow_execution_error": str(async_chunk_traversal_workflow_execution.get("error") or ""),
                 "async_chunk_traversal_loop_plan_error": str(async_chunk_traversal_loop_plan.get("error") or ""),
                 "async_chunk_traversal_loop_execution_error": str(async_chunk_traversal_loop_execution.get("error") or ""),
+                "async_chunk_recursive_traversal_plan_error": str(async_chunk_recursive_traversal_plan.get("error") or ""),
+                "async_chunk_recursive_traversal_followup_error": str(async_chunk_recursive_traversal_followup.get("error") or ""),
+                "async_chunk_recursive_traversal_execution_error": str(async_chunk_recursive_traversal_execution.get("error") or ""),
                 "custom_loader_traversal_error": str(custom_loader_traversal_plan.get("error") or ""),
                 "custom_loader_traversal_graph_error": str(custom_loader_traversal_graph.get("error") or ""),
                 "custom_loader_traversal_workflow_plan_error": str(custom_loader_traversal_workflow_plan.get("error") or ""),
