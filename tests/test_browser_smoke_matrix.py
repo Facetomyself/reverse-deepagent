@@ -11,6 +11,7 @@ from reverse_deepagent.browser.smoke import (
     browser_provider_smoke_matrix_payload,
     browser_provider_smoke_row,
     legacy_browser_provider_payload_from_smoke_row,
+    list_browser_provider_production_readiness_rules,
     validate_browser_provider_capability_compatibility,
 )
 
@@ -109,8 +110,6 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
             self.assertEqual(lifecycle["availability_checked"], "not_checked")
             self.assertEqual(lifecycle["session_start_requested"], "skipped")
 
-
-
     def test_compatibility_rule_catalog_is_serializable_and_extensible(self) -> None:
         rules = list_browser_provider_compatibility_rules()
         rule_ids = {rule["rule_id"] for rule in rules}
@@ -124,6 +123,43 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
             self.assertIn("message", rule)
             self.assertIsInstance(rule["when_all"], list)
             self.assertIsInstance(rule["requires_any"], list)
+
+
+    def test_production_readiness_rule_catalog_is_serializable_and_provider_specific(self) -> None:
+        rules = list_browser_provider_production_readiness_rules()
+        rule_ids = {rule["rule_id"] for rule in rules}
+        self.assertIn("hosted_cdp_reference_lifecycle_declared", rule_ids)
+        hosted_rule = next(rule for rule in rules if rule["rule_id"] == "hosted_cdp_reference_lifecycle_declared")
+        self.assertEqual(hosted_rule["severity"], "warning")
+        self.assertEqual(hosted_rule["provider_ids"], ["hosted-cdp-reference"])
+        self.assertIn("supports_launch", hosted_rule["requires_all"])
+        self.assertEqual(hosted_rule["metadata_equals"]["session_recovery"], "session-id-reattach-or-endpoint-connect")
+
+    def test_provider_specific_readiness_rule_warns_on_drift(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="hosted-cdp-reference",
+                display_name="Hosted CDP Reference",
+                transport="hosted-cdp-reference",
+                supports_launch=True,
+                supports_connect=True,
+                supports_cdp=True,
+                managed_browser=False,
+                production_readiness={
+                    "readiness_tier": "review-required",
+                    "health_check_mode": "explicit-endpoint-probe-after-vendor-session-allocation",
+                    "profile_lifecycle": "external-service-session-owned",
+                    "session_recovery": "connect-existing-endpoint",
+                    "intended_use": "reference-implementation-for-hosted-cdp-provider-packages",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["status"], "review-required")
+        self.assertIn("provider_specific:hosted_cdp_reference_lifecycle_declared", readiness["warnings"])
+        checks = {item["check_id"]: item for item in readiness["checks"]}
+        self.assertEqual(checks["provider_specific:hosted_cdp_reference_lifecycle_declared"]["status"], "warn")
 
     def test_registration_metadata_matrix_does_not_call_provider_factory(self) -> None:
         metadata = [
@@ -145,7 +181,9 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["compatibility_rule_version"], BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION)
         self.assertIn("compatibility_rules", payload)
+        self.assertIn("production_readiness_rules", payload)
         self.assertGreater(len(payload["compatibility_rules"]), 5)
+        self.assertGreaterEqual(len(payload["production_readiness_rules"]), 1)
         self.assertEqual(payload["summary"]["provider_count"], 1)
         self.assertEqual(payload["summary"]["compatibility"]["compatible_count"], 1)
         self.assertEqual(payload["production_readiness_version"], BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION)

@@ -1054,3 +1054,15 @@ The reference provider models a production-shaped lifecycle: `start()` performs 
 Boundary: this is a reference implementation, not a real vendor integration. It does not manage accounts, provision proxies, validate geoip, own hosted browser infrastructure, ship anti-detect behavior, make metadata listing allocate sessions, make runtime smoke implicit, call MCP, or touch Android / iOS / mini-program full runtime chains. Real third-party BrowserProvider packages and provider-specific readiness rules remain follow-up work.
 
 Tests cover the package entry point, dependency declaration, side-effect-free registration metadata, production readiness classification, delayed factory invocation, unavailable-without-endpoint guidance, URL / session metadata redaction, explicit endpoint attach without ownership, in-memory reference allocation / idempotent release, and launch smoke through `browser_provider_smoke_row(...)` against the fake CDP server.
+
+### Step 117 execution record: Provider-specific BrowserProvider readiness rule scaffold
+
+Status: implemented as metadata-only provider-specific production readiness rule infrastructure, not a runtime smoke, vendor SDK integration, endpoint probe, or coordinator-level provider special case.
+
+`reverse_deepagent.browser.smoke` now exposes `BrowserProviderProductionReadinessRule` and `list_browser_provider_production_readiness_rules()`. BrowserProvider metadata matrices include `production_readiness_rules` alongside the existing compatibility rule catalog, and `browser_provider_production_readiness(...)` folds matching provider-specific rules into its read-only `checks`, `warnings`, score, and status. The evaluator still consumes only serialized capability metadata: it does not call provider factories, import optional SDKs, allocate hosted sessions, check availability, probe CDP endpoints, launch browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+The first provider-specific readiness rule covers `hosted-cdp-reference`: it verifies that the reference provider keeps launch / connect / CDP / managed-browser lifecycle metadata and the reviewed allocation / attach / release readiness fields aligned with the external package contract. Drift is reported as a review-required warning instead of blocking metadata inventory, so real vendor packages can add their own rules later without leaking provider-specific behavior into the coordinator.
+
+Boundary: this is a scaffold and one reference lifecycle rule. It does not implement real third-party vendor readiness rules, proxy / geoip validation, anti-detect behavior verification, hosted account allocation, runtime smoke automation, or broader BrowserProvider certification. Additional provider-specific compatibility / readiness rules remain follow-up work when real provider packages introduce new capability flags or lifecycle policies.
+
+Tests cover production readiness rule catalog serialization, metadata matrix rule export, hosted-CDP reference rule pass behavior, provider-specific drift warning behavior, and existing BrowserProvider matrix / plugin regressions.

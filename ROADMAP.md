@@ -24,6 +24,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - CloakBrowser optional provider skeleton, launch / persistent-context / connect baseline, and manual smoke path.
 - Browser provider doctor mode and side-effect-free provider matrix.
 - BrowserProvider production readiness metadata baseline that classifies provider rows as `production-ready`, `review-required`, or `metadata-incomplete` without invoking provider factories, probing CDP, launching browsers, or calling MCP.
+- Provider-specific production readiness rule catalog scaffold, currently covering the hosted-CDP reference lifecycle metadata contract without invoking provider factories or probing endpoints.
 - Extensible BrowserProvider capability compatibility rule catalog for CDP/debugger/network/lifecycle plus proxy, humanize, mobile emulation, and extension capability checks.
 - Functional external BrowserProvider fixture plugin package that proves entry-point discovery, metadata-only listing, delayed factory creation, and launch/connect smoke outside core runtime.
 - Hosted CDP BrowserProvider template package that gives vendor anti-detect browsers, hosted browser services, and enterprise CDP brokers a provider-neutral external package seam with metadata-only registration and explicit Remote CDP contract smoke.
@@ -93,7 +94,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 ### Browser / CDP / hook depth
 
 - Real third-party BrowserProvider plugins beyond the functional fixture, hosted-CDP template, and hosted-CDP reference packages, such as concrete vendor anti-detect browsers or hosted browser services; new providers should preserve the reference allocation / attach / release lifecycle and fill the production readiness metadata contract before runtime smoke is accepted.
-- Provider-specific compatibility / readiness rule additions when real third-party provider plugins introduce new capability flags or lifecycle policies.
+- Additional provider-specific compatibility / readiness rules when real third-party provider plugins introduce new capability flags or lifecycle policies.
 - Cross-process live CDP paused execution continuation.
 - Arbitrary custom loader traversal and async chunk graph analysis.
 - Execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.

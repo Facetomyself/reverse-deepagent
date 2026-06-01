@@ -8,7 +8,7 @@ from reverse_deepagent.browser.base import BrowserProvider
 
 BROWSER_SMOKE_MATRIX_VERSION = "2026-05-31.lifecycle-baseline"
 BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION = "2026-05-31.metadata-compatibility-v1"
-BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-01.production-readiness-v1"
+BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-01.production-readiness-v2"
 DEFAULT_BROWSER_PROVIDER_MATRIX: tuple[str, ...] = (
     "playwright-chromium",
     "cloakbrowser",
@@ -82,6 +82,66 @@ class BrowserProviderCompatibilityRule:
             "requires_all": list(self.requires_all),
             "requires_any": list(self.requires_any),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserProviderProductionReadinessRule:
+    """One metadata-only provider-specific production readiness rule."""
+
+    rule_id: str
+    severity: str
+    message: str
+    provider_ids: tuple[str, ...] = field(default_factory=tuple)
+    transports: tuple[str, ...] = field(default_factory=tuple)
+    requires_all: tuple[str, ...] = field(default_factory=tuple)
+    metadata_equals: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+
+    def applies_to(self, capabilities: dict[str, Any]) -> bool:
+        provider_id = str(capabilities.get("provider_id") or "")
+        transport = str(capabilities.get("transport") or "")
+        if self.provider_ids and provider_id not in self.provider_ids:
+            return False
+        if self.transports and transport not in self.transports:
+            return False
+        return True
+
+    def satisfied_by(self, capabilities: dict[str, Any], profile: dict[str, Any]) -> bool:
+        if self.requires_all and not all(_capability_enabled(capabilities, key) for key in self.requires_all):
+            return False
+        for key, expected_value in self.metadata_equals:
+            if str(profile.get(key) or "") != expected_value:
+                return False
+        return True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rule_id": self.rule_id,
+            "severity": self.severity,
+            "message": self.message,
+            "provider_ids": list(self.provider_ids),
+            "transports": list(self.transports),
+            "requires_all": list(self.requires_all),
+            "metadata_equals": {key: value for key, value in self.metadata_equals},
+        }
+
+
+BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionReadinessRule, ...] = (
+    BrowserProviderProductionReadinessRule(
+        rule_id="hosted_cdp_reference_lifecycle_declared",
+        severity="warning",
+        provider_ids=("hosted-cdp-reference",),
+        requires_all=("supports_launch", "supports_connect", "supports_cdp", "managed_browser"),
+        metadata_equals=(
+            ("readiness_tier", "review-required"),
+            ("health_check_mode", "explicit-reference-allocation-and-cdp-contract-smoke"),
+            ("session_recovery", "session-id-reattach-or-endpoint-connect"),
+        ),
+        message=(
+            "hosted-cdp-reference should declare launch/connect/CDP lifecycle support and the reviewed "
+            "allocation/attach/release readiness metadata used by production provider packages"
+        ),
+    ),
+)
 
 
 BROWSER_PROVIDER_COMPATIBILITY_RULES: tuple[BrowserProviderCompatibilityRule, ...] = (
@@ -215,6 +275,7 @@ def browser_provider_metadata_matrix_payload(
         "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
         "production_readiness_version": BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
         "compatibility_rules": list_browser_provider_compatibility_rules(),
+        "production_readiness_rules": list_browser_provider_production_readiness_rules(),
         "providers": rows,
         "summary": _matrix_summary(rows),
     }
@@ -292,6 +353,7 @@ def browser_provider_smoke_matrix_payload(
         "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
         "production_readiness_version": BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
         "compatibility_rules": list_browser_provider_compatibility_rules(),
+        "production_readiness_rules": list_browser_provider_production_readiness_rules(),
         "providers": rows,
         "summary": _matrix_summary(rows),
     }
@@ -465,6 +527,12 @@ def list_browser_provider_compatibility_rules() -> list[dict[str, Any]]:
     return [rule.to_dict() for rule in BROWSER_PROVIDER_COMPATIBILITY_RULES]
 
 
+def list_browser_provider_production_readiness_rules() -> list[dict[str, Any]]:
+    """Return metadata-only provider-specific production readiness rule catalog."""
+
+    return [rule.to_dict() for rule in BROWSER_PROVIDER_PRODUCTION_READINESS_RULES]
+
+
 def browser_provider_production_readiness(capabilities: dict[str, Any]) -> dict[str, Any]:
     """Evaluate provider production-readiness metadata without side effects.
 
@@ -571,6 +639,10 @@ def browser_provider_production_readiness(capabilities: dict[str, Any]) -> dict[
     else:
         add_check("readiness_tier", "missing", "readiness_tier is not declared", required_key="readiness_tier")
 
+    provider_specific_rules = _evaluate_provider_specific_readiness_rules(capabilities, profile)
+    for rule_result in provider_specific_rules:
+        add_check(rule_result["check_id"], rule_result["status"], rule_result["message"])
+
     unique_missing = sorted(set(missing_metadata))
     unique_warnings = sorted(set(warnings))
     pass_count = sum(1 for item in checks if item["status"] == "pass")
@@ -601,6 +673,25 @@ def browser_provider_production_readiness(capabilities: dict[str, Any]) -> dict[
             "calls_mcp": False,
         },
     }
+
+
+def _evaluate_provider_specific_readiness_rules(capabilities: dict[str, Any], profile: dict[str, Any]) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for rule in BROWSER_PROVIDER_PRODUCTION_READINESS_RULES:
+        if not rule.applies_to(capabilities):
+            continue
+        passed = rule.satisfied_by(capabilities, profile)
+        status = "pass" if passed else "missing" if rule.severity == "error" else "warn"
+        results.append(
+            {
+                "check_id": f"provider_specific:{rule.rule_id}",
+                "status": status,
+                "message": rule.message if not passed else f"{rule.rule_id} provider-specific readiness rule passed",
+                "rule_id": rule.rule_id,
+                "severity": rule.severity,
+            }
+        )
+    return results
 
 
 def validate_browser_provider_capability_compatibility(capabilities: dict[str, Any]) -> dict[str, Any]:

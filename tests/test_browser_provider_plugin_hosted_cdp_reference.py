@@ -76,6 +76,9 @@ class BrowserProviderPluginHostedCDPReferenceTests(unittest.TestCase):
         self.assertEqual(metadata[0]["production_readiness"]["readiness_tier"], "review-required")
         self.assertTrue(matrix["ok"])
         self.assertEqual(matrix["providers"][0]["production_readiness"]["status"], "review-required")
+        self.assertIn("production_readiness_rules", matrix)
+        checks = {item["check_id"]: item for item in matrix["providers"][0]["production_readiness"]["checks"]}
+        self.assertEqual(checks["provider_specific:hosted_cdp_reference_lifecycle_declared"]["status"], "pass")
         self.assertEqual(matrix["summary"]["production_readiness"]["review_required_count"], 1)
         summary = provider.describe().config
         self.assertEqual(summary["service_base_url"], "https://broker.example.test/api?query=%3Credacted%3E")
