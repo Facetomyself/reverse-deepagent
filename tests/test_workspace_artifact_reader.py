@@ -352,6 +352,58 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertTrue(result["side_effect_policy"]["read_only"])
             self.assertFalse(result["side_effect_policy"]["artifacts_written"])
 
+    def test_workspace_dual_write_pilot_result_ignores_scoped_legacy_only_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan = plan_workspace_dual_write_pilot_payload(
+                default_artifact_root=root,
+                artifact_keys_json=json.dumps(["workspace_task_card"]),
+            )
+            legacy_task = root / "workspace" / "task-card.json"
+            future_task = root / "workspace" / "recon" / "task-card.json"
+            legacy_route = root / "workspace" / "route-decision.json"
+            legacy_task.parent.mkdir(parents=True)
+            future_task.parent.mkdir(parents=True)
+            legacy_task.write_text('{"task": "demo"}\n', encoding="utf-8")
+            future_task.write_text('{"task": "demo"}\n', encoding="utf-8")
+            legacy_route.write_text('{"route": "legacy-only"}\n', encoding="utf-8")
+            observed = {
+                "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
+                "status": "applied",
+                "mode": "scoped-opt-in-dual-write",
+                "dual_write_scope_enabled": True,
+                "dual_write_scope_artifact_keys": ["workspace_task_card"],
+                "records": [
+                    {
+                        "artifact_key": "workspace_task_card",
+                        "canonical_path": "workspace/task-card.json",
+                        "future_path": "/workspace/recon/task-card.json",
+                        "write_paths": [str(legacy_task), str(future_task)],
+                        "dual_write_enabled": True,
+                    },
+                    {
+                        "artifact_key": "workspace_route",
+                        "canonical_path": "workspace/route-decision.json",
+                        "future_path": "/workspace/recon/route-decision.json",
+                        "write_paths": [str(legacy_route)],
+                        "dual_write_enabled": False,
+                        "dual_write_scope_enabled": True,
+                        "dual_write_in_scope": False,
+                    },
+                ],
+            }
+
+            result = record_workspace_dual_write_pilot_result_payload(
+                default_artifact_root=root,
+                pilot_plan_json=json.dumps(plan),
+                workspace_dual_write_plan_json=json.dumps(observed),
+            )
+
+            self.assertEqual(result["status"], "verified")
+            self.assertEqual(result["summary"]["out_of_scope_observed_count"], 0)
+            self.assertEqual(result["out_of_scope_observed_artifacts"], [])
+            self.assertNotIn("observed_dual_write_records_outside_pilot_plan", result["warnings"])
+
     def test_workspace_dual_write_pilot_result_can_write_audit_artifact_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "artifacts"

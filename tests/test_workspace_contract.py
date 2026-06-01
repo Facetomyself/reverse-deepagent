@@ -239,6 +239,41 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(missing["status"], "unknown-artifact")
         self.assertEqual(missing["write_paths"], ())
 
+    def test_workspace_path_resolver_can_scope_dual_write_to_selected_artifacts(self) -> None:
+        resolver = WorkspacePathResolver(
+            enable_dual_write=True,
+            dual_write_artifact_keys={"workspace_task_card"},
+        )
+
+        in_scope = resolver.resolve_artifact_key("workspace_task_card")
+        out_of_scope = resolver.resolve_artifact_key("workspace_route")
+
+        self.assertIsNotNone(in_scope)
+        self.assertIsNotNone(out_of_scope)
+        assert in_scope is not None
+        assert out_of_scope is not None
+        self.assertTrue(in_scope.dual_write_enabled)
+        self.assertTrue(in_scope.dual_write_scope_enabled)
+        self.assertTrue(in_scope.dual_write_in_scope)
+        self.assertEqual(in_scope.write_paths, ("workspace/task-card.json", "/workspace/recon/task-card.json"))
+        self.assertEqual(in_scope.migration_status, "scoped-dual-write-plan-only")
+        self.assertFalse(out_of_scope.dual_write_enabled)
+        self.assertTrue(out_of_scope.dual_write_scope_enabled)
+        self.assertFalse(out_of_scope.dual_write_in_scope)
+        self.assertEqual(out_of_scope.write_paths, ("workspace/route-decision.json",))
+        self.assertEqual(out_of_scope.migration_status, "dual-write-out-of-scope")
+
+        in_scope_plan = resolver.plan_dual_write("workspace_task_card")
+        out_of_scope_plan = resolver.plan_dual_write("workspace_route")
+        self.assertEqual(in_scope_plan["status"], "planned")
+        self.assertTrue(in_scope_plan["dual_write_enabled"])
+        self.assertTrue(in_scope_plan["dual_write_scope_enabled"])
+        self.assertTrue(in_scope_plan["dual_write_in_scope"])
+        self.assertEqual(out_of_scope_plan["status"], "out-of-scope")
+        self.assertFalse(out_of_scope_plan["dual_write_enabled"])
+        self.assertTrue(out_of_scope_plan["dual_write_scope_enabled"])
+        self.assertFalse(out_of_scope_plan["dual_write_in_scope"])
+
     def test_web_pipeline_writes_workspace_contract_and_manifest_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output = run_reverse_pipeline(
@@ -318,6 +353,49 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertIn("workspace_dual_write_plan", manifest_by_key)
             alias = manifest_by_key["workspace_dual_write_plan"]["metadata"]["workspace_alias"]
             self.assertEqual(alias["future_path"], "/workspace/delivery/workspace-dual-write-plan.json")
+
+    def test_web_pipeline_can_scope_workspace_dual_write_to_selected_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "artifacts"
+            output = run_reverse_pipeline(
+                task_text="https://example.com/search 找 sign 入口，并给出下一步建议",
+                artifact_root=root,
+                runtime_kind="mock",
+                enable_workspace_dual_write=True,
+                workspace_dual_write_artifact_keys={"workspace_task_card"},
+            )
+
+            legacy_task = root / "workspace" / "task-card.json"
+            future_task = root / "workspace" / "recon" / "task-card.json"
+            legacy_route = root / "workspace" / "route-decision.json"
+            future_route = root / "workspace" / "recon" / "route-decision.json"
+            future_manifest = root / "workspace" / "delivery" / "backend-artifact-manifest.json"
+            dual_write_plan_path = root / "workspace" / "workspace-dual-write-plan.json"
+
+            self.assertEqual(output.artifacts["workspace_task_card"], str(legacy_task))
+            self.assertTrue(legacy_task.exists())
+            self.assertTrue(future_task.exists())
+            self.assertTrue(legacy_route.exists())
+            self.assertFalse(future_route.exists())
+            self.assertFalse(future_manifest.exists())
+            self.assertTrue(dual_write_plan_path.exists())
+
+            plan = json.loads(dual_write_plan_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["status"], "applied")
+            self.assertEqual(plan["mode"], "scoped-opt-in-dual-write")
+            self.assertTrue(plan["dual_write_scope_enabled"])
+            self.assertEqual(plan["dual_write_scope_artifact_keys"], ["workspace_task_card"])
+            self.assertEqual(plan["dual_written_count"], 1)
+            self.assertGreater(plan["out_of_scope_record_count"], 1)
+            records = {record["artifact_key"]: record for record in plan["records"]}
+            self.assertEqual(records["workspace_task_card"]["write_paths"], [str(legacy_task), str(future_task)])
+            self.assertTrue(records["workspace_task_card"]["dual_write_enabled"])
+            self.assertTrue(records["workspace_task_card"]["dual_write_in_scope"])
+            self.assertEqual(records["workspace_task_card"]["migration_status"], "scoped-dual-write-plan-only")
+            self.assertEqual(records["workspace_route"]["write_paths"], [str(legacy_route)])
+            self.assertFalse(records["workspace_route"]["dual_write_enabled"])
+            self.assertFalse(records["workspace_route"]["dual_write_in_scope"])
+            self.assertEqual(records["workspace_route"]["migration_status"], "dual-write-out-of-scope")
 
     def test_platform_pipeline_writes_workspace_contract_and_manifest_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

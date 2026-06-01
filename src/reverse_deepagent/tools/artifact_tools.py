@@ -583,7 +583,7 @@ def record_workspace_dual_write_pilot_result_payload(
     routes_by_key = {route.artifact_key: route for route in default_workspace_artifact_routes()}
     for record in observed_records:
         key = str(record.get("artifact_key") or "")
-        if not key or key == "workspace_dual_write_pilot_result":
+        if not key or key == "workspace_dual_write_pilot_result" or not record.get("dual_write_enabled"):
             continue
         route = routes_by_key.get(key)
         risk = _dual_write_route_risk(route) if route is not None else {"risk_level": "unknown", "rationale": "observed artifact is not registered", "category": "unknown", "producer_roles": []}
@@ -592,6 +592,7 @@ def record_workspace_dual_write_pilot_result_payload(
             "legacy_path": record.get("canonical_path") or record.get("legacy_path") or "",
             "future_path": record.get("future_path") or "",
             "write_paths": list(record.get("write_paths") or []),
+            "dual_write_enabled": bool(record.get("dual_write_enabled")),
             "risk": risk,
         }
         if key not in planned_keys:

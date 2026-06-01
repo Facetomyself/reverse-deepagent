@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
@@ -774,6 +775,7 @@ def write_outputs(
     export_bundle: dict[str, Any],
     runtime_capabilities: RuntimeBackendCapabilities | None = None,
     enable_workspace_dual_write: bool = False,
+    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
 ) -> dict[str, str]:
     """Persist the standard workspace/report/export artifact set."""
 
@@ -784,7 +786,10 @@ def write_outputs(
     reports_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write)
+    workspace_resolver = WorkspacePathResolver(
+        enable_dual_write=enable_workspace_dual_write,
+        dual_write_artifact_keys=workspace_dual_write_artifact_keys,
+    )
     workspace_write_records: list[dict[str, Any]] = []
     report_json_path = reports_dir / "demo-final-result.json"
     report_md_path = reports_dir / "demo-final-report.md"
@@ -855,7 +860,10 @@ def write_outputs(
         "rebuild_result": rebuild_result.model_dump(mode="json"),
     }
     if enable_workspace_dual_write:
-        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
+        dual_write_plan = _workspace_dual_write_plan_payload(
+            workspace_write_records,
+            dual_write_artifact_keys=workspace_dual_write_artifact_keys,
+        )
         dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
         artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
         artifact_index["workspace_dual_write"] = dual_write_plan
@@ -1113,6 +1121,7 @@ def run_platform_pipeline(
     runtime_kind: str = "android-adb",
     runtime: ReverseRuntime | None = None,
     enable_workspace_dual_write: bool = False,
+    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
     **runtime_kwargs: Any,
 ) -> PlatformPipelineOutput:
     """Run a platform-neutral runtime pipeline without assuming browser/Web recon semantics.
@@ -1138,6 +1147,7 @@ def run_platform_pipeline(
         capabilities,
         export_bundle,
         enable_workspace_dual_write=enable_workspace_dual_write,
+        workspace_dual_write_artifact_keys=workspace_dual_write_artifact_keys,
     )
     return PlatformPipelineOutput(
         final_result=final_result,
@@ -1155,6 +1165,7 @@ def write_platform_outputs(
     runtime_capabilities: RuntimeBackendCapabilities,
     export_bundle: RuntimeExportBundle,
     enable_workspace_dual_write: bool = False,
+    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
 ) -> dict[str, str]:
     """Persist the platform-neutral workspace/report/export artifact set."""
 
@@ -1165,7 +1176,10 @@ def write_platform_outputs(
     reports_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write)
+    workspace_resolver = WorkspacePathResolver(
+        enable_dual_write=enable_workspace_dual_write,
+        dual_write_artifact_keys=workspace_dual_write_artifact_keys,
+    )
     workspace_write_records: list[dict[str, Any]] = []
     report_json_path = reports_dir / "platform-pipeline-result.json"
     report_md_path = reports_dir / "platform-pipeline-report.md"
@@ -1229,7 +1243,10 @@ def write_platform_outputs(
         "backend_artifact_manifest": str(manifest_path),
     }
     if enable_workspace_dual_write:
-        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
+        dual_write_plan = _workspace_dual_write_plan_payload(
+            workspace_write_records,
+            dual_write_artifact_keys=workspace_dual_write_artifact_keys,
+        )
         dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
         artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
         artifact_index["workspace_dual_write"] = dual_write_plan
@@ -1376,6 +1393,7 @@ def run_reverse_pipeline(
     mcp_command: str | None = None,
     runtime: WebReverseRuntime | None = None,
     enable_workspace_dual_write: bool = False,
+    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
     **runtime_kwargs: Any,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
@@ -1433,6 +1451,7 @@ def run_reverse_pipeline(
         export_bundle,
         runtime_capabilities=runtime_capabilities,
         enable_workspace_dual_write=enable_workspace_dual_write,
+        workspace_dual_write_artifact_keys=workspace_dual_write_artifact_keys,
     )
     return ReversePipelineOutput(
         final_result=final_result,
@@ -1478,6 +1497,8 @@ def _write_workspace_json(
             "virtual_uri": resolution.virtual_uri,
             "write_paths": written_paths,
             "dual_write_enabled": resolution.dual_write_enabled,
+            "dual_write_scope_enabled": resolution.dual_write_scope_enabled,
+            "dual_write_in_scope": resolution.dual_write_in_scope,
             "physical_migration_enabled": resolution.physical_migration_enabled,
             "canonical_path_remains_authoritative": resolution.canonical_path_remains_authoritative,
             "migration_status": resolution.migration_status,
@@ -1496,16 +1517,30 @@ def _workspace_filesystem_path(base_dir: Path, workspace_path: str) -> Path:
     return base_dir / "workspace" / workspace_path
 
 
-def _workspace_dual_write_plan_payload(write_records: list[dict[str, Any]]) -> dict[str, Any]:
+def _workspace_dual_write_plan_payload(
+    write_records: list[dict[str, Any]],
+    *,
+    dual_write_artifact_keys: Iterable[str] | None = None,
+) -> dict[str, Any]:
     dual_written = [record for record in write_records if record.get("dual_write_enabled")]
+    scoped = dual_write_artifact_keys is not None
+    scope_keys = sorted(str(key) for key in dual_write_artifact_keys or [] if str(key))
+    out_of_scope = [
+        record
+        for record in write_records
+        if scoped and record.get("artifact_key") not in set(scope_keys)
+    ]
     return {
         "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
         "status": "applied" if dual_written else "not-enabled",
-        "mode": "opt-in-dual-write",
+        "mode": "scoped-opt-in-dual-write" if scoped else "opt-in-dual-write",
         "canonical_path_remains_authoritative": True,
         "physical_migration_enabled": False,
+        "dual_write_scope_enabled": scoped,
+        "dual_write_scope_artifact_keys": scope_keys,
         "record_count": len(write_records),
         "dual_written_count": len(dual_written),
+        "out_of_scope_record_count": len(out_of_scope),
         "records": write_records,
     }
 

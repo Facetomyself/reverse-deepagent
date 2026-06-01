@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from collections.abc import Iterable
 from typing import Any
 
 
@@ -80,6 +81,8 @@ class WorkspacePathResolution:
     virtual_folder: str
     category: str
     producer_roles: tuple[str, ...]
+    dual_write_scope_enabled: bool = False
+    dual_write_in_scope: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -428,9 +431,15 @@ class WorkspacePathResolver:
         *,
         enable_dual_write: bool = False,
         physical_migration_enabled: bool = False,
+        dual_write_artifact_keys: Iterable[str] | None = None,
     ) -> None:
         self.enable_dual_write = enable_dual_write
         self.physical_migration_enabled = physical_migration_enabled
+        self.dual_write_artifact_keys = (
+            None
+            if dual_write_artifact_keys is None
+            else frozenset(str(key) for key in dual_write_artifact_keys if str(key))
+        )
         self._routes_by_key = workspace_artifact_routes_by_key()
         self._routes_by_path = workspace_artifact_routes_by_path()
 
@@ -458,19 +467,32 @@ class WorkspacePathResolver:
             }
         return {
             "artifact_key": artifact_key,
-            "status": "planned",
+            "status": "planned" if resolution.dual_write_enabled else "out-of-scope" if resolution.dual_write_scope_enabled else "not-enabled",
             "canonical_path": resolution.canonical_path,
             "future_path": resolution.future_path,
             "virtual_uri": resolution.virtual_uri,
             "write_paths": resolution.write_paths,
             "dual_write_enabled": resolution.dual_write_enabled,
+            "dual_write_scope_enabled": resolution.dual_write_scope_enabled,
+            "dual_write_in_scope": resolution.dual_write_in_scope,
             "physical_migration_enabled": resolution.physical_migration_enabled,
             "canonical_path_remains_authoritative": resolution.canonical_path_remains_authoritative,
             "migration_status": resolution.migration_status,
         }
 
     def _resolution_for_route(self, route: WorkspaceArtifactRoute) -> WorkspacePathResolution:
-        write_paths = (route.legacy_path, route.future_path) if self.enable_dual_write else (route.legacy_path,)
+        scope_enabled = self.dual_write_artifact_keys is not None
+        in_scope = not scope_enabled or route.artifact_key in self.dual_write_artifact_keys
+        dual_write_enabled = self.enable_dual_write and in_scope
+        write_paths = (route.legacy_path, route.future_path) if dual_write_enabled else (route.legacy_path,)
+        if dual_write_enabled and scope_enabled:
+            migration_status = "scoped-dual-write-plan-only"
+        elif dual_write_enabled:
+            migration_status = "dual-write-plan-only"
+        elif self.enable_dual_write and scope_enabled:
+            migration_status = "dual-write-out-of-scope"
+        else:
+            migration_status = "resolver-only"
         return WorkspacePathResolution(
             artifact_key=route.artifact_key,
             legacy_path=route.legacy_path,
@@ -480,13 +502,15 @@ class WorkspacePathResolver:
             canonical_uri=workspace_virtual_uri(route.legacy_path),
             read_paths=(route.legacy_path, route.future_path, workspace_virtual_uri(route.future_path)),
             write_paths=write_paths,
-            dual_write_enabled=self.enable_dual_write,
+            dual_write_enabled=dual_write_enabled,
             physical_migration_enabled=self.physical_migration_enabled,
             canonical_path_remains_authoritative=True,
-            migration_status="dual-write-plan-only" if self.enable_dual_write else "resolver-only",
+            migration_status=migration_status,
             virtual_folder=route.virtual_folder,
             category=route.category,
             producer_roles=route.producer_roles,
+            dual_write_scope_enabled=scope_enabled,
+            dual_write_in_scope=in_scope,
         )
 
 

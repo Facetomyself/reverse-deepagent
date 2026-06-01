@@ -16,6 +16,13 @@ DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts"
 
 
+def _parse_artifact_key_list(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    keys = [item.strip() for item in value.split(",") if item.strip()]
+    return list(dict.fromkeys(keys))
+
+
 def build_demo_parser() -> argparse.ArgumentParser:
     """Build the parser for the deterministic reverse pipeline demo."""
 
@@ -73,6 +80,12 @@ def build_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-geoip", action="store_true", help="Let BrowserProvider derive geo settings from proxy/IP when supported.")
     parser.add_argument("--browser-locale", default=None, help="Optional BrowserProvider locale, such as zh-CN.")
     parser.add_argument("--browser-timezone", default=None, help="Optional BrowserProvider timezone, such as Asia/Shanghai.")
+    parser.add_argument("--enable-workspace-dual-write", action="store_true", help="Opt in to writing registered workspace artifacts to both legacy and future foldered paths.")
+    parser.add_argument(
+        "--workspace-dual-write-artifact-keys",
+        default="",
+        help="Optional comma-separated artifact keys that limit --enable-workspace-dual-write to a reviewed pilot scope.",
+    )
     return parser
 
 
@@ -118,6 +131,8 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
             browser_geoip=args.browser_geoip,
             browser_locale=args.browser_locale,
             browser_timezone=args.browser_timezone,
+            enable_workspace_dual_write=args.enable_workspace_dual_write,
+            workspace_dual_write_artifact_keys=_parse_artifact_key_list(args.workspace_dual_write_artifact_keys),
         )
     except LegacyMcpPluginUnavailableError as exc:
         print(
@@ -161,6 +176,12 @@ def build_platform_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mini-program-devtools-command", default=None, help="Optional vendor mini-program devtools CLI path/name.")
     parser.add_argument("--mini-program-vendor", default=None, help="Mini-program vendor, for example wechat or alipay.")
     parser.add_argument("--mini-program-project-path", default=None, help="Optional mini-program local project path.")
+    parser.add_argument("--enable-workspace-dual-write", action="store_true", help="Opt in to writing registered workspace artifacts to both legacy and future foldered paths.")
+    parser.add_argument(
+        "--workspace-dual-write-artifact-keys",
+        default="",
+        help="Optional comma-separated artifact keys that limit --enable-workspace-dual-write to a reviewed pilot scope.",
+    )
     return parser
 
 
@@ -184,6 +205,8 @@ def main_platform(argv: Sequence[str] | None = None) -> int:
         task_text=args.task_text,
         artifact_root=Path(args.artifact_root),
         runtime_kind=args.runtime,
+        enable_workspace_dual_write=args.enable_workspace_dual_write,
+        workspace_dual_write_artifact_keys=_parse_artifact_key_list(args.workspace_dual_write_artifact_keys),
         **runtime_kwargs,
     )
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))

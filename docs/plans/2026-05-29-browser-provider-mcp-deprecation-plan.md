@@ -1030,3 +1030,15 @@ By default the tool is read-only and only inspects files. When explicitly called
 Boundary: this does not enable dual-write, does not limit the pipeline writer to a selected scope, does not migrate physical workspace paths, does not change canonical paths, does not execute delivery, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Broader dual-write rollout and foldered-canonical migration remain follow-ups.
 
 Tests cover missing observed dual-write plans, verified legacy / future digest matches, explicit audit artifact writing, route metadata, coordinator tool exposure, and existing workspace / rebuild regressions.
+
+### Step 115 execution record: Scoped workspace dual-write writer baseline
+
+Status: implemented as an explicit scope gate for opt-in dual-write runs, not foldered-canonical migration, physical artifact relocation, or delivery gate relaxation.
+
+`WorkspacePathResolver` now accepts `dual_write_artifact_keys`. When `enable_dual_write=True` and no scope is provided, the previous behavior is preserved: every registered workspace artifact written by the pipeline gets both the legacy canonical path and the future foldered path. When a scope is provided, only artifact keys in that reviewed set receive the future foldered write path; out-of-scope registered artifacts remain legacy-only and are recorded with `dual_write_enabled=false`, `dual_write_scope_enabled=true`, `dual_write_in_scope=false`, and `migration_status=dual-write-out-of-scope`.
+
+`write_outputs(...)`, `run_reverse_pipeline(...)`, `write_platform_outputs(...)`, and `run_platform_pipeline(...)` now accept `workspace_dual_write_artifact_keys`. The deterministic CLIs expose the same boundary with `--enable-workspace-dual-write` and comma-separated `--workspace-dual-write-artifact-keys`. The emitted `workspace/workspace-dual-write-plan.json` records `mode=scoped-opt-in-dual-write`, `dual_write_scope_enabled`, `dual_write_scope_artifact_keys`, `dual_written_count`, `out_of_scope_record_count`, and per-record scope metadata so `record_workspace_dual_write_pilot_result` can verify only actual dual-written out-of-scope artifacts instead of legacy-only scoped records.
+
+Boundary: this does not make dual-write default, does not migrate canonical paths, does not move or delete legacy artifacts, does not relax delivery / transaction / review gates, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Broader dual-write rollout and foldered-canonical migration remain follow-ups.
+
+Tests cover scoped resolver planning, Web pipeline scoped dual-write output, scoped audit metadata, legacy-only out-of-scope record handling in pilot result verification, CLI compatibility, and existing workspace regressions.
