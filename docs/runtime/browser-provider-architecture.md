@@ -257,7 +257,9 @@ The resolver introduces an opt-in dual-write writer seam. `WorkspacePathResolver
 
 `packages/reverse-deepagent-browser-provider-fixture/` is a functional external provider package rather than a template. It declares the same entry-point group for `fixture-browser`, keeps metadata loading side-effect free, delays factory invocation until explicit provider creation, and returns an in-memory provider-neutral `BrowserSession` / `BrowserPage` from `start()` and `connect()`. It does not launch a real browser, expose CDP, provide stealth behavior, or replace Playwright / CloakBrowser, but it proves that external BrowserProvider packages can be discovered, compatibility-checked, and launch-smoked without core runtime branches.
 
-Both packages are part of the MCP deprecation seam: new browser integrations should land as packages that expose registration metadata and provider factories, not as new `if/else` branches in `NativeWebRuntime` or the coordinator. The hard requirements are the same as the registry contract: metadata loading is side-effect free, capability config is non-secret, optional browser SDK imports are delayed, and real launch / CDP probing only happens behind explicit runtime or doctor smoke paths.
+`packages/reverse-deepagent-browser-provider-hosted-cdp-template/` is a more specific template for hosted browser services, vendor anti-detect browsers, enterprise browser pools, and remote CDP brokers. It declares `hosted-cdp-template`, keeps registration metadata side-effect free, reports `review-required` production readiness, and requires an explicit `browser_url` / `cdp_browser_url` before lifecycle methods can connect. When an endpoint is provided, it delegates to the core `RemoteCDPProvider` adapter so plugin authors can smoke the BrowserProvider contract before replacing allocation / attach logic with a vendor SDK.
+
+These packages are part of the MCP deprecation seam: new browser integrations should land as packages that expose registration metadata and provider factories, not as new `if/else` branches in `NativeWebRuntime` or the coordinator. The hard requirements are the same as the registry contract: metadata loading is side-effect free, capability config is non-secret, optional browser SDK imports are delayed, and real launch / CDP probing only happens behind explicit runtime or doctor smoke paths.
 
 ## 5.10 ExternalDeliveryProvider plugin package template
 
@@ -273,6 +275,7 @@ The template provider intentionally never publishes externally: dry-run returns 
 | `cloakbrowser` | Stealth-oriented browser provider. | Preferred for fingerprint-sensitive targets; supports launch / persistent context and CDP connect to an existing CloakBrowser or cloakserve endpoint. |
 | `chrome-cdp` | Connect to local Chrome DevTools endpoint. | Good for migration and local debugging. |
 | `remote-cdp` | Connect to browserless, Docker, remote Chrome, or `cloakserve`. | Good for self-hosted runner isolation. |
+| `hosted-cdp-template` | External package seam for hosted CDP / browser-service providers. | Template only; metadata-only registration is side-effect free, explicit endpoint connect delegates to `RemoteCDPProvider` for contract smoke. |
 | `legacy-mcp` | Existing JSReverser MCP adapter. | Compatibility only; not the default long-term path. |
 
 ## 7. CloakBrowser role

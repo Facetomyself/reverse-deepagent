@@ -26,6 +26,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - BrowserProvider production readiness metadata baseline that classifies provider rows as `production-ready`, `review-required`, or `metadata-incomplete` without invoking provider factories, probing CDP, launching browsers, or calling MCP.
 - Extensible BrowserProvider capability compatibility rule catalog for CDP/debugger/network/lifecycle plus proxy, humanize, mobile emulation, and extension capability checks.
 - Functional external BrowserProvider fixture plugin package that proves entry-point discovery, metadata-only listing, delayed factory creation, and launch/connect smoke outside core runtime.
+- Hosted CDP BrowserProvider template package that gives vendor anti-detect browsers, hosted browser services, and enterprise CDP brokers a provider-neutral external package seam with metadata-only registration and explicit Remote CDP contract smoke.
 - Managed Chrome debug launcher scripts and docs.
 - MCP legacy downgrade, alias warnings, and optional legacy MCP package split.
 
@@ -90,7 +91,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Browser / CDP / hook depth
 
-- Production third-party BrowserProvider plugins beyond the functional fixture provider, such as vendor anti-detect browsers or hosted browser services; new providers should fill the production readiness metadata contract before runtime smoke is accepted.
+- Production third-party BrowserProvider plugins beyond the functional fixture and hosted-CDP template packages, such as concrete vendor anti-detect browsers or hosted browser services; new providers should fill the production readiness metadata contract before runtime smoke is accepted.
 - Provider-specific compatibility / readiness rule additions when real third-party provider plugins introduce new capability flags or lifecycle policies.
 - Cross-process live CDP paused execution continuation.
 - Arbitrary custom loader traversal and async chunk graph analysis.
