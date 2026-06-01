@@ -18,6 +18,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkTraversalWorkflowExecutionSpec,
     AsyncChunkTraversalLoopPlanManager,
     AsyncChunkTraversalLoopPlanSpec,
+    AsyncChunkTraversalLoopExecutionManager,
+    AsyncChunkTraversalLoopExecutionSpec,
     AsyncChunkModuleDiffManager,
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
@@ -2241,6 +2243,88 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
             )
+        if self._is_async_chunk_traversal_loop_execution_request(protection_name, context):
+            spec = AsyncChunkTraversalLoopExecutionSpec.from_context(context)
+            result = AsyncChunkTraversalLoopExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"async_chunk_traversal_loop_execution_status={result.status}",
+                f"async_chunk_traversal_loop_execution_reason={result.reason or ''}",
+                f"async_chunk_traversal_loop_execution_stage_count={len(stages)}",
+                f"async_chunk_traversal_loop_execution_selected_iteration_index={execution.get('selected_iteration_index')}",
+                f"async_chunk_traversal_loop_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"async_chunk_traversal_loop_execution_review_approved={policy.get('review_approved', False)}",
+                f"async_chunk_traversal_loop_execution_runtime_loader_executed={policy.get('runtime_loader_executed', False)}",
+                f"async_chunk_traversal_loop_execution_chunk_request_sent={policy.get('chunk_request_sent', False)}",
+                f"async_chunk_traversal_loop_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
+                f"async_chunk_traversal_loop_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
+                f"async_chunk_traversal_loop_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"async_chunk_traversal_loop_execution_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"async_chunk_traversal_loop_execution_automatic_loop_execution={policy.get('automatic_loop_execution', False)}",
+                f"async_chunk_traversal_loop_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"async_chunk_traversal_loop_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"async_chunk_traversal_loop_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-traversal-loop-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated bounded async chunk traversal loop execution baseline.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "loop_plan_id": execution.get("loop_plan_id"),
+                        "source_workflow_plan_id": execution.get("source_workflow_plan_id"),
+                        "source_graph_id": execution.get("source_graph_id"),
+                        "selected_iteration_index": execution.get("selected_iteration_index"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_candidate_index": execution.get("selected_candidate_index"),
+                        "stage_count": len(stages),
+                        "workflow_execution_status": execution.get("workflow_execution_status"),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "runtime_loader_executed": policy.get("runtime_loader_executed", False),
+                        "chunk_request_sent": policy.get("chunk_request_sent", False),
+                        "module_diff_executed": policy.get("module_diff_executed", False),
+                        "module_hook_installed": policy.get("module_hook_installed", False),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "execute_at_most_one_loop_iteration_per_review": policy.get("execute_at_most_one_loop_iteration_per_review", True),
+                        "automatic_loop_execution": policy.get("automatic_loop_execution", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "async_chunk_load_planned"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_async_chunk_traversal_loop_execution_iteration"]
+                next_action = execution.get("next_action", "review_async_chunk_traversal_loop_execution_plan")
+            elif result.status in {"async_chunk_load_success", "module_diff_ready", "module_hook_recorded"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_async_chunk_traversal_loop_iteration"]
+                next_action = execution.get("next_action", "rerun_module_discovery_and_rebuild_async_chunk_traversal_graph_before_next_loop_iteration")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["execute_async_chunk_traversal_loop_iteration"]
+                next_action = execution.get("next_action", "resolve_async_chunk_traversal_loop_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_async_chunk_traversal_loop_execution_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "async_chunk_load_planned", "async_chunk_load_success", "module_diff_ready", "module_hook_recorded"} else ConfidenceLevel.LOW,
+            )
         if self._is_async_chunk_traversal_loop_plan_request(protection_name, context):
             spec = AsyncChunkTraversalLoopPlanSpec.from_context(context)
             result = AsyncChunkTraversalLoopPlanManager().plan(spec)
@@ -3804,6 +3888,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 "asyncChunkDeepTraversalLoop",
                 "plan_async_chunk_traversal_loop",
                 "planAsyncChunkTraversalLoop",
+            )
+        )
+
+    @staticmethod
+    def _is_async_chunk_traversal_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "async-chunk-traversal-loop-execution",
+            "execute-async-chunk-traversal-loop",
+            "async-chunk-bounded-loop-execution",
+            "reviewed-async-chunk-traversal-loop-execution",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "async_chunk_traversal_loop_execution",
+                "asyncChunkTraversalLoopExecution",
+                "async-chunk-traversal-loop-execution",
+                "execute_async_chunk_traversal_loop",
+                "executeAsyncChunkTraversalLoop",
             )
         )
 
