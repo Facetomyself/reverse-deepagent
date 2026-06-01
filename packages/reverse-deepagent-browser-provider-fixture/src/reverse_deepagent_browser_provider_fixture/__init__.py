@@ -171,6 +171,17 @@ def fixture_browser_provider_capabilities(
             "does not launch a real browser, expose CDP, or provide stealth/fingerprint behavior",
         ],
         config=config.summary(),
+        production_readiness={
+            "readiness_tier": "fixture-only",
+            "health_check_mode": "in-memory-contract-smoke",
+            "profile_lifecycle": "ephemeral-in-memory",
+            "proxy_policy": "not-supported",
+            "extension_policy": "not-supported",
+            "humanize_policy": "not-supported",
+            "session_recovery": "new-in-memory-session",
+            "intended_use": "ci-contract-fixture-only",
+            "side_effect_boundary": "metadata-listing-does-not-call-factory; start-and-connect-are-explicit-in-memory-only",
+        },
     )
 
 

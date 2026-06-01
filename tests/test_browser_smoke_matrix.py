@@ -3,7 +3,9 @@ import unittest
 from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
 from reverse_deepagent.browser.smoke import (
     BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
+    BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
     DEFAULT_BROWSER_PROVIDER_MATRIX,
+    browser_provider_production_readiness,
     list_browser_provider_compatibility_rules,
     browser_provider_metadata_matrix_payload,
     browser_provider_smoke_matrix_payload,
@@ -146,15 +148,70 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertGreater(len(payload["compatibility_rules"]), 5)
         self.assertEqual(payload["summary"]["provider_count"], 1)
         self.assertEqual(payload["summary"]["compatibility"]["compatible_count"], 1)
+        self.assertEqual(payload["production_readiness_version"], BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION)
+        self.assertEqual(payload["summary"]["production_readiness"]["metadata_incomplete_count"], 1)
         row = payload["providers"][0]
         self.assertEqual(row["provider_id"], "registered-browser")
         self.assertEqual(row["aliases"], ["registered-alias"])
         self.assertEqual(row["supported_modes"], ["connect", "cdp", "runtime-eval"])
         self.assertEqual(row["compatibility"]["status"], "compatible")
+        self.assertEqual(row["production_readiness"]["status"], "metadata-incomplete")
+        self.assertFalse(row["production_readiness"]["side_effect_policy"]["starts_browser"])
         lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
         self.assertEqual(lifecycle["configured"], "ok")
         self.assertEqual(lifecycle["availability_checked"], "not_checked")
         self.assertEqual(row["smoke"]["status"], "skipped")
+
+    def test_production_readiness_classifies_provider_metadata(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="production-browser",
+                display_name="Production Browser",
+                supports_launch=True,
+                supports_connect=True,
+                supports_persistent_context=True,
+                supports_proxy=True,
+                supports_extensions=True,
+                supports_humanize=True,
+                production_readiness={
+                    "readiness_tier": "production-ready",
+                    "health_check_mode": "explicit-metadata-or-launch-smoke",
+                    "profile_lifecycle": "persistent-context-supported",
+                    "proxy_policy": "provider-level-redacted",
+                    "extension_policy": "launch-controlled",
+                    "humanize_policy": "supported",
+                    "session_recovery": "connect-or-launch",
+                    "intended_use": "production-provider",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["version"], BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION)
+        self.assertEqual(readiness["status"], "production-ready")
+        self.assertEqual(readiness["missing_metadata"], [])
+        self.assertFalse(readiness["side_effect_policy"]["provider_factory_invoked"])
+        self.assertFalse(readiness["side_effect_policy"]["availability_checked"])
+        self.assertFalse(readiness["side_effect_policy"]["launch_smoke_requested"])
+
+    def test_production_readiness_marks_template_metadata_incomplete(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="template-browser",
+                display_name="Template Browser",
+                production_readiness={
+                    "readiness_tier": "template-only",
+                    "health_check_mode": "replace-me",
+                    "profile_lifecycle": "replace-me",
+                    "session_recovery": "replace-me",
+                    "intended_use": "copy-and-replace-provider-template",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["status"], "metadata-incomplete")
+        self.assertIn("production_provider_replacement", readiness["missing_metadata"])
 
     def test_capability_compatibility_flags_invalid_breakpoint_combo(self) -> None:
         compatibility = validate_browser_provider_capability_compatibility(

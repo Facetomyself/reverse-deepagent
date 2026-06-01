@@ -35,6 +35,14 @@ class BrowserProviderCapabilities(SchemaBaseModel):
     managed_browser: bool = Field(default=False, description="Whether the provider manages browser lifecycle itself.")
     notes: list[str] = Field(default_factory=list, description="Operational notes and known limitations.")
     config: dict[str, Any] = Field(default_factory=dict, description="Non-secret default/config summary.")
+    production_readiness: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Non-secret production-readiness metadata for side-effect-free provider review, "
+            "including health check mode, profile lifecycle, proxy/extension/humanize policies, "
+            "session recovery, and intended use."
+        ),
+    )
 
 
 BROWSER_PROVIDER_SECRET_KEYWORDS = (

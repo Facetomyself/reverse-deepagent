@@ -115,6 +115,8 @@ class RemoteCDPProviderTests(unittest.TestCase):
             capabilities = provider.describe().model_dump(mode="json")
             self.assertEqual(capabilities["provider_id"], "remote-cdp")
             self.assertEqual(capabilities["transport"], "remote-cdp")
+            self.assertEqual(capabilities["production_readiness"]["readiness_tier"], "review-required")
+            self.assertEqual(capabilities["production_readiness"]["session_recovery"], "connect-existing-endpoint")
 
             session = provider.start()
             page = session.get_active_page()

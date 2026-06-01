@@ -1539,3 +1539,16 @@ Default selection is intentionally conservative: it only proposes low-risk `work
 Boundary: this is not the actual dual-write writer. It does not inspect files, write artifacts, create directories, enable dual-write, migrate workspace paths, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
 
 Tests cover default low-risk candidate selection, unknown and high-risk explicit key blocking, side-effect policy, coordinator tool exposure, and existing workspace / rebuild regressions.
+
+
+### Step 112 execution record: BrowserProvider production readiness metadata baseline
+
+Status: implemented as metadata-only production seam hardening, not a runtime smoke, browser launch, CDP probe, or third-party vendor integration.
+
+`BrowserProviderCapabilities` now exposes non-secret `production_readiness` metadata. Built-in providers and external template / fixture packages declare health-check mode, profile lifecycle, proxy policy, extension policy, humanize policy, session recovery, intended use, side-effect boundary, and a readiness tier. `reverse_deepagent.browser.smoke.browser_provider_production_readiness(...)` evaluates that serialized metadata into `production-ready`, `review-required`, or `metadata-incomplete` with checks, missing metadata, warnings, score, and an explicit side-effect policy.
+
+`browser_provider_smoke_matrix` and metadata-only registry matrix rows now include `production_readiness`, the matrix top level exposes `production_readiness_version`, and summary output counts production-ready, review-required, and metadata-incomplete providers. Current built-in metadata classifies `cloakbrowser` as production-ready metadata, `playwright-chromium` and `remote-cdp` as review-required, `fixture-browser` as fixture-only / review-required, and `template-browser` as template-only / metadata-incomplete. Doctor inherits the matrix output without starting browsers or touching MCP.
+
+Boundary: this does not call provider factories for external plugins, import optional browser SDKs, check availability, probe CDP endpoints, launch browsers, install hooks, run Web recon, call MCP, or touch Android / iOS / mini-program full runtime chains. Real third-party BrowserProvider implementations, provider-specific readiness rules, controlled proxy / geoip validation, and deeper native-web parity remain follow-up work.
+
+Tests cover the readiness evaluator, metadata matrix output, doctor summary counts, built-in provider metadata, template / fixture plugin classifications, and existing BrowserProvider registry / contract regressions.

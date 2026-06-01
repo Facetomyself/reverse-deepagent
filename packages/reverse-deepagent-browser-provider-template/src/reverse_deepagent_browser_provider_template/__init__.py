@@ -96,6 +96,17 @@ def template_browser_provider_capabilities(
             "metadata loading must not invoke provider factory or start a browser",
         ],
         config=config.summary(),
+        production_readiness={
+            "readiness_tier": "template-only",
+            "health_check_mode": "replace-me",
+            "profile_lifecycle": "replace-me",
+            "proxy_policy": "replace-me",
+            "extension_policy": "replace-me",
+            "humanize_policy": "replace-me",
+            "session_recovery": "replace-me",
+            "intended_use": "copy-and-replace-provider-template",
+            "side_effect_boundary": "metadata-listing-does-not-call-factory; lifecycle-methods-must-be-replaced-before-use",
+        },
     )
 
 

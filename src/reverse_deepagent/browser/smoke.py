@@ -8,6 +8,7 @@ from reverse_deepagent.browser.base import BrowserProvider
 
 BROWSER_SMOKE_MATRIX_VERSION = "2026-05-31.lifecycle-baseline"
 BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION = "2026-05-31.metadata-compatibility-v1"
+BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-01.production-readiness-v1"
 DEFAULT_BROWSER_PROVIDER_MATRIX: tuple[str, ...] = (
     "playwright-chromium",
     "cloakbrowser",
@@ -212,6 +213,7 @@ def browser_provider_metadata_matrix_payload(
         "lifecycle_stages": list(LIFECYCLE_STAGES),
         "capability_flags": list(CAPABILITY_FLAG_KEYS),
         "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
+        "production_readiness_version": BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
         "compatibility_rules": list_browser_provider_compatibility_rules(),
         "providers": rows,
         "summary": _matrix_summary(rows),
@@ -231,6 +233,7 @@ def _browser_provider_metadata_row(metadata: dict[str, Any], *, smoke_url: str) 
         "capabilities": metadata,
         "capability_matrix": _capability_matrix(metadata),
         "compatibility": validate_browser_provider_capability_compatibility(metadata),
+        "production_readiness": browser_provider_production_readiness(metadata),
         "supported_modes": _supported_modes(metadata),
         "aliases": list(metadata.get("aliases", [])) if isinstance(metadata.get("aliases", []), list) else [],
         "keys": list(metadata.get("keys", [])) if isinstance(metadata.get("keys", []), list) else [],
@@ -287,6 +290,7 @@ def browser_provider_smoke_matrix_payload(
         "lifecycle_stages": list(LIFECYCLE_STAGES),
         "capability_flags": list(CAPABILITY_FLAG_KEYS),
         "compatibility_rule_version": BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
+        "production_readiness_version": BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
         "compatibility_rules": list_browser_provider_compatibility_rules(),
         "providers": rows,
         "summary": _matrix_summary(rows),
@@ -324,6 +328,7 @@ def browser_provider_smoke_row(
         row["capabilities"] = capabilities
         row["capability_matrix"] = _capability_matrix(capabilities)
         row["compatibility"] = validate_browser_provider_capability_compatibility(capabilities)
+        row["production_readiness"] = browser_provider_production_readiness(capabilities)
         row["supported_modes"] = _supported_modes(capabilities)
         _append_lifecycle(row, "capability_described", "ok", "provider capabilities captured without launching")
     except Exception as exc:
@@ -460,6 +465,144 @@ def list_browser_provider_compatibility_rules() -> list[dict[str, Any]]:
     return [rule.to_dict() for rule in BROWSER_PROVIDER_COMPATIBILITY_RULES]
 
 
+def browser_provider_production_readiness(capabilities: dict[str, Any]) -> dict[str, Any]:
+    """Evaluate provider production-readiness metadata without side effects.
+
+    The evaluator intentionally uses only serialized provider capabilities. It
+    does not import optional SDKs, call provider factories, probe CDP endpoints,
+    launch browsers, check availability, or depend on MCP. Providers can use
+    this metadata to document production seams while the coordinator remains
+    provider-neutral.
+    """
+
+    provider_id = str(capabilities.get("provider_id") or "unknown")
+    metadata = capabilities.get("production_readiness")
+    profile = metadata if isinstance(metadata, dict) else {}
+    checks: list[dict[str, Any]] = []
+    missing_metadata: list[str] = []
+    warnings: list[str] = []
+
+    def add_check(check_id: str, status: str, message: str, *, required_key: str | None = None) -> None:
+        checks.append({"check_id": check_id, "status": status, "message": message})
+        if status == "missing" and required_key:
+            missing_metadata.append(required_key)
+        if status == "warn":
+            warnings.append(check_id)
+
+    if not profile:
+        add_check("production_metadata_present", "missing", "production_readiness metadata is missing", required_key="production_readiness")
+    else:
+        add_check("production_metadata_present", "pass", "production_readiness metadata is present")
+
+    required_fields = (
+        "health_check_mode",
+        "profile_lifecycle",
+        "session_recovery",
+        "intended_use",
+        "side_effect_boundary",
+    )
+    for field_name in required_fields:
+        value = str(profile.get(field_name) or "").strip()
+        add_check(
+            f"{field_name}_declared",
+            "pass" if value else "missing",
+            f"{field_name} is declared" if value else f"{field_name} is not declared",
+            required_key=field_name if not value else None,
+        )
+
+    lifecycle_supported = bool(capabilities.get("supports_launch") or capabilities.get("supports_connect"))
+    add_check(
+        "lifecycle_entrypoint_available",
+        "pass" if lifecycle_supported else "warn",
+        "provider can launch or connect" if lifecycle_supported else "provider cannot launch or connect; runtime use requires template replacement",
+    )
+
+    if capabilities.get("supports_persistent_context"):
+        add_check(
+            "persistent_profile_lifecycle_documented",
+            "pass" if profile.get("profile_lifecycle") else "missing",
+            "persistent profile lifecycle is documented"
+            if profile.get("profile_lifecycle")
+            else "supports_persistent_context requires profile_lifecycle metadata",
+            required_key=None if profile.get("profile_lifecycle") else "profile_lifecycle",
+        )
+    else:
+        add_check("persistent_profile_lifecycle_documented", "not-applicable", "provider does not claim persistent context support")
+
+    if capabilities.get("supports_proxy"):
+        add_check(
+            "proxy_policy_documented",
+            "pass" if profile.get("proxy_policy") else "missing",
+            "provider-level proxy policy is documented" if profile.get("proxy_policy") else "supports_proxy requires proxy_policy metadata",
+            required_key=None if profile.get("proxy_policy") else "proxy_policy",
+        )
+    else:
+        add_check("proxy_policy_documented", "not-applicable", "provider does not claim provider-level proxy support")
+
+    if capabilities.get("supports_extensions"):
+        add_check(
+            "extension_policy_documented",
+            "pass" if profile.get("extension_policy") else "missing",
+            "extension lifecycle policy is documented" if profile.get("extension_policy") else "supports_extensions requires extension_policy metadata",
+            required_key=None if profile.get("extension_policy") else "extension_policy",
+        )
+    else:
+        add_check("extension_policy_documented", "not-applicable", "provider does not claim extension support")
+
+    if capabilities.get("supports_humanize"):
+        add_check(
+            "humanize_policy_documented",
+            "pass" if profile.get("humanize_policy") else "missing",
+            "humanized interaction policy is documented" if profile.get("humanize_policy") else "supports_humanize requires humanize_policy metadata",
+            required_key=None if profile.get("humanize_policy") else "humanize_policy",
+        )
+    else:
+        add_check("humanize_policy_documented", "not-applicable", "provider does not claim humanized interaction support")
+
+    readiness_tier = str(profile.get("readiness_tier") or "").strip()
+    if readiness_tier in {"template-only", "metadata-incomplete"}:
+        add_check("readiness_tier", "missing", f"provider is declared as {readiness_tier}", required_key="production_provider_replacement")
+    elif readiness_tier in {"fixture-only", "review-required"}:
+        add_check("readiness_tier", "warn", f"provider is declared as {readiness_tier}")
+    elif readiness_tier == "production-ready":
+        add_check("readiness_tier", "pass", "provider declares production-ready metadata")
+    elif readiness_tier:
+        add_check("readiness_tier", "warn", f"provider declares unrecognized readiness_tier={readiness_tier}")
+    else:
+        add_check("readiness_tier", "missing", "readiness_tier is not declared", required_key="readiness_tier")
+
+    unique_missing = sorted(set(missing_metadata))
+    unique_warnings = sorted(set(warnings))
+    pass_count = sum(1 for item in checks if item["status"] == "pass")
+    applicable_count = sum(1 for item in checks if item["status"] != "not-applicable")
+    score = int(round((pass_count / applicable_count) * 100)) if applicable_count else 100
+    if unique_missing:
+        status = "metadata-incomplete"
+    elif unique_warnings:
+        status = "review-required"
+    else:
+        status = "production-ready"
+    return {
+        "version": BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
+        "provider_id": provider_id,
+        "status": status,
+        "score": score,
+        "readiness_tier": readiness_tier or "unspecified",
+        "checks": checks,
+        "warnings": unique_warnings,
+        "missing_metadata": unique_missing,
+        "side_effect_policy": {
+            "metadata_only": True,
+            "provider_factory_invoked": False,
+            "availability_checked": False,
+            "launch_smoke_requested": False,
+            "cdp_endpoint_probed": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+        },
+    }
+
+
 def validate_browser_provider_capability_compatibility(capabilities: dict[str, Any]) -> dict[str, Any]:
     """Validate BrowserProvider capability combinations without side effects.
 
@@ -524,6 +667,7 @@ def _append_lifecycle(row: dict[str, Any], stage: str, status: str, message: str
 
 def _matrix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     compatibility_items = [row.get("compatibility") for row in rows if isinstance(row.get("compatibility"), dict)]
+    readiness_items = [row.get("production_readiness") for row in rows if isinstance(row.get("production_readiness"), dict)]
     return {
         "provider_count": len(rows),
         "configured_count": sum(1 for row in rows if row.get("configured")),
@@ -536,6 +680,11 @@ def _matrix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "compatible_count": sum(1 for item in compatibility_items if item.get("status") == "compatible"),
             "warning_count": sum(1 for item in compatibility_items if item.get("status") == "warning"),
             "error_count": sum(1 for item in compatibility_items if item.get("status") == "error"),
+        },
+        "production_readiness": {
+            "production_ready_count": sum(1 for item in readiness_items if item.get("status") == "production-ready"),
+            "review_required_count": sum(1 for item in readiness_items if item.get("status") == "review-required"),
+            "metadata_incomplete_count": sum(1 for item in readiness_items if item.get("status") == "metadata-incomplete"),
         },
     }
 

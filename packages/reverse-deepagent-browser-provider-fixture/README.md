@@ -22,6 +22,11 @@ and a delayed factory. Registry metadata listing and doctor matrix paths must no
 invoke the factory. The factory is called only when a caller explicitly creates
 `fixture-browser` / `fixture` / `ci-browser-fixture`.
 
+The capabilities also include `production_readiness` metadata with
+`readiness_tier=fixture-only`. BrowserProvider matrix output should therefore
+classify the fixture as `review-required`: it is useful for CI contract smoke,
+but it is not a production browser runtime.
+
 ## Runtime behavior
 
 - `is_available()` returns `true`.

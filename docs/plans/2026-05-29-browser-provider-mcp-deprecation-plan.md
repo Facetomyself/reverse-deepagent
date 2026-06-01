@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-108 is implemented through the rebuild generation artifact-ref input adoption baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-112 is implemented through the BrowserProvider production readiness metadata baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -1012,3 +1012,6 @@ Default selection is intentionally conservative: it only proposes low-risk `work
 Boundary: this is not the actual dual-write writer. It does not inspect files, write artifacts, create directories, enable dual-write, migrate workspace paths, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
 
 Tests cover default low-risk candidate selection, unknown and high-risk explicit key blocking, side-effect policy, coordinator tool exposure, and existing workspace / rebuild regressions.
+
+
+Step 112 execution record: BrowserProvider production readiness metadata baseline is implemented as metadata-only provider seam hardening. `BrowserProviderCapabilities` now includes non-secret `production_readiness` metadata, and BrowserProvider matrix rows include a `production_readiness` evaluation with `production-ready`, `review-required`, or `metadata-incomplete` status, score, checks, missing metadata, warnings, and a side-effect policy. Built-in provider metadata currently classifies `cloakbrowser` as production-ready metadata and `playwright-chromium` / `remote-cdp` as review-required; external fixture/template packages are classified as fixture-only / template-only. Doctor matrix output exposes `production_readiness_version` and readiness summary counts without invoking provider factories, importing optional SDKs, probing CDP, launching browsers, calling MCP, or touching Android / iOS / mini-program full runtime chains. Real third-party BrowserProvider packages and provider-specific readiness rules remain follow-ups.

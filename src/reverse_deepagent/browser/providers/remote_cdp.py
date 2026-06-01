@@ -226,6 +226,17 @@ class RemoteCDPProvider:
                 "useful when Playwright is unavailable but Chrome debug is reachable",
             ],
             config=self.config.safe_summary(),
+            production_readiness={
+                "readiness_tier": "review-required",
+                "health_check_mode": "explicit-endpoint-probe",
+                "profile_lifecycle": "external-browser-owned",
+                "proxy_policy": "external-browser-owned",
+                "extension_policy": "external-browser-owned",
+                "humanize_policy": "not-supported",
+                "session_recovery": "connect-existing-endpoint",
+                "intended_use": "attach-to-existing-debug-browser",
+                "side_effect_boundary": "describe-and-metadata-matrix-are-side-effect-free; endpoint-probe-and-connect-are-explicit",
+            },
         )
 
     def start(self) -> RemoteCDPBrowserSession:

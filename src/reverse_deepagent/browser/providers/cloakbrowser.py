@@ -75,6 +75,17 @@ class CloakBrowserProvider:
                 "binary must not be committed or redistributed by this repository",
             ],
             config=self.config.safe_summary(),
+            production_readiness={
+                "readiness_tier": "production-ready",
+                "health_check_mode": "optional-sdk-or-connect-endpoint",
+                "profile_lifecycle": "persistent-context-supported",
+                "proxy_policy": "provider-level-redacted",
+                "extension_policy": "launch-or-persistent-context",
+                "humanize_policy": "supported",
+                "session_recovery": "connect-over-cdp-or-persistent-context",
+                "intended_use": "optional-stealth-browser-provider",
+                "side_effect_boundary": "describe-and-metadata-matrix-are-side-effect-free; availability-and-launch-are-explicit",
+            },
         )
 
     def start(self) -> PlaywrightBrowserSessionAdapter:

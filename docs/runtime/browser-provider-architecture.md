@@ -156,6 +156,7 @@ class BrowserProviderCapabilities(SchemaBaseModel):
     supports_websocket_frames: bool
     supports_breakpoints: bool
     supports_runtime_eval: bool
+    production_readiness: dict[str, Any]
 ```
 
 This lets routing and doctor commands answer precise questions:
@@ -165,6 +166,14 @@ This lets routing and doctor commands answer precise questions:
 - Can it expose script source?
 - Can it run breakpoints?
 - Is it stealth-oriented?
+
+`production_readiness` is not a runtime smoke result. It is a non-secret,
+metadata-only review contract for provider operations: health-check mode,
+profile lifecycle, proxy policy, extension policy, humanize policy, session
+recovery, intended use, and side-effect boundary. Provider registration and
+doctor matrix output must be able to evaluate this field without importing an
+optional browser SDK, invoking a provider factory, probing CDP, launching a
+browser, or calling MCP.
 
 ## 5.1 BrowserProvider registry, smoke matrix, and lifecycle baseline
 
@@ -176,13 +185,13 @@ This lets routing and doctor commands answer precise questions:
 - `cloakbrowser`
 - `remote-cdp`
 
-The matrix records standard capability flags, supported modes, metadata-only compatibility checks, and lifecycle stages:
+The matrix records standard capability flags, supported modes, metadata-only compatibility checks, production readiness checks, and lifecycle stages:
 
 ```text
 configured -> capability_described -> availability_checked -> session_start_requested -> session_opened -> page_ready -> session_closed
 ```
 
-The default matrix path is metadata-only and side-effect free: it reads provider registration metadata and `describe()` output, runs a serializable compatibility rule catalog such as `breakpoints_require_cdp`, `response_body_requires_network_or_cdp`, `persistent_context_requires_lifecycle`, `humanize_requires_page_control_transport`, `mobile_emulation_requires_page_control_transport`, `extensions_require_launch_or_persistent_context`, and `proxy_requires_launch_or_managed_browser`, but does not call provider factories for external plugins, import optional browser binaries, probe remote CDP endpoints, launch browsers, or touch MCP. Matrix output includes `compatibility_rules`, per-provider `rule_count`, and `evaluated_rules` so provider plugins can review capability drift without starting a browser. Availability checks and launch smoke are explicit knobs. Doctor exposes this through:
+The default matrix path is metadata-only and side-effect free: it reads provider registration metadata and `describe()` output, runs a serializable compatibility rule catalog such as `breakpoints_require_cdp`, `response_body_requires_network_or_cdp`, `persistent_context_requires_lifecycle`, `humanize_requires_page_control_transport`, `mobile_emulation_requires_page_control_transport`, `extensions_require_launch_or_persistent_context`, and `proxy_requires_launch_or_managed_browser`, and evaluates `production_readiness` metadata into `production-ready`, `review-required`, or `metadata-incomplete`. It does not call provider factories for external plugins, import optional browser binaries, probe remote CDP endpoints, launch browsers, or touch MCP. Matrix output includes `compatibility_rules`, per-provider `rule_count`, `evaluated_rules`, `production_readiness_version`, per-provider readiness checks, and readiness summary counts so provider plugins can review capability and operational drift without starting a browser. Availability checks and launch smoke are explicit knobs. Doctor exposes this through:
 
 ```bash
 reverse-agent-doctor --browser-provider-matrix
