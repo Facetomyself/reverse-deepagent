@@ -28,6 +28,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderModuleDiffSpec,
     CustomLoaderModuleHookManager,
     CustomLoaderModuleHookSpec,
+    CustomLoaderTraversalGraphManager,
+    CustomLoaderTraversalGraphSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1701,6 +1703,62 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_traversal_graph_request(protection_name, context):
+            spec = CustomLoaderTraversalGraphSpec.from_context(context)
+            result = CustomLoaderTraversalGraphManager().plan(spec)
+            graph = result.graph if isinstance(result.graph, dict) else {}
+            verification = [
+                f"custom_loader_traversal_graph_status={result.status}",
+                f"custom_loader_traversal_graph_reason={result.reason or ''}",
+                f"custom_loader_traversal_graph_node_count={graph.get('node_count', 0)}",
+                f"custom_loader_traversal_graph_edge_count={graph.get('edge_count', 0)}",
+                f"custom_loader_traversal_graph_queue_count={graph.get('queue_count', 0)}",
+                f"custom_loader_traversal_graph_depth_blocked_count={graph.get('depth_blocked_count', 0)}",
+                f"custom_loader_traversal_graph_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-graph.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only deeper custom loader traversal graph and queue.",
+                    metadata={
+                        "status": result.status,
+                        "graph_status": graph.get("status"),
+                        "node_count": graph.get("node_count", 0),
+                        "edge_count": graph.get("edge_count", 0),
+                        "queue_count": graph.get("queue_count", 0),
+                        "journal_record_count": graph.get("journal_record_count", 0),
+                        "depth_blocked_count": graph.get("depth_blocked_count", 0),
+                        "duplicate_executed_count": graph.get("duplicate_executed_count", 0),
+                        "max_traversal_depth": graph.get("max_traversal_depth"),
+                        "next_action": graph.get("next_action"),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_traversal_graph"]
+                next_action = graph.get("next_action", "review_custom_loader_traversal_graph_queue")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_graph"]
+                next_action = graph.get("next_action", "provide_custom_loader_traversal_plan_and_journal")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_custom_loader_traversal_graph_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
         if self._is_custom_loader_execution_request(protection_name, context):
             spec = CustomLoaderExecutionSpec.from_context(context)
             result = CustomLoaderExecutionManager().execute(page, spec)
@@ -3080,6 +3138,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "custom-loader-continuation-execution",
                 "execute_custom_loader_continuation_step",
                 "executeCustomLoaderContinuationStep",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_traversal_graph_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-traversal-graph",
+            "custom-loader-continuation-queue",
+            "plan-custom-loader-deep-traversal",
+            "custom-loader-deep-traversal-plan",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_traversal_graph",
+                "customLoaderTraversalGraph",
+                "custom-loader-traversal-graph",
+                "custom_loader_continuation_queue",
+                "customLoaderContinuationQueue",
+                "plan_custom_loader_deep_traversal",
+                "planCustomLoaderDeepTraversal",
             )
         )
 

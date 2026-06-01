@@ -1140,6 +1140,99 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["already_executed_count"], 1)
         self.assertEqual(result.artifacts[0].metadata["previous_execution_count"], 1)
 
+    def test_native_web_runtime_plans_custom_loader_traversal_graph_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-traversal-graph",
+            {
+                "custom_loader_traversal_plan": {
+                    "status": "planned",
+                    "candidates": [
+                        {
+                            "index": 0,
+                            "status": "ready_for_review",
+                            "classification": "arbitrary_custom_loader",
+                            "loader_path": "window.__customLoader.load",
+                            "target": "window.__customLoader.load",
+                            "chunk_id": "custom-sign",
+                            "depth": 1,
+                            "continuation_supported": True,
+                            "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                        },
+                        {
+                            "index": 1,
+                            "status": "ready_for_review",
+                            "classification": "arbitrary_custom_loader",
+                            "loader_path": "window.__customLoader.loadChild",
+                            "target": "window.__customLoader.loadChild",
+                            "chunk_id": "custom-sign-child",
+                            "parent_loader_path": "window.__customLoader.load",
+                            "depth": 2,
+                            "continuation_supported": True,
+                        },
+                    ],
+                },
+                "custom_loader_continuation_journal": {
+                    "journal": {
+                        "records": [
+                            {
+                                "loader_path": "window.__customLoader.load",
+                                "candidate_fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                            }
+                        ]
+                    }
+                },
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_traversal_graph"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_traversal_graph_status=ready_for_review", result.verification)
+        self.assertIn("custom_loader_traversal_graph_node_count=2", result.verification)
+        self.assertIn("custom_loader_traversal_graph_queue_count=1", result.verification)
+        self.assertIn("custom_loader_traversal_graph_automatic_recursive_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_traversal_graph_queue")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-graph.json")
+        self.assertEqual(result.artifacts[0].metadata["queue_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+
+    def test_native_web_runtime_blocks_custom_loader_traversal_graph_depth_overflow(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "plan-custom-loader-deep-traversal",
+            {
+                "custom_loader_traversal_plan": {
+                    "status": "planned",
+                    "candidates": [
+                        {
+                            "index": 0,
+                            "status": "ready_for_review",
+                            "classification": "arbitrary_custom_loader",
+                            "loader_path": "window.__customLoader.loadGrandChild",
+                            "target": "window.__customLoader.loadGrandChild",
+                            "chunk_id": "too-deep",
+                            "depth": 4,
+                            "continuation_supported": True,
+                        }
+                    ],
+                },
+                "max_traversal_depth": 2,
+            },
+        )
+
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_traversal_graph"])
+        self.assertIn("custom_loader_traversal_graph_status=blocked", result.verification)
+        self.assertIn("custom_loader_traversal_graph_reason=max_traversal_depth_exceeded", result.verification)
+        self.assertIn("custom_loader_traversal_graph_depth_blocked_count=1", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_traversal_depth_before_continuing")
+        self.assertEqual(result.artifacts[0].metadata["depth_blocked_count"], 1)
+
     def test_native_web_runtime_plans_custom_loader_continuation_workflow_without_execution(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

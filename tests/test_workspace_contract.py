@@ -88,6 +88,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/stitched-flow.json"].virtual_folder, "/workspace/timeline/")
         self.assertEqual(routes["workspace/protection-triage-hooks.json"].future_path, "/workspace/hooks/protection-triage-hooks.json")
         self.assertEqual(routes["workspace/wasm-runtime-candidates.json"].future_path, "/workspace/runtime/wasm-runtime-candidates.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-graph.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-graph.json"].future_path, "/workspace/runtime/custom-loader-traversal-graph.json")
         self.assertEqual(routes["workspace/vm-dispatcher-candidates.json"].future_path, "/workspace/runtime/vm-dispatcher-candidates.json")
         self.assertEqual(routes["workspace/review-gate-after-rollback.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-gate-after-physical-rollback.json"].virtual_folder, "/workspace/review/")

@@ -328,6 +328,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_async_chunk_load_plan", "workspace/async-chunk-load-plan.json", "/workspace/runtime/", "async-chunk-load-plan.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_async_chunk_module_diff", "workspace/async-chunk-module-diff.json", "/workspace/hooks/", "async-chunk-module-diff.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_traversal_plan", "workspace/custom-loader-traversal-plan.json", "/workspace/runtime/", "custom-loader-traversal-plan.json", "triage", ("hook", "browser_runtime", "review")),
+        ("workspace_custom_loader_traversal_graph", "workspace/custom-loader-traversal-graph.json", "/workspace/runtime/", "custom-loader-traversal-graph.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_continuation_workflow", "workspace/custom-loader-continuation-workflow.json", "/workspace/runtime/", "custom-loader-continuation-workflow.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_continuation_journal", "workspace/custom-loader-continuation-journal.json", "/workspace/runtime/", "custom-loader-continuation-journal.json", "audit", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_continuation_execution", "workspace/custom-loader-continuation-execution.json", "/workspace/runtime/", "custom-loader-continuation-execution.json", "audit", ("hook", "browser_runtime", "review")),

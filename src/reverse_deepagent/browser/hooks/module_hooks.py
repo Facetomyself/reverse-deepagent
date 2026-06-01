@@ -1425,6 +1425,315 @@ class CustomLoaderContinuationExecutionManager:
 
 
 @dataclass(slots=True)
+class CustomLoaderTraversalGraphSpec:
+    """Review-only graph / queue planner for deeper custom-loader traversal."""
+
+    traversal_plan: dict[str, Any] = field(default_factory=dict)
+    continuation_journal: dict[str, Any] = field(default_factory=dict)
+    continuation_execution: dict[str, Any] = field(default_factory=dict)
+    previous_execution_results: list[dict[str, Any]] = field(default_factory=list)
+    max_traversal_depth: int = 3
+    max_queue_size: int = 20
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderTraversalGraphSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("custom_loader_traversal_graph")
+            or context.get("customLoaderTraversalGraph")
+            or context.get("custom-loader-traversal-graph")
+            or context.get("custom_loader_continuation_queue")
+            or context.get("customLoaderContinuationQueue")
+            or context.get("plan_custom_loader_deep_traversal")
+            or context.get("planCustomLoaderDeepTraversal")
+        )
+        traversal_plan = (
+            context.get("custom_loader_traversal_plan")
+            or context.get("custom-loader-traversal-plan")
+            or context.get("customLoaderTraversalPlan")
+            or context.get("loader_traversal_plan")
+            or context.get("loaderTraversalPlan")
+        )
+        if isinstance(traversal_plan, dict) and isinstance(traversal_plan.get("plan"), dict):
+            traversal_plan = traversal_plan["plan"]
+        continuation_journal = CustomLoaderContinuationJournalSpec._object_alias(
+            context,
+            "custom_loader_continuation_journal",
+            "custom-loader-continuation-journal",
+            "customLoaderContinuationJournal",
+            "continuation_journal",
+            "continuationJournal",
+        )
+        continuation_execution = CustomLoaderContinuationJournalSpec._object_alias(
+            context,
+            "custom_loader_continuation_execution",
+            "custom-loader-continuation-execution",
+            "customLoaderContinuationExecution",
+            "continuation_execution",
+            "continuationExecution",
+        )
+        execution_results: list[dict[str, Any]] = []
+        for key in (
+            "custom_loader_execution_result",
+            "custom-loader-execution-result",
+            "customLoaderExecutionResult",
+            "previous_custom_loader_execution_result",
+            "previousCustomLoaderExecutionResult",
+        ):
+            value = context.get(key)
+            if isinstance(value, dict):
+                execution_results.append(dict(value))
+        for key in (
+            "custom_loader_execution_results",
+            "customLoaderExecutionResults",
+            "previous_custom_loader_execution_results",
+            "previousCustomLoaderExecutionResults",
+        ):
+            value = context.get(key)
+            if isinstance(value, list):
+                execution_results.extend(dict(item) for item in value if isinstance(item, dict))
+        if isinstance(continuation_execution.get("execution"), dict):
+            nested_execution = continuation_execution["execution"].get("custom_loader_execution_result")
+            if isinstance(nested_execution, dict):
+                execution_results.append(dict(nested_execution))
+        if not isinstance(traversal_plan, dict):
+            return None if not requested and not continuation_journal and not continuation_execution else cls(
+                continuation_journal=continuation_journal,
+                continuation_execution=continuation_execution,
+                previous_execution_results=execution_results,
+            )
+        return cls(
+            traversal_plan=dict(traversal_plan),
+            continuation_journal=continuation_journal,
+            continuation_execution=continuation_execution,
+            previous_execution_results=execution_results,
+            max_traversal_depth=max(1, int(context.get("max_traversal_depth", context.get("maxTraversalDepth", context.get("traversal_depth", 3))) or 3)),
+            max_queue_size=max(1, int(context.get("max_queue_size", context.get("maxQueueSize", 20)) or 20)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class CustomLoaderTraversalGraphResult:
+    status: str
+    graph: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "graph": self.graph,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class CustomLoaderTraversalGraphManager:
+    """Build a review-only traversal graph and queue for deeper custom-loader continuation."""
+
+    def plan(self, spec: CustomLoaderTraversalGraphSpec | None) -> CustomLoaderTraversalGraphResult:
+        policy = self._side_effect_policy()
+        if spec is None or not spec.traversal_plan:
+            return CustomLoaderTraversalGraphResult(status="unsupported", reason="missing_custom_loader_traversal_plan", side_effect_policy=policy)
+        candidates = self._candidate_records(spec.traversal_plan)
+        journal_records = self._journal_records(spec.continuation_journal)
+        executed_fingerprints = self._executed_fingerprints(spec, journal_records)
+        nodes = [self._node(candidate, index=index, spec=spec, executed_fingerprints=executed_fingerprints) for index, candidate in enumerate(candidates)]
+        edges = self._edges(nodes, journal_records)
+        queue = [node for node in nodes if node.get("queue_status") == "ready_for_review"][: spec.max_queue_size]
+        depth_blocked_count = sum(1 for node in nodes if node.get("queue_status") == "max_depth_blocked")
+        duplicate_count = sum(1 for node in nodes if node.get("already_executed"))
+        if queue:
+            status = "ready_for_review"
+            reason = None
+        elif depth_blocked_count:
+            status = "blocked"
+            reason = "max_traversal_depth_exceeded"
+        elif candidates:
+            status = "complete"
+            reason = None
+        else:
+            status = "blocked"
+            reason = "no_custom_loader_candidates"
+        graph = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-graph.v1",
+            "status": status,
+            "review_required": True,
+            "graph_id": "custom-loader-traversal-graph",
+            "max_traversal_depth": spec.max_traversal_depth,
+            "candidate_count": len(candidates),
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "journal_record_count": len(journal_records),
+            "executed_fingerprint_count": len(executed_fingerprints),
+            "queue_count": len(queue),
+            "duplicate_executed_count": duplicate_count,
+            "depth_blocked_count": depth_blocked_count,
+            "nodes": nodes,
+            "edges": edges,
+            "review_queue": queue,
+            "review_sequence": [
+                "inspect_traversal_graph_nodes",
+                "select_one_review_queue_candidate",
+                "plan_custom_loader_continuation_workflow",
+                "run_custom_loader_execution_preflight",
+                "execute_one_reviewed_custom_loader_continuation_step",
+                "append_custom_loader_continuation_journal",
+                "rerun_traversal_graph_after_new_candidates",
+            ],
+            "side_effect_policy": policy,
+            "next_action": self._next_action(status=status, queue=queue, depth_blocked_count=depth_blocked_count),
+        }
+        return CustomLoaderTraversalGraphResult(status=status, graph=graph, side_effect_policy=policy, reason=reason)
+
+    @classmethod
+    def _candidate_records(cls, traversal_plan: dict[str, Any]) -> list[dict[str, Any]]:
+        candidates = traversal_plan.get("candidates")
+        if isinstance(candidates, list):
+            return [dict(item) for item in candidates if isinstance(item, dict)]
+        return []
+
+    @classmethod
+    def _journal_records(cls, journal: dict[str, Any]) -> list[dict[str, Any]]:
+        nested = journal.get("journal") if isinstance(journal.get("journal"), dict) else journal
+        records = nested.get("records") if isinstance(nested, dict) else []
+        if isinstance(records, list):
+            return [dict(item) for item in records if isinstance(item, dict)]
+        return []
+
+    @classmethod
+    def _executed_fingerprints(cls, spec: CustomLoaderTraversalGraphSpec, records: list[dict[str, Any]]) -> set[str]:
+        fingerprints = {str(record.get("candidate_fingerprint") or "").strip() for record in records if str(record.get("candidate_fingerprint") or "").strip()}
+        fingerprints.update(
+            "|".join(item)
+            for item in CustomLoaderTraversalPlanManager._executed_candidate_fingerprints(spec.previous_execution_results)
+        )
+        execution = spec.continuation_execution.get("execution") if isinstance(spec.continuation_execution.get("execution"), dict) else {}
+        execution_result = execution.get("custom_loader_execution_result") if isinstance(execution.get("custom_loader_execution_result"), dict) else {}
+        selected = execution_result.get("selected_candidate") if isinstance(execution_result.get("selected_candidate"), dict) else {}
+        if selected:
+            fingerprints.add(cls._candidate_fingerprint(selected))
+        return {item for item in fingerprints if item}
+
+    @classmethod
+    def _node(
+        cls,
+        candidate: dict[str, Any],
+        *,
+        index: int,
+        spec: CustomLoaderTraversalGraphSpec,
+        executed_fingerprints: set[str],
+    ) -> dict[str, Any]:
+        loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or "")[: spec.max_preview_length]
+        target = str(candidate.get("target") or loader_path)[: spec.max_preview_length]
+        chunk_id = str(candidate.get("chunk_id") or candidate.get("chunkId") or target)[: spec.max_preview_length]
+        parent_loader_path = str(candidate.get("parent_loader_path") or candidate.get("parentLoaderPath") or "")[: spec.max_preview_length]
+        depth = CustomLoaderTraversalPlanManager._candidate_depth(candidate, default=1)
+        fingerprint = str(candidate.get("fingerprint") or cls._candidate_fingerprint(candidate))
+        already_executed = bool(candidate.get("already_executed") or candidate.get("alreadyExecuted") or fingerprint in executed_fingerprints)
+        max_depth_exceeded = depth > spec.max_traversal_depth or bool(candidate.get("max_traversal_depth_exceeded") or candidate.get("maxTraversalDepthExceeded"))
+        classification = str(candidate.get("classification") or "").strip() or "arbitrary_custom_loader"
+        blocked_reasons = [str(item) for item in candidate.get("blocking_reasons", []) if str(item)] if isinstance(candidate.get("blocking_reasons"), list) else []
+        continuation_supported = bool(candidate.get("continuation_supported") or candidate.get("continuationSupported") or candidate.get("traversal_supported"))
+        if already_executed:
+            queue_status = "already_executed"
+        elif max_depth_exceeded:
+            queue_status = "max_depth_blocked"
+        elif classification == "arbitrary_custom_loader" and continuation_supported and not blocked_reasons:
+            queue_status = "ready_for_review"
+        elif classification == "arbitrary_custom_loader" and not blocked_reasons:
+            queue_status = "candidate_review_required"
+        else:
+            queue_status = "blocked"
+        return {
+            "node_id": f"custom-loader-node-{index}",
+            "candidate_index": candidate.get("index", index),
+            "loader_path": loader_path,
+            "target": target,
+            "chunk_id": chunk_id,
+            "parent_loader_path": parent_loader_path,
+            "depth": depth,
+            "fingerprint": fingerprint,
+            "classification": classification,
+            "candidate_status": candidate.get("status", ""),
+            "queue_status": queue_status,
+            "already_executed": already_executed,
+            "max_traversal_depth_exceeded": max_depth_exceeded,
+            "continuation_supported": continuation_supported,
+            "blocking_reasons": blocked_reasons,
+            "review_requirements": [
+                "review_this_candidate_before_preflight",
+                "execute_at_most_one_loader_step",
+                "append_journal_before_replanning_deeper_traversal",
+            ],
+            "automatic_execution": False,
+        }
+
+    @classmethod
+    def _edges(cls, nodes: list[dict[str, Any]], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_loader = {str(node.get("loader_path")): node for node in nodes if node.get("loader_path")}
+        edges: list[dict[str, Any]] = []
+        for node in nodes:
+            parent = str(node.get("parent_loader_path") or "")
+            if parent and parent in by_loader:
+                edges.append(
+                    {
+                        "from": by_loader[parent]["node_id"],
+                        "to": node["node_id"],
+                        "edge_type": "parent_loader_path",
+                        "review_required": True,
+                    }
+                )
+        for record in records:
+            loader_path = str(record.get("loader_path") or "")
+            if loader_path in by_loader:
+                edges.append(
+                    {
+                        "from": "journal",
+                        "to": by_loader[loader_path]["node_id"],
+                        "edge_type": "journal_recorded_execution",
+                        "review_required": False,
+                    }
+                )
+        return edges
+
+    @staticmethod
+    def _candidate_fingerprint(candidate: dict[str, Any]) -> str:
+        loader_path, target, chunk_id = CustomLoaderTraversalPlanManager._candidate_fingerprint(candidate)
+        return "|".join((loader_path, target, chunk_id))
+
+    @staticmethod
+    def _next_action(*, status: str, queue: list[dict[str, Any]], depth_blocked_count: int) -> str:
+        if status == "ready_for_review" and queue:
+            return "review_custom_loader_traversal_graph_queue"
+        if depth_blocked_count:
+            return "review_custom_loader_traversal_depth_before_continuing"
+        if status == "complete":
+            return "custom_loader_traversal_graph_complete_or_provide_new_candidates"
+        return "provide_custom_loader_traversal_plan_and_journal"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "loader_invoked": False,
+            "custom_loader_executed": False,
+            "preflight_executed": False,
+            "module_diff_executed": False,
+            "module_hook_installed": False,
+            "writes_journal": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class CustomLoaderExecutionPreflightSpec:
     """Side-effect-free preflight for a reviewed custom loader execution candidate."""
 

@@ -22,6 +22,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderModuleDiffSpec,
     CustomLoaderModuleHookManager,
     CustomLoaderModuleHookSpec,
+    CustomLoaderTraversalGraphManager,
+    CustomLoaderTraversalGraphSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -417,6 +419,128 @@ class CustomLoaderTraversalPlanManagerTests(unittest.TestCase):
         self.assertFalse(second["side_effect_policy"]["executed_now"])
         self.assertEqual(third["status"], "blocked")
         self.assertIn("max_traversal_depth_exceeded", third["blocking_reasons"])
+
+
+class CustomLoaderTraversalGraphManagerTests(unittest.TestCase):
+    def _traversal_plan(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-plan.v1",
+            "status": "ready_for_review",
+            "candidates": [
+                {
+                    "index": 0,
+                    "status": "ready_for_review",
+                    "classification": "arbitrary_custom_loader",
+                    "loader_kind": "custom-loader",
+                    "edge_type": "custom-loader-candidate",
+                    "loader_path": "window.__customLoader.load",
+                    "target": "window.__customLoader.load",
+                    "chunk_id": "custom-sign",
+                    "depth": 1,
+                    "continuation_supported": True,
+                    "fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                },
+                {
+                    "index": 1,
+                    "status": "ready_for_review",
+                    "classification": "arbitrary_custom_loader",
+                    "loader_kind": "custom-loader",
+                    "edge_type": "custom-loader-candidate",
+                    "loader_path": "window.__customLoader.loadChild",
+                    "target": "window.__customLoader.loadChild",
+                    "chunk_id": "custom-sign-child",
+                    "parent_loader_path": "window.__customLoader.load",
+                    "depth": 2,
+                    "continuation_supported": True,
+                },
+            ],
+        }
+
+    def test_builds_review_queue_without_executing_runtime(self) -> None:
+        spec = CustomLoaderTraversalGraphSpec.from_context(
+            {
+                "custom_loader_traversal_plan": self._traversal_plan(),
+                "custom_loader_continuation_journal": {
+                    "journal": {
+                        "records": [
+                            {
+                                "loader_path": "window.__customLoader.load",
+                                "candidate_fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                            }
+                        ]
+                    }
+                },
+            }
+        )
+
+        result = CustomLoaderTraversalGraphManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.graph["schema_version"], "reverse-deepagent.custom-loader-traversal-graph.v1")
+        self.assertEqual(result.graph["node_count"], 2)
+        self.assertGreaterEqual(result.graph["edge_count"], 1)
+        self.assertEqual(result.graph["queue_count"], 1)
+        self.assertEqual(result.graph["review_queue"][0]["loader_path"], "window.__customLoader.loadChild")
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_blocks_candidates_beyond_reviewed_depth(self) -> None:
+        plan = self._traversal_plan()
+        plan["candidates"] = [
+            {
+                "index": 0,
+                "status": "ready_for_review",
+                "classification": "arbitrary_custom_loader",
+                "loader_path": "window.__customLoader.loadGrandChild",
+                "target": "window.__customLoader.loadGrandChild",
+                "chunk_id": "too-deep",
+                "depth": 4,
+                "continuation_supported": True,
+            }
+        ]
+        spec = CustomLoaderTraversalGraphSpec.from_context(
+            {
+                "custom_loader_traversal_plan": plan,
+                "max_traversal_depth": 2,
+            }
+        )
+
+        result = CustomLoaderTraversalGraphManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "max_traversal_depth_exceeded")
+        self.assertEqual(result.graph["depth_blocked_count"], 1)
+        self.assertEqual(result.graph["queue_count"], 0)
+        self.assertEqual(result.graph["next_action"], "review_custom_loader_traversal_depth_before_continuing")
+
+    def test_marks_complete_when_all_candidates_were_already_executed(self) -> None:
+        spec = CustomLoaderTraversalGraphSpec.from_context(
+            {
+                "custom_loader_traversal_plan": self._traversal_plan(),
+                "custom_loader_continuation_journal": {
+                    "journal": {
+                        "records": [
+                            {
+                                "candidate_fingerprint": "window.__customLoader.load|window.__customLoader.load|custom-sign",
+                            },
+                            {
+                                "candidate_fingerprint": "window.__customLoader.loadChild|window.__customLoader.loadChild|custom-sign-child",
+                            },
+                        ]
+                    }
+                },
+            }
+        )
+
+        result = CustomLoaderTraversalGraphManager().plan(spec)
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.graph["queue_count"], 0)
+        self.assertEqual(result.graph["duplicate_executed_count"], 2)
+        self.assertEqual(result.graph["next_action"], "custom_loader_traversal_graph_complete_or_provide_new_candidates")
 
 
 class CustomLoaderContinuationWorkflowManagerTests(unittest.TestCase):

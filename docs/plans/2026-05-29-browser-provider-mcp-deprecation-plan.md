@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-144 is implemented through the review-approved one-step custom-loader continuation execution baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-145 is implemented through the review-only custom-loader traversal graph / queue baseline after the review-approved one-step custom-loader continuation execution baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -1381,3 +1381,15 @@ Status: implemented as an explicit one-step custom-loader continuation executor,
 Boundary: this executor closes only one reviewed continuation step. It does not recurse into the next traversal candidate, automatically continue until exhaustion, execute dynamic imports, invoke webpack `require.e`, invoke module factories, execute module federation `get/init`, bypass preflight/review gates, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper multi-step custom-loader traversal, deep async chunk traversal, and recursive federation traversal remain capability-gated follow-up work.
 
 Tests cover manager-level plan-only / preflight-only / blocked-without-preflight / reviewed execution+diff+journal flows, native-web route metadata and one-step execution behavior, hook-subagent review warnings, workspace route aliasing, coordinator payload extraction / category mapping, and existing module / native-web regressions.
+
+### Step 145 execution record: Review-only custom loader traversal graph / queue baseline
+
+Status: implemented as a review-only graph / queue planner for deeper custom-loader traversal, not automatic recursive execution, preflight execution, loader invocation, journal mutation, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`CustomLoaderTraversalGraphManager` now consumes `custom_loader_traversal_plan` evidence plus optional `custom_loader_continuation_journal`, `custom_loader_continuation_execution`, and previous custom-loader execution results. It emits `reverse-deepagent.custom-loader-traversal-graph.v1` with graph nodes, parent / journal edges, duplicate-execution detection, max-depth blockers, bounded `review_queue`, and side-effect policy fields that keep `plan_only=true`, `loader_invoked=false`, `preflight_executed=false`, `module_diff_executed=false`, `module_hook_installed=false`, `writes_journal=false`, `automatic_recursive_traversal=false`, `calls_mcp=false`, and `mobile_runtime_used=false`.
+
+`native-web` exposes this through explicit `custom-loader-traversal-graph` / `custom-loader-continuation-queue` / `plan-custom-loader-deep-traversal` / `custom-loader-deep-traversal-plan` protection names and returns `virtual://workspace/custom-loader-traversal-graph.json`. The workspace contract indexes `workspace/custom-loader-traversal-graph.json` with future alias `/workspace/runtime/custom-loader-traversal-graph.json`; coordinator extraction / artifact category mapping classify it as `triage`; hook review summarizes graph status, queue count, depth blockers, and warns with `custom_loader_traversal_graph_requires_review` when a queue is ready.
+
+Boundary: this closes only the review-only graph / queue surface between one-step continuation execution and any future deeper traversal workflow. It does not run preflight, invoke custom loaders, request chunks, run dynamic imports, invoke module factories, execute webpack `require.e`, execute module federation `get/init`, install hooks, append continuation journals, recurse automatically, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper multi-step execution-style custom-loader traversal remains capability-gated follow-up work.
+
+Tests cover manager-level queue planning / depth blocking / duplicate completion, native-web graph route metadata and depth-block behavior, hook-subagent review warnings, workspace route aliasing, coordinator payload extraction / category mapping, and existing module / native-web regressions.

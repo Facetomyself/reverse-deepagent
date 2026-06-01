@@ -930,6 +930,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_async_chunk_load_plan": "triage",
     "workspace_async_chunk_module_diff": "triage",
     "workspace_custom_loader_traversal_plan": "triage",
+    "workspace_custom_loader_traversal_graph": "triage",
     "workspace_custom_loader_continuation_workflow": "triage",
     "workspace_custom_loader_continuation_journal": "audit",
     "workspace_custom_loader_continuation_execution": "audit",
@@ -1662,6 +1663,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["async-chunk-module-diff.json"] = evidence.details
         elif evidence.source == "custom_loader_traversal_plan":
             payloads["custom-loader-traversal-plan.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_graph":
+            payloads["custom-loader-traversal-graph.json"] = evidence.details
         elif evidence.source == "custom_loader_continuation_workflow":
             payloads["custom-loader-continuation-workflow.json"] = evidence.details
         elif evidence.source == "custom_loader_continuation_journal":
