@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reverse_deepagent.tools.artifact_tools import make_read_workspace_artifact_tool, summarize_workspace_artifact_read
+from reverse_deepagent.tools.artifact_tools import (
+    audit_workspace_artifact_consumers_payload,
+    make_audit_workspace_artifact_consumers_tool,
+    make_read_workspace_artifact_tool,
+    summarize_workspace_artifact_read,
+)
 
 
 class WorkspaceArtifactReaderTests(unittest.TestCase):
@@ -124,6 +129,33 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertFalse(metrics["direct_path_fallback_used"])
             self.assertTrue(metrics["missing"])
             self.assertGreaterEqual(metrics["checked_path_count"], 2)
+
+    def test_workspace_consumer_audit_classifies_remaining_adoption_boundaries(self) -> None:
+        payload = audit_workspace_artifact_consumers_payload()
+
+        self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-consumer-audit.v1")
+        self.assertEqual(payload["status"], "review")
+        self.assertTrue(payload["side_effect_policy"]["read_only"])
+        self.assertFalse(payload["side_effect_policy"]["files_inspected"])
+        self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+        self.assertTrue(payload["summary"]["mobile_full_runtime_chains_deferred"])
+        by_id = {item["consumer_id"]: item for item in payload["consumers"]}
+        self.assertEqual(by_id["coordinator.read_workspace_artifact"]["resolver_status"], "resolver-ready")
+        self.assertEqual(by_id["delivery.execute_local_delivery.artifacts_json"]["resolver_status"], "partial")
+        self.assertEqual(by_id["rebuild.build_rebuild_delivery"]["resolver_status"], "candidate")
+        self.assertEqual(by_id["delivery.execute_delivery_recovery"]["resolver_status"], "explicit-filesystem-boundary")
+        self.assertIn("rebuild.build_rebuild_delivery", {item["consumer_id"] for item in payload["follow_up_candidates"]})
+        self.assertNotIn("delivery.execute_delivery_recovery", {item["consumer_id"] for item in payload["follow_up_candidates"]})
+        self.assertGreaterEqual(payload["summary"]["explicit_filesystem_boundary_count"], 4)
+
+    def test_workspace_consumer_audit_tool_returns_payload_without_side_effects(self) -> None:
+        tool = make_audit_workspace_artifact_consumers_tool()
+
+        payload = tool()
+
+        self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-consumer-audit.v1")
+        self.assertEqual(tool.__name__, "audit_workspace_artifact_consumers")
+        self.assertTrue(payload["side_effect_policy"]["read_only"])
 
 
 if __name__ == "__main__":

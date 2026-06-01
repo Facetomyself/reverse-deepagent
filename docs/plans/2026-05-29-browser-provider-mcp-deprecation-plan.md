@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-106 is implemented through the workspace resolver compatibility metrics baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-107 is implemented through the workspace consumer adoption audit baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -960,3 +960,15 @@ Status: implemented as read-only resolver usage diagnostics attached to workspac
 Boundary: metrics are local read diagnostics only. They do not write audit artifacts, create directories, enable dual-write, change canonical paths, migrate files, start browsers, call MCP, perform delivery, or touch Android / iOS / mini-program full runtime chains. They are intended to inform later alias adoption, opt-in dual-write expansion, and any future foldered-canonical migration pilot.
 
 Tests cover legacy canonical hits, future foldered fallback hits, direct relative fallback hits, missing resolved artifacts, and compact summary propagation.
+
+### Step 107 execution record: Workspace consumer adoption audit baseline
+
+Status: implemented as a read-only consumer matrix for workspace artifact-ref adoption, not broader resolver adoption, path migration, dual-write expansion, or delivery gate relaxation.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `audit_workspace_artifact_consumers_payload(...)` and `make_audit_workspace_artifact_consumers_tool(...)`. The audit classifies known workspace and path consumers as `resolver-ready`, `partial`, `candidate`, `explicit-filesystem-boundary`, or `non-workspace-input`, with owner, tool, input names, current support, rationale, and next action.
+
+The default coordinator toolset now includes `audit_workspace_artifact_consumers`, giving the agent a side-effect-free way to inspect remaining adoption candidates before proposing alias expansion. Current follow-up candidates include `execute_local_delivery` source path usage monitoring and optional artifact-ref inputs for `build_rebuild_delivery`; delivery resume / transition / recovery / rollback backend-manifest paths and review approval roots are explicitly marked as filesystem safety boundaries.
+
+Boundary: this is an audit surface only. It does not inspect files, write artifacts, create directories, enable dual-write, migrate paths, start browsers, call MCP, execute delivery, mutate manifests, record approvals, or touch Android / iOS / mini-program full runtime chains. It is intended to prevent accidental resolver expansion across apply-time safety gates while guiding later targeted adoption.
+
+Tests cover the audit payload, side-effect policy, candidate / partial / explicit-boundary classification, and coordinator smoke compatibility.

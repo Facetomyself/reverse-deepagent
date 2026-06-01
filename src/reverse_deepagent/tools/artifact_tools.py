@@ -53,6 +53,67 @@ def make_read_workspace_artifact_tool(default_artifact_root: str | Path) -> Arti
     return read_workspace_artifact
 
 
+def make_audit_workspace_artifact_consumers_tool() -> ArtifactTool:
+    """Create a read-only audit tool for workspace artifact-ref adoption."""
+
+    def audit_workspace_artifact_consumers() -> dict[str, Any]:
+        """Return a static resolver-adoption matrix for workspace artifact consumers."""
+
+        return audit_workspace_artifact_consumers_payload()
+
+    audit_workspace_artifact_consumers.__name__ = "audit_workspace_artifact_consumers"
+    audit_workspace_artifact_consumers.__doc__ = (
+        "Read-only audit of tools and workflow inputs that consume workspace artifacts or filesystem paths. "
+        "Classifies consumers as resolver-ready, partial, candidate, explicit-filesystem-boundary, or non-workspace input; "
+        "does not inspect files, write artifacts, migrate paths, enable dual-write, start browsers, or call MCP."
+    )
+    return audit_workspace_artifact_consumers
+
+
+def audit_workspace_artifact_consumers_payload() -> dict[str, Any]:
+    """Return the current resolver adoption matrix for known workspace consumers."""
+
+    consumers = _workspace_consumer_audit_entries()
+    by_status: dict[str, int] = {}
+    by_owner: dict[str, int] = {}
+    for item in consumers:
+        by_status[item["resolver_status"]] = by_status.get(item["resolver_status"], 0) + 1
+        by_owner[item["owner"]] = by_owner.get(item["owner"], 0) + 1
+    follow_up_candidates = [
+        item
+        for item in consumers
+        if item["resolver_status"] in {"candidate", "partial"}
+        and item["next_action"] not in {"keep-explicit-filesystem-boundary", "none"}
+    ]
+    explicit_boundaries = [item for item in consumers if item["resolver_status"] == "explicit-filesystem-boundary"]
+    return {
+        "schema_version": "reverse-deepagent.workspace-consumer-audit.v1",
+        "status": "review",
+        "summary": {
+            "consumer_count": len(consumers),
+            "by_status": dict(sorted(by_status.items())),
+            "by_owner": dict(sorted(by_owner.items())),
+            "follow_up_candidate_count": len(follow_up_candidates),
+            "explicit_filesystem_boundary_count": len(explicit_boundaries),
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "consumers": consumers,
+        "follow_up_candidates": follow_up_candidates,
+        "explicit_filesystem_boundaries": explicit_boundaries,
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
 def read_workspace_artifact_payload(
     *,
     artifact_ref: str,
@@ -126,6 +187,186 @@ def load_workspace_artifact_json_object(
     if not isinstance(value, dict):
         raise ValueError(f"{field_name} must resolve to a JSON object artifact")
     return value, result
+
+
+def _workspace_consumer_audit_entries() -> list[dict[str, Any]]:
+    """Return the static list of known workspace artifact / path consumers."""
+
+    return [
+        _consumer_entry(
+            consumer_id="coordinator.read_workspace_artifact",
+            owner="coordinator",
+            tool="read_workspace_artifact",
+            inputs=("artifact_ref", "artifact_root"),
+            resolver_status="resolver-ready",
+            current_support="artifact key, legacy path, future path, virtual URI, and artifact-root-relative fallback",
+            next_action="none",
+            rationale="Shared read-only resolver consumer with compatibility metrics.",
+        ),
+        _consumer_entry(
+            consumer_id="timeline.review_flow_timeline",
+            owner="timeline",
+            tool="review_flow_timeline",
+            inputs=("flow_timeline_artifact_ref", "artifact_root"),
+            resolver_status="resolver-ready",
+            current_support="artifact-ref input plus legacy JSON string input",
+            next_action="none",
+            rationale="Specialized review helper reads through load_workspace_artifact_json_object.",
+        ),
+        _consumer_entry(
+            consumer_id="hook.review_hook_artifacts",
+            owner="hook",
+            tool="review_hook_artifacts",
+            inputs=("hook_artifacts_ref", "artifact_root"),
+            resolver_status="resolver-ready",
+            current_support="artifact-ref input plus legacy JSON string input",
+            next_action="none",
+            rationale="Specialized review helper reads hook artifacts through the shared resolver.",
+        ),
+        _consumer_entry(
+            consumer_id="debugger.review_debugger_artifacts",
+            owner="debugger",
+            tool="review_debugger_artifacts",
+            inputs=("debugger_artifacts_ref", "artifact_root"),
+            resolver_status="resolver-ready",
+            current_support="artifact-ref input plus legacy JSON string input",
+            next_action="none",
+            rationale="Specialized review helper reads debugger artifacts through the shared resolver.",
+        ),
+        _consumer_entry(
+            consumer_id="rebuild.review_rebuild_artifacts",
+            owner="rebuild",
+            tool="review_rebuild_artifacts",
+            inputs=("rebuild_result_artifact_ref", "rebuild_plan_artifact_ref", "artifact_root"),
+            resolver_status="resolver-ready",
+            current_support="artifact-ref inputs plus legacy JSON string inputs",
+            next_action="none",
+            rationale="Read-only rebuild review accepts artifact refs for both result and plan payloads.",
+        ),
+        _consumer_entry(
+            consumer_id="review.evaluate_delivery_review_gate",
+            owner="review",
+            tool="evaluate_delivery_review_gate",
+            inputs=("rebuild_result_artifact_ref", "evidence_promotion_artifact_ref", "artifact_root"),
+            resolver_status="resolver-ready",
+            current_support="artifact-ref inputs plus legacy JSON string inputs",
+            next_action="none",
+            rationale="Review gate consumes reviewed JSON object artifacts through the shared resolver.",
+        ),
+        _consumer_entry(
+            consumer_id="delivery.execute_local_delivery.artifacts_json",
+            owner="delivery",
+            tool="execute_local_delivery",
+            inputs=("artifacts_json[].source_artifact_ref", "artifacts_json[].artifact_ref", "artifact_root"),
+            resolver_status="partial",
+            current_support="source_artifact_ref / artifact_ref are resolver-ready; source_path remains supported for explicit filesystem delivery",
+            next_action="monitor-source_path-usage-before-tightening",
+            rationale="Delivery artifact source normalization is resolver-ready, but source_path is intentionally retained for non-workspace files and backward compatibility.",
+        ),
+        _consumer_entry(
+            consumer_id="rebuild.build_rebuild_delivery",
+            owner="rebuild",
+            tool="build_rebuild_delivery",
+            inputs=("task_card_json", "final_result_json", "artifact_root"),
+            resolver_status="candidate",
+            current_support="JSON string inputs only; artifact_root selects output root",
+            next_action="add-optional-task-card-and-final-result-artifact-ref-inputs",
+            rationale="The common upstream inputs are workspace_task_card and workspace_final; optional artifact refs would reduce manual read-then-paste handoff without changing output writes.",
+        ),
+        _consumer_entry(
+            consumer_id="delivery.execute_delivery_resume",
+            owner="delivery",
+            tool="execute_delivery_resume",
+            inputs=("backend_manifest_path", "approval_ledger_path", "delivery_root"),
+            resolver_status="explicit-filesystem-boundary",
+            current_support="explicit filesystem paths only",
+            next_action="keep-explicit-filesystem-boundary",
+            rationale="Resume runner validates and mutates transaction-scoped delivery state; backend manifest and approval ledger paths are apply-time safety gates.",
+        ),
+        _consumer_entry(
+            consumer_id="delivery.execute_delivery_transition",
+            owner="delivery",
+            tool="execute_delivery_transition",
+            inputs=("backend_manifest_path", "delivery_root"),
+            resolver_status="explicit-filesystem-boundary",
+            current_support="explicit filesystem paths only",
+            next_action="keep-explicit-filesystem-boundary",
+            rationale="Transition execution can recover or commit backend manifest state and must not silently reinterpret mutation targets through workspace aliases.",
+        ),
+        _consumer_entry(
+            consumer_id="delivery.execute_delivery_recovery",
+            owner="delivery",
+            tool="execute_delivery_recovery",
+            inputs=("backend_manifest_path", "delivery_root"),
+            resolver_status="explicit-filesystem-boundary",
+            current_support="explicit filesystem paths only",
+            next_action="keep-explicit-filesystem-boundary",
+            rationale="Recovery can restore a backend manifest from checkpoints; explicit paths keep reviewer intent and digest checks unambiguous.",
+        ),
+        _consumer_entry(
+            consumer_id="delivery.execute_delivery_rollback",
+            owner="delivery",
+            tool="execute_delivery_rollback",
+            inputs=("backend_manifest_path", "delivery_root"),
+            resolver_status="explicit-filesystem-boundary",
+            current_support="explicit filesystem paths only",
+            next_action="keep-explicit-filesystem-boundary",
+            rationale="Rollback preflight / apply is a physical mutation boundary and should not be hidden behind artifact alias lookup.",
+        ),
+        _consumer_entry(
+            consumer_id="review.record_review_approval",
+            owner="review",
+            tool="record_review_approval",
+            inputs=("review_root", "subject_id", "subject_digest_sha256"),
+            resolver_status="explicit-filesystem-boundary",
+            current_support="explicit review root plus logical subject identifiers",
+            next_action="keep-explicit-filesystem-boundary",
+            rationale="Approval recording writes append-only audit artifacts; subject refs should stay logical and review_root should stay explicit.",
+        ),
+        _consumer_entry(
+            consumer_id="delivery.plan_delivery_resume",
+            owner="delivery",
+            tool="plan_delivery_resume",
+            inputs=("delivery_root", "transaction_id"),
+            resolver_status="non-workspace-input",
+            current_support="transaction root inspection only",
+            next_action="none",
+            rationale="The planner inspects a delivery transaction root, not workspace artifacts.",
+        ),
+        _consumer_entry(
+            consumer_id="delivery.manage_delivery_transaction_lock_provider",
+            owner="delivery",
+            tool="manage_delivery_transaction_lock_provider",
+            inputs=("delivery_root", "provider_id", "transaction_id"),
+            resolver_status="non-workspace-input",
+            current_support="transaction lock provider root and logical lock ids",
+            next_action="none",
+            rationale="Lock provider operations are transaction lease boundaries, not workspace artifact consumption.",
+        ),
+    ]
+
+
+def _consumer_entry(
+    *,
+    consumer_id: str,
+    owner: str,
+    tool: str,
+    inputs: tuple[str, ...],
+    resolver_status: str,
+    current_support: str,
+    next_action: str,
+    rationale: str,
+) -> dict[str, Any]:
+    return {
+        "consumer_id": consumer_id,
+        "owner": owner,
+        "tool": tool,
+        "inputs": list(inputs),
+        "resolver_status": resolver_status,
+        "current_support": current_support,
+        "next_action": next_action,
+        "rationale": rationale,
+    }
 
 def summarize_workspace_artifact_read(result: dict[str, Any] | None) -> dict[str, Any]:
     """Return compact, secret-safe diagnostics for artifact-ref based tool inputs."""
