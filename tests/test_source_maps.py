@@ -1,6 +1,6 @@
 import unittest
 
-from reverse_deepagent.browser.source_maps import SourceMapRemapper
+from reverse_deepagent.browser.source_maps import SourceMapFetchManager, SourceMapFetchSpec, SourceMapRemapper
 
 
 BASE64_VLQ_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -19,6 +19,87 @@ def encode_vlq_segment(values: list[int]) -> str:
             if not vlq:
                 break
     return "".join(encoded)
+
+
+class SourceMapFetchManagerTests(unittest.TestCase):
+    def test_source_map_fetch_plans_same_origin_source_mapping_url_without_network(self) -> None:
+        spec = SourceMapFetchSpec.from_context(
+            {
+                "script_url": "https://example.test/assets/app.js?cache=1",
+                "script_source": "console.log('x');\n//# sourceMappingURL=app.js.map?token=secret",
+            }
+        )
+
+        result = SourceMapFetchManager(fetcher=lambda *_: (_ for _ in ()).throw(AssertionError("network not expected"))).plan_or_fetch(spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertEqual(result.plan["source_map_url"], "https://example.test/assets/app.js.map?token=secret")
+        self.assertEqual(result.plan["source_map_url_redacted"], "https://example.test/assets/app.js.map")
+        self.assertTrue(result.plan["fetch_allowed"])
+        self.assertTrue(result.side_effect_policy["plan_only_by_default"])
+        self.assertFalse(result.result["attempted"])
+
+    def test_source_map_fetch_blocks_cross_origin_without_allowlist(self) -> None:
+        spec = SourceMapFetchSpec.from_context(
+            {
+                "script_url": "https://example.test/assets/app.js",
+                "source_map_url": "https://cdn.example.test/maps/app.js.map",
+                "fetch_source_map": True,
+                "review_approved": True,
+            }
+        )
+
+        result = SourceMapFetchManager(fetcher=lambda *_: b"{}").plan_or_fetch(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "cross_origin_source_map_requires_allowlist_or_override")
+        self.assertFalse(result.result["attempted"])
+
+    def test_source_map_fetch_requires_review_before_network(self) -> None:
+        spec = SourceMapFetchSpec.from_context(
+            {
+                "script_url": "https://example.test/assets/app.js",
+                "source_map_url": "app.js.map",
+                "fetch_source_map": True,
+            }
+        )
+
+        result = SourceMapFetchManager(fetcher=lambda *_: (_ for _ in ()).throw(AssertionError("network not expected"))).plan_or_fetch(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.result["attempted"])
+
+    def test_source_map_fetches_reviewed_payload_and_indexed_section_urls(self) -> None:
+        root_payload = b'{"version":3,"sections":[{"offset":{"line":0,"column":0},"url":"child.map"}]}'
+        child_payload = b'{"version":3,"sources":["src/app.js"],"names":["buildSign"],"mappings":"AAAA"}'
+        calls: list[str] = []
+
+        def fetcher(url: str, max_bytes: int) -> bytes:
+            calls.append(url)
+            return child_payload if url.endswith("child.map") else root_payload
+
+        spec = SourceMapFetchSpec.from_context(
+            {
+                "script_url": "https://example.test/assets/app.js",
+                "source_map_url": "app.js.map",
+                "fetch_source_map": True,
+                "review_approved": True,
+                "fetch_indexed_section_urls": True,
+            }
+        )
+
+        result = SourceMapFetchManager(fetcher=fetcher).plan_or_fetch(spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(calls, ["https://example.test/assets/app.js.map", "https://example.test/assets/child.map"])
+        self.assertTrue(result.result["ok"])
+        self.assertEqual(result.result["section_count"], 1)
+        self.assertEqual(result.result["indexed_section_url_count"], 1)
+        self.assertEqual(result.result["indexed_section_success_count"], 1)
+        self.assertEqual(result.result["indexed_section_results"][0]["sources_count"], 1)
+        self.assertFalse(result.side_effect_policy["browser_cookies_sent"])
+        self.assertFalse(result.result["payload_exported"])
 
 
 class SourceMapRemapperTests(unittest.TestCase):

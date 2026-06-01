@@ -179,6 +179,10 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/async-chunk-load-plan.json"].future_path, "/workspace/runtime/async-chunk-load-plan.json")
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].future_path, "/workspace/runtime/async-chunk-load-result.json")
+        self.assertEqual(routes["workspace/source-map-fetch-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-fetch-plan.json"].future_path, "/workspace/debugger/source-map-fetch-plan.json")
+        self.assertEqual(routes["workspace/source-map-fetch-result.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-fetch-result.json"].future_path, "/workspace/debugger/source-map-fetch-result.json")
         self.assertEqual(routes["workspace/workspace-contract.json"].future_path, "/workspace/delivery/workspace-contract.json")
         self.assertTrue(all(item.migration_status == "indexed-only" for item in routes.values()))
 

@@ -1569,6 +1569,29 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["record_count"], 2)
         self.assertEqual(result.artifacts[0].metadata["types"], ["attributes", "childList"])
 
+    def test_native_web_runtime_plans_source_map_fetch_without_network_by_default(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-fetch",
+            {
+                "script_url": "https://example.test/assets/app.js",
+                "script_source": "console.log('x');\n//# sourceMappingURL=app.js.map?token=secret",
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_source_map_fetch"])
+        self.assertIn("source_map_fetch_status=planned", result.verification)
+        self.assertIn("source_map_fetch_allowed=True", result.verification)
+        self.assertIn("source_map_fetch_attempted=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_fetch_plan_before_execution")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-fetch-plan.json")
+        self.assertTrue(result.artifacts[0].metadata["fetch_allowed"])
+        self.assertEqual(result.artifacts[0].metadata["source_map_url_redacted"], "https://example.test/assets/app.js.map")
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/source-map-fetch-result.json")
+        self.assertFalse(result.artifacts[1].metadata["fetch_attempted"])
+
     def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

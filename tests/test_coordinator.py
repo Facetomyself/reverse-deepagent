@@ -182,6 +182,20 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native source map fetch plan",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_fetch_plan",
+                    details={"status": "ready_for_review", "source_map_url_redacted": "https://example.test/app.js.map"},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map fetch result",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="source_map_fetch_result",
+                    details={"status": "success", "byte_count": 128},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint timeline",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoint_timeline",
@@ -217,6 +231,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
         self.assertEqual(payloads["async-chunk-load-result.json"]["addedRegistryKeys"], ["731"])
+        self.assertEqual(payloads["source-map-fetch-plan.json"]["source_map_url_redacted"], "https://example.test/app.js.map")
+        self.assertEqual(payloads["source-map-fetch-result.json"]["byte_count"], 128)
         self.assertEqual(payloads["source-logpoints.json"]["count"], 1)
         self.assertEqual(payloads["source-logpoint-timeline.json"]["event_count"], 1)
         self.assertEqual(payloads["stitched-flow.json"]["flows"][0]["stitched_flow_id"], "stitched-flow-1")
@@ -225,6 +241,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_result"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_fetch_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_fetch_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")

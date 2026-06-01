@@ -31,6 +31,7 @@ from reverse_deepagent.browser.hooks import (
     SourceLogpointManager,
     SourceLogpointSpec,
 )
+from reverse_deepagent.browser.source_maps import SourceMapFetchManager, SourceMapFetchSpec
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -1017,6 +1018,81 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action="inspect_closure_function_candidates" if candidate_count else "provide_candidate_names_or_adjust_breakpoint",
                 confidence=ConfidenceLevel.MEDIUM if candidate_count else ConfidenceLevel.LOW,
             )
+        if self._is_source_map_fetch_request(protection_name, context):
+            spec = SourceMapFetchSpec.from_context(context)
+            result = SourceMapFetchManager().plan_or_fetch(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            fetch_result = result.result if isinstance(result.result, dict) else {}
+            verification = [
+                f"source_map_fetch_status={result.status}",
+                f"source_map_fetch_plan_status={plan.get('status', 'missing')}",
+                f"source_map_fetch_detected={plan.get('source_mapping_url_detected', False)}",
+                f"source_map_fetch_allowed={plan.get('fetch_allowed', False)}",
+                f"source_map_fetch_attempted={fetch_result.get('attempted', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if plan.get("blocking_reason"):
+                verification.append(f"source_map_fetch_blocking_reason={plan['blocking_reason']}")
+            if fetch_result.get("byte_count") is not None:
+                verification.append(f"source_map_fetch_byte_count={fetch_result['byte_count']}")
+            if fetch_result.get("indexed_section_url_count") is not None:
+                verification.append(f"source_map_indexed_section_url_count={fetch_result['indexed_section_url_count']}")
+            if result.reason:
+                verification.append(f"source_map_fetch_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_fetch_error={result.error}")
+            artifacts = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-fetch-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime external Source Map fetch plan.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "source_map_url_redacted": plan.get("source_map_url_redacted"),
+                        "fetch_allowed": plan.get("fetch_allowed", False),
+                        "review_required": plan.get("review_required", True),
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/source-map-fetch-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime external Source Map fetch result metadata.",
+                    metadata={
+                        "status": result.status,
+                        "fetch_attempted": fetch_result.get("attempted", False),
+                        "fetch_ok": fetch_result.get("ok", False),
+                        "byte_count": fetch_result.get("byte_count", 0),
+                        "sources_count": fetch_result.get("sources_count", 0),
+                        "indexed_section_url_count": fetch_result.get("indexed_section_url_count", 0),
+                    },
+                ),
+            ]
+            if result.status == "success":
+                status = ExecutionStatus.SUCCESS
+                next_action = "review_fetched_source_map_metadata_before_remap"
+                actions = ["fetch_source_map"]
+            elif result.status == "planned":
+                status = ExecutionStatus.SUCCESS
+                next_action = "review_source_map_fetch_plan_before_execution"
+                actions = ["plan_source_map_fetch"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = "approve_source_map_fetch_or_adjust_url_policy"
+                actions = ["plan_source_map_fetch"]
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_fetch_failure"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=artifacts,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
+            )
         if self._is_source_logpoint_request(protection_name, context):
             spec = SourceLogpointSpec.from_context(context)
             result = SourceLogpointManager().install(page, spec)
@@ -1703,6 +1779,25 @@ class NativeWebRuntime(WebReverseRuntime):
                 "closureQuery",
                 "closure_scope_discovery",
                 "closureScopeDiscovery",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_fetch_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"source-map-fetch", "fetch-source-map", "source-map-url"}:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_url",
+                "sourceMapUrl",
+                "source_mapping_url",
+                "sourceMappingURL",
+                "fetch_source_map",
+                "fetchSourceMap",
+                "fetch_indexed_section_urls",
+                "fetchIndexedSectionUrls",
             )
         )
 
