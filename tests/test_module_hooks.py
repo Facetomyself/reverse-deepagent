@@ -1,6 +1,8 @@
 import unittest
 
 from reverse_deepagent.browser.hooks import (
+    AsyncChunkLoadManager,
+    AsyncChunkLoadSpec,
     ModuleDiscoveryManager,
     ModuleDiscoverySpec,
     ModuleHookManager,
@@ -88,6 +90,33 @@ class ModuleDiscoveryPage:
         if "__webpack_require__(731).sign" in expression:
             self.triggered = True
             return "sig-demo"
+        raise AssertionError(f"unexpected expression: {expression}")
+
+
+class AsyncChunkLoadPage:
+    url = "https://example.test/app"
+
+    def __init__(self) -> None:
+        self.executed_chunk_ids: list[str] = []
+
+    def evaluate(self, expression):
+        if "__REVERSE_AGENT_ASYNC_CHUNK_LOAD__" in expression:
+            self.executed_chunk_ids.append("731")
+            return {
+                "marker": "__REVERSE_AGENT_ASYNC_CHUNK_LOAD__",
+                "attempted": True,
+                "ok": True,
+                "status": "success",
+                "runtimePath": "window.__webpack_require__",
+                "chunkId": "731",
+                "beforeRegistryCount": 1,
+                "afterRegistryCount": 2,
+                "addedRegistryKeys": ["731"],
+                "beforeCacheCount": 0,
+                "afterCacheCount": 0,
+                "addedCacheKeys": [],
+                "moduleFactoryInvoked": False,
+            }
         raise AssertionError(f"unexpected expression: {expression}")
 
 
@@ -294,6 +323,112 @@ class ModuleDiscoveryManagerTests(unittest.TestCase):
         self.assertTrue(loader["has_chunk_filename_resolver"])
         self.assertEqual(loader["loader_registry_keys"], ["j"])
         self.assertEqual(result.to_dict()["chunk_graph_candidate_count"], graph["candidate_count"])
+
+    def test_async_chunk_load_plans_by_default_without_executing_loader(self) -> None:
+        page = AsyncChunkLoadPage()
+        spec = AsyncChunkLoadSpec.from_context(
+            {
+                "chunk_candidate": {
+                    "chunk_id": "731",
+                    "target": "/assets/731.js",
+                    "loader_kind": "webpack-runtime",
+                    "runtime_path": "window.__webpack_require__",
+                }
+            }
+        )
+
+        result = AsyncChunkLoadManager().plan_or_execute(page, spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertEqual(result.plan["status"], "ready_for_review")
+        self.assertTrue(result.plan["review_required"])
+        self.assertFalse(result.execution["attempted"])
+        self.assertFalse(page.executed_chunk_ids)
+        self.assertTrue(result.side_effect_policy["plan_only_by_default"])
+        self.assertTrue(result.side_effect_policy["requires_review_approval"])
+        self.assertFalse(result.side_effect_policy["module_factory_invoked"])
+
+    def test_async_chunk_load_blocks_execution_without_review_approval(self) -> None:
+        page = AsyncChunkLoadPage()
+        spec = AsyncChunkLoadSpec.from_context(
+            {
+                "chunk_id": "731",
+                "loader_kind": "webpack-runtime",
+                "runtime_path": "window.__webpack_require__",
+                "execute_chunk_load": True,
+            }
+        )
+
+        result = AsyncChunkLoadManager().plan_or_execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.execution["attempted"])
+        self.assertFalse(page.executed_chunk_ids)
+
+    def test_async_chunk_load_executes_reviewed_webpack_loader_and_records_registry_diff(self) -> None:
+        page = AsyncChunkLoadPage()
+        spec = AsyncChunkLoadSpec.from_context(
+            {
+                "chunk_id": "731",
+                "target": "/assets/731.js",
+                "loader_kind": "webpack-runtime",
+                "runtime_path": "window.__webpack_require__",
+                "execute_chunk_load": True,
+                "review_approved": True,
+            }
+        )
+
+        result = AsyncChunkLoadManager().plan_or_execute(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(page.executed_chunk_ids, ["731"])
+        self.assertTrue(result.execution["ok"])
+        self.assertEqual(result.execution["addedRegistryKeys"], ["731"])
+        self.assertTrue(result.side_effect_policy["runtime_loader_executed"])
+        self.assertTrue(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["dynamic_import_executed"])
+        self.assertFalse(result.side_effect_policy["module_factory_invoked"])
+
+    def test_async_chunk_load_blocks_arbitrary_custom_loader_execution(self) -> None:
+        page = AsyncChunkLoadPage()
+        spec = AsyncChunkLoadSpec.from_context(
+            {
+                "chunk_id": "custom-sign",
+                "target": "window.__customLoader.load",
+                "loader_kind": "custom-loader",
+                "execute_chunk_load": True,
+                "review_approved": True,
+            }
+        )
+
+        result = AsyncChunkLoadManager().plan_or_execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "unsupported_loader_kind_for_execution")
+        self.assertFalse(result.execution["attempted"])
+        self.assertFalse(page.executed_chunk_ids)
+        self.assertFalse(result.plan["execution_supported"])
+        self.assertFalse(result.plan["side_effect_policy"]["custom_loader_executed"])
+
+    def test_async_chunk_load_blocks_expression_runtime_path_execution(self) -> None:
+        page = AsyncChunkLoadPage()
+        spec = AsyncChunkLoadSpec.from_context(
+            {
+                "chunk_id": "731",
+                "loader_kind": "webpack-runtime",
+                "runtime_path": "window.sideEffect(), window.__webpack_require__",
+                "execute_chunk_load": True,
+                "review_approved": True,
+            }
+        )
+
+        result = AsyncChunkLoadManager().plan_or_execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "unsupported_runtime_path_for_execution")
+        self.assertFalse(result.execution["attempted"])
+        self.assertFalse(page.executed_chunk_ids)
 
 
 class ModuleHookManagerTests(unittest.TestCase):

@@ -325,6 +325,8 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_function_hook_timeline", "workspace/function-hook-timeline.json", "/workspace/hooks/", "function-hook-timeline.json", "hook-timeline", ("hook", "timeline")),
         ("workspace_module_hooks", "workspace/module-hooks.json", "/workspace/hooks/", "module-hooks.json", "hook-timeline", ("hook", "protector")),
         ("workspace_module_hook_timeline", "workspace/module-hook-timeline.json", "/workspace/hooks/", "module-hook-timeline.json", "hook-timeline", ("hook", "timeline")),
+        ("workspace_async_chunk_load_plan", "workspace/async-chunk-load-plan.json", "/workspace/runtime/", "async-chunk-load-plan.json", "triage", ("hook", "browser_runtime", "review")),
+        ("workspace_async_chunk_load_result", "workspace/async-chunk-load-result.json", "/workspace/runtime/", "async-chunk-load-result.json", "trace", ("hook", "browser_runtime", "review")),
         ("workspace_source_logpoints", "workspace/source-logpoints.json", "/workspace/debugger/", "source-logpoints.json", "trace", ("debugger", "hook")),
         ("workspace_source_logpoint_timeline", "workspace/source-logpoint-timeline.json", "/workspace/timeline/", "source-logpoint-timeline.json", "trace", ("timeline", "debugger")),
         ("workspace_mutation_audit", "workspace/mutation-audit.json", "/workspace/debugger/", "mutation-audit.json", "trace", ("debugger", "review")),

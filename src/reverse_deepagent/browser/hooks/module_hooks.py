@@ -10,6 +10,7 @@ from reverse_deepagent.browser.collectors.scripts import ScriptCollector
 
 
 JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
+JS_DOTTED_PATH_RE = re.compile(r"^(?:window\.)?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$")
 
 
 def _module_call_path(require_path: str, module_id: str) -> str:
@@ -197,6 +198,265 @@ class ModuleDiscoveryResult:
             "error": self.error,
             "reason": self.reason,
         }
+
+
+@dataclass(slots=True)
+class AsyncChunkLoadSpec:
+    """Review-gated async chunk load request derived from chunk graph candidates."""
+
+    chunk_id: str
+    target: str = ""
+    loader_kind: str = "webpack-runtime"
+    edge_type: str = "runtime-async-chunk"
+    runtime_path: str = "window.__webpack_require__"
+    loader_path: str | None = None
+    execute_chunk_load: bool = False
+    review_approved: bool = False
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkLoadSpec | None":
+        context = context or {}
+        candidate = context.get("chunk_candidate", context.get("chunkCandidate"))
+        candidate_payload = candidate if isinstance(candidate, dict) else {}
+        chunk_id = (
+            context.get("chunk_id")
+            or context.get("chunkId")
+            or candidate_payload.get("chunk_id")
+            or candidate_payload.get("chunkId")
+            or candidate_payload.get("target")
+        )
+        target = str(context.get("chunk_target", context.get("chunkTarget", candidate_payload.get("target", ""))) or "")
+        if chunk_id is None and not target:
+            return None
+        normalized_chunk_id = str(chunk_id or target).strip()
+        if not normalized_chunk_id:
+            return None
+        loader_kind = str(context.get("loader_kind", context.get("loaderKind", candidate_payload.get("loader_kind", candidate_payload.get("loaderKind", "webpack-runtime")))) or "webpack-runtime").strip()
+        edge_type = str(context.get("edge_type", context.get("edgeType", candidate_payload.get("edge_type", candidate_payload.get("edgeType", "runtime-async-chunk")))) or "runtime-async-chunk").strip()
+        runtime_path = str(context.get("runtime_path", context.get("runtimePath", candidate_payload.get("runtime_path", candidate_payload.get("runtimePath", "window.__webpack_require__")))) or "window.__webpack_require__").strip()
+        loader_path_value = context.get("loader_path", context.get("loaderPath", candidate_payload.get("loader_path", candidate_payload.get("loaderPath"))))
+        return cls(
+            chunk_id=normalized_chunk_id,
+            target=target,
+            loader_kind=loader_kind,
+            edge_type=edge_type,
+            runtime_path=runtime_path,
+            loader_path=str(loader_path_value).strip() if loader_path_value else None,
+            execute_chunk_load=bool(context.get("execute_chunk_load", context.get("executeChunkLoad", False))),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))),
+            max_preview_length=int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240),
+        )
+
+
+@dataclass(slots=True)
+class AsyncChunkLoadResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class AsyncChunkLoadManager:
+    """Plan and explicitly execute reviewed async chunk loading without module factory invocation."""
+
+    SUPPORTED_EXECUTION_LOADER_KINDS = {"webpack-runtime", "webpack-require"}
+
+    def plan_or_execute(self, page: BrowserPage, spec: AsyncChunkLoadSpec | None) -> AsyncChunkLoadResult:
+        if spec is None:
+            return AsyncChunkLoadResult(status="unsupported", reason="missing_async_chunk_load_request")
+        plan = self._build_plan(spec)
+        if not spec.execute_chunk_load:
+            return AsyncChunkLoadResult(
+                status="planned",
+                plan=plan,
+                execution={"attempted": False, "reason": "execute_chunk_load_not_requested"},
+                side_effect_policy=plan["side_effect_policy"],
+            )
+        if not spec.review_approved:
+            return AsyncChunkLoadResult(
+                status="blocked",
+                plan=plan,
+                execution={"attempted": False, "reason": "review_approval_required"},
+                side_effect_policy=plan["side_effect_policy"],
+                reason="review_approval_required",
+            )
+        if spec.loader_kind not in self.SUPPORTED_EXECUTION_LOADER_KINDS:
+            return AsyncChunkLoadResult(
+                status="blocked",
+                plan=plan,
+                execution={"attempted": False, "reason": "unsupported_loader_kind_for_execution", "loader_kind": spec.loader_kind},
+                side_effect_policy=plan["side_effect_policy"],
+                reason="unsupported_loader_kind_for_execution",
+            )
+        runtime_path_parts = self._runtime_path_parts(spec.runtime_path)
+        if runtime_path_parts is None:
+            return AsyncChunkLoadResult(
+                status="blocked",
+                plan=plan,
+                execution={"attempted": False, "reason": "unsupported_runtime_path_for_execution", "runtime_path": spec.runtime_path},
+                side_effect_policy=plan["side_effect_policy"],
+                reason="unsupported_runtime_path_for_execution",
+            )
+        try:
+            payload = page.evaluate(self._execution_expression(spec, runtime_path_parts=runtime_path_parts))
+        except Exception as exc:
+            return AsyncChunkLoadResult(
+                status="failed",
+                plan=plan,
+                execution={"attempted": True, "ok": False, "error": str(exc)},
+                side_effect_policy=self._executed_side_effect_policy(),
+                error=str(exc),
+            )
+        execution = payload if isinstance(payload, dict) else {"attempted": True, "ok": False, "result": payload}
+        status = "success" if execution.get("ok") else "failed"
+        return AsyncChunkLoadResult(status=status, plan=plan, execution=execution, side_effect_policy=self._executed_side_effect_policy())
+
+    @staticmethod
+    def _build_plan(spec: AsyncChunkLoadSpec) -> dict[str, Any]:
+        supported = spec.loader_kind in AsyncChunkLoadManager.SUPPORTED_EXECUTION_LOADER_KINDS
+        return {
+            "schema_version": "reverse-deepagent.async-chunk-load-plan.v1",
+            "status": "ready_for_review" if supported else "blocked",
+            "chunk_id": spec.chunk_id,
+            "target": spec.target,
+            "loader_kind": spec.loader_kind,
+            "edge_type": spec.edge_type,
+            "runtime_path": spec.runtime_path,
+            "loader_path": spec.loader_path,
+            "review_required": True,
+            "execution_supported": supported,
+            "approval_requirements": [
+                "confirm_chunk_candidate_origin",
+                "approve_runtime_loader_execution",
+                "inspect_module_registry_diff_after_load",
+            ],
+            "side_effect_policy": {
+                "plan_only_by_default": True,
+                "requires_execute_chunk_load": True,
+                "requires_review_approval": True,
+                "would_execute_runtime_loader": supported,
+                "would_request_chunk": supported,
+                "dynamic_import_executed": False,
+                "custom_loader_executed": False,
+                "module_factory_invoked": False,
+                "module_federation_get_init_executed": False,
+                "calls_mcp": False,
+            },
+            "next_action": "approve_execute_async_chunk_load" if supported else "choose_supported_webpack_runtime_chunk_candidate",
+        }
+
+    @staticmethod
+    def _executed_side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only_by_default": False,
+            "requires_execute_chunk_load": True,
+            "requires_review_approval": True,
+            "runtime_loader_executed": True,
+            "chunk_request_sent": True,
+            "dynamic_import_executed": False,
+            "custom_loader_executed": False,
+            "module_factory_invoked": False,
+            "module_federation_get_init_executed": False,
+            "calls_mcp": False,
+        }
+
+    @staticmethod
+    def _runtime_path_parts(runtime_path: str) -> list[str] | None:
+        normalized = str(runtime_path or "").strip()
+        if not normalized or not JS_DOTTED_PATH_RE.fullmatch(normalized):
+            return None
+        parts = [item for item in normalized.split(".") if item]
+        if parts and parts[0] == "window":
+            parts = parts[1:]
+        return parts or None
+
+    @staticmethod
+    def _execution_expression(spec: AsyncChunkLoadSpec, *, runtime_path_parts: list[str]) -> str:
+        chunk_id = json.dumps(spec.chunk_id, ensure_ascii=False)
+        runtime_path = json.dumps(spec.runtime_path, ensure_ascii=False)
+        runtime_parts = json.dumps(runtime_path_parts, ensure_ascii=False)
+        max_preview_length = max(1, int(spec.max_preview_length))
+        return f"""
+(async () => {{
+  const marker = "__REVERSE_AGENT_ASYNC_CHUNK_LOAD__";
+  const chunkId = {chunk_id};
+  const runtimePath = {runtime_path};
+  const runtimePathParts = {runtime_parts};
+  const maxPreviewLength = {max_preview_length};
+  const describeError = (error) => String(error && (error.stack || error.message) || error).slice(0, maxPreviewLength);
+  const resolveRuntime = (parts) => {{
+    try {{
+      let value = window;
+      for (const part of parts) {{
+        if (!part || !/^[A-Za-z_$][\w$]*$/.test(part)) return {{ ok: false, error: 'unsafe_runtime_path_segment' }};
+        value = value && value[part];
+      }}
+      return {{ ok: true, value }};
+    }} catch (error) {{
+      return {{ ok: false, error: describeError(error) }};
+    }}
+  }};
+  const registryKeys = (req) => req && req.m && typeof req.m === "object" ? Object.keys(req.m).map(String).sort() : [];
+  const cacheKeys = (req) => req && req.c && typeof req.c === "object" ? Object.keys(req.c).map(String).sort() : [];
+  const diffKeys = (before, after) => after.filter((item) => !before.includes(item));
+  const resolved = resolveRuntime(runtimePathParts);
+  if (!resolved.ok) {{
+    return {{ marker, attempted: true, ok: false, status: "failed", reason: "runtime_path_unavailable", runtimePath, chunkId, error: resolved.error }};
+  }}
+  const req = resolved.value;
+  if (!req || typeof req.e !== "function") {{
+    return {{ marker, attempted: true, ok: false, status: "failed", reason: "ensure_chunk_loader_missing", runtimePath, chunkId }};
+  }}
+  const beforeRegistry = registryKeys(req);
+  const beforeCache = cacheKeys(req);
+  try {{
+    await req.e(chunkId);
+  }} catch (error) {{
+    return {{
+      marker,
+      attempted: true,
+      ok: false,
+      status: "failed",
+      reason: "ensure_chunk_loader_failed",
+      runtimePath,
+      chunkId,
+      beforeRegistryCount: beforeRegistry.length,
+      beforeCacheCount: beforeCache.length,
+      error: describeError(error)
+    }};
+  }}
+  const afterRegistry = registryKeys(req);
+  const afterCache = cacheKeys(req);
+  return {{
+    marker,
+    attempted: true,
+    ok: true,
+    status: "success",
+    runtimePath,
+    chunkId,
+    beforeRegistryCount: beforeRegistry.length,
+    afterRegistryCount: afterRegistry.length,
+    addedRegistryKeys: diffKeys(beforeRegistry, afterRegistry).slice(0, 50),
+    beforeCacheCount: beforeCache.length,
+    afterCacheCount: afterCache.length,
+    addedCacheKeys: diffKeys(beforeCache, afterCache).slice(0, 50),
+    moduleFactoryInvoked: false
+  }};
+}})()
+"""
 
 
 class ModuleDiscoveryManager:

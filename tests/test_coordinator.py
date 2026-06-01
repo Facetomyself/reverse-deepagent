@@ -168,6 +168,20 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native async chunk load plan",
+                    kind=EvidenceKind.NOTE,
+                    source="async_chunk_load_plan",
+                    details={"status": "ready_for_review", "chunk_id": "731"},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native async chunk load result",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="async_chunk_load_result",
+                    details={"status": "success", "addedRegistryKeys": ["731"]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint timeline",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoint_timeline",
@@ -201,12 +215,16 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["debugger-timeline.json"]["entry_count"], 4)
         self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
+        self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
+        self.assertEqual(payloads["async-chunk-load-result.json"]["addedRegistryKeys"], ["731"])
         self.assertEqual(payloads["source-logpoints.json"]["count"], 1)
         self.assertEqual(payloads["source-logpoint-timeline.json"]["event_count"], 1)
         self.assertEqual(payloads["stitched-flow.json"]["flows"][0]["stitched_flow_id"], "stitched-flow-1")
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_function_hooks"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")

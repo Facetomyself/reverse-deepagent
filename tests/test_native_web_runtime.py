@@ -109,6 +109,7 @@ class FakeRawPage:
         self.function_hook_events = []
         self.module_hook_installed = False
         self.module_hook_events = []
+        self.async_chunk_loads = []
         self.external_source = ""
         self.runtime_module_payload = None
         self.page_mutation_html_length = 10
@@ -240,6 +241,23 @@ class FakeRawPage:
                 "cacheModules": [],
                 "registryModules": [],
                 "reason": "require_path_unavailable",
+            }
+        if "__REVERSE_AGENT_ASYNC_CHUNK_LOAD__" in expression:
+            self.async_chunk_loads.append("731")
+            return {
+                "marker": "__REVERSE_AGENT_ASYNC_CHUNK_LOAD__",
+                "attempted": True,
+                "ok": True,
+                "status": "success",
+                "runtimePath": "window.__webpack_require__",
+                "chunkId": "731",
+                "beforeRegistryCount": 1,
+                "afterRegistryCount": 2,
+                "addedRegistryKeys": ["731"],
+                "beforeCacheCount": 0,
+                "afterCacheCount": 0,
+                "addedCacheKeys": [],
+                "moduleFactoryInvoked": False,
             }
         if "fetch(" in expression and "/assets/app.js" in expression:
             return self.external_source
@@ -835,6 +853,58 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["chunk_graph_status"], "success")
         self.assertEqual(result.artifacts[0].metadata["chunk_graph_candidate_count"], 3)
         self.assertEqual(result.artifacts[0].metadata["chunk_graph_runtime_loader_count"], 1)
+
+    def test_native_web_runtime_plans_async_chunk_load_without_execution_by_default(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "async-chunk-load",
+            {
+                "chunk_id": "731",
+                "target": "/assets/731.js",
+                "loader_kind": "webpack-runtime",
+                "runtime_path": "window.__webpack_require__",
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_async_chunk_load"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertIn("async_chunk_load_status=planned", result.verification)
+        self.assertIn("async_chunk_load_execution_attempted=False", result.verification)
+        self.assertEqual(result.next_action, "review_async_chunk_load_plan_before_execution")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/async-chunk-load-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["plan_status"], "ready_for_review")
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/async-chunk-load-result.json")
+        self.assertFalse(result.artifacts[1].metadata["execution_attempted"])
+
+    def test_native_web_runtime_executes_reviewed_async_chunk_load(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "async-chunk-load",
+            {
+                "chunk_id": "731",
+                "target": "/assets/731.js",
+                "loader_kind": "webpack-runtime",
+                "runtime_path": "window.__webpack_require__",
+                "execute_chunk_load": True,
+                "review_approved": True,
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_async_chunk_load:731"])
+        self.assertEqual(page.async_chunk_loads, ["731"])
+        self.assertIn("async_chunk_load_status=success", result.verification)
+        self.assertIn("async_chunk_load_execution_attempted=True", result.verification)
+        self.assertIn("async_chunk_load_execution_ok=True", result.verification)
+        self.assertIn("async_chunk_load_added_registry_key_count=1", result.verification)
+        self.assertEqual(result.next_action, "inspect_module_registry_diff_after_chunk_load")
+        self.assertTrue(result.artifacts[1].metadata["execution_ok"])
+        self.assertEqual(result.artifacts[1].metadata["added_registry_key_count"], 1)
 
     def test_native_web_runtime_apply_minimal_protection_builds_flow_timeline(self) -> None:
         provider = FakeProvider()

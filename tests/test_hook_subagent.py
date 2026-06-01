@@ -59,6 +59,44 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["next_action"], "inspect_hook_failure_and_adjust_target_paths")
         self.assertEqual(result["review_required_items"][0]["module_hook_error"], "missing export")
 
+    def test_review_hook_artifacts_warns_for_unexecuted_async_chunk_load_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_load_plan": {
+                "status": "ready_for_review",
+                "chunk_id": "731",
+                "loader_kind": "webpack-runtime",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_load_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_async_chunk_load_plan_before_execution")
+        self.assertEqual(result["summary"]["async_chunk_load_plan_status"], "ready_for_review")
+        self.assertFalse(result["summary"]["async_chunk_load_execution_attempted"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_hook_artifacts_passes_reviewed_async_chunk_load_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_load_plan": {"status": "ready_for_review", "chunk_id": "731"},
+            "async_chunk_load_result": {
+                "status": "success",
+                "execution": {"attempted": True, "ok": True},
+                "addedRegistryKeys": ["731"],
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["next_action"], "hook_review_passed")
+        self.assertEqual(result["summary"]["async_chunk_load_result_status"], "success")
+        self.assertTrue(result["summary"]["async_chunk_load_execution_attempted"])
+        self.assertEqual(result["summary"]["async_chunk_load_added_registry_key_count"], 1)
+
 
     def test_review_hook_artifacts_reads_artifact_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -8,7 +8,7 @@ from typing import Any
 from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_object, summarize_workspace_artifact_read
 
 
-HOOK_ARTIFACT_REVIEW_VERSION = "2026-05-31.hook-artifact-review-v1"
+HOOK_ARTIFACT_REVIEW_VERSION = "2026-06-01.hook-artifact-review-v2"
 
 
 def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = None):
@@ -37,6 +37,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         module_timeline = _object_alias(payload, "module_hook_timeline", "module-hook-timeline", "moduleHookTimeline")
         generic_timeline = _object_alias(payload, "hook_timeline", "hook-timeline", "hookTimeline")
         source_logpoints = _object_alias(payload, "source_logpoints", "source-logpoints", "sourceLogpoints")
+        async_chunk_plan = _object_alias(payload, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan")
+        async_chunk_result = _object_alias(payload, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult")
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -53,11 +55,17 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
 
         blockers: list[str] = []
         warnings: list[str] = []
-        artifact_count = sum(bool(item) for item in (function_hooks, function_timeline, module_hooks, module_timeline, generic_timeline, source_logpoints)) + sum(bool(items) for items in (module_candidates, function_candidates))
+        artifact_count = sum(bool(item) for item in (function_hooks, function_timeline, module_hooks, module_timeline, generic_timeline, source_logpoints, async_chunk_plan, async_chunk_result)) + sum(bool(items) for items in (module_candidates, function_candidates))
         if not artifact_count:
             warnings.append("no_hook_artifacts_provided")
         if any(_status(item) in {"failed", "failure", "error", "unsupported"} for item in (function_hooks, module_hooks, source_logpoints, generic_timeline)):
             blockers.append("hook_artifact_reports_failure")
+        if _status(async_chunk_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_load_plan_blocked")
+        if _status(async_chunk_result) in {"failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_load_failed")
+        if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
+            warnings.append("async_chunk_load_requires_review")
         if missing_count:
             warnings.append("hook_targets_missing")
         if installed_function_count + installed_module_count + source_logpoint_count > 0 and timeline_event_count == 0:
@@ -83,6 +91,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "function_hook_event_count": _event_count(function_timeline, function_events),
                 "module_hook_event_count": _event_count(module_timeline, module_events),
                 "generic_hook_event_count": _event_count(generic_timeline, generic_events),
+                "async_chunk_load_plan_status": _status(async_chunk_plan),
+                "async_chunk_load_result_status": _status(async_chunk_result),
+                "async_chunk_load_execution_attempted": bool(async_chunk_result.get("execution", {}).get("attempted") if isinstance(async_chunk_result.get("execution"), dict) else async_chunk_result.get("execution_attempted", False)),
+                "async_chunk_load_added_registry_key_count": len(_listish(async_chunk_result.get("addedRegistryKeys") or async_chunk_result.get("added_registry_keys"))),
                 "timeline_event_count": timeline_event_count,
                 "function_hook_event_type_counts": _event_type_counts(function_events),
                 "module_hook_event_type_counts": _event_type_counts(module_events),
@@ -91,7 +103,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, function_hooks, module_hooks, source_logpoints),
+            "review_required_items": _review_required_items(blockers, warnings, function_hooks, module_hooks, source_logpoints, async_chunk_plan, async_chunk_result),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -173,6 +185,10 @@ def _status(item: dict[str, Any]) -> str:
     return value.lower() if isinstance(value, str) else ""
 
 
+def _listish(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _intish(value: Any) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -219,8 +235,14 @@ def _installed_targets(payload: dict[str, Any]) -> list[str]:
 def _next_action(blockers: list[str], warnings: list[str]) -> str:
     if "hook_artifact_reports_failure" in blockers:
         return "inspect_hook_failure_and_adjust_target_paths"
+    if "async_chunk_load_plan_blocked" in blockers:
+        return "choose_supported_async_chunk_candidate"
+    if "async_chunk_load_failed" in blockers:
+        return "inspect_async_chunk_load_failure"
     if "no_hook_artifacts_provided" in warnings:
         return "collect_hook_artifacts_before_review"
+    if "async_chunk_load_requires_review" in warnings:
+        return "review_async_chunk_load_plan_before_execution"
     if "hook_targets_missing" in warnings:
         return "adjust_missing_hook_paths_or_module_exports"
     if "installed_hooks_without_timeline_events" in warnings:
@@ -238,6 +260,8 @@ def _review_required_items(
     function_hooks: dict[str, Any],
     module_hooks: dict[str, Any],
     source_logpoints: dict[str, Any],
+    async_chunk_plan: dict[str, Any],
+    async_chunk_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for code in blockers + warnings:
@@ -249,9 +273,12 @@ def _review_required_items(
                 "function_hook_status": _status(function_hooks),
                 "module_hook_status": _status(module_hooks),
                 "source_logpoint_status": _status(source_logpoints),
+                "async_chunk_load_plan_status": _status(async_chunk_plan),
+                "async_chunk_load_result_status": _status(async_chunk_result),
                 "function_hook_error": str(function_hooks.get("error") or ""),
                 "module_hook_error": str(module_hooks.get("error") or ""),
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
+                "async_chunk_load_error": str(async_chunk_result.get("error") or async_chunk_plan.get("error") or ""),
             }
         )
     return items

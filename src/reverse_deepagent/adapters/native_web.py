@@ -8,6 +8,8 @@ from typing import Any
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderRegistryError, BrowserProviderUnavailableError, BrowserSession, build_default_browser_provider_registry
 from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventCacheCollector, ConsoleCollector, DOMCollector, NetworkCollector, ScriptCollector, StorageCollector
 from reverse_deepagent.browser.hooks import (
+    AsyncChunkLoadManager,
+    AsyncChunkLoadSpec,
     BreakpointManager,
     BreakpointSpec,
     BrowserHookManager,
@@ -1132,6 +1134,79 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
+        if self._is_async_chunk_load_request(protection_name, context):
+            spec = AsyncChunkLoadSpec.from_context(context)
+            result = AsyncChunkLoadManager().plan_or_execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            verification = [
+                f"async_chunk_load_status={result.status}",
+                f"async_chunk_load_plan_status={plan.get('status', 'missing')}",
+                f"async_chunk_load_chunk_id={plan.get('chunk_id', '<missing>')}",
+                f"async_chunk_load_loader_kind={plan.get('loader_kind', '<missing>')}",
+                f"async_chunk_load_execution_attempted={execution.get('attempted', False)}",
+                f"async_chunk_load_execution_ok={execution.get('ok', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if execution.get("addedRegistryKeys") is not None:
+                verification.append(f"async_chunk_load_added_registry_key_count={len(execution.get('addedRegistryKeys') or [])}")
+            if execution.get("reason"):
+                verification.append(f"async_chunk_load_execution_reason={execution['reason']}")
+            if result.reason:
+                verification.append(f"async_chunk_load_reason={result.reason}")
+            if result.error:
+                verification.append(f"async_chunk_load_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-load-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed async chunk load plan.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "chunk_id": plan.get("chunk_id"),
+                        "loader_kind": plan.get("loader_kind"),
+                        "review_required": plan.get("review_required", True),
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-load-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime async chunk load execution evidence.",
+                    metadata={
+                        "status": result.status,
+                        "execution_attempted": execution.get("attempted", False),
+                        "execution_ok": execution.get("ok", False),
+                        "chunk_id": plan.get("chunk_id"),
+                        "added_registry_key_count": len(execution.get("addedRegistryKeys") or []),
+                    },
+                ),
+            ]
+            if result.status == "success":
+                next_action = "inspect_module_registry_diff_after_chunk_load"
+                status = ExecutionStatus.SUCCESS
+                applied_actions = [f"execute_async_chunk_load:{plan.get('chunk_id', '<missing>')}"]
+            elif result.status == "planned":
+                next_action = "review_async_chunk_load_plan_before_execution"
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_async_chunk_load"]
+            elif result.status == "blocked":
+                next_action = "approve_async_chunk_load_or_choose_supported_candidate"
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_async_chunk_load"]
+            else:
+                next_action = "inspect_async_chunk_load_failure"
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
+            )
         if self._is_module_discovery_request(protection_name, context):
             discovery_context = {**context, "discover_modules": True}
             spec = ModuleDiscoverySpec.from_context(discovery_context)
@@ -1662,6 +1737,25 @@ class NativeWebRuntime(WebReverseRuntime):
                 "moduleDiscovery",
                 "module_query",
                 "moduleQuery",
+            )
+        )
+
+    @staticmethod
+    def _is_async_chunk_load_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"async-chunk-load", "load-async-chunk", "chunk-load", "webpack-chunk-load"}:
+            return True
+        return any(
+            key in context
+            for key in (
+                "async_chunk_load",
+                "asyncChunkLoad",
+                "execute_chunk_load",
+                "executeChunkLoad",
+                "chunk_candidate",
+                "chunkCandidate",
+                "chunk_id",
+                "chunkId",
             )
         )
 

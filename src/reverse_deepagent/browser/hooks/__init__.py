@@ -2,7 +2,17 @@ from .breakpoints import BreakpointManager, BreakpointResult, BreakpointSpec, Pa
 from .closure_scope import ClosureScopeDiscoveryManager, ClosureScopeDiscoveryResult, ClosureScopeDiscoverySpec
 from .flow_timeline import FlowTimelineManager, FlowTimelineResult, FlowTimelineSpec
 from .function_hooks import FunctionHookManager, FunctionHookResult, FunctionHookSpec
-from .module_hooks import ModuleDiscoveryManager, ModuleDiscoveryResult, ModuleDiscoverySpec, ModuleHookManager, ModuleHookResult, ModuleHookSpec
+from .module_hooks import (
+    AsyncChunkLoadManager,
+    AsyncChunkLoadResult,
+    AsyncChunkLoadSpec,
+    ModuleDiscoveryManager,
+    ModuleDiscoveryResult,
+    ModuleDiscoverySpec,
+    ModuleHookManager,
+    ModuleHookResult,
+    ModuleHookSpec,
+)
 from .page_mutation import (
     MutationObserverTimelineManager,
     MutationObserverTimelineResult,
@@ -29,6 +39,9 @@ __all__ = [
     "FunctionHookManager",
     "FunctionHookResult",
     "FunctionHookSpec",
+    "AsyncChunkLoadManager",
+    "AsyncChunkLoadResult",
+    "AsyncChunkLoadSpec",
     "ModuleHookManager",
     "ModuleHookResult",
     "ModuleHookSpec",
