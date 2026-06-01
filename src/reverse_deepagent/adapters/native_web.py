@@ -14,6 +14,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
+    CustomLoaderExecutionPreflightManager,
+    CustomLoaderExecutionPreflightSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1623,6 +1625,54 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_execution_preflight_request(protection_name, context):
+            spec = CustomLoaderExecutionPreflightSpec.from_context(context)
+            result = CustomLoaderExecutionPreflightManager().preflight(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            verification = [
+                f"custom_loader_execution_preflight_status={result.status}",
+                f"custom_loader_execution_preflight_reason={result.reason or ''}",
+                f"custom_loader_execution_preflight_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"custom_loader_execution_preflight_blocking_count={len(preflight.get('blocking_reasons') or [])}",
+                f"custom_loader_execution_preflight_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-execution-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime side-effect-free custom loader execution preflight.",
+                    metadata={
+                        "status": result.status,
+                        "preflight_status": preflight.get("status"),
+                        "review_required": preflight.get("review_required", True),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                        "blocking_count": len(preflight.get("blocking_reasons") or []),
+                        "preflight_only": result.side_effect_policy.get("preflight_only", True),
+                    },
+                )
+            ]
+            if result.status == "ready_for_execution_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = "execute_custom_loader_with_review_approval"
+                applied_actions = ["preflight_custom_loader_execution"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = preflight.get("next_action", "resolve_custom_loader_preflight_blockers")
+                applied_actions = ["preflight_custom_loader_execution"]
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_execution_preflight_request"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_execution_review" else ConfidenceLevel.LOW,
+            )
         if self._is_custom_loader_traversal_request(protection_name, context):
             spec = CustomLoaderTraversalPlanSpec.from_context(context)
             result = CustomLoaderTraversalPlanManager().plan(spec)
@@ -2580,6 +2630,41 @@ class NativeWebRuntime(WebReverseRuntime):
                 "module_federation_factory_invoke_result",
                 "moduleFederationFactoryInvokeResult",
                 "module-federation-factory-invoke-result",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_execution_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-execution-preflight",
+            "custom-loader-preflight",
+            "preflight-custom-loader-execution",
+            "review-custom-loader-execution",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_execution_preflight",
+                "customLoaderExecutionPreflight",
+                "execute_custom_loader",
+                "executeCustomLoader",
+                "custom_loader_traversal_plan",
+                "customLoaderTraversalPlan",
+                "custom-loader-traversal-plan",
+            )
+        ) and any(
+            key in context
+            for key in (
+                "selected_custom_loader_candidate",
+                "selectedCustomLoaderCandidate",
+                "selected_loader_candidate",
+                "selectedLoaderCandidate",
+                "selected_candidate",
+                "selectedCandidate",
+                "candidate_index",
+                "candidateIndex",
             )
         )
 

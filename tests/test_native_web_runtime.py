@@ -1060,6 +1060,75 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["custom_candidate_count"], 1)
         self.assertTrue(result.artifacts[0].metadata["plan_only"])
 
+    def test_native_web_runtime_preflights_reviewed_custom_loader_execution_without_running_loader(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        traversal = runtime.apply_minimal_protection(
+            "custom-loader-traversal-plan",
+            {
+                "custom_loader_candidates": [
+                    {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "runtime_path": "window.__customLoader",
+                    }
+                ]
+            },
+        )
+        plan = {"status": "planned", "candidates": [{"index": 0, "classification": "arbitrary_custom_loader", "loader_kind": "custom-loader", "edge_type": "custom-loader-candidate", "loader_path": "window.__customLoader.load", "target": "window.__customLoader.load"}]}
+        self.assertEqual(traversal.status.value, "success")
+
+        result = runtime.apply_minimal_protection(
+            "custom-loader-execution-preflight",
+            {
+                "custom_loader_traversal_plan": plan,
+                "candidate_index": 0,
+                "review_approved": True,
+                "expected_loader_path": "window.__customLoader.load",
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["preflight_custom_loader_execution"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertIn("custom_loader_execution_preflight_status=ready_for_execution_review", result.verification)
+        self.assertIn("custom_loader_execution_preflight_loader_invoked=False", result.verification)
+        self.assertEqual(result.next_action, "execute_custom_loader_with_review_approval")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-execution-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["preflight_status"], "ready_for_execution_review")
+        self.assertTrue(result.artifacts[0].metadata["preflight_only"])
+
+    def test_native_web_runtime_blocks_custom_loader_execution_preflight_without_review(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-execution-preflight",
+            {
+                "custom_loader_traversal_plan": {
+                    "status": "planned",
+                    "candidates": [
+                        {
+                            "index": 0,
+                            "classification": "arbitrary_custom_loader",
+                            "loader_kind": "custom-loader",
+                            "edge_type": "custom-loader-candidate",
+                            "loader_path": "window.__customLoader.load",
+                            "target": "window.__customLoader.load",
+                        }
+                    ],
+                },
+                "candidate_index": 0,
+            },
+        )
+
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, ["preflight_custom_loader_execution"])
+        self.assertIn("custom_loader_execution_preflight_status=blocked", result.verification)
+        self.assertEqual(result.next_action, "resolve_custom_loader_preflight_blockers")
+
     def test_native_web_runtime_plans_module_federation_get_init_without_execution(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

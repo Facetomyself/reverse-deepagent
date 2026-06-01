@@ -473,6 +473,172 @@ class CustomLoaderTraversalPlanManager:
 
 
 @dataclass(slots=True)
+class CustomLoaderExecutionPreflightSpec:
+    """Side-effect-free preflight for a reviewed custom loader execution candidate."""
+
+    traversal_plan: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    candidate_index: int | None = None
+    review_approved: bool = False
+    expected_loader_path: str | None = None
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderExecutionPreflightSpec | None":
+        context = context or {}
+        plan = (
+            context.get("custom_loader_traversal_plan")
+            or context.get("custom-loader-traversal-plan")
+            or context.get("customLoaderTraversalPlan")
+            or context.get("loader_traversal_plan")
+            or context.get("loaderTraversalPlan")
+        )
+        if not isinstance(plan, dict):
+            return None
+        index_value = context.get("candidate_index", context.get("candidateIndex"))
+        candidate_index: int | None = None
+        if index_value is not None:
+            try:
+                candidate_index = int(index_value)
+            except (TypeError, ValueError):
+                candidate_index = None
+        selected = (
+            context.get("selected_custom_loader_candidate")
+            or context.get("selectedCustomLoaderCandidate")
+            or context.get("selected_loader_candidate")
+            or context.get("selectedLoaderCandidate")
+            or context.get("selected_candidate")
+            or context.get("selectedCandidate")
+            or context.get("loader_candidate")
+            or context.get("loaderCandidate")
+        )
+        expected_loader_path = context.get("expected_loader_path", context.get("expectedLoaderPath"))
+        return cls(
+            traversal_plan=dict(plan),
+            selected_candidate=dict(selected) if isinstance(selected, dict) else {},
+            candidate_index=candidate_index,
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            expected_loader_path=str(expected_loader_path).strip() if expected_loader_path is not None else None,
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class CustomLoaderExecutionPreflightResult:
+    status: str
+    preflight: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "preflight": self.preflight,
+            "selected_candidate": self.selected_candidate,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class CustomLoaderExecutionPreflightManager:
+    """Validate a selected custom-loader candidate before any reviewed execution."""
+
+    def preflight(self, spec: CustomLoaderExecutionPreflightSpec | None) -> CustomLoaderExecutionPreflightResult:
+        policy = self._side_effect_policy(review_approved=bool(spec and spec.review_approved))
+        if spec is None:
+            return CustomLoaderExecutionPreflightResult(status="unsupported", reason="missing_custom_loader_traversal_plan", side_effect_policy=policy)
+        candidate = self._select_candidate(spec)
+        checks = self._checks(candidate, spec)
+        blocking_reasons = [item["reason"] for item in checks if not item.get("passed")]
+        if not candidate:
+            blocking_reasons.insert(0, "review_custom_loader_traversal_plan")
+        if not spec.review_approved:
+            blocking_reasons.insert(0, "review_approval_required")
+        status = "ready_for_execution_review" if not blocking_reasons else "blocked"
+        reason = None if status != "blocked" else blocking_reasons[0]
+        preflight = {
+            "schema_version": "reverse-deepagent.custom-loader-execution-preflight.v1",
+            "status": status,
+            "review_required": True,
+            "review_approved": bool(spec.review_approved),
+            "candidate_index": candidate.get("index") if candidate else spec.candidate_index,
+            "selected_candidate": candidate,
+            "checks": checks,
+            "blocking_reasons": blocking_reasons,
+            "execution_contract": {
+                "single_step_only": True,
+                "requires_review_approval": True,
+                "requires_strict_dotted_loader_path": True,
+                "requires_expected_loader_path_match": bool(spec.expected_loader_path),
+                "execute_dynamic_import": False,
+                "execute_module_federation_get_init": False,
+                "execute_webpack_loader": False,
+                "automatic_recursive_traversal": False,
+            },
+            "side_effect_policy": policy,
+            "next_action": "execute_custom_loader_with_review_approval" if status == "ready_for_execution_review" else "resolve_custom_loader_preflight_blockers",
+        }
+        return CustomLoaderExecutionPreflightResult(status=status, preflight=preflight, selected_candidate=candidate, side_effect_policy=policy, reason=reason)
+
+    @classmethod
+    def _select_candidate(cls, spec: CustomLoaderExecutionPreflightSpec) -> dict[str, Any]:
+        if spec.selected_candidate:
+            return dict(spec.selected_candidate)
+        candidates = spec.traversal_plan.get("candidates") if isinstance(spec.traversal_plan, dict) else None
+        if not isinstance(candidates, list):
+            return {}
+        index = 0 if spec.candidate_index is None else spec.candidate_index
+        if index < 0 or index >= len(candidates):
+            return {}
+        candidate = candidates[index]
+        return dict(candidate) if isinstance(candidate, dict) else {}
+
+    @classmethod
+    def _checks(cls, candidate: dict[str, Any], spec: CustomLoaderExecutionPreflightSpec) -> list[dict[str, Any]]:
+        if not candidate:
+            return [{"name": "candidate_selected", "passed": False, "reason": "missing_selected_custom_loader_candidate"}]
+        loader_kind = str(candidate.get("loader_kind") or candidate.get("loaderKind") or "custom-loader").strip().lower()
+        classification = str(candidate.get("classification") or "").strip().lower()
+        loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or "").strip()
+        edge_type = str(candidate.get("edge_type") or candidate.get("edgeType") or "").strip().lower()
+        is_custom_loader = loader_kind not in CustomLoaderTraversalPlanManager.WEBPACK_KINDS | CustomLoaderTraversalPlanManager.DYNAMIC_IMPORT_KINDS | CustomLoaderTraversalPlanManager.FEDERATION_KINDS and classification in {"arbitrary_custom_loader", "", "custom_loader"}
+        expected_match = True if not spec.expected_loader_path else loader_path == spec.expected_loader_path
+        return [
+            {"name": "candidate_selected", "passed": True, "details": {"index": candidate.get("index")}},
+            {"name": "review_approved", "passed": bool(spec.review_approved), "reason": "review_approval_required" if not spec.review_approved else ""},
+            {"name": "custom_loader_candidate", "passed": bool(is_custom_loader), "reason": "unsupported_loader_kind_for_custom_execution_preflight" if not is_custom_loader else "", "details": {"loader_kind": loader_kind, "classification": classification, "edge_type": edge_type}},
+            {"name": "strict_dotted_loader_path", "passed": bool(JS_DOTTED_PATH_RE.fullmatch(loader_path)), "reason": "strict_dotted_loader_path_required" if not JS_DOTTED_PATH_RE.fullmatch(loader_path) else "", "details": {"loader_path": loader_path[: spec.max_preview_length]}},
+            {"name": "expected_loader_path_match", "passed": bool(expected_match), "reason": "expected_loader_path_mismatch" if not expected_match else "", "details": {"expected_loader_path": spec.expected_loader_path or "", "loader_path": loader_path[: spec.max_preview_length]}},
+            {"name": "dynamic_import_blocked", "passed": loader_kind not in CustomLoaderTraversalPlanManager.DYNAMIC_IMPORT_KINDS and edge_type != "dynamic-import", "reason": "dynamic_import_requires_dedicated_gate" if loader_kind in CustomLoaderTraversalPlanManager.DYNAMIC_IMPORT_KINDS or edge_type == "dynamic-import" else ""},
+            {"name": "module_federation_blocked", "passed": loader_kind not in CustomLoaderTraversalPlanManager.FEDERATION_KINDS and "federation" not in edge_type, "reason": "module_federation_requires_dedicated_gate" if loader_kind in CustomLoaderTraversalPlanManager.FEDERATION_KINDS or "federation" in edge_type else ""},
+            {"name": "webpack_loader_redirect", "passed": loader_kind not in CustomLoaderTraversalPlanManager.WEBPACK_KINDS, "reason": "use_async_chunk_load_for_webpack_loader" if loader_kind in CustomLoaderTraversalPlanManager.WEBPACK_KINDS else ""},
+        ]
+
+    @staticmethod
+    def _side_effect_policy(*, review_approved: bool) -> dict[str, Any]:
+        return {
+            "preflight_only": True,
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": review_approved,
+            "loader_invoked": False,
+            "runtime_loader_executed": False,
+            "chunk_request_sent": False,
+            "dynamic_import_executed": False,
+            "custom_loader_executed": False,
+            "module_factory_invoked": False,
+            "module_federation_get_init_executed": False,
+            "browser_state_mutated": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class ModuleFederationGetInitPlanSpec:
     """Plan-only Module Federation container init/get analysis request."""
 

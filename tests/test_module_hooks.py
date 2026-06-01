@@ -1,4 +1,5 @@
 import unittest
+from typing import Any
 
 from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadManager,
@@ -7,6 +8,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleDiffSpec,
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
+    CustomLoaderExecutionPreflightManager,
+    CustomLoaderExecutionPreflightSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -296,6 +299,90 @@ class CustomLoaderTraversalPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.plan["status"], "blocked")
         self.assertEqual(result.plan["next_action"], "provide_custom_loader_candidates_from_chunk_graph")
         self.assertTrue(result.side_effect_policy["plan_only"])
+
+
+class CustomLoaderExecutionPreflightManagerTests(unittest.TestCase):
+    def _plan(self) -> dict[str, Any]:
+        spec = CustomLoaderTraversalPlanSpec.from_context(
+            {
+                "custom_loader_candidates": [
+                    {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "runtime_path": "window.__customLoader",
+                    }
+                ]
+            }
+        )
+        return CustomLoaderTraversalPlanManager().plan(spec).plan
+
+    def test_blocks_without_review_approval(self) -> None:
+        spec = CustomLoaderExecutionPreflightSpec.from_context(
+            {
+                "custom_loader_traversal_plan": self._plan(),
+                "candidate_index": 0,
+            }
+        )
+
+        result = CustomLoaderExecutionPreflightManager().preflight(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertIn("review_approval_required", result.preflight["blocking_reasons"])
+        self.assertTrue(result.side_effect_policy["preflight_only"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_allows_reviewed_strict_dotted_custom_loader_candidate(self) -> None:
+        spec = CustomLoaderExecutionPreflightSpec.from_context(
+            {
+                "custom_loader_traversal_plan": self._plan(),
+                "candidate_index": 0,
+                "review_approved": True,
+                "expected_loader_path": "window.__customLoader.load",
+            }
+        )
+
+        result = CustomLoaderExecutionPreflightManager().preflight(spec)
+
+        self.assertEqual(result.status, "ready_for_execution_review")
+        self.assertEqual(result.preflight["schema_version"], "reverse-deepagent.custom-loader-execution-preflight.v1")
+        self.assertEqual(result.preflight["blocking_reasons"], [])
+        self.assertEqual(result.preflight["next_action"], "execute_custom_loader_with_review_approval")
+        self.assertFalse(result.side_effect_policy["runtime_loader_executed"])
+        self.assertFalse(result.side_effect_policy["browser_state_mutated"])
+
+    def test_blocks_dynamic_import_candidate(self) -> None:
+        plan_spec = CustomLoaderTraversalPlanSpec.from_context(
+            {
+                "custom_loader_candidates": [
+                    {
+                        "chunk_id": "dynamic-sign",
+                        "target": "import('/assets/sign.js')",
+                        "loader_kind": "dynamic-import",
+                        "edge_type": "dynamic-import",
+                    }
+                ]
+            }
+        )
+        spec = CustomLoaderExecutionPreflightSpec.from_context(
+            {
+                "custom_loader_traversal_plan": CustomLoaderTraversalPlanManager().plan(plan_spec).plan,
+                "candidate_index": 0,
+                "review_approved": True,
+            }
+        )
+
+        result = CustomLoaderExecutionPreflightManager().preflight(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("unsupported_loader_kind_for_custom_execution_preflight", result.preflight["blocking_reasons"])
+        self.assertIn("strict_dotted_loader_path_required", result.preflight["blocking_reasons"])
+        self.assertIn("dynamic_import_requires_dedicated_gate", result.preflight["blocking_reasons"])
 
 
 class ModuleFederationGetInitPlanManagerTests(unittest.TestCase):
