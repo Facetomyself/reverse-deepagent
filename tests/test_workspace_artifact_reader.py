@@ -8,7 +8,9 @@ from reverse_deepagent.tools.artifact_tools import (
     audit_workspace_artifact_consumers_payload,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
+    make_plan_workspace_dual_write_pilot_tool,
     make_read_workspace_artifact_tool,
+    plan_workspace_dual_write_pilot_payload,
     summarize_workspace_artifact_read,
 )
 
@@ -229,6 +231,60 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+
+    def test_workspace_dual_write_pilot_plan_selects_low_risk_candidates_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = plan_workspace_dual_write_pilot_payload(default_artifact_root=root, max_artifacts=3)
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-dual-write-pilot-plan.v1")
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["candidate_count"], 3)
+            self.assertEqual(payload["summary"]["readiness_limited_dual_write_status"], "ready_for_review")
+            self.assertTrue(payload["selection_policy"]["legacy_canonical_path_remains_authoritative"])
+            self.assertFalse(payload["selection_policy"]["actual_dual_write_enabled"])
+            for candidate in payload["candidate_artifacts"]:
+                self.assertEqual(candidate["risk"]["risk_level"], "low")
+                self.assertTrue(candidate["dual_write_plan"]["dual_write_enabled"])
+                self.assertTrue(candidate["dual_write_plan"]["canonical_path_remains_authoritative"])
+                self.assertGreaterEqual(len(candidate["dual_write_plan"]["write_paths"]), 2)
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+
+    def test_workspace_dual_write_pilot_plan_blocks_unknown_and_high_risk_explicit_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = plan_workspace_dual_write_pilot_payload(
+                default_artifact_root=root,
+                artifact_keys_json=json.dumps(["workspace_task_card", "workspace_delivery_receipt", "missing_artifact"]),
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("unknown_requested_artifact_keys", payload["blocking_reasons"])
+            self.assertIn("high_risk_requested_artifacts_require_separate_review", payload["blocking_reasons"])
+            self.assertEqual(payload["blocked_artifacts"]["unknown_artifact_keys"], ["missing_artifact"])
+            self.assertEqual(payload["blocked_artifacts"]["high_risk_requested_artifact_keys"], ["workspace_delivery_receipt"])
+            by_key = {item["artifact_key"]: item for item in payload["candidate_artifacts"]}
+            self.assertEqual(by_key["workspace_task_card"]["risk"]["risk_level"], "low")
+            self.assertEqual(by_key["workspace_delivery_receipt"]["risk"]["risk_level"], "high")
+
+    def test_workspace_dual_write_pilot_plan_tool_returns_payload_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            tool = make_plan_workspace_dual_write_pilot_tool(root)
+
+            payload = tool(max_artifacts=1)
+
+            self.assertEqual(tool.__name__, "plan_workspace_dual_write_pilot")
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-dual-write-pilot-plan.v1")
+            self.assertEqual(payload["summary"]["candidate_count"], 1)
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["creates_directories"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
 
 
 if __name__ == "__main__":

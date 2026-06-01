@@ -1002,3 +1002,13 @@ The report deliberately separates `limited_dual_write_pilot` from `foldered_cano
 Boundary: this is audit / planning only. It does not inspect files, write artifacts, create directories, enable dual-write, migrate workspace paths, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
 
 Tests cover missing delivery source audit evidence, observed `source_path` / external filesystem source usage, side-effect policy, coordinator tool exposure, and existing workspace / rebuild regressions.
+
+### Step 111 execution record: Limited workspace dual-write pilot plan baseline
+
+The coordinator now exposes `plan_workspace_dual_write_pilot`, a read-only plan-only tool for narrowing the next dual-write action after migration readiness review. It uses the workspace migration readiness report, registered workspace routes, and optional explicit artifact keys to return a `reverse-deepagent.workspace-dual-write-pilot-plan.v1` payload.
+
+Default selection is intentionally conservative: it only proposes low-risk `workspace`, `runtime-context`, `source`, `network`, and `evidence` routes, returns their legacy / future write paths through `WorkspacePathResolver(enable_dual_write=True)`, and keeps legacy canonical paths authoritative. Explicit medium-risk audit / triage artifact keys are allowed but flagged for extra review; explicit high-risk delivery / transaction / export / rebuild / hook / trace artifacts block the plan and require a separate manual review.
+
+Boundary: this is not the actual dual-write writer. It does not inspect files, write artifacts, create directories, enable dual-write, migrate workspace paths, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+Tests cover default low-risk candidate selection, unknown and high-risk explicit key blocking, side-effect policy, coordinator tool exposure, and existing workspace / rebuild regressions.
