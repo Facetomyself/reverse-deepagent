@@ -259,9 +259,15 @@ def _workspace_consumer_audit_entries() -> list[dict[str, Any]]:
             tool="execute_local_delivery",
             inputs=("artifacts_json[].source_artifact_ref", "artifacts_json[].artifact_ref", "artifact_root"),
             resolver_status="partial",
-            current_support="source_artifact_ref / artifact_ref are resolver-ready; source_path remains supported for explicit filesystem delivery",
-            next_action="monitor-source_path-usage-before-tightening",
-            rationale="Delivery artifact source normalization is resolver-ready, but source_path is intentionally retained for non-workspace files and backward compatibility.",
+            current_support=(
+                "source_artifact_ref / artifact_ref are resolver-ready; source_path remains supported with "
+                "delivery_source_audit classification for explicit filesystem delivery and backward compatibility"
+            ),
+            next_action="continue-source_path-usage-monitoring-before-tightening",
+            rationale=(
+                "Delivery artifact source normalization is resolver-ready and now emits source compatibility metrics, "
+                "but source_path is intentionally retained for non-workspace files and backward compatibility."
+            ),
         ),
         _consumer_entry(
             consumer_id="rebuild.build_rebuild_delivery",

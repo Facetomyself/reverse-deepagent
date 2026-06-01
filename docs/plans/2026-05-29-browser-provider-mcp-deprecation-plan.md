@@ -984,3 +984,11 @@ The tool still writes only the existing rebuild outputs under `artifact_root/reb
 Boundary: this does not execute local delivery, external delivery, replay scripts, Scrapy, backend manifest mutation, transaction commit, rollback, recovery, approval recording, dual-write expansion, physical migration, browser startup, MCP calls, or Android / iOS / mini-program full runtime chains.
 
 Tests cover artifact-ref based rebuild generation, artifact input diagnostics, ambiguous JSON plus artifact-ref rejection, updated consumer audit classification, and existing rebuild / workspace regressions.
+
+### Step 109 execution record: Delivery source path compatibility audit baseline
+
+`execute_local_delivery` now emits a read-only `delivery_artifact_source_audit` summary and per-artifact `metadata.delivery_source_audit` records. The audit distinguishes resolver-backed `source_artifact_ref` / `artifact_ref` inputs from retained `source_path` inputs, classifies legacy workspace paths, future workspace paths, artifact-root-relative paths, relative filesystem paths, and external filesystem source paths, and reports source usage counts without changing delivery behavior.
+
+`audit_workspace_artifact_consumers` still marks `delivery.execute_local_delivery.artifacts_json` as `partial` because explicit `source_path` remains supported for backward compatibility and non-workspace files, but its current support now includes source compatibility metrics. This is an audit / monitoring baseline only: it does not remove `source_path`, does not create directories, does not enable dual-write, does not migrate workspace paths, does not weaken delivery gates, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains.
+
+Tests cover resolver-backed artifact refs, legacy workspace `source_path`, external filesystem `source_path`, top-level source usage counts, per-artifact metadata classification, and the updated workspace consumer audit next action.

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from reverse_deepagent.tools.artifact_tools import read_workspace_artifact_payload, summarize_workspace_artifact_read
+from reverse_deepagent.workspace_contract import WorkspacePathResolver
 
 from reverse_deepagent.delivery import (
     DeliveryArtifact,
@@ -84,6 +85,7 @@ def make_local_delivery_executor_tool(
             raise ValueError("artifacts_json must decode to a list")
         effective_artifact_root = Path(artifact_root) if artifact_root else artifact_root_default
         artifacts = [_artifact_from_payload(item, artifact_root=effective_artifact_root) for item in raw_artifacts]
+        delivery_artifact_source_audit = _summarize_delivery_source_audit(artifacts)
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
             raise ValueError("metadata_json must decode to an object")
@@ -125,7 +127,9 @@ def make_local_delivery_executor_tool(
             expected_transaction_lock_transaction_id=expected_transaction_lock_transaction_id,
             metadata=metadata,
         )
-        return LocalDeliveryExecutor(config).execute(artifacts).to_dict()
+        result = LocalDeliveryExecutor(config).execute(artifacts).to_dict()
+        result["delivery_artifact_source_audit"] = delivery_artifact_source_audit
+        return result
 
     execute_local_delivery.__name__ = "execute_local_delivery"
     execute_local_delivery.__doc__ = (
@@ -601,9 +605,10 @@ def make_delivery_rollback_executor_tool(default_delivery_root: str | Path) -> D
 def _artifact_from_payload(payload: Any, *, artifact_root: Path) -> DeliveryArtifact:
     if not isinstance(payload, dict):
         raise ValueError("each delivery artifact must be an object")
-    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    metadata = dict(payload.get("metadata")) if isinstance(payload.get("metadata"), dict) else {}
     source_path = payload.get("source_path") or payload.get("path")
     source_artifact_ref = payload.get("source_artifact_ref") or payload.get("artifact_ref")
+    source_artifact_ref_field = "source_artifact_ref" if payload.get("source_artifact_ref") else "artifact_ref"
     artifact_key = str(payload.get("artifact_key")) if payload.get("artifact_key") is not None else None
     if source_path and source_artifact_ref:
         raise ValueError("delivery artifact must not provide both source_path and source_artifact_ref")
@@ -618,13 +623,25 @@ def _artifact_from_payload(payload: Any, *, artifact_root: Path) -> DeliveryArti
         source_path = str(read_result["path"])
         resolution = read_result.get("resolution") if isinstance(read_result.get("resolution"), dict) else {}
         artifact_key = artifact_key or str(resolution.get("artifact_key") or source_artifact_ref)
+        workspace_artifact_read = summarize_workspace_artifact_read(read_result)
         metadata = {
             **metadata,
             "source_artifact_ref": str(source_artifact_ref),
-            "workspace_artifact_read": summarize_workspace_artifact_read(read_result),
+            "workspace_artifact_read": workspace_artifact_read,
+            "delivery_source_audit": _delivery_source_audit_for_artifact_ref(
+                source_artifact_ref=str(source_artifact_ref),
+                input_field=source_artifact_ref_field,
+                workspace_artifact_read=workspace_artifact_read,
+            ),
         }
     if not source_path:
         raise ValueError("delivery artifact requires source_path or source_artifact_ref")
+    if "delivery_source_audit" not in metadata:
+        metadata["delivery_source_audit"] = _delivery_source_audit_for_source_path(
+            source_path=str(source_path),
+            artifact_root=artifact_root,
+            input_field="source_path" if payload.get("source_path") else "path",
+        )
     return DeliveryArtifact(
         source_path=Path(str(source_path)),
         artifact_key=artifact_key,
@@ -632,3 +649,212 @@ def _artifact_from_payload(payload: Any, *, artifact_root: Path) -> DeliveryArti
         required=bool(payload.get("required", True)),
         metadata=metadata,
     )
+
+
+def _delivery_source_audit_for_artifact_ref(
+    *,
+    source_artifact_ref: str,
+    input_field: str,
+    workspace_artifact_read: dict[str, Any],
+) -> dict[str, Any]:
+    """Return source compatibility diagnostics for resolver-backed delivery inputs."""
+
+    resolver_metrics = (
+        workspace_artifact_read.get("resolver_metrics") if isinstance(workspace_artifact_read.get("resolver_metrics"), dict) else {}
+    )
+    resolution = workspace_artifact_read.get("resolution") if isinstance(workspace_artifact_read.get("resolution"), dict) else {}
+    return {
+        "schema_version": "reverse-deepagent.delivery-source-compatibility-audit.v1",
+        "input_field": input_field,
+        "source_input_kind": "workspace-artifact-ref",
+        "source_path_kind": "resolver-backed-workspace-artifact",
+        "source_artifact_ref": source_artifact_ref,
+        "artifact_ref_kind": resolver_metrics.get("artifact_ref_kind") or "",
+        "resolution_status": workspace_artifact_read.get("resolution_status") or resolver_metrics.get("resolution_status") or "",
+        "resolved_artifact_key": resolver_metrics.get("resolved_artifact_key") or resolution.get("artifact_key") or "",
+        "hit_path_kind": resolver_metrics.get("hit_path_kind") or "",
+        "canonical_path": resolver_metrics.get("canonical_path") or resolution.get("canonical_path") or "",
+        "future_path": resolver_metrics.get("future_path") or resolution.get("future_path") or "",
+        "workspace_resolved": True,
+        "source_path_compatibility": "resolver-ready",
+        "source_path_retained_for_compatibility": False,
+        "explicit_filesystem_boundary": False,
+        "read_only": True,
+    }
+
+
+def _delivery_source_audit_for_source_path(
+    *,
+    source_path: str,
+    artifact_root: Path,
+    input_field: str,
+) -> dict[str, Any]:
+    """Classify legacy source_path usage without changing delivery path semantics."""
+
+    resolver = WorkspacePathResolver()
+    normalized_refs = _source_path_workspace_lookup_refs(source_path, artifact_root)
+    resolution = None
+    for ref in normalized_refs:
+        resolution = resolver.resolve_path(ref)
+        if resolution is not None:
+            break
+    source_path_kind = _source_path_kind(source_path, artifact_root, resolution)
+    resolved_artifact_key = resolution.artifact_key if resolution else ""
+    return {
+        "schema_version": "reverse-deepagent.delivery-source-compatibility-audit.v1",
+        "input_field": input_field,
+        "source_input_kind": "source-path",
+        "source_path_kind": source_path_kind,
+        "artifact_ref_kind": "",
+        "resolution_status": "resolved" if resolution else "explicit-filesystem-path",
+        "resolved_artifact_key": resolved_artifact_key,
+        "hit_path_kind": "",
+        "canonical_path": resolution.canonical_path if resolution else "",
+        "future_path": resolution.future_path if resolution else "",
+        "workspace_resolved": bool(resolution),
+        "source_path_compatibility": _source_path_compatibility(source_path_kind),
+        "source_path_retained_for_compatibility": True,
+        "explicit_filesystem_boundary": source_path_kind
+        in {"absolute-source-path", "external-filesystem-source-path", "relative-source-path", "virtual-uri-source-path"},
+        "read_only": True,
+    }
+
+
+def _source_path_workspace_lookup_refs(source_path: str, artifact_root: Path) -> list[str]:
+    value = str(source_path).strip()
+    refs: list[str] = []
+    if value:
+        refs.append(value)
+    if value.startswith("virtual://"):
+        return _dedupe_strings(refs)
+    path = Path(value)
+    root = artifact_root.expanduser().resolve()
+    if path.is_absolute():
+        try:
+            relative = path.expanduser().resolve().relative_to(root).as_posix()
+        except ValueError:
+            relative = ""
+        if relative:
+            refs.append(relative)
+            if relative.startswith("workspace/"):
+                refs.append(f"/{relative}")
+    else:
+        normalized = path.as_posix()
+        refs.append(normalized)
+        if normalized.startswith("workspace/"):
+            refs.append(f"/{normalized}")
+    return _dedupe_strings(refs)
+
+
+def _source_path_kind(source_path: str, artifact_root: Path, resolution: Any | None) -> str:
+    value = str(source_path).strip()
+    if value.startswith("virtual://"):
+        return "virtual-uri-source-path"
+    path = Path(value)
+    root = artifact_root.expanduser().resolve()
+    relative_to_root = False
+    relative_text = ""
+    if path.is_absolute():
+        try:
+            relative_text = path.expanduser().resolve().relative_to(root).as_posix()
+            relative_to_root = True
+        except ValueError:
+            relative_to_root = False
+    else:
+        relative_text = path.as_posix()
+    if resolution is not None:
+        if relative_text == resolution.legacy_path or value == resolution.legacy_path:
+            return "legacy-source-path"
+        if relative_text == resolution.future_path.lstrip("/") or value == resolution.future_path:
+            return "future-source-path"
+        if relative_to_root:
+            return "artifact-root-relative-source-path"
+    if path.is_absolute():
+        return "artifact-root-relative-source-path" if relative_to_root else "external-filesystem-source-path"
+    return "relative-source-path"
+
+
+def _source_path_compatibility(source_path_kind: str) -> str:
+    if source_path_kind == "legacy-source-path":
+        return "legacy-workspace-path-compatible"
+    if source_path_kind == "future-source-path":
+        return "future-workspace-path-compatible"
+    if source_path_kind == "artifact-root-relative-source-path":
+        return "artifact-root-relative-path"
+    if source_path_kind == "external-filesystem-source-path":
+        return "explicit-external-filesystem-path"
+    if source_path_kind == "virtual-uri-source-path":
+        return "unsupported-virtual-uri-in-source_path-use-source_artifact_ref"
+    return "relative-filesystem-path"
+
+
+def _summarize_delivery_source_audit(artifacts: list[DeliveryArtifact]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    by_source_input_kind: dict[str, int] = {}
+    by_source_path_kind: dict[str, int] = {}
+    workspace_resolved_count = 0
+    external_source_path_count = 0
+    source_path_count = 0
+    source_artifact_ref_count = 0
+    for artifact in artifacts:
+        audit = artifact.metadata.get("delivery_source_audit") if isinstance(artifact.metadata, dict) else None
+        if not isinstance(audit, dict):
+            continue
+        source_input_kind = str(audit.get("source_input_kind") or "unknown")
+        source_path_kind = str(audit.get("source_path_kind") or "unknown")
+        by_source_input_kind[source_input_kind] = by_source_input_kind.get(source_input_kind, 0) + 1
+        by_source_path_kind[source_path_kind] = by_source_path_kind.get(source_path_kind, 0) + 1
+        workspace_resolved_count += int(bool(audit.get("workspace_resolved")))
+        source_path_count += int(source_input_kind == "source-path")
+        source_artifact_ref_count += int(source_input_kind == "workspace-artifact-ref")
+        external_source_path_count += int(source_path_kind == "external-filesystem-source-path")
+        items.append(
+            {
+                "artifact_key": artifact.artifact_key,
+                "input_field": audit.get("input_field"),
+                "source_input_kind": source_input_kind,
+                "source_path_kind": source_path_kind,
+                "source_path_compatibility": audit.get("source_path_compatibility"),
+                "workspace_resolved": bool(audit.get("workspace_resolved")),
+                "resolved_artifact_key": audit.get("resolved_artifact_key") or "",
+                "source_path_retained_for_compatibility": bool(audit.get("source_path_retained_for_compatibility")),
+                "explicit_filesystem_boundary": bool(audit.get("explicit_filesystem_boundary")),
+            }
+        )
+    return {
+        "schema_version": "reverse-deepagent.delivery-source-compatibility-audit.v1",
+        "artifact_count": len(artifacts),
+        "audited_artifact_count": len(items),
+        "source_artifact_ref_count": source_artifact_ref_count,
+        "source_path_count": source_path_count,
+        "workspace_resolved_count": workspace_resolved_count,
+        "external_source_path_count": external_source_path_count,
+        "legacy_source_path_count": by_source_path_kind.get("legacy-source-path", 0),
+        "future_source_path_count": by_source_path_kind.get("future-source-path", 0),
+        "artifact_root_relative_source_path_count": by_source_path_kind.get("artifact-root-relative-source-path", 0),
+        "relative_source_path_count": by_source_path_kind.get("relative-source-path", 0),
+        "by_source_input_kind": dict(sorted(by_source_input_kind.items())),
+        "by_source_path_kind": dict(sorted(by_source_path_kind.items())),
+        "items": items,
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+        },
+    }
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result

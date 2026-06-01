@@ -37,6 +37,15 @@ class DeliveryToolTests(TestCase):
             self.assertTrue(result["dry_run"])
             self.assertFalse(result["filesystem_artifact_mutated"])
             self.assertFalse((root / "delivery").exists())
+            audit = result["delivery_artifact_source_audit"]
+            self.assertEqual(audit["schema_version"], "reverse-deepagent.delivery-source-compatibility-audit.v1")
+            self.assertEqual(audit["source_path_count"], 1)
+            self.assertEqual(audit["source_artifact_ref_count"], 0)
+            self.assertEqual(audit["legacy_source_path_count"], 1)
+            self.assertEqual(audit["workspace_resolved_count"], 1)
+            planned_audit = result["planned_artifacts"][0]["metadata"]["delivery_source_audit"]
+            self.assertEqual(planned_audit["source_input_kind"], "source-path")
+            self.assertEqual(planned_audit["source_path_kind"], "legacy-source-path")
 
     def test_local_delivery_tool_apply_writes_local_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,6 +101,11 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(planned["source_path"], str(source.resolve()))
             self.assertEqual(planned["metadata"]["source_artifact_ref"], "workspace_final")
             self.assertEqual(planned["metadata"]["workspace_artifact_read"]["resolution"]["artifact_key"], "workspace_final")
+            self.assertEqual(planned["metadata"]["delivery_source_audit"]["source_input_kind"], "workspace-artifact-ref")
+            self.assertEqual(planned["metadata"]["delivery_source_audit"]["source_path_compatibility"], "resolver-ready")
+            self.assertEqual(result["delivery_artifact_source_audit"]["source_artifact_ref_count"], 1)
+            self.assertEqual(result["delivery_artifact_source_audit"]["source_path_count"], 0)
+            self.assertEqual(result["delivery_artifact_source_audit"]["workspace_resolved_count"], 1)
 
     def test_local_delivery_tool_resolves_source_artifact_ref_in_apply_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -120,8 +134,49 @@ class DeliveryToolTests(TestCase):
             delivered = result["receipt"]["delivered_artifacts"][0]
             self.assertEqual(delivered["source_path"], str(source.resolve()))
             self.assertEqual(delivered["metadata"]["source_artifact_ref"], "virtual://workspace/delivery/final-result.json")
+            self.assertEqual(delivered["metadata"]["delivery_source_audit"]["artifact_ref_kind"], "virtual-uri")
+            self.assertEqual(delivered["metadata"]["delivery_source_audit"]["hit_path_kind"], "legacy-canonical")
             self.assertTrue((root / "delivery" / "final-result.json").exists())
 
+    def test_local_delivery_tool_audits_mixed_source_path_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as external_tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            external_source = Path(external_tmp) / "external-report.json"
+            external_source.write_text('{"external": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            result = tool(
+                artifacts_json=json.dumps(
+                    [
+                        {
+                            "source_path": str(source),
+                            "artifact_key": "workspace_final",
+                            "destination_name": "final-result.json",
+                        },
+                        {
+                            "source_path": str(external_source),
+                            "artifact_key": "external_report",
+                            "destination_name": "external-report.json",
+                        },
+                    ]
+                ),
+                transaction_id="tx-tool-source-path-audit",
+            )
+
+            audit = result["delivery_artifact_source_audit"]
+            self.assertEqual(audit["artifact_count"], 2)
+            self.assertEqual(audit["source_path_count"], 2)
+            self.assertEqual(audit["source_artifact_ref_count"], 0)
+            self.assertEqual(audit["legacy_source_path_count"], 1)
+            self.assertEqual(audit["external_source_path_count"], 1)
+            self.assertEqual(audit["workspace_resolved_count"], 1)
+            by_key = {item["artifact_key"]: item for item in audit["items"]}
+            self.assertEqual(by_key["workspace_final"]["source_path_kind"], "legacy-source-path")
+            self.assertEqual(by_key["external_report"]["source_path_kind"], "external-filesystem-source-path")
+            self.assertTrue(by_key["external_report"]["explicit_filesystem_boundary"])
 
     def test_local_delivery_tool_rejects_ambiguous_source_path_and_artifact_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -437,7 +437,7 @@ The following items used to be listed as broad follow-ups and now have conservat
 - Generated rebuild review hints derived from runtime-context diff classifications, including volatile, session-bound, missing-field, type-drift, and object-drift risk hints.
 - Plan-only protected-flow triage hook planner for WASM / VM / obfuscation / anti-debug / dynamic-secret markers, including workspace routes for `protection-triage-hooks.json`, `wasm-runtime-candidates.json`, and `vm-dispatcher-candidates.json`.
 - Provider-neutral strategy evidence scoring baseline for review-only `evidence_score` payloads across strategy detection and rebuild plans; it does not change readiness, execute replay, start browsers, or call MCP.
-- Workspace artifact reader, read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, resolver compatibility metrics, and consumer adoption audit baselines exposed through `read_workspace_artifact`, `audit_workspace_artifact_consumers`, `build_rebuild_delivery`, `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_artifacts`, `review_rebuild_artifacts`, `evaluate_delivery_review_gate`, and `execute_local_delivery`; they consume or classify artifact keys, legacy paths, future paths, virtual URIs, artifact-root-relative fallback paths, and explicit filesystem boundaries without moving artifacts or bypassing delivery gates.
+- Workspace artifact reader, read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, delivery source compatibility audit, resolver compatibility metrics, and consumer adoption audit baselines exposed through `read_workspace_artifact`, `audit_workspace_artifact_consumers`, `build_rebuild_delivery`, `review_flow_timeline`, `review_hook_artifacts`, `review_debugger_artifacts`, `review_rebuild_artifacts`, `evaluate_delivery_review_gate`, and `execute_local_delivery`; they consume or classify artifact keys, legacy paths, future paths, virtual URIs, artifact-root-relative fallback paths, legacy / future / external `source_path` usage, and explicit filesystem boundaries without moving artifacts or bypassing delivery gates.
 
 These baselines are intentionally review-gated, read-only, or pure-analysis-only where noted; they should not be treated as automatic workflow execution, automatic lock lifecycle management, automatic browser context collection, or automatic external publication.
 
@@ -458,7 +458,7 @@ The remaining Web-first work should continue behind provider / runtime / artifac
 - Advanced adaptive provider retry policy, retry budgets, provider-specific rate-limit behavior, and partial-failure recovery.
 - Additional external distributed lock providers beyond local-file / SQLite / Redis when a deployment actually needs them.
 - More complete cross-request timeline conflict resolution and reviewer UX.
-- Remaining targeted adoption for audited partial workspace resolver consumers and compatibility-informed migration planning before any foldered-canonical migration pilot.
+- Compatibility-informed workspace migration readiness planning before any broader dual-write rollout or foldered-canonical migration pilot, using resolver metrics, consumer audit output, and delivery source compatibility audit data.
 
 ### Explicitly deferred automation
 

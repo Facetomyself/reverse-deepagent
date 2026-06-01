@@ -43,7 +43,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 
 - DeepAgents workspace contract indexed-only baseline.
 - Manifest-only workspace alias for future foldered virtual paths while keeping flat `workspace/*.json` paths canonical.
-- Workspace artifact reader, specialized read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, resolver compatibility metrics, and workspace consumer adoption audit baselines for artifact key, legacy path, future path, `virtual://workspace/...` URI, and artifact-root-relative consumption by coordinator, review / rebuild / timeline / hook / debugger subagents, and reviewed local delivery planning / apply inputs.
+- Workspace artifact reader, specialized read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, delivery source compatibility audit, resolver compatibility metrics, and workspace consumer adoption audit baselines for artifact key, legacy path, future path, `virtual://workspace/...` URI, artifact-root-relative consumption, explicit source_path classification, and reviewed local delivery planning / apply inputs by coordinator, review / rebuild / timeline / hook / debugger / delivery subagents.
 - Router, web recon, browser runtime, debugger, hook, timeline, review, rebuild, and delivery subagent baselines.
 - Review approval ledger baseline.
 
@@ -105,7 +105,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Workspace and artifact evolution
 
-- Remaining targeted resolver adoption for audited partial consumers, especially delivery `source_path` usage monitoring, while preserving explicit filesystem safety boundaries.
+- Compatibility-informed workspace migration readiness planning, using resolver metrics, consumer audit output, and delivery `delivery_artifact_source_audit` source_path usage data before any broader dual-write rollout or foldered-canonical migration pilot.
 - Opt-in dual-write expansion informed by resolver compatibility metrics.
 - A narrow foldered-canonical migration pilot only after consumers support the resolver.
 
