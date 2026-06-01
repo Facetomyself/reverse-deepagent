@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import posixpath
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 BASE64_VLQ_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 BASE64_VLQ_VALUES = {char: index for index, char in enumerate(BASE64_VLQ_CHARS)}
@@ -36,9 +38,10 @@ class SourceMapRemapper:
     The resolver intentionally implements the stable baseline used by
     source-logpoint routing: generated bundle character offsets, flat Source
     Map v3 mapping lookup, sourceRoot-aware source matching, GLB bias fallback,
-    and indexed source-map sections with generated offsets. It still does not
-    try to be a full source-map consumer with name resolution or complete URL
-    semantics.
+    indexed source-map sections with generated offsets, source-map ``names``
+    metadata, URL-like source equivalence, and nested indexed sections. It does
+    not fetch section URLs or external source-map URLs; callers must pass the
+    source-map payload explicitly.
     """
 
     @classmethod
@@ -127,7 +130,7 @@ class SourceMapRemapper:
         bias: str,
     ) -> GeneratedLocation | None:
         sources = source_map.get("sources", []) if isinstance(source_map.get("sources"), list) else []
-        source_index, resolved_source = cls._find_source_index(
+        source_index, resolved_source, source_match = cls._find_source_index(
             sources,
             original_source=original_source,
             source_root=str(source_map.get("sourceRoot") or ""),
@@ -160,6 +163,7 @@ class SourceMapRemapper:
                 original_column_number=original_column_number,
                 strategy="source_map_exact",
                 source_index=source_index,
+                source_match=source_match,
                 source_map=source_map,
             )
         normalized_bias = bias.strip().replace("-", "_").lower()
@@ -171,6 +175,7 @@ class SourceMapRemapper:
                 original_column_number=original_column_number,
                 strategy="source_map_bias_glb",
                 source_index=source_index,
+                source_match=source_match,
                 source_map=source_map,
                 extra_metadata={
                     "matched_original_column_number": bias_match.get("original_column_number"),
@@ -198,7 +203,7 @@ class SourceMapRemapper:
             offset = section.get("offset") if isinstance(section.get("offset"), dict) else {}
             offset_line = int(offset.get("line", 0) or 0)
             offset_column = int(offset.get("column", 0) or 0)
-            child = cls._location_from_flat_source_map(
+            child = cls.location_from_source_map(
                 section["map"],
                 original_source=original_source,
                 original_line_number=original_line_number,
@@ -218,7 +223,16 @@ class SourceMapRemapper:
                     "child_strategy": child.strategy,
                 }
             )
-            strategy = "source_map_indexed_exact" if child.strategy == "source_map_exact" else "source_map_indexed_bias_glb"
+            section_entry = {
+                "section_index": index,
+                "offset_line": offset_line,
+                "offset_column": offset_column,
+                "child_strategy": child.strategy,
+            }
+            child_stack = metadata.get("section_stack") if isinstance(metadata.get("section_stack"), list) else []
+            metadata["section_stack"] = [section_entry, *child_stack]
+            metadata["indexed_section_depth"] = len(metadata["section_stack"])
+            strategy = "source_map_indexed_exact" if "exact" in child.strategy else "source_map_indexed_bias_glb"
             return GeneratedLocation(
                 line_number=generated_line,
                 column_number=generated_column,
@@ -239,14 +253,22 @@ class SourceMapRemapper:
         original_column_number: int,
         strategy: str,
         source_index: int,
+        source_match: dict[str, Any],
         source_map: dict[str, Any],
         extra_metadata: dict[str, Any] | None = None,
     ) -> GeneratedLocation:
+        names = source_map.get("names", []) if isinstance(source_map.get("names"), list) else []
         metadata = {
             "source_index": source_index,
             "sources_count": len(source_map.get("sources", []) if isinstance(source_map.get("sources"), list) else []),
-            "names_count": len(source_map.get("names", []) if isinstance(source_map.get("names"), list) else []),
+            "names_count": len(names),
+            "source_match": source_match,
         }
+        name_index = mapping.get("name_index")
+        if isinstance(name_index, int):
+            metadata["name_index"] = name_index
+            if 0 <= name_index < len(names):
+                metadata["name"] = str(names[name_index])
         if source_map.get("sourceRoot"):
             metadata["sourceRoot"] = source_map.get("sourceRoot")
         if extra_metadata:
@@ -262,28 +284,77 @@ class SourceMapRemapper:
         )
 
     @classmethod
-    def _find_source_index(cls, sources: list[Any], *, original_source: str, source_root: str = "") -> tuple[int, str]:
+    def _find_source_index(cls, sources: list[Any], *, original_source: str, source_root: str = "") -> tuple[int, str, dict[str, Any]]:
         candidates = cls._source_candidates(original_source)
         for index, source in enumerate(sources):
             raw_source = str(source)
             joined = cls._join_source_root(source_root, raw_source)
-            for candidate in candidates:
-                if cls._normalize_source(raw_source) == candidate or cls._normalize_source(joined) == candidate:
-                    return index, joined if source_root else raw_source
-        return -1, original_source
+            raw_candidates = cls._source_candidates(raw_source)
+            joined_candidates = cls._source_candidates(joined)
+            for candidate in cls._ordered_source_candidates(candidates):
+                if candidate in raw_candidates or candidate in joined_candidates:
+                    return (
+                        index,
+                        joined if source_root else raw_source,
+                        {
+                            "requested_source": original_source,
+                            "matched_source": raw_source,
+                            "resolved_source": joined if source_root else raw_source,
+                            "normalized_match": candidate,
+                            "source_root_applied": bool(source_root),
+                            "url_equivalence": cls._source_has_url_semantics(raw_source)
+                            or cls._source_has_url_semantics(joined)
+                            or cls._source_has_url_semantics(original_source),
+                        },
+                    )
+        return -1, original_source, {"requested_source": original_source, "matched": False}
 
     @staticmethod
     def _source_candidates(source: str) -> set[str]:
         normalized = SourceMapRemapper._normalize_source(source)
-        candidates = {normalized}
-        candidates.add(normalized.lstrip("./"))
+        candidates = {normalized, normalized.lstrip("./").lstrip("/")}
+        url_parts = urlsplit(source.replace("\\", "/").strip())
+        if url_parts.scheme:
+            normalized_url_path = SourceMapRemapper._normalize_path(url_parts.path)
+            host_path = SourceMapRemapper._normalize_source(f"{url_parts.netloc}/{normalized_url_path}" if url_parts.netloc else normalized_url_path)
+            candidates.add(host_path)
+            candidates.add(normalized_url_path)
+            candidates.add(normalized_url_path.lstrip("/"))
+            if url_parts.scheme == "webpack" and url_parts.netloc:
+                candidates.add(SourceMapRemapper._normalize_source(f"{url_parts.netloc}/{normalized_url_path}"))
         if "://" in normalized:
             candidates.add(normalized.split("://", 1)[1].lstrip("/"))
         return {item for item in candidates if item}
 
     @staticmethod
+    def _ordered_source_candidates(candidates: set[str]) -> list[str]:
+        return sorted(candidates, key=lambda item: ("://" not in item, -len(item), item))
+
+    @staticmethod
     def _normalize_source(source: str) -> str:
-        return source.replace("\\", "/").strip().lstrip("./")
+        source = unquote(source.replace("\\", "/").strip())
+        url_parts = urlsplit(source)
+        if url_parts.scheme:
+            normalized_path = SourceMapRemapper._normalize_path(url_parts.path)
+            return urlunsplit((url_parts.scheme, url_parts.netloc, normalized_path, "", "")).lstrip("./")
+        return SourceMapRemapper._normalize_path(source).lstrip("./")
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        stripped = path.split("#", 1)[0].split("?", 1)[0]
+        had_leading_slash = stripped.startswith("/")
+        normalized = posixpath.normpath(stripped or "")
+        if normalized == ".":
+            normalized = ""
+        if had_leading_slash and normalized and not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        return normalized.lstrip("./")
+
+    @staticmethod
+    def _source_has_url_semantics(source: str) -> bool:
+        value = source.replace("\\", "/").strip()
+        parts = urlsplit(value)
+        return bool(parts.scheme or "?" in value or "#" in value or "/./" in value or "/../" in value)
 
     @staticmethod
     def _join_source_root(source_root: str, source: str) -> str:

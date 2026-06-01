@@ -39,7 +39,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Target-function wrapper and webpack-like module export hook baselines.
 - Module discovery, runtime module cache / registry introspection, custom object runtime, and module federation function-path candidate baseline.
 - Closure-scope function discovery baseline without automatic closure wrapper replacement.
-- Source-level logpoints and Source Map exact / bias / sourceRoot / indexed-section remap baseline.
+- Source-level logpoints and Source Map exact / bias / sourceRoot / indexed-section remap baseline, with source-map `names` metadata, URL-like source equivalence, and nested indexed-section stack metadata.
 - Page mutation audit and MutationObserver timeline baselines.
 - Same-process paused-session continuation and durable inspect-only paused-session snapshots.
 
@@ -99,7 +99,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 - Arbitrary custom loader traversal and async chunk graph analysis.
 - Execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.
 - Opt-in wrapper replacement for closure-internal functions beyond paused-callframe evidence.
-- Richer Source Map name, URL, and complex indexed-section semantics.
+- External source-map URL / indexed-section URL fetching and bundler-specific symbol scoping beyond the local payload remap baseline.
 - Scoped JS heap / object-root mutation audit and object graph diff.
 
 ### Strategy and rebuild quality
