@@ -1093,6 +1093,52 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[1].metadata["execution_ok"])
         self.assertEqual(result.artifacts[1].metadata["added_registry_key_count"], 1)
 
+    def test_native_web_runtime_plans_async_chunk_module_diff_after_reviewed_load(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "async-chunk-module-diff",
+            {
+                "async_chunk_load_result": {
+                    "status": "success",
+                    "execution": {
+                        "attempted": True,
+                        "ok": True,
+                        "chunkId": "731",
+                        "runtimePath": "window.__webpack_require__",
+                        "addedRegistryKeys": ["731"],
+                    },
+                },
+                "module_discovery": {
+                    "modules": [
+                        {
+                            "module_id": "731",
+                            "runtime_path": "window.__webpack_require__",
+                            "export_names": ["sign"],
+                            "export_types": {"sign": "function"},
+                        }
+                    ]
+                },
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_async_chunk_module_diff"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertIn("async_chunk_module_diff_status=planned", result.verification)
+        self.assertIn("async_chunk_module_diff_added_registry_key_count=1", result.verification)
+        self.assertIn("async_chunk_module_diff_matched_module_count=1", result.verification)
+        self.assertIn("async_chunk_module_diff_hook_candidate_count=1", result.verification)
+        self.assertIn("async_chunk_module_diff_automatic_hook_installation=False", result.verification)
+        self.assertEqual(result.next_action, "review_async_chunk_module_diff_hook_candidates")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/async-chunk-module-diff.json")
+        self.assertEqual(result.artifacts[0].metadata["chunk_id"], "731")
+        self.assertEqual(result.artifacts[0].metadata["added_registry_key_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["matched_module_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_hook_installation"])
+
     def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

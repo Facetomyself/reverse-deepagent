@@ -3,6 +3,8 @@ import unittest
 from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadManager,
     AsyncChunkLoadSpec,
+    AsyncChunkModuleDiffManager,
+    AsyncChunkModuleDiffSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -908,6 +910,72 @@ class ModuleDiscoveryManagerTests(unittest.TestCase):
         self.assertEqual(result.reason, "unsupported_runtime_path_for_execution")
         self.assertFalse(result.execution["attempted"])
         self.assertFalse(page.executed_chunk_ids)
+
+    def test_async_chunk_module_diff_recommends_hook_candidates_after_reviewed_load(self) -> None:
+        spec = AsyncChunkModuleDiffSpec.from_context(
+            {
+                "async_chunk_load_result": {
+                    "status": "success",
+                    "execution": {
+                        "attempted": True,
+                        "ok": True,
+                        "chunkId": "731",
+                        "runtimePath": "window.__webpack_require__",
+                        "addedRegistryKeys": ["731"],
+                    },
+                },
+                "module_discovery": {
+                    "modules": [
+                        {
+                            "module_id": "731",
+                            "runtime_path": "window.__webpack_require__",
+                            "export_names": ["sign"],
+                            "export_types": {"sign": "function"},
+                            "hook_kind": "module-export",
+                        },
+                        {
+                            "module_id": "100",
+                            "runtime_path": "window.__webpack_require__",
+                            "export_names": ["other"],
+                        },
+                    ]
+                },
+            }
+        )
+
+        result = AsyncChunkModuleDiffManager().plan(spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertEqual(result.diff["status"], "ready_for_review")
+        self.assertEqual(result.diff["chunk_id"], "731")
+        self.assertEqual(result.diff["added_registry_keys"], ["731"])
+        self.assertEqual(result.diff["matched_module_count"], 1)
+        self.assertEqual(result.diff["candidate_count"], 1)
+        candidate = result.diff["hook_candidates"][0]
+        self.assertEqual(candidate["module_id"], "731")
+        self.assertEqual(candidate["export_name"], "sign")
+        self.assertEqual(candidate["hook_path"], "window.__webpack_require__(731).sign")
+        self.assertEqual(candidate["recommended_follow_up"], "hook_module_export_after_chunk_review")
+        self.assertFalse(result.diff["automatic_hook_installation"])
+        self.assertFalse(result.side_effect_policy["loads_chunk"])
+        self.assertFalse(result.side_effect_policy["installs_hooks"])
+        self.assertFalse(result.side_effect_policy["evaluates_javascript"])
+
+    def test_async_chunk_module_diff_blocks_without_successful_load(self) -> None:
+        spec = AsyncChunkModuleDiffSpec.from_context(
+            {
+                "async_chunk_load_result": {
+                    "status": "planned",
+                    "execution": {"attempted": False, "ok": False},
+                }
+            }
+        )
+
+        result = AsyncChunkModuleDiffManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "successful_async_chunk_load_required")
+        self.assertFalse(result.side_effect_policy["module_factory_invoked"])
 
 
 class ModuleHookManagerTests(unittest.TestCase):

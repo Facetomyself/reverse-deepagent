@@ -10,6 +10,8 @@ from reverse_deepagent.browser.collectors import CDPEnhancedCollector, CDPEventC
 from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadManager,
     AsyncChunkLoadSpec,
+    AsyncChunkModuleDiffManager,
+    AsyncChunkModuleDiffSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1662,6 +1664,45 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
             )
+        if self._is_async_chunk_module_diff_request(protection_name, context):
+            spec = AsyncChunkModuleDiffSpec.from_context(context)
+            result = AsyncChunkModuleDiffManager().plan(spec)
+            diff = result.diff if isinstance(result.diff, dict) else {}
+            verification = [
+                f"async_chunk_module_diff_status={result.status}",
+                f"async_chunk_module_diff_added_registry_key_count={len(diff.get('added_registry_keys') or [])}",
+                f"async_chunk_module_diff_matched_module_count={diff.get('matched_module_count', 0)}",
+                f"async_chunk_module_diff_hook_candidate_count={diff.get('candidate_count', 0)}",
+                f"async_chunk_module_diff_automatic_hook_installation={diff.get('automatic_hook_installation', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"async_chunk_module_diff_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-module-diff.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only async chunk module diff and hook candidate refresh.",
+                    metadata={
+                        "status": result.status,
+                        "chunk_id": diff.get("chunk_id"),
+                        "added_registry_key_count": len(diff.get("added_registry_keys") or []),
+                        "matched_module_count": diff.get("matched_module_count", 0),
+                        "candidate_count": diff.get("candidate_count", 0),
+                        "review_required": diff.get("review_required", True),
+                        "automatic_hook_installation": diff.get("automatic_hook_installation", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["plan_async_chunk_module_diff"] if result.status == "planned" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=diff.get("next_action", "rerun_module_discovery_after_chunk_load"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
         if self._is_module_discovery_request(protection_name, context):
             discovery_context = {**context, "discover_modules": True}
             spec = ModuleDiscoverySpec.from_context(discovery_context)
@@ -2380,6 +2421,26 @@ class NativeWebRuntime(WebReverseRuntime):
                 "chunkCandidate",
                 "chunk_id",
                 "chunkId",
+            )
+        )
+
+    @staticmethod
+    def _is_async_chunk_module_diff_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "async-chunk-module-diff",
+            "async-chunk-hook-candidates",
+            "chunk-module-diff",
+            "chunk-hook-candidates",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "async_chunk_module_diff",
+                "asyncChunkModuleDiff",
+                "async_chunk_hook_candidates",
+                "asyncChunkHookCandidates",
             )
         )
 

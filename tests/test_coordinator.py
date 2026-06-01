@@ -182,6 +182,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native async chunk module diff",
+                    kind=EvidenceKind.NOTE,
+                    source="async_chunk_module_diff",
+                    details={"status": "planned", "candidate_count": 1, "matched_module_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map fetch plan",
                     kind=EvidenceKind.NOTE,
                     source="source_map_fetch_plan",
@@ -272,6 +279,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
+        self.assertEqual(payloads["async-chunk-module-diff.json"]["candidate_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-plan.json"]["candidate_count"], 1)
         self.assertEqual(payloads["module-federation-get-init-plan.json"]["container_count"], 1)
         self.assertEqual(payloads["module-federation-get-init-result.json"]["execution"]["remoteFactoryInvoked"], False)
@@ -289,6 +297,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_function_hooks"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_async_chunk_module_diff"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_get_init_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_factory_invoke_result"), "trace")

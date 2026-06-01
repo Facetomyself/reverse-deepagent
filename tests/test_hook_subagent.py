@@ -130,7 +130,7 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["module_federation_get_init_blocked_execution_count"], 1)
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
-    def test_review_hook_artifacts_passes_reviewed_async_chunk_load_result(self) -> None:
+    def test_review_hook_artifacts_warns_for_reviewed_async_chunk_load_without_module_diff(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
             "async_chunk_load_plan": {"status": "ready_for_review", "chunk_id": "731"},
@@ -143,11 +143,37 @@ class HookSubagentTests(unittest.TestCase):
 
         result = tool(json.dumps(payload))
 
-        self.assertEqual(result["status"], "pass")
-        self.assertEqual(result["next_action"], "hook_review_passed")
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_module_diff_required", result["warnings"])
+        self.assertEqual(result["next_action"], "run_async_chunk_module_diff_after_reviewed_load")
         self.assertEqual(result["summary"]["async_chunk_load_result_status"], "success")
         self.assertTrue(result["summary"]["async_chunk_load_execution_attempted"])
         self.assertEqual(result["summary"]["async_chunk_load_added_registry_key_count"], 1)
+
+    def test_review_hook_artifacts_warns_for_async_chunk_module_diff_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "async_chunk_load_result": {
+                "status": "success",
+                "execution": {"attempted": True, "ok": True, "addedRegistryKeys": ["731"]},
+            },
+            "async_chunk_module_diff": {
+                "status": "planned",
+                "matched_module_count": 1,
+                "candidate_count": 1,
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("async_chunk_module_diff_requires_review", result["warnings"])
+        self.assertNotIn("async_chunk_module_diff_required", result["warnings"])
+        self.assertEqual(result["next_action"], "review_async_chunk_module_diff_hook_candidates")
+        self.assertEqual(result["summary"]["async_chunk_module_diff_status"], "planned")
+        self.assertEqual(result["summary"]["async_chunk_module_diff_matched_module_count"], 1)
+        self.assertEqual(result["summary"]["async_chunk_module_diff_hook_candidate_count"], 1)
+        self.assertEqual(result["review_required_items"][0]["async_chunk_module_diff_status"], "planned")
 
     def test_review_hook_artifacts_warns_for_module_federation_get_init_probe_result(self) -> None:
         tool = make_review_hook_artifacts_tool()

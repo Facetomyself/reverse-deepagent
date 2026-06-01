@@ -1250,3 +1250,15 @@ Status: implemented as a review-only remote export hook selection plan, not auto
 Boundary: this closes review-only remote export hook selection, but it still does not install wrappers for returned exports, recursively traverse nested remotes, execute arbitrary custom loaders, infer bundler-specific symbol scopes, call MCP, or touch Android / iOS / mini-program full runtime chains. Review-approved remote export hook installation and deeper federation traversal remain capability-gated follow-ups.
 
 Tests cover manager-level function / unsupported export classification, blocked missing-factory-execution behavior, native-web protection artifact metadata, workspace route aliasing, coordinator payload extraction / category mapping, and hook subagent review warnings.
+
+### Step 134 execution record: Review-only async chunk module diff / hook candidate refresh baseline
+
+Status: implemented as a side-effect-free post-load module diff and hook candidate refresh baseline, not deeper async traversal, automatic hook installation, arbitrary custom-loader execution, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`AsyncChunkModuleDiffManager` now consumes `async_chunk_load_result` / `async-chunk-load-result` evidence from the reviewed webpack `require.e(chunkId)` baseline plus optional refreshed `module_discovery` / `module_registry` / `modules` payloads. It requires a successful reviewed chunk load, reads `addedRegistryKeys` / `addedCacheKeys`, matches those keys against refreshed module records, and emits `reverse-deepagent.async-chunk-module-diff.v1` with chunk id, runtime path, added keys, matched modules, review-only `hook-module` candidates, and `next_action=review_async_chunk_module_diff_hook_candidates` when candidates exist.
+
+`native-web` exposes this through explicit `async-chunk-module-diff` / `async-chunk-hook-candidates` / `chunk-module-diff` / `chunk-hook-candidates` protection names and returns `virtual://workspace/async-chunk-module-diff.json`. The workspace contract indexes the artifact at `workspace/async-chunk-module-diff.json` with the future alias `/workspace/hooks/async-chunk-module-diff.json`, and coordinator extraction / artifact category mapping classify it as `triage`. The hook review subagent now warns when a reviewed async chunk load has no module-diff refresh yet, and treats an existing async chunk module diff plan as requiring `review_async_chunk_module_diff_hook_candidates` before follow-up hook installation.
+
+Boundary: this baseline does not load chunks, evaluate JavaScript, invoke module factories, install hooks, execute arbitrary custom loaders, perform recursive async traversal, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper async chunk traversal and execution-style custom loader traversal remain capability-gated follow-ups.
+
+Tests cover manager-level diff / candidate generation and blocked missing-successful-load behavior, native-web protection metadata, workspace route aliasing, coordinator payload extraction / category mapping, and hook subagent review warnings.

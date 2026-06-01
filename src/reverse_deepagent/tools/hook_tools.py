@@ -39,6 +39,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         source_logpoints = _object_alias(payload, "source_logpoints", "source-logpoints", "sourceLogpoints")
         async_chunk_plan = _object_alias(payload, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan")
         async_chunk_result = _object_alias(payload, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult")
+        async_chunk_module_diff = _object_alias(payload, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff")
         custom_loader_traversal_plan = _object_alias(
             payload,
             "custom_loader_traversal_plan",
@@ -96,6 +97,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 source_logpoints,
                 async_chunk_plan,
                 async_chunk_result,
+                async_chunk_module_diff,
                 custom_loader_traversal_plan,
                 module_federation_get_init_plan,
                 module_federation_get_init_result,
@@ -111,6 +113,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("async_chunk_load_plan_blocked")
         if _status(async_chunk_result) in {"failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_load_failed")
+        if _status(async_chunk_module_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("async_chunk_module_diff_blocked")
         if _status(custom_loader_traversal_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_traversal_plan_blocked")
         custom_loader_plan_status = _nested_status(custom_loader_traversal_plan, "plan")
@@ -147,6 +151,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("module_federation_export_hook_plan_requires_review")
         if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
             warnings.append("async_chunk_load_requires_review")
+        async_chunk_diff_status = _nested_status(async_chunk_module_diff, "diff")
+        if _status(async_chunk_result) == "success" and not async_chunk_module_diff:
+            warnings.append("async_chunk_module_diff_required")
+        if async_chunk_module_diff and (
+            _status(async_chunk_module_diff) in {"ready_for_review", "planned"}
+            or async_chunk_diff_status == "ready_for_review"
+        ):
+            warnings.append("async_chunk_module_diff_requires_review")
         if missing_count:
             warnings.append("hook_targets_missing")
         if installed_function_count + installed_module_count + source_logpoint_count > 0 and timeline_event_count == 0:
@@ -174,6 +186,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "generic_hook_event_count": _event_count(generic_timeline, generic_events),
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
+                "async_chunk_module_diff_status": _status(async_chunk_module_diff) or async_chunk_diff_status,
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or custom_loader_plan_status,
                 "custom_loader_traversal_candidate_count": _intish(custom_loader_traversal_plan.get("candidate_count") or _nested_get(custom_loader_traversal_plan, "plan", "candidate_count")),
                 "custom_loader_traversal_ready_for_review_count": _intish(custom_loader_traversal_plan.get("ready_for_review_count") or _nested_get(custom_loader_traversal_plan, "plan", "ready_for_review_count")),
@@ -199,6 +212,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "module_federation_export_hook_hookable_candidate_count": _intish(module_federation_export_hook_plan.get("hookable_candidate_count") or _nested_get(module_federation_export_hook_plan, "plan", "hookable_candidate_count")),
                 "async_chunk_load_execution_attempted": bool(async_chunk_result.get("execution", {}).get("attempted") if isinstance(async_chunk_result.get("execution"), dict) else async_chunk_result.get("execution_attempted", False)),
                 "async_chunk_load_added_registry_key_count": len(_listish(async_chunk_result.get("addedRegistryKeys") or async_chunk_result.get("added_registry_keys"))),
+                "async_chunk_module_diff_matched_module_count": _intish(async_chunk_module_diff.get("matched_module_count") or _nested_get(async_chunk_module_diff, "diff", "matched_module_count")),
+                "async_chunk_module_diff_hook_candidate_count": _intish(async_chunk_module_diff.get("candidate_count") or _nested_get(async_chunk_module_diff, "diff", "candidate_count")),
                 "timeline_event_count": timeline_event_count,
                 "function_hook_event_type_counts": _event_type_counts(function_events),
                 "module_hook_event_type_counts": _event_type_counts(module_events),
@@ -215,6 +230,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 source_logpoints,
                 async_chunk_plan,
                 async_chunk_result,
+                async_chunk_module_diff,
                 custom_loader_traversal_plan,
                 module_federation_get_init_plan,
                 module_federation_get_init_result,
@@ -376,6 +392,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "choose_supported_async_chunk_candidate"
     if "async_chunk_load_failed" in blockers:
         return "inspect_async_chunk_load_failure"
+    if "async_chunk_module_diff_blocked" in blockers:
+        return "rerun_module_discovery_after_chunk_load"
     if "no_hook_artifacts_provided" in warnings:
         return "collect_hook_artifacts_before_review"
     if "module_federation_get_init_requires_review" in warnings:
@@ -390,6 +408,10 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_custom_loader_traversal_plan"
     if "async_chunk_load_requires_review" in warnings:
         return "review_async_chunk_load_plan_before_execution"
+    if "async_chunk_module_diff_required" in warnings:
+        return "run_async_chunk_module_diff_after_reviewed_load"
+    if "async_chunk_module_diff_requires_review" in warnings:
+        return "review_async_chunk_module_diff_hook_candidates"
     if "hook_targets_missing" in warnings:
         return "adjust_missing_hook_paths_or_module_exports"
     if "installed_hooks_without_timeline_events" in warnings:
@@ -409,6 +431,7 @@ def _review_required_items(
     source_logpoints: dict[str, Any],
     async_chunk_plan: dict[str, Any],
     async_chunk_result: dict[str, Any],
+    async_chunk_module_diff: dict[str, Any],
     custom_loader_traversal_plan: dict[str, Any],
     module_federation_get_init_plan: dict[str, Any],
     module_federation_get_init_result: dict[str, Any],
@@ -427,6 +450,7 @@ def _review_required_items(
                 "source_logpoint_status": _status(source_logpoints),
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
+                "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or _nested_status(custom_loader_traversal_plan, "plan"),
                 "module_federation_get_init_plan_status": _status(module_federation_get_init_plan) or _nested_status(module_federation_get_init_plan, "plan"),
                 "module_federation_get_init_result_status": _status(module_federation_get_init_result),
@@ -436,6 +460,7 @@ def _review_required_items(
                 "module_hook_error": str(module_hooks.get("error") or ""),
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
                 "async_chunk_load_error": str(async_chunk_result.get("error") or async_chunk_plan.get("error") or ""),
+                "async_chunk_module_diff_error": str(async_chunk_module_diff.get("error") or ""),
                 "custom_loader_traversal_error": str(custom_loader_traversal_plan.get("error") or ""),
                 "module_federation_get_init_error": str(module_federation_get_init_result.get("error") or module_federation_get_init_plan.get("error") or ""),
                 "module_federation_factory_error": str(module_federation_factory_invoke_result.get("error") or ""),

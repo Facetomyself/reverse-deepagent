@@ -1771,6 +1771,176 @@ class AsyncChunkLoadManager:
 """
 
 
+@dataclass(slots=True)
+class AsyncChunkModuleDiffSpec:
+    """Review-only module diff and hook candidate refresh after a reviewed async chunk load."""
+
+    async_chunk_load_result: dict[str, Any] = field(default_factory=dict)
+    module_discovery: dict[str, Any] = field(default_factory=dict)
+    modules: list[dict[str, Any]] = field(default_factory=list)
+    max_candidates: int = 30
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "AsyncChunkModuleDiffSpec | None":
+        context = context or {}
+        load_result = (
+            context.get("async_chunk_load_result")
+            or context.get("async-chunk-load-result")
+            or context.get("asyncChunkLoadResult")
+        )
+        discovery = (
+            context.get("module_discovery")
+            or context.get("moduleDiscovery")
+            or context.get("module_registry")
+            or context.get("moduleRegistry")
+        )
+        modules = context.get("modules", context.get("module_candidates", context.get("moduleCandidates", [])))
+        if not isinstance(load_result, dict):
+            return None
+        return cls(
+            async_chunk_load_result=dict(load_result),
+            module_discovery=dict(discovery) if isinstance(discovery, dict) else {},
+            modules=[dict(item) for item in modules if isinstance(item, dict)] if isinstance(modules, list) else [],
+            max_candidates=max(1, int(context.get("max_candidates", context.get("maxCandidates", 30)) or 30)),
+        )
+
+
+@dataclass(slots=True)
+class AsyncChunkModuleDiffResult:
+    status: str
+    diff: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "diff": self.diff,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class AsyncChunkModuleDiffManager:
+    """Build a side-effect-free module diff and hook candidate refresh after chunk load."""
+
+    def plan(self, spec: AsyncChunkModuleDiffSpec | None) -> AsyncChunkModuleDiffResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return AsyncChunkModuleDiffResult(status="unsupported", reason="missing_async_chunk_load_result", side_effect_policy=policy)
+        execution = self._execution_payload(spec.async_chunk_load_result)
+        if not execution.get("attempted") or not execution.get("ok"):
+            return AsyncChunkModuleDiffResult(status="blocked", reason="successful_async_chunk_load_required", side_effect_policy=policy)
+        added_registry_keys = [str(item) for item in execution.get("addedRegistryKeys") or execution.get("added_registry_keys") or [] if str(item)]
+        added_cache_keys = [str(item) for item in execution.get("addedCacheKeys") or execution.get("added_cache_keys") or [] if str(item)]
+        modules = self._module_records(spec)
+        matched_modules = [module for module in modules if str(module.get("module_id") or module.get("moduleId") or "") in set(added_registry_keys + added_cache_keys)]
+        candidates = self._hook_candidates(matched_modules, max_candidates=spec.max_candidates)
+        status = "planned" if candidates or matched_modules or added_registry_keys or added_cache_keys else "blocked"
+        diff = {
+            "schema_version": "reverse-deepagent.async-chunk-module-diff.v1",
+            "status": "ready_for_review" if status == "planned" else "blocked",
+            "source": "async_chunk_load_result",
+            "chunk_id": execution.get("chunkId") or execution.get("chunk_id") or spec.async_chunk_load_result.get("chunk_id", ""),
+            "runtime_path": execution.get("runtimePath") or execution.get("runtime_path") or "",
+            "added_registry_keys": added_registry_keys,
+            "added_cache_keys": added_cache_keys,
+            "matched_module_count": len(matched_modules),
+            "candidate_count": len(candidates),
+            "matched_modules": matched_modules[: spec.max_candidates],
+            "hook_candidates": candidates,
+            "review_required": True,
+            "automatic_hook_installation": False,
+            "module_factory_invoked": False,
+            "next_action": "review_async_chunk_module_diff_hook_candidates" if candidates else "rerun_module_discovery_after_chunk_load",
+        }
+        return AsyncChunkModuleDiffResult(
+            status=status,
+            diff=diff,
+            side_effect_policy=policy,
+            reason=None if status == "planned" else "no_added_module_diff_or_candidates",
+        )
+
+    @staticmethod
+    def _execution_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(payload.get("execution"), dict):
+            return payload["execution"]
+        return payload
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "loads_chunk": False,
+            "installs_hooks": False,
+            "evaluates_javascript": False,
+            "module_factory_invoked": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @classmethod
+    def _module_records(cls, spec: AsyncChunkModuleDiffSpec) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        records.extend(spec.modules)
+        discovery = spec.module_discovery
+        for key in ("modules", "module_candidates", "moduleCandidates", "candidates"):
+            value = discovery.get(key)
+            if isinstance(value, list):
+                records.extend(dict(item) for item in value if isinstance(item, dict))
+        runtime = discovery.get("runtime")
+        if isinstance(runtime, dict) and isinstance(runtime.get("modules"), list):
+            records.extend(dict(item) for item in runtime["modules"] if isinstance(item, dict))
+        return cls._dedupe_records(records)
+
+    @staticmethod
+    def _dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen: set[tuple[str, str]] = set()
+        result: list[dict[str, Any]] = []
+        for record in records:
+            module_id = str(record.get("module_id") or record.get("moduleId") or "")
+            runtime_path = str(record.get("runtime_path") or record.get("runtimePath") or "")
+            key = (runtime_path, module_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized = dict(record)
+            if module_id:
+                normalized["module_id"] = module_id
+            if runtime_path:
+                normalized["runtime_path"] = runtime_path
+            result.append(normalized)
+        return result
+
+    @classmethod
+    def _hook_candidates(cls, modules: list[dict[str, Any]], *, max_candidates: int) -> list[dict[str, Any]]:
+        candidates: list[dict[str, Any]] = []
+        for module in modules:
+            module_id = str(module.get("module_id") or module.get("moduleId") or "")
+            runtime_path = str(module.get("runtime_path") or module.get("runtimePath") or "window.__webpack_require__")
+            export_names = ModuleDiscoveryManager._normalize_export_names(module.get("export_names") or module.get("exportNames"))
+            export_types = module.get("export_types") if isinstance(module.get("export_types"), dict) else module.get("exportTypes") if isinstance(module.get("exportTypes"), dict) else {}
+            for export_name in export_names:
+                candidate = {
+                    "kind": "async-chunk-module-export",
+                    "hook_kind": "module-export",
+                    "module_id": module_id,
+                    "export_name": export_name,
+                    "export_type": str(export_types.get(export_name) or "unknown"),
+                    "runtime_path": runtime_path,
+                    "hook_path": _module_export_hook_path(runtime_path, module_id, export_name),
+                    "recommended_follow_up": "hook_module_export_after_chunk_review",
+                    "requires_review_approval": True,
+                    "automatic_hook_installation": False,
+                    "source": "async_chunk_module_diff",
+                }
+                candidates.append(candidate)
+                if len(candidates) >= max_candidates:
+                    return candidates
+        return candidates
+
+
 class ModuleDiscoveryManager:
     """Best-effort webpack-like module discovery from runtime and source text."""
 

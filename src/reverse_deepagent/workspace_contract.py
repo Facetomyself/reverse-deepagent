@@ -326,6 +326,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_module_hooks", "workspace/module-hooks.json", "/workspace/hooks/", "module-hooks.json", "hook-timeline", ("hook", "protector")),
         ("workspace_module_hook_timeline", "workspace/module-hook-timeline.json", "/workspace/hooks/", "module-hook-timeline.json", "hook-timeline", ("hook", "timeline")),
         ("workspace_async_chunk_load_plan", "workspace/async-chunk-load-plan.json", "/workspace/runtime/", "async-chunk-load-plan.json", "triage", ("hook", "browser_runtime", "review")),
+        ("workspace_async_chunk_module_diff", "workspace/async-chunk-module-diff.json", "/workspace/hooks/", "async-chunk-module-diff.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_traversal_plan", "workspace/custom-loader-traversal-plan.json", "/workspace/runtime/", "custom-loader-traversal-plan.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_module_federation_get_init_plan", "workspace/module-federation-get-init-plan.json", "/workspace/runtime/", "module-federation-get-init-plan.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_module_federation_get_init_result", "workspace/module-federation-get-init-result.json", "/workspace/runtime/", "module-federation-get-init-result.json", "trace", ("hook", "browser_runtime", "review")),
