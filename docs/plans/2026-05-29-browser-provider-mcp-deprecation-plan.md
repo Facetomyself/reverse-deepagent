@@ -1018,3 +1018,15 @@ Step 112 execution record: BrowserProvider production readiness metadata baselin
 
 
 Step 113 execution record: Hosted CDP BrowserProvider template package baseline is implemented as an external package seam for hosted browser services, vendor anti-detect browsers, enterprise browser pools, and remote CDP brokers. `packages/reverse-deepagent-browser-provider-hosted-cdp-template/` declares the `reverse_deepagent.browser_providers` entry point `hosted-cdp-template`, returns non-secret `BrowserProviderCapabilities` with `review-required` production readiness metadata, and keeps metadata listing side-effect free. Registry / matrix paths do not call the provider factory, allocate hosted sessions, open sockets, probe CDP, launch browsers, import vendor SDKs, call MCP, or touch Android / iOS / mini-program full runtime chains. Explicit provider creation can pass `browser_url` / `cdp_browser_url`; when present, `connect()` delegates to the core `RemoteCDPProvider` adapter so plugin authors can smoke the BrowserProvider contract against an existing hosted CDP endpoint before replacing allocation / attach logic with a vendor SDK. Missing endpoints raise structured `BrowserProviderUnavailableError` guidance.
+
+### Step 114 execution record: Workspace dual-write pilot result artifact baseline
+
+Status: implemented as a read-mostly pilot result verifier and optional audit artifact writer, not scoped dual-write enforcement, foldered-canonical migration, or delivery gate relaxation.
+
+The coordinator now exposes `record_workspace_dual_write_pilot_result`, backed by `record_workspace_dual_write_pilot_result_payload(...)`. The tool compares a reviewed `plan_workspace_dual_write_pilot` payload with an observed `workspace/workspace-dual-write-plan.json` payload, checks each planned candidate's legacy canonical file and future foldered file, records size / sha256 metadata, detects digest mismatches, missing legacy / future files, not-observed candidates, out-of-scope observed writes, and medium / high-risk observed artifacts.
+
+By default the tool is read-only and only inspects files. When explicitly called with `write_result=true`, it writes the audit result to `workspace/workspace-dual-write-pilot-result.json`, which is registered as `workspace_dual_write_pilot_result` under `/workspace/delivery/`. The result keeps legacy paths authoritative and reports `verified`, `partial`, `blocked`, or `not_run` status with blocking reasons and next actions.
+
+Boundary: this does not enable dual-write, does not limit the pipeline writer to a selected scope, does not migrate physical workspace paths, does not change canonical paths, does not execute delivery, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Broader dual-write rollout and foldered-canonical migration remain follow-ups.
+
+Tests cover missing observed dual-write plans, verified legacy / future digest matches, explicit audit artifact writing, route metadata, coordinator tool exposure, and existing workspace / rebuild regressions.
