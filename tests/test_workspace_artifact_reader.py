@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 
 from reverse_deepagent.tools.artifact_tools import (
+    assess_workspace_migration_readiness_payload,
     audit_workspace_artifact_consumers_payload,
+    make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
     make_read_workspace_artifact_tool,
     summarize_workspace_artifact_read,
@@ -162,6 +164,71 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
         self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-consumer-audit.v1")
         self.assertEqual(tool.__name__, "audit_workspace_artifact_consumers")
         self.assertTrue(payload["side_effect_policy"]["read_only"])
+
+    def test_workspace_migration_readiness_blocks_foldered_migration_without_delivery_source_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = assess_workspace_migration_readiness_payload(default_artifact_root=root)
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-migration-readiness.v1")
+            self.assertEqual(payload["status"], "review")
+            self.assertEqual(payload["summary"]["limited_dual_write_pilot_status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["foldered_canonical_migration_status"], "blocked")
+            self.assertIn(
+                "delivery_source_audit_evidence_missing",
+                payload["migration_readiness"]["foldered_canonical_migration"]["blocking_reasons"],
+            )
+            self.assertIn("delivery.execute_local_delivery.artifacts_json", payload["consumer_readiness"]["partial_consumers"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["files_inspected"])
+            self.assertFalse(payload["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+
+    def test_workspace_migration_readiness_uses_delivery_source_audit_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            delivery_source_audit = {
+                "schema_version": "reverse-deepagent.delivery-source-compatibility-audit.v1",
+                "artifact_count": 2,
+                "source_artifact_ref_count": 1,
+                "source_path_count": 1,
+                "workspace_resolved_count": 1,
+                "external_source_path_count": 1,
+                "legacy_source_path_count": 0,
+                "future_source_path_count": 0,
+                "artifact_root_relative_source_path_count": 0,
+                "relative_source_path_count": 0,
+                "by_source_input_kind": {"source-path": 1, "workspace-artifact-ref": 1},
+                "by_source_path_kind": {"external-filesystem-source-path": 1, "resolver-backed-workspace-artifact": 1},
+            }
+
+            payload = assess_workspace_migration_readiness_payload(
+                default_artifact_root=root,
+                delivery_source_audit_json=json.dumps(delivery_source_audit),
+            )
+
+            self.assertEqual(payload["delivery_source_audit"]["status"], "observed")
+            self.assertEqual(payload["delivery_source_audit"]["source_path_count"], 1)
+            self.assertEqual(payload["delivery_source_audit"]["external_source_path_count"], 1)
+            blockers = payload["migration_readiness"]["foldered_canonical_migration"]["blocking_reasons"]
+            self.assertIn("source_path_usage_observed", blockers)
+            self.assertIn("external_source_path_usage_observed", blockers)
+            self.assertIn("partial_consumers_still_present", blockers)
+            self.assertIn("keep_external_filesystem_delivery_sources_as_explicit_boundaries", payload["recommended_next_actions"])
+
+    def test_workspace_migration_readiness_tool_returns_payload_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            tool = make_assess_workspace_migration_readiness_tool(root)
+
+            payload = tool()
+
+            self.assertEqual(tool.__name__, "assess_workspace_migration_readiness")
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-migration-readiness.v1")
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
 
 
 if __name__ == "__main__":

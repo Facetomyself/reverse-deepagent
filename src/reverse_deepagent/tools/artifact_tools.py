@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from reverse_deepagent.runtime.base import ReverseRuntime
 from reverse_deepagent.schemas import FinalResult
-from reverse_deepagent.workspace_contract import WorkspacePathResolution, WorkspacePathResolver
+from reverse_deepagent.workspace_contract import WorkspacePathResolution, WorkspacePathResolver, default_workspace_artifact_routes
 
 
 ArtifactTool = Callable[..., dict[str, Any]]
@@ -70,6 +70,33 @@ def make_audit_workspace_artifact_consumers_tool() -> ArtifactTool:
     return audit_workspace_artifact_consumers
 
 
+def make_assess_workspace_migration_readiness_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only tool for workspace migration readiness planning."""
+
+    root = Path(default_artifact_root)
+
+    def assess_workspace_migration_readiness(
+        artifact_root: str | None = None,
+        delivery_source_audit_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Assess dual-write and foldered-canonical migration readiness without mutating files."""
+
+        return assess_workspace_migration_readiness_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            delivery_source_audit_json=delivery_source_audit_json,
+        )
+
+    assess_workspace_migration_readiness.__name__ = "assess_workspace_migration_readiness"
+    assess_workspace_migration_readiness.__doc__ = (
+        "Read-only workspace migration readiness report. Combines workspace consumer adoption status, "
+        "registered artifact route counts, and optional execute_local_delivery delivery_artifact_source_audit JSON "
+        "to distinguish limited dual-write pilot readiness from foldered-canonical migration blockers. "
+        "It does not inspect files, write artifacts, create directories, enable dual-write, migrate paths, start browsers, or call MCP."
+    )
+    return assess_workspace_migration_readiness
+
+
 def audit_workspace_artifact_consumers_payload() -> dict[str, Any]:
     """Return the current resolver adoption matrix for known workspace consumers."""
 
@@ -112,6 +139,203 @@ def audit_workspace_artifact_consumers_payload() -> dict[str, Any]:
             "touches_mobile_full_runtime_chains": False,
         },
     }
+
+
+def assess_workspace_migration_readiness_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    delivery_source_audit_json: str | None = None,
+) -> dict[str, Any]:
+    """Return a read-only migration readiness report for workspace path evolution."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    consumer_audit = audit_workspace_artifact_consumers_payload()
+    consumers = consumer_audit["consumers"]
+    resolver_ready = [item for item in consumers if item["resolver_status"] == "resolver-ready"]
+    partial = [item for item in consumers if item["resolver_status"] == "partial"]
+    candidates = [item for item in consumers if item["resolver_status"] == "candidate"]
+    explicit_boundaries = [item for item in consumers if item["resolver_status"] == "explicit-filesystem-boundary"]
+    delivery_source_audit = _parse_delivery_source_audit(delivery_source_audit_json)
+    delivery_source_summary = _summarize_delivery_source_audit_payload(delivery_source_audit)
+    registered_routes = default_workspace_artifact_routes()
+
+    limited_dual_write_blockers: list[str] = []
+    if candidates:
+        limited_dual_write_blockers.append("candidate_consumers_require_resolver_adoption")
+    if not resolver_ready:
+        limited_dual_write_blockers.append("no_resolver_ready_consumers")
+    limited_dual_write_status = "ready_for_review" if not limited_dual_write_blockers else "blocked"
+
+    foldered_blockers: list[str] = []
+    if partial:
+        foldered_blockers.append("partial_consumers_still_present")
+    if candidates:
+        foldered_blockers.append("candidate_consumers_require_resolver_adoption")
+    if delivery_source_audit is None:
+        foldered_blockers.append("delivery_source_audit_evidence_missing")
+    elif delivery_source_summary["malformed"]:
+        foldered_blockers.append("delivery_source_audit_malformed")
+    elif delivery_source_summary["source_path_count"] > 0:
+        foldered_blockers.append("source_path_usage_observed")
+    if delivery_source_summary["external_source_path_count"] > 0:
+        foldered_blockers.append("external_source_path_usage_observed")
+    foldered_canonical_status = "ready_for_review" if not foldered_blockers else "blocked"
+
+    return {
+        "schema_version": "reverse-deepagent.workspace-migration-readiness.v1",
+        "status": "review",
+        "artifact_root": str(effective_root),
+        "summary": {
+            "consumer_count": consumer_audit["summary"]["consumer_count"],
+            "resolver_ready_count": len(resolver_ready),
+            "partial_count": len(partial),
+            "candidate_count": len(candidates),
+            "explicit_filesystem_boundary_count": len(explicit_boundaries),
+            "registered_workspace_route_count": len(registered_routes),
+            "delivery_source_audit_observed": delivery_source_audit is not None,
+            "limited_dual_write_pilot_status": limited_dual_write_status,
+            "foldered_canonical_migration_status": foldered_canonical_status,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "consumer_readiness": {
+            "resolver_ready_consumers": [item["consumer_id"] for item in resolver_ready],
+            "partial_consumers": [item["consumer_id"] for item in partial],
+            "candidate_consumers": [item["consumer_id"] for item in candidates],
+            "explicit_filesystem_boundaries": [item["consumer_id"] for item in explicit_boundaries],
+        },
+        "delivery_source_audit": delivery_source_summary,
+        "migration_readiness": {
+            "limited_dual_write_pilot": {
+                "status": limited_dual_write_status,
+                "blocking_reasons": limited_dual_write_blockers,
+                "allowed_scope": "registered-workspace-artifacts-only",
+                "requires_explicit_opt_in": True,
+                "keeps_legacy_canonical_path": True,
+                "writes_future_foldered_copy": limited_dual_write_status == "ready_for_review",
+                "review_required": True,
+            },
+            "foldered_canonical_migration": {
+                "status": foldered_canonical_status,
+                "blocking_reasons": foldered_blockers,
+                "requires_no_partial_consumers": True,
+                "requires_delivery_source_audit_without_source_path_usage": True,
+                "keeps_explicit_filesystem_boundaries": True,
+                "review_required": True,
+            },
+        },
+        "recommended_next_actions": _workspace_migration_next_actions(
+            limited_dual_write_blockers=limited_dual_write_blockers,
+            foldered_blockers=foldered_blockers,
+            delivery_source_audit_present=delivery_source_audit is not None,
+        ),
+        "source_evidence": {
+            "consumer_audit_schema_version": consumer_audit["schema_version"],
+            "delivery_source_audit_schema_version": delivery_source_summary["schema_version"],
+        },
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _parse_delivery_source_audit(delivery_source_audit_json: str | None) -> dict[str, Any] | None:
+    if not delivery_source_audit_json:
+        return None
+    try:
+        payload = json.loads(delivery_source_audit_json)
+    except json.JSONDecodeError as exc:
+        return {
+            "schema_version": "invalid-json",
+            "status": "malformed",
+            "error": f"delivery_source_audit_json is not valid JSON: {exc}",
+        }
+    if not isinstance(payload, dict):
+        return {
+            "schema_version": "invalid-json",
+            "status": "malformed",
+            "error": "delivery_source_audit_json must decode to an object",
+        }
+    return payload
+
+
+def _summarize_delivery_source_audit_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    if payload is None:
+        return {
+            "schema_version": "missing",
+            "status": "missing",
+            "artifact_count": 0,
+            "source_artifact_ref_count": 0,
+            "source_path_count": 0,
+            "workspace_resolved_count": 0,
+            "external_source_path_count": 0,
+            "legacy_source_path_count": 0,
+            "future_source_path_count": 0,
+            "artifact_root_relative_source_path_count": 0,
+            "relative_source_path_count": 0,
+            "by_source_input_kind": {},
+            "by_source_path_kind": {},
+            "malformed": False,
+        }
+    malformed = payload.get("status") == "malformed"
+    return {
+        "schema_version": payload.get("schema_version") or "unknown",
+        "status": "malformed" if malformed else "observed",
+        "artifact_count": _safe_int(payload.get("artifact_count")),
+        "source_artifact_ref_count": _safe_int(payload.get("source_artifact_ref_count")),
+        "source_path_count": _safe_int(payload.get("source_path_count")),
+        "workspace_resolved_count": _safe_int(payload.get("workspace_resolved_count")),
+        "external_source_path_count": _safe_int(payload.get("external_source_path_count")),
+        "legacy_source_path_count": _safe_int(payload.get("legacy_source_path_count")),
+        "future_source_path_count": _safe_int(payload.get("future_source_path_count")),
+        "artifact_root_relative_source_path_count": _safe_int(payload.get("artifact_root_relative_source_path_count")),
+        "relative_source_path_count": _safe_int(payload.get("relative_source_path_count")),
+        "by_source_input_kind": payload.get("by_source_input_kind") if isinstance(payload.get("by_source_input_kind"), dict) else {},
+        "by_source_path_kind": payload.get("by_source_path_kind") if isinstance(payload.get("by_source_path_kind"), dict) else {},
+        "malformed": malformed,
+        "error": payload.get("error") if malformed else "",
+    }
+
+
+def _workspace_migration_next_actions(
+    *,
+    limited_dual_write_blockers: list[str],
+    foldered_blockers: list[str],
+    delivery_source_audit_present: bool,
+) -> list[str]:
+    actions: list[str] = []
+    if limited_dual_write_blockers:
+        actions.append("resolve_candidate_consumers_before_dual_write_pilot")
+    else:
+        actions.append("review_limited_dual_write_pilot_for_registered_workspace_artifacts")
+    if not delivery_source_audit_present:
+        actions.append("run_execute_local_delivery_dry_run_and_collect_delivery_artifact_source_audit")
+    if "source_path_usage_observed" in foldered_blockers:
+        actions.append("continue_monitoring_source_path_usage_before_foldered_canonical_migration")
+    if "external_source_path_usage_observed" in foldered_blockers:
+        actions.append("keep_external_filesystem_delivery_sources_as_explicit_boundaries")
+    if "partial_consumers_still_present" in foldered_blockers:
+        actions.append("do_not_start_foldered_canonical_migration_until_partial_consumers_are_closed_or_explicitly_accepted")
+    if not foldered_blockers:
+        actions.append("review_narrow_foldered_canonical_migration_pilot")
+    return actions
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def read_workspace_artifact_payload(

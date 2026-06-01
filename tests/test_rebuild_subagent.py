@@ -196,6 +196,11 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertIn("delivery", names)
         self.assertLess(names.index("review"), names.index("rebuild"))
         self.assertLess(names.index("rebuild"), names.index("delivery"))
+        tool_names = {tool.__name__ for tool in captured["tools"]}
+        self.assertIn("read_workspace_artifact", tool_names)
+        self.assertIn("audit_workspace_artifact_consumers", tool_names)
+        self.assertIn("assess_workspace_migration_readiness", tool_names)
+        self.assertIn("build_rebuild_delivery", tool_names)
 
 
 if __name__ == "__main__":

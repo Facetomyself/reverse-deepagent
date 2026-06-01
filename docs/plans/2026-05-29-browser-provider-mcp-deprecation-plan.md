@@ -992,3 +992,13 @@ Tests cover artifact-ref based rebuild generation, artifact input diagnostics, a
 `audit_workspace_artifact_consumers` still marks `delivery.execute_local_delivery.artifacts_json` as `partial` because explicit `source_path` remains supported for backward compatibility and non-workspace files, but its current support now includes source compatibility metrics. This is an audit / monitoring baseline only: it does not remove `source_path`, does not create directories, does not enable dual-write, does not migrate workspace paths, does not weaken delivery gates, does not start browsers, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains.
 
 Tests cover resolver-backed artifact refs, legacy workspace `source_path`, external filesystem `source_path`, top-level source usage counts, per-artifact metadata classification, and the updated workspace consumer audit next action.
+
+### Step 110 execution record: Workspace migration readiness report baseline
+
+The coordinator now exposes `assess_workspace_migration_readiness`, a read-only workspace migration readiness report. It combines `audit_workspace_artifact_consumers`, registered workspace route counts, and optional `execute_local_delivery` `delivery_artifact_source_audit` JSON into a machine-readable `reverse-deepagent.workspace-migration-readiness.v1` payload.
+
+The report deliberately separates `limited_dual_write_pilot` from `foldered_canonical_migration`. A limited dual-write pilot can be `ready_for_review` when no candidate consumers remain and legacy canonical paths stay authoritative. Foldered-canonical migration remains `blocked` while partial consumers exist, delivery source audit evidence is missing or malformed, retained `source_path` usage is observed, or external filesystem delivery sources remain explicit boundaries.
+
+Boundary: this is audit / planning only. It does not inspect files, write artifacts, create directories, enable dual-write, migrate workspace paths, change canonical paths, start browsers, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+Tests cover missing delivery source audit evidence, observed `source_path` / external filesystem source usage, side-effect policy, coordinator tool exposure, and existing workspace / rebuild regressions.
