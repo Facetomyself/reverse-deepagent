@@ -328,6 +328,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_async_chunk_load_plan", "workspace/async-chunk-load-plan.json", "/workspace/runtime/", "async-chunk-load-plan.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_async_chunk_module_diff", "workspace/async-chunk-module-diff.json", "/workspace/hooks/", "async-chunk-module-diff.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_traversal_plan", "workspace/custom-loader-traversal-plan.json", "/workspace/runtime/", "custom-loader-traversal-plan.json", "triage", ("hook", "browser_runtime", "review")),
+        ("workspace_custom_loader_continuation_workflow", "workspace/custom-loader-continuation-workflow.json", "/workspace/runtime/", "custom-loader-continuation-workflow.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_execution_preflight", "workspace/custom-loader-execution-preflight.json", "/workspace/runtime/", "custom-loader-execution-preflight.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_execution_result", "workspace/custom-loader-execution-result.json", "/workspace/runtime/", "custom-loader-execution-result.json", "trace", ("hook", "browser_runtime", "review")),
         ("workspace_custom_loader_module_diff", "workspace/custom-loader-module-diff.json", "/workspace/hooks/", "custom-loader-module-diff.json", "triage", ("hook", "browser_runtime", "review")),

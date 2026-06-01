@@ -15,6 +15,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
     CustomLoaderExecutionManager,
+    CustomLoaderContinuationWorkflowManager,
+    CustomLoaderContinuationWorkflowSpec,
     CustomLoaderExecutionPreflightManager,
     CustomLoaderExecutionPreflightSpec,
     CustomLoaderExecutionSpec,
@@ -1694,6 +1696,59 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_continuation_workflow_request(protection_name, context):
+            spec = CustomLoaderContinuationWorkflowSpec.from_context(context)
+            result = CustomLoaderContinuationWorkflowManager().plan(spec)
+            workflow = result.workflow if isinstance(result.workflow, dict) else {}
+            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+            verification = [
+                f"custom_loader_continuation_workflow_status={result.status}",
+                f"custom_loader_continuation_workflow_reason={result.reason or ''}",
+                f"custom_loader_continuation_workflow_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"custom_loader_continuation_workflow_selected_candidate_index={workflow.get('selected_candidate_index')}",
+                f"custom_loader_continuation_workflow_blocking_count={len(workflow.get('blocking_reasons') or [])}",
+                f"custom_loader_continuation_workflow_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-continuation-workflow.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader continuation workflow plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_status": workflow.get("status"),
+                        "selected_candidate_index": workflow.get("selected_candidate_index"),
+                        "loader_path": candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target"),
+                        "review_required": workflow.get("review_required", True),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                        "blocking_count": len(workflow.get("blocking_reasons") or []),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                        "writes_journal": result.side_effect_policy.get("writes_journal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "approved_for_preflight"}:
+                status = ExecutionStatus.SUCCESS
+                next_action = workflow.get("next_action", "review_custom_loader_continuation_workflow")
+                applied_actions = ["plan_custom_loader_continuation_workflow"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = workflow.get("next_action", "revise_custom_loader_continuation_workflow_inputs")
+                applied_actions = ["plan_custom_loader_continuation_workflow"]
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_continuation_workflow_request"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "approved_for_preflight"} else ConfidenceLevel.LOW,
+            )
         if self._is_custom_loader_execution_preflight_request(protection_name, context):
             spec = CustomLoaderExecutionPreflightSpec.from_context(context)
             result = CustomLoaderExecutionPreflightManager().preflight(spec)
@@ -2858,6 +2913,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 "custom-loader-execution-preflight",
                 "custom_loader_preflight",
                 "customLoaderPreflight",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_continuation_workflow_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-continuation-workflow",
+            "custom-loader-continuation-plan",
+            "plan-custom-loader-continuation",
+            "review-custom-loader-continuation-workflow",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_continuation_workflow",
+                "customLoaderContinuationWorkflow",
+                "custom-loader-continuation-workflow",
+                "plan_custom_loader_continuation_workflow",
+                "planCustomLoaderContinuationWorkflow",
             )
         )
 

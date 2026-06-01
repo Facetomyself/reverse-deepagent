@@ -1140,6 +1140,89 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["already_executed_count"], 1)
         self.assertEqual(result.artifacts[0].metadata["previous_execution_count"], 1)
 
+    def test_native_web_runtime_plans_custom_loader_continuation_workflow_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        traversal_plan = runtime.apply_minimal_protection(
+            "custom-loader-traversal-plan",
+            {
+                "traversal_depth": 2,
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "selected_candidate": {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                    },
+                    "execution": {"attempted": True, "ok": True, "loaderInvoked": True, "loaderPath": "window.__customLoader.load"},
+                },
+                "next_custom_loader_candidates": [
+                    {
+                        "chunk_id": "custom-sign",
+                        "target": "window.__customLoader.load",
+                        "loader_path": "window.__customLoader.load",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                    },
+                    {
+                        "chunk_id": "custom-sign-child",
+                        "target": "window.__customLoader.loadChild",
+                        "loader_path": "window.__customLoader.loadChild",
+                        "loader_kind": "custom-loader",
+                        "edge_type": "custom-loader-candidate",
+                        "parent_loader_path": "window.__customLoader.load",
+                        "depth": 2,
+                    },
+                ],
+            },
+        )
+        result = runtime.apply_minimal_protection(
+            "custom-loader-continuation-workflow",
+            {
+                "custom_loader_traversal_plan": traversal_plan.artifacts[0].metadata | {
+                    "status": "ready_for_review",
+                    "candidate_count": 2,
+                    "ready_continuation_count": 1,
+                    "candidates": [
+                        {
+                            "index": 0,
+                            "status": "already_executed",
+                            "classification": "arbitrary_custom_loader",
+                            "loader_path": "window.__customLoader.load",
+                            "target": "window.__customLoader.load",
+                            "loader_kind": "custom-loader",
+                            "already_executed": True,
+                            "continuation_supported": False,
+                        },
+                        {
+                            "index": 1,
+                            "status": "ready_for_review",
+                            "classification": "arbitrary_custom_loader",
+                            "loader_path": "window.__customLoader.loadChild",
+                            "target": "window.__customLoader.loadChild",
+                            "loader_kind": "custom-loader",
+                            "parent_loader_path": "window.__customLoader.load",
+                            "depth": 2,
+                            "continuation_supported": True,
+                        },
+                    ],
+                },
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_continuation_workflow"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_continuation_workflow_status=ready_for_review", result.verification)
+        self.assertIn("custom_loader_continuation_workflow_selected_candidate_index=1", result.verification)
+        self.assertIn("custom_loader_continuation_workflow_loader_invoked=False", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_continuation_workflow")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-continuation-workflow.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_candidate_index"], 1)
+        self.assertFalse(result.artifacts[0].metadata["writes_journal"])
+
     def test_native_web_runtime_preflights_reviewed_custom_loader_execution_without_running_loader(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

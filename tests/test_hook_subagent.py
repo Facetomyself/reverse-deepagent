@@ -103,6 +103,28 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["custom_loader_traversal_blocked_execution_count"], 1)
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_custom_loader_continuation_workflow(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_continuation_workflow": {
+                "status": "ready_for_review",
+                "workflow": {
+                    "status": "ready_for_review",
+                    "selected_candidate_index": 1,
+                    "review_approved": False,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("custom_loader_continuation_workflow_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_custom_loader_continuation_workflow")
+        self.assertEqual(result["summary"]["custom_loader_continuation_workflow_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["custom_loader_continuation_workflow_selected_candidate_index"], 1)
+        self.assertFalse(result["summary"]["custom_loader_continuation_workflow_review_approved"])
+
     def test_review_hook_artifacts_warns_for_custom_loader_preflight_ready_to_execute(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
