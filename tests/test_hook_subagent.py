@@ -302,6 +302,43 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["module_federation_export_hook_plan_status"], "planned")
 
 
+
+    def test_review_hook_artifacts_suppresses_federation_export_plan_after_function_hook_install(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_factory_invoke_result": {
+                "status": "success",
+                "factory_execution": {
+                    "attempted": True,
+                    "ok": True,
+                    "remoteFactoryInvoked": True,
+                    "remoteCodeExecuted": True,
+                    "exportNames": ["sign"],
+                },
+            },
+            "module_federation_export_hook_plan": {
+                "status": "planned",
+                "candidate_count": 1,
+                "hookable_candidate_count": 1,
+            },
+            "function_hooks": {
+                "status": "success",
+                "installed": {"window.remoteApp:./sign:sign": True},
+            },
+            "function_hook_timeline": {
+                "status": "success",
+                "events": [
+                    {"type": "remote_export_call", "payload": {"hookPath": "window.remoteApp:./sign:sign"}}
+                ],
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertNotIn("module_federation_export_hook_plan_requires_review", result["warnings"])
+        self.assertEqual(result["summary"]["installed_function_hook_count"], 1)
+        self.assertEqual(result["next_action"], "hook_review_passed")
+
     def test_review_hook_artifacts_reads_artifact_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             artifact_root = Path(tmp) / "artifacts"

@@ -379,6 +379,34 @@ class FakeRawPage:
                 "afterContainerKeys": ["get", "init"],
                 "addedContainerKeys": [],
             }
+        if "remote_export_hooks" in expression and "installed.push" in expression:
+            self.function_hook_installed = True
+            return {
+                "ok": True,
+                "installed": [
+                    {
+                        "hookPath": "window.remoteOther:./token:token",
+                        "containerPath": "window.remoteOther",
+                        "exposedName": "./token",
+                        "exportName": "token",
+                        "functionName": "token",
+                    }
+                ],
+                "missing": [],
+                "eventCount": len(self.function_hook_events),
+            }
+        if "remote_export_" in expression and "eventCount" in expression:
+            return {
+                "ok": self.function_hook_installed,
+                "events": list(self.function_hook_events),
+                "eventCount": len(self.function_hook_events),
+                "installed": {"window.remoteOther:./token:token": self.function_hook_installed},
+            }
+        if "window.remoteToken" in expression:
+            if self.function_hook_installed:
+                self.function_hook_events.append({"type": "remote_export_call", "payload": {"hookPath": "window.remoteOther:./token:token", "containerPath": "window.remoteOther", "exposedName": "./token", "exportName": "token", "argCount": 1}})
+                self.function_hook_events.append({"type": "remote_export_return", "payload": {"hookPath": "window.remoteOther:./token:token", "containerPath": "window.remoteOther", "exposedName": "./token", "exportName": "token", "result": {"type": "string", "preview": "remote-token"}}})
+            return "remote-token"
         if "fetch(" in expression and "/assets/app.js" in expression:
             return self.external_source
         if "__REVERSE_AGENT_VALIDATE_CANDIDATE__" in expression:
@@ -1334,6 +1362,85 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["hookable_candidate_count"], 1)
         self.assertFalse(result.artifacts[0].metadata["automatic_hook_installation"])
         self.assertFalse(result.artifacts[0].metadata["recursive_federation_traversal"])
+
+
+    def test_native_web_runtime_installs_reviewed_module_federation_remote_export_hook(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "module-federation-export-hook-install",
+            {
+                "module_federation_export_hook_plan": {
+                    "status": "planned",
+                    "plan": {
+                        "status": "ready_for_review",
+                        "candidates": [
+                            {
+                                "kind": "module-federation-remote-export",
+                                "export_name": "token",
+                                "export_type": "function",
+                                "function_name": "token",
+                                "container_path": "window.remoteOther",
+                                "exposed_name": "./token",
+                                "hook_kind": "remote-export-wrapper",
+                                "hookable": True,
+                                "requires_review_approval": True,
+                                "automatic_hook_installation": False,
+                                "recursive_federation_traversal": False,
+                            }
+                        ],
+                    },
+                },
+                "selected_export_hook_candidate": {"container_path": "window.remoteOther", "exposed_name": "./token", "export_name": "token"},
+                "review_approved": True,
+                "trigger_expression": "window.remoteToken('demo')",
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["hook_module_federation_remote_export:window.remoteOther:./token:token"])
+        self.assertIn("module_federation_export_hook_install_status=success", result.verification)
+        self.assertIn("module_federation_export_hook_review_approved=True", result.verification)
+        self.assertIn("module_federation_export_hook_installed_count=1", result.verification)
+        self.assertIn("module_federation_export_hook_event_count=2", result.verification)
+        self.assertIn("module_federation_export_hook_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "inspect_module_federation_export_hook_events")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/function-hooks.json")
+        self.assertEqual(result.artifacts[0].metadata["source"], "module_federation_export_hook_plan")
+        self.assertTrue(result.artifacts[0].metadata["review_approved"])
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/function-hook-timeline.json")
+
+    def test_native_web_runtime_blocks_module_federation_remote_export_hook_without_review(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "module-federation-export-hook-install",
+            {
+                "module_federation_export_hook_plan": {
+                    "status": "planned",
+                    "plan": {
+                        "status": "ready_for_review",
+                        "candidates": [
+                            {
+                                "kind": "module-federation-remote-export",
+                                "export_name": "token",
+                                "container_path": "window.remoteOther",
+                                "exposed_name": "./token",
+                                "hook_kind": "remote-export-wrapper",
+                                "hookable": True,
+                            }
+                        ],
+                    },
+                },
+                "selected_export_hook_candidate": {"container_path": "window.remoteOther", "exposed_name": "./token", "export_name": "token"},
+            },
+        )
+
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("module_federation_export_hook_install_reason=review_approval_required", result.verification)
+        self.assertEqual(result.next_action, "approve_module_federation_export_hook_candidate")
+        self.assertFalse(result.artifacts[0].metadata["review_approved"])
 
     def test_native_web_runtime_apply_minimal_protection_builds_flow_timeline(self) -> None:
         provider = FakeProvider()

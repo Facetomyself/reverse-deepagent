@@ -18,6 +18,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
+    ModuleFederationExportHookInstallManager,
+    ModuleFederationExportHookInstallSpec,
     ModuleFederationFactoryInvokeManager,
     ModuleFederationFactoryInvokeSpec,
     ModuleFederationGetInitPlanManager,
@@ -1280,6 +1282,88 @@ class NativeWebRuntime(WebReverseRuntime):
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_get_init_request(protection_name, context):
+            if self._is_module_federation_export_hook_install_request(protection_name, context):
+                spec = ModuleFederationExportHookInstallSpec.from_context(context)
+                result = ModuleFederationExportHookInstallManager().install(page, spec)
+                installed_count = len(result.installed)
+                missing_count = len(result.missing)
+                event_count = len(result.events)
+                candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+                verification = [
+                    f"module_federation_export_hook_install_status={result.status}",
+                    f"module_federation_export_hook_install_reason={result.reason or ''}",
+                    f"module_federation_export_hook_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                    f"module_federation_export_hook_installed_count={installed_count}",
+                    f"module_federation_export_hook_missing_count={missing_count}",
+                    f"module_federation_export_hook_event_count={event_count}",
+                    f"module_federation_export_hook_remote_factory_invoked={result.side_effect_policy.get('remote_factory_invoked', False)}",
+                    f"module_federation_export_hook_recursive_federation_traversal={result.side_effect_policy.get('recursive_federation_traversal', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if result.trigger:
+                    verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                    if result.trigger.get("error"):
+                        verification.append(f"trigger_error={result.trigger['error']}")
+                if result.error:
+                    verification.append(f"module_federation_export_hook_error={result.error}")
+                hook_path = candidate.get("hook_path") or candidate.get("hookPath") or f"{candidate.get('container_path') or candidate.get('containerPath')}:{candidate.get('exposed_name') or candidate.get('exposedName')}:{candidate.get('export_name') or candidate.get('exportName')}"
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/function-hooks.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime reviewed Module Federation remote export hook install result.",
+                        metadata={
+                            "status": result.status,
+                            "installed_count": installed_count,
+                            "missing_count": missing_count,
+                            "container_path": candidate.get("container_path") or candidate.get("containerPath") or "<missing>",
+                            "exposed_name": candidate.get("exposed_name") or candidate.get("exposedName") or "<missing>",
+                            "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                            "hook_path": hook_path,
+                            "source": "module_federation_export_hook_plan",
+                            "review_approved": result.side_effect_policy.get("review_approved", False),
+                        },
+                    ),
+                    ArtifactRef(
+                        path="virtual://workspace/function-hook-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime reviewed Module Federation remote export hook timeline.",
+                        metadata={
+                            "status": "success" if event_count else "not_observed",
+                            "event_count": event_count,
+                            "container_path": candidate.get("container_path") or candidate.get("containerPath") or "<missing>",
+                            "exposed_name": candidate.get("exposed_name") or candidate.get("exposedName") or "<missing>",
+                            "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                            "hook_path": hook_path,
+                            "source": "module_federation_export_hook_plan",
+                        },
+                    ),
+                ]
+                if result.status == "success":
+                    status = ExecutionStatus.SUCCESS
+                    next_action = "inspect_module_federation_export_hook_events" if event_count else "invoke_hooked_remote_export_or_wait_for_events"
+                elif result.reason == "review_approval_required":
+                    status = ExecutionStatus.PARTIAL
+                    next_action = "approve_module_federation_export_hook_candidate"
+                elif result.reason == "review_module_federation_export_hook_plan":
+                    status = ExecutionStatus.PARTIAL
+                    next_action = "review_module_federation_export_hook_plan"
+                else:
+                    status = ExecutionStatus.FAILED if result.status in {"failed", "unsupported"} else ExecutionStatus.PARTIAL
+                    next_action = "inspect_module_federation_export_hook_failure"
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=(
+                        [f"hook_module_federation_remote_export:{candidate.get('container_path') or candidate.get('containerPath')}:{candidate.get('exposed_name') or candidate.get('exposedName')}:{candidate.get('export_name') or candidate.get('exportName')}"]
+                        if installed_count
+                        else []
+                    ),
+                    verification=verification,
+                    status=status,
+                    artifacts=artifact_paths,
+                    next_action=next_action,
+                    confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+                )
             if self._is_module_federation_export_hook_plan_request(protection_name, context):
                 spec = ModuleFederationExportHookPlanSpec.from_context(context)
                 result = ModuleFederationExportHookPlanManager().plan(spec)
@@ -2382,6 +2466,11 @@ class NativeWebRuntime(WebReverseRuntime):
             "module-federation-export-hooks",
             "remote-export-hook-plan",
             "remote-export-hooks",
+            "module-federation-export-hook-install",
+            "module-federation-remote-export-hook",
+            "remote-export-hook-install",
+            "hook-module-federation-remote-export",
+            "reviewed-remote-export-hook",
         }:
             return True
         return any(
@@ -2405,6 +2494,14 @@ class NativeWebRuntime(WebReverseRuntime):
                 "federationModules",
                 "exposed_modules",
                 "exposedModules",
+                "execute_module_federation_export_hook",
+                "executeModuleFederationExportHook",
+                "hook_module_federation_remote_export",
+                "hookModuleFederationRemoteExport",
+                "install_remote_export_hook",
+                "installRemoteExportHook",
+                "reviewed_remote_export_hook",
+                "reviewedRemoteExportHook",
             )
         )
 
@@ -2435,6 +2532,31 @@ class NativeWebRuntime(WebReverseRuntime):
                 "executeRemoteFactory",
                 "invoke_remote_factory",
                 "invokeRemoteFactory",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_export_hook_install_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "module-federation-export-hook-install",
+            "module-federation-remote-export-hook",
+            "remote-export-hook-install",
+            "hook-module-federation-remote-export",
+            "reviewed-remote-export-hook",
+        }:
+            return True
+        return any(
+            bool(context.get(key))
+            for key in (
+                "execute_module_federation_export_hook",
+                "executeModuleFederationExportHook",
+                "hook_module_federation_remote_export",
+                "hookModuleFederationRemoteExport",
+                "install_remote_export_hook",
+                "installRemoteExportHook",
+                "reviewed_remote_export_hook",
+                "reviewedRemoteExportHook",
             )
         )
 

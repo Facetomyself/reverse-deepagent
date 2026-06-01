@@ -144,7 +144,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         export_hook_plan_status = _nested_status(module_federation_export_hook_plan, "plan")
         if _status(module_federation_factory_invoke_result) == "success" and federation_factory_execution.get("remoteFactoryInvoked", False) and not module_federation_export_hook_plan:
             warnings.append("module_federation_factory_exports_require_review")
-        if module_federation_export_hook_plan and (
+        if module_federation_export_hook_plan and installed_function_count == 0 and (
             _status(module_federation_export_hook_plan) in {"ready_for_review", "planned"}
             or export_hook_plan_status == "ready_for_review"
         ):

@@ -13,6 +13,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationFactoryInvokeSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
+    ModuleFederationExportHookInstallManager,
+    ModuleFederationExportHookInstallSpec,
     ModuleDiscoveryManager,
     ModuleDiscoverySpec,
     ModuleFederationGetInitPlanManager,
@@ -541,6 +543,41 @@ class ModuleFederationFactoryInvokeManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
 
 
+class ModuleFederationRemoteExportHookPage:
+    url = "https://example.test/app"
+
+    def __init__(self) -> None:
+        self.installed = False
+        self.events: list[dict] = []
+        self.hook_path = "window.remoteApp:./sign:sign"
+
+    def evaluate(self, expression):
+        if "remote_export_hooks" in expression and "installed.push" in expression:
+            self.installed = True
+            return {
+                "ok": True,
+                "installed": [
+                    {
+                        "hookPath": self.hook_path,
+                        "containerPath": "window.remoteApp",
+                        "exposedName": "./sign",
+                        "exportName": "sign",
+                        "functionName": "sign",
+                    }
+                ],
+                "missing": [],
+                "eventCount": len(self.events),
+            }
+        if "remote_export_" in expression and "eventCount" in expression:
+            return {"ok": self.installed, "events": list(self.events), "eventCount": len(self.events), "installed": {self.hook_path: self.installed}}
+        if "window.remoteAppSign" in expression:
+            if self.installed:
+                self.events.append({"type": "remote_export_call", "payload": {"hookPath": self.hook_path, "containerPath": "window.remoteApp", "exposedName": "./sign", "exportName": "sign", "argCount": 1}})
+                self.events.append({"type": "remote_export_return", "payload": {"hookPath": self.hook_path, "containerPath": "window.remoteApp", "exposedName": "./sign", "exportName": "sign", "result": {"type": "string", "preview": "remote-sig"}}})
+            return "remote-sig"
+        raise AssertionError(f"unexpected expression: {expression}")
+
+
 class ModuleFederationExportHookPlanManagerTests(unittest.TestCase):
     def test_module_federation_export_hook_plan_recommends_function_exports_without_installing_hooks(self) -> None:
         spec = ModuleFederationExportHookPlanSpec.from_context(
@@ -601,6 +638,85 @@ class ModuleFederationExportHookPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "remote_factory_execution_required")
         self.assertFalse(result.side_effect_policy["executes_remote_code"])
+
+
+class ModuleFederationExportHookInstallManagerTests(unittest.TestCase):
+    def _plan_payload(self) -> dict:
+        return {
+            "status": "planned",
+            "plan": {
+                "status": "ready_for_review",
+                "source": "module_federation_factory_invoke_result",
+                "candidates": [
+                    {
+                        "kind": "module-federation-remote-export",
+                        "export_name": "sign",
+                        "export_type": "function",
+                        "function_name": "sign",
+                        "container_path": "window.remoteApp",
+                        "exposed_name": "./sign",
+                        "hook_kind": "remote-export-wrapper",
+                        "hookable": True,
+                        "requires_review_approval": True,
+                        "automatic_hook_installation": False,
+                        "recursive_federation_traversal": False,
+                    }
+                ],
+            },
+        }
+
+    def test_blocks_without_review_approval(self) -> None:
+        spec = ModuleFederationExportHookInstallSpec.from_context(
+            {
+                "module_federation_export_hook_plan": self._plan_payload(),
+                "selected_export_hook_candidate": {"container_path": "window.remoteApp", "exposed_name": "./sign", "export_name": "sign"},
+            }
+        )
+
+        result = ModuleFederationExportHookInstallManager().install(ModuleFederationRemoteExportHookPage(), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.side_effect_policy["review_approved"])
+        self.assertFalse(result.side_effect_policy["installs_hooks"])
+
+    def test_installs_reviewed_remote_export_hook_and_captures_events(self) -> None:
+        page = ModuleFederationRemoteExportHookPage()
+        spec = ModuleFederationExportHookInstallSpec.from_context(
+            {
+                "module_federation_export_hook_plan": self._plan_payload(),
+                "selected_export_hook_candidate": {"container_path": "window.remoteApp", "exposed_name": "./sign", "export_name": "sign"},
+                "review_approved": True,
+                "trigger_expression": "window.remoteAppSign('demo')",
+            }
+        )
+
+        result = ModuleFederationExportHookInstallManager().install(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertTrue(result.side_effect_policy["review_approved"])
+        self.assertTrue(result.side_effect_policy["remote_factory_invoked"])
+        self.assertTrue(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+        self.assertEqual(result.installed[0]["hookPath"], "window.remoteApp:./sign:sign")
+        self.assertEqual(result.events[0]["type"], "remote_export_call")
+        self.assertEqual(result.trigger["ok"], True)
+
+    def test_blocks_non_hookable_remote_export_candidate(self) -> None:
+        plan = self._plan_payload()
+        plan["plan"]["candidates"][0].update({"hook_kind": "manual-inspection", "hookable": False})
+        spec = ModuleFederationExportHookInstallSpec.from_context(
+            {
+                "module_federation_export_hook_plan": plan,
+                "review_approved": True,
+            }
+        )
+
+        result = ModuleFederationExportHookInstallManager().install(ModuleFederationRemoteExportHookPage(), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "unsupported_remote_export_hook_kind")
+
 
 
 class ModuleDiscoveryManagerTests(unittest.TestCase):

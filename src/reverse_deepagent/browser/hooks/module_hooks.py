@@ -1513,6 +1513,276 @@ class ModuleFederationExportHookPlanManager:
 
 
 @dataclass(slots=True)
+class ModuleFederationExportHookInstallSpec:
+    """Review-approved remote export hook install request from an export hook plan."""
+
+    export_hook_plan: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    review_approved: bool = False
+    candidate_index: int | None = None
+    share_scope_path: str = "window.__webpack_share_scopes__.default"
+    capture_args: bool = True
+    capture_result: bool = True
+    max_preview_length: int = 240
+    trigger_expression: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationExportHookInstallSpec | None":
+        context = context or {}
+        plan = (
+            context.get("module_federation_export_hook_plan")
+            or context.get("module-federation-export-hook-plan")
+            or context.get("moduleFederationExportHookPlan")
+            or context.get("remote_export_hook_plan")
+            or context.get("remoteExportHookPlan")
+        )
+        if not isinstance(plan, dict):
+            return None
+        index_value = context.get("candidate_index", context.get("candidateIndex"))
+        candidate_index: int | None = None
+        if index_value is not None:
+            try:
+                candidate_index = int(index_value)
+            except (TypeError, ValueError):
+                candidate_index = None
+        selected = (
+            context.get("selected_export_hook_candidate")
+            or context.get("selectedExportHookCandidate")
+            or context.get("selected_hook_candidate")
+            or context.get("selectedHookCandidate")
+            or context.get("hook_candidate")
+            or context.get("hookCandidate")
+        )
+        return cls(
+            export_hook_plan=dict(plan),
+            selected_candidate=dict(selected) if isinstance(selected, dict) else {},
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            candidate_index=candidate_index,
+            share_scope_path=str(context.get("share_scope_path", context.get("shareScopePath", "window.__webpack_share_scopes__.default")) or "window.__webpack_share_scopes__.default").strip(),
+            capture_args=bool(context.get("capture_args", context.get("captureArgs", True))),
+            capture_result=bool(context.get("capture_result", context.get("captureResult", True))),
+            max_preview_length=int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240),
+            trigger_expression=str(context.get("trigger_expression", context.get("triggerExpression"))) if context.get("trigger_expression", context.get("triggerExpression")) else None,
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationExportHookInstallResult:
+    status: str
+    installed: list[dict[str, Any]] = field(default_factory=list)
+    missing: list[dict[str, Any]] = field(default_factory=list)
+    events: list[dict[str, Any]] = field(default_factory=list)
+    trigger: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "installed_count": len(self.installed),
+            "missing_count": len(self.missing),
+            "event_count": len(self.events),
+            "installed": self.installed,
+            "missing": self.missing,
+            "events": self.events,
+            "trigger": self.trigger,
+            "selected_candidate": self.selected_candidate,
+            "side_effect_policy": self.side_effect_policy,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class ModuleFederationExportHookInstallManager:
+    """Install reviewed wrappers around function exports returned by Module Federation remotes."""
+
+    def install(self, page: BrowserPage, spec: ModuleFederationExportHookInstallSpec | None) -> ModuleFederationExportHookInstallResult:
+        policy = self._side_effect_policy(review_approved=bool(spec and spec.review_approved))
+        if spec is None:
+            return ModuleFederationExportHookInstallResult(status="unsupported", reason="missing_module_federation_export_hook_plan", side_effect_policy=policy)
+        candidate = self._select_candidate(spec)
+        if not candidate:
+            return ModuleFederationExportHookInstallResult(status="blocked", reason="review_module_federation_export_hook_plan", side_effect_policy=policy)
+        if not spec.review_approved:
+            return ModuleFederationExportHookInstallResult(status="blocked", selected_candidate=candidate, reason="review_approval_required", side_effect_policy=policy)
+        if str(candidate.get("kind") or "") != "module-federation-remote-export":
+            return ModuleFederationExportHookInstallResult(status="blocked", selected_candidate=candidate, reason="candidate_not_module_federation_remote_export", side_effect_policy=policy)
+        if str(candidate.get("hook_kind") or candidate.get("hookKind") or "") != "remote-export-wrapper":
+            return ModuleFederationExportHookInstallResult(status="blocked", selected_candidate=candidate, reason="unsupported_remote_export_hook_kind", side_effect_policy=policy)
+        if not bool(candidate.get("hookable", False)):
+            return ModuleFederationExportHookInstallResult(status="blocked", selected_candidate=candidate, reason="remote_export_candidate_not_hookable", side_effect_policy=policy)
+        if not JS_DOTTED_PATH_RE.fullmatch(str(candidate.get("container_path") or candidate.get("containerPath") or "")):
+            return ModuleFederationExportHookInstallResult(status="blocked", selected_candidate=candidate, reason="strict_dotted_container_path_required", side_effect_policy=policy)
+        if not JS_DOTTED_PATH_RE.fullmatch(spec.share_scope_path):
+            return ModuleFederationExportHookInstallResult(status="blocked", selected_candidate=candidate, reason="strict_dotted_share_scope_path_required", side_effect_policy=policy)
+        try:
+            install_payload = page.evaluate(self._install_expression(candidate, spec))
+        except Exception as exc:
+            return ModuleFederationExportHookInstallResult(status="failed", selected_candidate=candidate, side_effect_policy=policy, error=str(exc))
+        trigger = self._run_trigger(page, spec)
+        try:
+            snapshot_payload = page.evaluate(self._snapshot_expression(candidate))
+        except Exception as exc:
+            snapshot_payload = {"ok": False, "events": [], "error": str(exc)}
+        installed = self._list_of_dicts(install_payload.get("installed") if isinstance(install_payload, dict) else [])
+        missing = self._list_of_dicts(install_payload.get("missing") if isinstance(install_payload, dict) else [])
+        events = self._list_of_dicts(snapshot_payload.get("events") if isinstance(snapshot_payload, dict) else [])
+        status = "success" if installed else "partial" if missing else "failed"
+        return ModuleFederationExportHookInstallResult(
+            status=status,
+            installed=installed,
+            missing=missing,
+            events=events,
+            trigger=trigger,
+            selected_candidate=candidate,
+            side_effect_policy=policy,
+            error=install_payload.get("error") if isinstance(install_payload, dict) else None,
+        )
+
+    @staticmethod
+    def _run_trigger(page: BrowserPage, spec: ModuleFederationExportHookInstallSpec) -> dict[str, Any]:
+        if not spec.trigger_expression:
+            return {"attempted": False}
+        try:
+            payload = page.evaluate(spec.trigger_expression)
+            return {"attempted": True, "ok": True, "result": payload if isinstance(payload, dict) else {"value": payload}}
+        except Exception as exc:
+            return {"attempted": True, "ok": False, "error": str(exc)}
+
+    @staticmethod
+    def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+    @classmethod
+    def _select_candidate(cls, spec: ModuleFederationExportHookInstallSpec) -> dict[str, Any]:
+        candidates = cls._candidates(spec.export_hook_plan)
+        if spec.candidate_index is not None and 0 <= spec.candidate_index < len(candidates):
+            return dict(candidates[spec.candidate_index])
+        if spec.selected_candidate:
+            selected_export = str(spec.selected_candidate.get("export_name") or spec.selected_candidate.get("exportName") or "")
+            selected_container = str(spec.selected_candidate.get("container_path") or spec.selected_candidate.get("containerPath") or "")
+            selected_exposed = str(spec.selected_candidate.get("exposed_name") or spec.selected_candidate.get("exposedName") or "")
+            for candidate in candidates:
+                export_name = str(candidate.get("export_name") or candidate.get("exportName") or "")
+                container_path = str(candidate.get("container_path") or candidate.get("containerPath") or "")
+                exposed_name = str(candidate.get("exposed_name") or candidate.get("exposedName") or "")
+                if selected_export and export_name == selected_export and (not selected_container or selected_container == container_path) and (not selected_exposed or selected_exposed == exposed_name):
+                    return dict(candidate)
+            merged = dict(spec.selected_candidate)
+            merged.setdefault("kind", "selected_remote_export_candidate")
+            return merged
+        if len(candidates) == 1:
+            return dict(candidates[0])
+        return {}
+
+    @staticmethod
+    def _candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        if isinstance(payload.get("plan"), dict):
+            payload = payload["plan"]
+        value = payload.get("candidates") or []
+        return [dict(item) for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+    @staticmethod
+    def _side_effect_policy(*, review_approved: bool) -> dict[str, Any]:
+        return {
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": review_approved,
+            "container_init_executed": review_approved,
+            "remote_get_called": review_approved,
+            "remote_factory_invoked": review_approved,
+            "remote_code_executed": review_approved,
+            "installs_hooks": review_approved,
+            "automatic_hook_installation": False,
+            "recursive_federation_traversal": False,
+            "shared_scope_may_mutate": review_approved,
+            "network_request_may_be_sent": review_approved,
+            "browser_state_mutated": review_approved,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _install_expression(candidate: dict[str, Any], spec: ModuleFederationExportHookInstallSpec) -> str:
+        config = {
+            "containerPath": candidate.get("container_path") or candidate.get("containerPath"),
+            "exposedName": candidate.get("exposed_name") or candidate.get("exposedName"),
+            "exportName": candidate.get("export_name") or candidate.get("exportName"),
+            "functionName": candidate.get("function_name") or candidate.get("functionName") or candidate.get("export_name") or candidate.get("exportName"),
+            "shareScopePath": spec.share_scope_path,
+            "containerParts": ModuleFederationGetInitProbeManager._path_parts(str(candidate.get("container_path") or candidate.get("containerPath") or "")),
+            "shareScopeParts": ModuleFederationGetInitProbeManager._path_parts(spec.share_scope_path),
+            "captureArgs": spec.capture_args,
+            "captureResult": spec.capture_result,
+            "maxPreviewLength": spec.max_preview_length,
+        }
+        config_json = json.dumps(config, ensure_ascii=False)
+        return """
+(async () => {
+  const config = __REVERSE_AGENT_REMOTE_EXPORT_HOOK_CONFIG__;
+  const root = window.__reverseDeepAgentHooks = window.__reverseDeepAgentHooks || { installedAt: Date.now(), events: [], installed: {}, push(type, payload) { try { this.events.push({ type, ts: Date.now(), payload }); if (this.events.length > 300) this.events.shift(); } catch (_) {} } };
+  root.installed.remote_export_hooks = root.installed.remote_export_hooks || {};
+  const hookPath = `${config.containerPath}:${config.exposedName}:${config.exportName}`;
+  const preview = (value) => { try { if (value === undefined) return { type: 'undefined', preview: 'undefined' }; if (value === null) return { type: 'null', preview: 'null' }; if (typeof value === 'string') return { type: 'string', size: value.length, preview: value.slice(0, config.maxPreviewLength) }; if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return { type: typeof value, preview: String(value) }; if (typeof value === 'function') return { type: 'function', name: value.name || '', preview: '<function>' }; const text = JSON.stringify(value); return { type: Array.isArray(value) ? 'array' : typeof value, size: text ? text.length : 0, preview: String(text || value).slice(0, config.maxPreviewLength) }; } catch (_) { return { type: typeof value, preview: '<unavailable>' }; } };
+  const resolvePath = (parts) => { let value = window; for (const part of parts || []) { if (!part || !/^[A-Za-z_$][\w$]*$/.test(part)) return { ok: false, error: 'unsafe_path_segment' }; value = value && value[part]; } return { ok: true, value }; };
+  const installed = [];
+  const missing = [];
+  try {
+    const containerResolved = resolvePath(config.containerParts);
+    if (!containerResolved.ok || !containerResolved.value) { missing.push({ hookPath, reason: 'container_unavailable', containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName }); return { ok: false, installed, missing, eventCount: root.events.length }; }
+    const container = containerResolved.value;
+    const shareScopeResolved = resolvePath(config.shareScopeParts);
+    const shareScope = shareScopeResolved.ok && shareScopeResolved.value && typeof shareScopeResolved.value === 'object' ? shareScopeResolved.value : {};
+    if (typeof container.init === 'function') await container.init(shareScope);
+    if (typeof container.get !== 'function') { missing.push({ hookPath, reason: 'container_get_missing', containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName }); return { ok: false, installed, missing, eventCount: root.events.length }; }
+    const factory = await container.get(config.exposedName);
+    if (typeof factory !== 'function') { missing.push({ hookPath, reason: 'remote_factory_not_function', containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName }); return { ok: false, installed, missing, eventCount: root.events.length }; }
+    const moduleExports = factory();
+    if (!moduleExports || (typeof moduleExports !== 'object' && typeof moduleExports !== 'function')) { missing.push({ hookPath, reason: 'module_exports_unavailable', containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName }); return { ok: false, installed, missing, eventCount: root.events.length }; }
+    const original = moduleExports[config.exportName];
+    if (typeof original !== 'function') { missing.push({ hookPath, reason: 'remote_export_function_not_found', containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName }); return { ok: false, installed, missing, eventCount: root.events.length }; }
+    if (original.__reverseAgentRemoteExportHooked) { installed.push({ hookPath, containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName, alreadyInstalled: true }); return { ok: true, installed, missing, eventCount: root.events.length }; }
+    const wrapped = function reverseAgentRemoteExportHookWrapper(...args) {
+      const callId = `${hookPath}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+      root.push('remote_export_call', { callId, hookPath, containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName, functionName: config.functionName || config.exportName, argCount: args.length, args: config.captureArgs ? args.map(preview) : [] });
+      try {
+        const result = original.apply(this, args);
+        const recordReturn = (value) => { root.push('remote_export_return', { callId, hookPath, containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName, functionName: config.functionName || config.exportName, result: config.captureResult ? preview(value) : { preview: '<disabled>' } }); return value; };
+        if (result && typeof result.then === 'function') return result.then(recordReturn, (error) => { root.push('remote_export_throw', { callId, hookPath, containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName, error: String(error && error.message || error) }); throw error; });
+        return recordReturn(result);
+      } catch (error) { root.push('remote_export_throw', { callId, hookPath, containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName, error: String(error && error.message || error) }); throw error; }
+    };
+    try { Object.defineProperty(wrapped, 'name', { value: original.name || config.functionName || 'reverseAgentRemoteExportHookWrapper' }); } catch (_) {}
+    wrapped.__reverseAgentOriginal = original;
+    wrapped.__reverseAgentRemoteExportHooked = true;
+    moduleExports[config.exportName] = wrapped;
+    root.installed.remote_export_hooks[hookPath] = true;
+    installed.push({ hookPath, containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName, functionName: config.functionName || config.exportName });
+  } catch (error) {
+    missing.push({ hookPath, reason: 'install_error', containerPath: config.containerPath, exposedName: config.exposedName, exportName: config.exportName, error: String(error && error.message || error) });
+  }
+  return { ok: installed.length > 0, installed, missing, eventCount: root.events.length };
+})()
+""".replace("__REVERSE_AGENT_REMOTE_EXPORT_HOOK_CONFIG__", config_json)
+
+    @staticmethod
+    def _snapshot_expression(candidate: dict[str, Any]) -> str:
+        hook_path = f"{candidate.get('container_path') or candidate.get('containerPath')}:{candidate.get('exposed_name') or candidate.get('exposedName')}:{candidate.get('export_name') or candidate.get('exportName')}"
+        hook_json = json.dumps(hook_path, ensure_ascii=False)
+        return """
+(() => {
+  const root = window.__reverseDeepAgentHooks;
+  if (!root) return { ok: false, events: [], eventCount: 0, reason: 'not_installed' };
+  const hookPath = __REVERSE_AGENT_REMOTE_EXPORT_HOOK_PATH__;
+  const events = (root.events || []).filter((event) => event && event.payload && event.payload.hookPath === hookPath && /^remote_export_/.test(event.type));
+  return { ok: true, events, eventCount: events.length, installed: Object.assign({}, (root.installed && root.installed.remote_export_hooks) || {}) };
+})()
+""".replace("__REVERSE_AGENT_REMOTE_EXPORT_HOOK_PATH__", hook_json)
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 
