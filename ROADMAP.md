@@ -24,11 +24,12 @@ These items have baseline implementations and tests. Some are intentionally cons
 - CloakBrowser optional provider skeleton, launch / persistent-context / connect baseline, manual smoke path, and explicit workspace smoke evidence capture path.
 - Browser provider doctor mode, side-effect-free provider matrix, `reverse-agent-browser-provider-smoke` workspace evidence CLI with metadata-only default / explicit launch smoke mode, and `reverse-agent-demo --browser-provider-smoke-json` attachment of reviewed existing smoke evidence into Web pipeline manifests.
 - BrowserProvider production readiness metadata baseline that classifies provider rows as `production-ready`, `review-required`, or `metadata-incomplete` without invoking provider factories, probing CDP, launching browsers, or calling MCP.
-- Provider-specific production readiness rule catalog scaffold, currently covering Playwright Chromium, Remote CDP, CloakBrowser, and hosted-CDP reference lifecycle metadata contracts without invoking provider factories or probing endpoints.
+- Provider-specific production readiness rule catalog scaffold, currently covering Playwright Chromium, Remote CDP, CloakBrowser, hosted-CDP reference, and Browserless CDP lifecycle metadata contracts without invoking provider factories or probing endpoints.
 - Extensible BrowserProvider capability compatibility rule catalog for CDP/debugger/network/lifecycle plus proxy, humanize, mobile emulation, and extension capability checks.
 - Functional external BrowserProvider fixture plugin package that proves entry-point discovery, metadata-only listing, delayed factory creation, and launch/connect smoke outside core runtime.
 - Hosted CDP BrowserProvider template package that gives vendor anti-detect browsers, hosted browser services, and enterprise CDP brokers a provider-neutral external package seam with metadata-only registration and explicit Remote CDP contract smoke.
 - Hosted CDP reference BrowserProvider package that models allocation / attach / release lifecycle, idempotent stop, redacted metadata, and launch smoke through the BrowserProvider contract without bundling a vendor SDK.
+- Browserless CDP BrowserProvider package baseline with side-effect-free entry-point registration, HTTP DevTools endpoint delegation, direct browser WebSocket CDP Target/Page/Runtime support, secret-safe endpoint metadata, explicit smoke path, and provider-specific readiness rule coverage.
 - Managed Chrome debug launcher scripts and docs.
 - MCP legacy downgrade, alias warnings, and optional legacy MCP package split.
 
@@ -93,7 +94,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Browser / CDP / hook depth
 
-- Real third-party BrowserProvider plugins beyond the functional fixture, hosted-CDP template, and hosted-CDP reference packages, such as concrete vendor anti-detect browsers or hosted browser services; new providers should preserve the reference allocation / attach / release lifecycle, fill the production readiness metadata contract, and provide `workspace/browser-provider-smoke.json` evidence before runtime smoke is accepted.
+- Additional real third-party BrowserProvider plugins beyond the Browserless CDP baseline, functional fixture, hosted-CDP template, and hosted-CDP reference packages, such as concrete vendor anti-detect browsers or other hosted browser services; new providers should preserve explicit metadata-only registration, fill the production readiness metadata contract, and provide `workspace/browser-provider-smoke.json` evidence before runtime smoke is accepted.
 - Additional provider-specific compatibility / readiness rules when real third-party provider plugins introduce new capability flags or lifecycle policies beyond the built-in provider baseline.
 - Cross-process live CDP paused execution continuation.
 - Execution-style arbitrary custom loader traversal, deep async chunk traversal, and broader async chunk loading beyond the current review-only custom-loader traversal plan and review-gated webpack ensure baselines.

@@ -226,6 +226,34 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             "allocation/attach/release readiness metadata used by production provider packages"
         ),
     ),
+    BrowserProviderProductionReadinessRule(
+        rule_id="browserless_cdp_contract_declared",
+        severity="warning",
+        provider_ids=("browserless-cdp",),
+        transports=("browserless-cdp",),
+        requires_all=(
+            "supports_connect",
+            "supports_cdp",
+            "supports_response_body",
+            "supports_request_initiator",
+            "supports_script_source",
+            "supports_websocket_frames",
+            "supports_breakpoints",
+            "supports_runtime_eval",
+            "managed_browser",
+        ),
+        metadata_equals=(
+            ("readiness_tier", "review-required"),
+            ("health_check_mode", "explicit-browserless-cdp-contract-smoke"),
+            ("profile_lifecycle", "browserless-session-owned"),
+            ("session_recovery", "explicit-endpoint-or-reconnect-url"),
+        ),
+        message=(
+            "browserless-cdp should declare a reviewed hosted-CDP connect contract, Browserless-owned "
+            "session lifecycle metadata, and explicit endpoint smoke requirements without probing endpoints "
+            "during metadata listing"
+        ),
+    ),
 )
 
 

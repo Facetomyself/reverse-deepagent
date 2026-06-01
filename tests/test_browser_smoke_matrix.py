@@ -133,6 +133,7 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertIn("remote_cdp_attach_contract_declared", rule_ids)
         self.assertIn("cloakbrowser_production_lifecycle_declared", rule_ids)
         self.assertIn("hosted_cdp_reference_lifecycle_declared", rule_ids)
+        self.assertIn("browserless_cdp_contract_declared", rule_ids)
         playwright_rule = next(rule for rule in rules if rule["rule_id"] == "playwright_chromium_lifecycle_declared")
         self.assertEqual(playwright_rule["provider_ids"], ["playwright-chromium"])
         self.assertEqual(playwright_rule["transports"], ["playwright"])
@@ -148,6 +149,11 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertEqual(hosted_rule["provider_ids"], ["hosted-cdp-reference"])
         self.assertIn("supports_launch", hosted_rule["requires_all"])
         self.assertEqual(hosted_rule["metadata_equals"]["session_recovery"], "session-id-reattach-or-endpoint-connect")
+        browserless_rule = next(rule for rule in rules if rule["rule_id"] == "browserless_cdp_contract_declared")
+        self.assertEqual(browserless_rule["provider_ids"], ["browserless-cdp"])
+        self.assertEqual(browserless_rule["transports"], ["browserless-cdp"])
+        self.assertIn("supports_runtime_eval", browserless_rule["requires_all"])
+        self.assertEqual(browserless_rule["metadata_equals"]["health_check_mode"], "explicit-browserless-cdp-contract-smoke")
 
     def test_builtin_provider_specific_readiness_rules_pass_without_runtime_side_effects(self) -> None:
         providers = [

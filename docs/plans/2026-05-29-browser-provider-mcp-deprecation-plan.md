@@ -1196,3 +1196,17 @@ Native Web recognizes `module-federation-get-init`, `module-federation-get-init-
 Boundary: this is plan-only and side-effect-free. It does not execute `container.init`, does not call `container.get`, does not invoke returned remote factories, does not mutate shared scope, does not execute remote module code, does not send network requests, does not mutate browser state, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Execution-style federation `get/init` and remote factory analysis remain capability-gated follow-ups.
 
 Validation: `tests.test_module_hooks`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, `tests.test_coordinator`, and `tests.test_hook_subagent` targeted tests passed locally.
+
+### Step 130 execution record: Browserless CDP BrowserProvider package baseline
+
+Status: implemented as a real third-party BrowserProvider package baseline for Browserless-style hosted CDP endpoints, not a bundled Browserless SDK, account allocator, proxy / geoip validator, implicit runtime smoke, MCP bridge, or Android / iOS / mini-program full runtime chain.
+
+`packages/reverse-deepagent-browser-provider-browserless-cdp/` now declares the `reverse_deepagent.browser_providers` entry point `browserless-cdp = reverse_deepagent_browser_provider_browserless_cdp:browser_provider_registration`. Its registration returns non-secret `BrowserProviderCapabilities`, aliases `browserless`, `browserless-io`, `browserless-provider`, and `browserless-hosted-cdp`, plus a delayed provider factory. Metadata-only registry listing and BrowserProvider matrix construction do not call the factory, open sockets, probe Browserless, allocate hosted sessions, read access material, launch browsers, call MCP, or touch mobile full runtime chains.
+
+The provider supports two explicit endpoint modes after reviewer-controlled provider creation: `browser_url` / `cdp_browser_url` delegates to the core `RemoteCDPProvider` for HTTP DevTools endpoints, while `browser_ws_url` / `cdp_browser_ws_url` uses a minimal browser-level CDP WebSocket wrapper for `Target.getTargets`, `Target.createTarget`, `Target.attachToTarget`, `Runtime.evaluate`, `Page.navigate`, and screenshot smoke. Capability metadata redacts URL credentials and query strings, exposes only endpoint / access-material booleans, and keeps Browserless account/session proxy, extension, and humanization policy outside core runtime.
+
+The provider-specific production readiness catalog now includes `browserless_cdp_contract_declared`, validating serialized Browserless CDP capability flags and readiness fields without invoking provider factories, checking availability, probing CDP endpoints, launching browsers, or calling MCP.
+
+Boundary: this closes the first real hosted CDP provider package baseline, but it does not manage Browserless accounts, create paid sessions, validate geoip/proxy policy, certify stealth behavior, ship vendor SDK integration, make provider smoke implicit, or replace explicit review-gated runtime smoke evidence. Additional vendor providers, provider-specific readiness evidence, and deeper native-web parity remain follow-ups; Android / iOS / mini-program full runtime chains remain deferred.
+
+Validation target: `tests.test_browser_provider_plugin_browserless_cdp` and `tests.test_browser_smoke_matrix`, plus existing BrowserProvider matrix / doctor / package plugin regressions.
