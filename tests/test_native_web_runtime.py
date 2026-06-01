@@ -800,6 +800,42 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["federation_key_count"], 1)
         self.assertEqual(result.artifacts[1].metadata["candidate_count"], 2)
 
+    def test_native_web_runtime_apply_minimal_protection_reviews_async_chunk_graph(self) -> None:
+        provider = FakeProvider()
+        provider.session.context.pages[0].external_source = """
+        const lazySign = () => import("./chunks/sign-panel.js");
+        importScripts("/workers/sign-worker.js");
+        """
+        provider.session.context.pages[0].runtime_module_payload = {
+            "ok": True,
+            "status": "partial",
+            "requirePath": "window.__webpack_require__",
+            "chunkGraph": {
+                "loaderCapabilities": {
+                    "hasEnsureChunk": True,
+                    "hasChunkFilenameResolver": True,
+                    "loaderRegistryKeys": ["j"],
+                    "publicPath": "/assets/",
+                },
+                "asyncChunks": [{"chunkId": "731", "target": "/assets/731.js", "loaderKind": "webpack-runtime"}],
+            },
+            "cacheModules": [],
+            "registryModules": [],
+        }
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection("module-discovery", {"module_query": "sign"})
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["discover_async_chunk_graph"])
+        self.assertIn("module_discovery_chunk_graph_status=success", result.verification)
+        self.assertIn("module_discovery_chunk_graph_candidate_count=3", result.verification)
+        self.assertIn("module_discovery_chunk_graph_script_edge_count=2", result.verification)
+        self.assertIn("module_discovery_chunk_graph_runtime_loader_count=1", result.verification)
+        self.assertEqual(result.next_action, "review_async_chunk_graph_before_loading")
+        self.assertEqual(result.artifacts[0].metadata["chunk_graph_status"], "success")
+        self.assertEqual(result.artifacts[0].metadata["chunk_graph_candidate_count"], 3)
+        self.assertEqual(result.artifacts[0].metadata["chunk_graph_runtime_loader_count"], 1)
+
     def test_native_web_runtime_apply_minimal_protection_builds_flow_timeline(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

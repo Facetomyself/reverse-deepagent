@@ -248,6 +248,53 @@ class ModuleDiscoveryManagerTests(unittest.TestCase):
         self.assertEqual(candidates["sign"]["hook_path"], 'window.remoteApp.__reverseAgentExposes["./sign"].sign')
         self.assertEqual(candidates["sign"]["discovery_source"], "module_federation")
 
+    def test_discovers_async_chunk_graph_without_executing_loaders(self) -> None:
+        source = """
+        const lazySign = () => import("./chunks/sign-panel.js");
+        __webpack_require__.e(731).then(__webpack_require__.bind(__webpack_require__, 731));
+        importScripts("/workers/sign-worker.js");
+        """
+        page = ModuleDiscoveryPage(source=source)
+        page.runtime_payload = {
+            "ok": True,
+            "status": "partial",
+            "requirePath": "window.__webpack_require__",
+            "chunkGraph": {
+                "loaderCapabilities": {
+                    "hasEnsureChunk": True,
+                    "hasChunkFilenameResolver": True,
+                    "loaderRegistryKeys": ["j"],
+                    "publicPath": "/assets/",
+                },
+                "asyncChunks": [{"chunkId": "731", "target": "/assets/731.js", "loaderKind": "webpack-runtime"}],
+                "customLoaderCandidates": [{"target": "window.__customLoader.load", "chunkId": "custom-sign"}],
+            },
+            "cacheModules": [],
+            "registryModules": [],
+        }
+        spec = ModuleDiscoverySpec.from_context({"discover_modules": True, "module_query": "sign"})
+
+        result = ModuleDiscoveryManager().discover(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.candidates, [])
+        graph = result.chunk_graph
+        self.assertEqual(graph["status"], "success")
+        self.assertEqual(graph["script_edge_count"], 2)
+        self.assertEqual(graph["runtime_loader_count"], 1)
+        self.assertGreaterEqual(graph["candidate_count"], 3)
+        self.assertFalse(graph["side_effect_policy"]["runtime_loader_executed"])
+        self.assertFalse(graph["side_effect_policy"]["chunk_request_sent"])
+        edge_types = {item["edge_type"] for item in graph["candidates"]}
+        self.assertIn("dynamic-import", edge_types)
+        self.assertIn("worker-importScripts", edge_types)
+        self.assertIn("runtime-async-chunk", edge_types)
+        loader = graph["runtime_loaders"][0]
+        self.assertTrue(loader["has_async_chunk_loader"])
+        self.assertTrue(loader["has_chunk_filename_resolver"])
+        self.assertEqual(loader["loader_registry_keys"], ["j"])
+        self.assertEqual(result.to_dict()["chunk_graph_candidate_count"], graph["candidate_count"])
+
 
 class ModuleHookManagerTests(unittest.TestCase):
     def test_from_context_accepts_webpack_module_export(self) -> None:

@@ -174,6 +174,7 @@ class ModuleDiscoveryResult:
     scripts: list[dict[str, Any]] = field(default_factory=list)
     modules: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
+    chunk_graph: dict[str, Any] = field(default_factory=dict)
     runtime: dict[str, Any] = field(default_factory=dict)
     trigger: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
@@ -185,9 +186,12 @@ class ModuleDiscoveryResult:
             "script_count": len(self.scripts),
             "module_count": len(self.modules),
             "candidate_count": len(self.candidates),
+            "chunk_graph_status": self.chunk_graph.get("status") if self.chunk_graph else "not_attempted",
+            "chunk_graph_candidate_count": int(self.chunk_graph.get("candidate_count") or 0) if self.chunk_graph else 0,
             "scripts": self.scripts,
             "modules": self.modules,
             "candidates": self.candidates,
+            "chunk_graph": self.chunk_graph,
             "runtime": self.runtime,
             "trigger": self.trigger,
             "error": self.error,
@@ -209,14 +213,17 @@ class ModuleDiscoveryManager:
         except Exception as exc:
             runtime_modules = self._list_of_dicts(runtime.get("modules"))
             candidates = self._build_candidates(runtime_modules, spec.require_path, max_candidates=spec.max_candidates)
-            status = "success" if candidates else "failed"
-            return ModuleDiscoveryResult(status=status, modules=runtime_modules, candidates=candidates, runtime=runtime, error=str(exc), trigger=trigger)
+            chunk_graph = self._build_chunk_graph([], runtime, query=spec.query, max_candidates=spec.max_candidates)
+            status = "success" if candidates or int(chunk_graph.get("candidate_count") or 0) else "failed"
+            return ModuleDiscoveryResult(status=status, modules=runtime_modules, candidates=candidates, chunk_graph=chunk_graph, runtime=runtime, error=str(exc), trigger=trigger)
         runtime_modules = self._list_of_dicts(runtime.get("modules"))
         source_modules = self._discover_modules_from_scripts(scripts, query=spec.query, max_preview_length=spec.max_preview_length, max_candidates=spec.max_candidates)
         modules = self._dedupe_modules([*runtime_modules, *source_modules], max_candidates=spec.max_candidates)
         candidates = self._build_candidates(modules, spec.require_path, max_candidates=spec.max_candidates)
-        status = "success" if modules or candidates else "partial" if scripts else "failed"
-        return ModuleDiscoveryResult(status=status, scripts=scripts, modules=modules, candidates=candidates, runtime=runtime, trigger=trigger)
+        chunk_graph = self._build_chunk_graph(scripts, runtime, query=spec.query, max_candidates=spec.max_candidates)
+        chunk_candidate_count = int(chunk_graph.get("candidate_count") or 0)
+        status = "success" if modules or candidates or chunk_candidate_count else "partial" if scripts or chunk_graph.get("script_edge_count") else "failed"
+        return ModuleDiscoveryResult(status=status, scripts=scripts, modules=modules, candidates=candidates, chunk_graph=chunk_graph, runtime=runtime, trigger=trigger)
 
     @staticmethod
     def _run_trigger(page: BrowserPage, spec: ModuleDiscoverySpec) -> dict[str, Any]:
@@ -277,6 +284,7 @@ class ModuleDiscoveryManager:
         registry_key_count = 0
         custom_key_count = 0
         federation_key_count = 0
+        runtime_chunk_graphs: list[dict[str, Any]] = []
         for runtime_payload in runtime_payloads:
             runtime_path = str(runtime_payload.get("runtimePath") or runtime_payload.get("requirePath") or spec.require_path)
             runtime_kind = str(runtime_payload.get("runtimeKind") or "webpack-require")
@@ -292,6 +300,7 @@ class ModuleDiscoveryManager:
             modules.extend(cls._modules_from_registry(runtime_payload, runtime_path, query_lower, page, spec.max_preview_length))
             modules.extend(cls._modules_from_custom_runtime(runtime_payload, runtime_path, query_lower, page, spec.max_preview_length))
             modules.extend(cls._modules_from_federation(runtime_payload, runtime_path, query_lower, page, spec.max_preview_length))
+            runtime_chunk_graphs.append(cls._normalize_runtime_chunk_graph(runtime_payload, runtime_path=runtime_path, runtime_kind=runtime_kind))
         status = str(payload.get("status") or ("success" if modules else "partial" if payload.get("ok") else "unsupported"))
         return {
             "status": status,
@@ -305,6 +314,7 @@ class ModuleDiscoveryManager:
             "federation_key_count": federation_key_count,
             "module_count": len(modules),
             "modules": modules,
+            "chunk_graph": cls._merge_runtime_chunk_graphs(runtime_chunk_graphs),
             "error": payload.get("error"),
             "reason": payload.get("reason"),
         }
@@ -325,6 +335,7 @@ class ModuleDiscoveryManager:
             "registryModules": payload.get("registryModules", []),
             "customRuntimeModules": payload.get("customRuntimeModules", []),
             "federationModules": payload.get("federationModules", []),
+            "chunkGraph": payload.get("chunkGraph", {}),
         }
         return [legacy]
 
@@ -423,6 +434,212 @@ class ModuleDiscoveryManager:
                 modules.append(module)
         return modules
 
+    @classmethod
+    def _build_chunk_graph(
+        cls,
+        scripts: list[dict[str, Any]],
+        runtime: dict[str, Any],
+        *,
+        query: str | None,
+        max_candidates: int,
+    ) -> dict[str, Any]:
+        query_lower = query.lower() if query else None
+        script_edges = cls._discover_chunk_edges_from_scripts(scripts, query_lower=query_lower, max_candidates=max_candidates)
+        runtime_graph = runtime.get("chunk_graph") if isinstance(runtime.get("chunk_graph"), dict) else {}
+        runtime_loaders = cls._list_of_dicts(runtime_graph.get("runtime_loaders")) if runtime_graph else []
+        runtime_candidates = cls._list_of_dicts(runtime_graph.get("candidates")) if runtime_graph else []
+        candidates = cls._dedupe_chunk_candidates([*script_edges, *runtime_candidates], max_candidates=max_candidates)
+        status = "success" if candidates or runtime_loaders else "partial" if script_edges else "not_found"
+        return {
+            "status": status,
+            "script_edge_count": len(script_edges),
+            "runtime_loader_count": len(runtime_loaders),
+            "candidate_count": len(candidates),
+            "script_edges": script_edges,
+            "runtime_loaders": runtime_loaders,
+            "candidates": candidates,
+            "side_effect_policy": {
+                "source_inventory_only": True,
+                "runtime_metadata_only": True,
+                "runtime_loader_executed": False,
+                "chunk_request_sent": False,
+                "module_factory_executed": False,
+            },
+        }
+
+    @classmethod
+    def _discover_chunk_edges_from_scripts(
+        cls,
+        scripts: list[dict[str, Any]],
+        *,
+        query_lower: str | None,
+        max_candidates: int,
+    ) -> list[dict[str, Any]]:
+        edges: list[dict[str, Any]] = []
+        for script in scripts:
+            source = str(script.get("source") or "")
+            if not source:
+                continue
+            for edge in cls._extract_chunk_edges(source):
+                edge.update(
+                    {
+                        "scriptId": script.get("scriptId"),
+                        "url": script.get("url"),
+                        "kind": script.get("kind"),
+                        "discovery_source": "script_inventory",
+                    }
+                )
+                if query_lower and not cls._chunk_edge_matches_query(edge, query_lower):
+                    continue
+                edges.append(edge)
+                if len(edges) >= max_candidates:
+                    return edges
+        return edges
+
+    @staticmethod
+    def _extract_chunk_edges(source: str) -> list[dict[str, Any]]:
+        edges: list[dict[str, Any]] = []
+        patterns: tuple[tuple[str, str, str], ...] = (
+            ("dynamic-import", "es-dynamic-import", r"\bimport\s*\(\s*(['\"])(?P<target>[^'\"]+)\1\s*\)"),
+            ("worker-importScripts", "worker-importScripts", r"\bimportScripts\s*\(\s*(['\"])(?P<target>[^'\"]+)\1\s*\)"),
+            ("asset-url", "import-meta-url", r"\bnew\s+URL\s*\(\s*(['\"])(?P<target>[^'\"]+)\1\s*,\s*import\.meta\.url\s*\)"),
+        )
+        for edge_type, loader_kind, pattern in patterns:
+            for match in re.finditer(pattern, source):
+                target = str(match.group("target"))
+                edges.append(
+                    {
+                        "edge_type": edge_type,
+                        "loader_kind": loader_kind,
+                        "target": target,
+                        "chunk_id": target,
+                        "offset": match.start(),
+                        "review_action": "review_async_chunk_target_before_runtime_loading",
+                    }
+                )
+        webpack_pattern = re.compile(
+            r"(?P<loader>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|(?:\[[^\]]+\]))*)\.e\s*\(\s*(?P<quote>['\"]?)(?P<chunk_id>[A-Za-z0-9_./:-]+)(?P=quote)\s*\)"
+        )
+        for match in webpack_pattern.finditer(source):
+            chunk_id = str(match.group("chunk_id"))
+            loader = str(match.group("loader"))
+            edges.append(
+                {
+                    "edge_type": "webpack-ensure-chunk",
+                    "loader_kind": "webpack-runtime",
+                    "target": chunk_id,
+                    "chunk_id": chunk_id,
+                    "loader_path": loader,
+                    "offset": match.start(),
+                    "review_action": "review_webpack_chunk_before_runtime_loading",
+                }
+            )
+        return sorted(edges, key=lambda item: int(item.get("offset") or 0))
+
+    @staticmethod
+    def _chunk_edge_matches_query(edge: dict[str, Any], query_lower: str) -> bool:
+        haystacks = [
+            str(edge.get("target") or ""),
+            str(edge.get("chunk_id") or ""),
+            str(edge.get("url") or ""),
+            str(edge.get("loader_path") or ""),
+        ]
+        return any(query_lower in item.lower() for item in haystacks)
+
+    @classmethod
+    def _normalize_runtime_chunk_graph(cls, payload: dict[str, Any], *, runtime_path: str, runtime_kind: str) -> dict[str, Any]:
+        raw_graph = payload.get("chunkGraph") if isinstance(payload.get("chunkGraph"), dict) else {}
+        loader_capabilities = raw_graph.get("loaderCapabilities") if isinstance(raw_graph.get("loaderCapabilities"), dict) else {}
+        async_chunks = cls._list_of_dicts(raw_graph.get("asyncChunks")) or cls._list_of_dicts(raw_graph.get("chunks"))
+        custom_loader_candidates = cls._list_of_dicts(raw_graph.get("customLoaderCandidates")) or cls._list_of_dicts(raw_graph.get("loaderCandidates"))
+        runtime_loader = {
+            "runtime_path": runtime_path,
+            "runtime_kind": runtime_kind,
+            "has_async_chunk_loader": bool(loader_capabilities.get("hasEnsureChunk") or loader_capabilities.get("hasAsyncChunkLoader")),
+            "has_chunk_filename_resolver": bool(loader_capabilities.get("hasChunkFilenameResolver")),
+            "loader_registry_keys": [str(item) for item in loader_capabilities.get("loaderRegistryKeys", []) if item is not None]
+            if isinstance(loader_capabilities.get("loaderRegistryKeys"), list)
+            else [],
+            "public_path": str(loader_capabilities.get("publicPath") or ""),
+            "side_effect_policy": {
+                "loader_metadata_only": True,
+                "runtime_loader_executed": False,
+                "chunk_request_sent": False,
+            },
+        }
+        candidates: list[dict[str, Any]] = []
+        for item in async_chunks:
+            chunk_id = str(item.get("chunkId") or item.get("chunk_id") or item.get("id") or item.get("target") or "")
+            target = str(item.get("target") or item.get("url") or item.get("href") or chunk_id)
+            if not chunk_id and not target:
+                continue
+            candidates.append(
+                {
+                    "edge_type": str(item.get("edgeType") or item.get("edge_type") or "runtime-async-chunk"),
+                    "loader_kind": str(item.get("loaderKind") or item.get("loader_kind") or runtime_kind),
+                    "chunk_id": chunk_id or target,
+                    "target": target,
+                    "runtime_path": runtime_path,
+                    "discovery_source": "runtime_chunk_graph",
+                    "review_action": "review_runtime_chunk_metadata_before_loading",
+                }
+            )
+        for item in custom_loader_candidates:
+            target = str(item.get("target") or item.get("path") or item.get("loaderPath") or item.get("loader_path") or "")
+            if not target:
+                continue
+            candidates.append(
+                {
+                    "edge_type": str(item.get("edgeType") or item.get("edge_type") or "custom-loader-candidate"),
+                    "loader_kind": str(item.get("loaderKind") or item.get("loader_kind") or "custom-loader"),
+                    "chunk_id": str(item.get("chunkId") or item.get("chunk_id") or target),
+                    "target": target,
+                    "runtime_path": runtime_path,
+                    "discovery_source": "runtime_chunk_graph",
+                    "review_action": "review_custom_loader_candidate_before_execution",
+                }
+            )
+        return {
+            "runtime_loader": runtime_loader,
+            "candidates": candidates,
+        }
+
+    @classmethod
+    def _merge_runtime_chunk_graphs(cls, graphs: list[dict[str, Any]]) -> dict[str, Any]:
+        runtime_loaders: list[dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
+        for graph in graphs:
+            runtime_loader = graph.get("runtime_loader") if isinstance(graph.get("runtime_loader"), dict) else {}
+            if runtime_loader:
+                runtime_loaders.append(runtime_loader)
+            candidates.extend(cls._list_of_dicts(graph.get("candidates")))
+        return {
+            "status": "success" if candidates or any(item.get("has_async_chunk_loader") for item in runtime_loaders) else "not_found",
+            "runtime_loader_count": len(runtime_loaders),
+            "candidate_count": len(candidates),
+            "runtime_loaders": runtime_loaders,
+            "candidates": candidates,
+        }
+
+    @staticmethod
+    def _dedupe_chunk_candidates(candidates: list[dict[str, Any]], *, max_candidates: int) -> list[dict[str, Any]]:
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for candidate in candidates:
+            key = (
+                str(candidate.get("edge_type") or ""),
+                str(candidate.get("loader_kind") or ""),
+                str(candidate.get("target") or ""),
+                str(candidate.get("runtime_path") or candidate.get("url") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+            if len(deduped) >= max_candidates:
+                break
+        return deduped
+
     @staticmethod
     def _runtime_introspection_expression(spec: ModuleDiscoverySpec) -> str:
         require_path = json.dumps(spec.require_path)
@@ -459,6 +676,17 @@ class ModuleDiscoveryManager:
     const registry = req.m && typeof req.m === "object" ? req.m : {{}};
     const cacheKeys = Object.keys(cache);
     const registryKeys = Object.keys(registry);
+    const loaderRegistryKeys = req.f && typeof req.f === "object" ? Object.keys(req.f) : [];
+    const chunkGraph = {{
+      loaderCapabilities: {{
+        hasEnsureChunk: typeof req.e === "function",
+        hasChunkFilenameResolver: typeof req.u === "function",
+        loaderRegistryKeys,
+        publicPath: typeof req.p === "string" ? req.p.slice(0, maxPreviewLength) : ""
+      }},
+      asyncChunks: [],
+      customLoaderCandidates: []
+    }};
     const cacheModules = [];
     for (const moduleId of cacheKeys) {{
       const moduleRecord = cache[moduleId] || {{}};
@@ -502,6 +730,7 @@ class ModuleDiscoveryManager:
       registryModules,
       customRuntimeModules: [],
       federationModules: [],
+      chunkGraph,
     }};
   }};
   const inspectObjectRuntime = (path, runtime) => {{
@@ -547,6 +776,7 @@ class ModuleDiscoveryManager:
       registryModules: [],
       customRuntimeModules: modules,
       federationModules: [],
+      chunkGraph: {{ loaderCapabilities: {{ hasAsyncChunkLoader: false, hasChunkFilenameResolver: false, loaderRegistryKeys: [], publicPath: "" }}, asyncChunks: [], customLoaderCandidates: [] }},
     }};
   }};
   const inspectFederationContainer = (path, container) => {{
@@ -590,6 +820,7 @@ class ModuleDiscoveryManager:
       registryModules: [],
       customRuntimeModules: [],
       federationModules: modules,
+      chunkGraph: {{ loaderCapabilities: {{ hasAsyncChunkLoader: typeof container.get === "function", hasChunkFilenameResolver: false, loaderRegistryKeys: [], publicPath: "" }}, asyncChunks: [], customLoaderCandidates: [] }},
     }};
   }};
   try {{

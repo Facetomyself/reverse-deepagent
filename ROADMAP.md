@@ -37,7 +37,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - DOM, console, script inventory, navigation events, network metadata, request initiator, response body metadata, source cache, and WebSocket frame cache with fallback paths.
 - Fetch / XHR / cookie / WebSocket / anti-debug hook baselines.
 - Target-function wrapper and webpack-like module export hook baselines.
-- Module discovery, runtime module cache / registry introspection, custom object runtime, and module federation function-path candidate baseline.
+- Module discovery, runtime module cache / registry introspection, custom object runtime, module federation function-path candidate baseline, and read-only async chunk graph / loader metadata baseline.
 - Closure-scope function discovery baseline without automatic closure wrapper replacement.
 - Source-level logpoints and Source Map exact / bias / sourceRoot / indexed-section remap baseline, with source-map `names` metadata, URL-like source equivalence, and nested indexed-section stack metadata.
 - Page mutation audit and MutationObserver timeline baselines.
@@ -96,7 +96,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 - Real third-party BrowserProvider plugins beyond the functional fixture, hosted-CDP template, and hosted-CDP reference packages, such as concrete vendor anti-detect browsers or hosted browser services; new providers should preserve the reference allocation / attach / release lifecycle and fill the production readiness metadata contract before runtime smoke is accepted.
 - Additional provider-specific compatibility / readiness rules when real third-party provider plugins introduce new capability flags or lifecycle policies beyond the built-in provider baseline.
 - Cross-process live CDP paused execution continuation.
-- Arbitrary custom loader traversal and async chunk graph analysis.
+- Execution-style arbitrary custom loader traversal and async chunk loading beyond the read-only chunk graph baseline.
 - Execution-style module federation `get/init` analysis beyond the current read-only runtime-path baseline.
 - Opt-in wrapper replacement for closure-internal functions beyond paused-callframe evidence.
 - External source-map URL / indexed-section URL fetching and bundler-specific symbol scoping beyond the local payload remap baseline.

@@ -1139,6 +1139,11 @@ class NativeWebRuntime(WebReverseRuntime):
             module_count = len(result.modules)
             candidate_count = len(result.candidates)
             script_count = len(result.scripts)
+            chunk_graph = result.chunk_graph if isinstance(result.chunk_graph, dict) else {}
+            chunk_graph_status = str(chunk_graph.get("status") or "not_attempted")
+            chunk_graph_candidate_count = int(chunk_graph.get("candidate_count") or 0)
+            chunk_graph_script_edge_count = int(chunk_graph.get("script_edge_count") or 0)
+            chunk_graph_runtime_loader_count = int(chunk_graph.get("runtime_loader_count") or 0)
             runtime_status = result.runtime.get("status") if result.runtime else "not_attempted"
             runtime_module_count = int(result.runtime.get("module_count") or 0) if result.runtime else 0
             runtime_kinds = result.runtime.get("runtime_kinds") if isinstance(result.runtime.get("runtime_kinds"), list) else []
@@ -1150,6 +1155,10 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"module_discovery_script_count={script_count}",
                 f"module_discovery_module_count={module_count}",
                 f"module_discovery_candidate_count={candidate_count}",
+                f"module_discovery_chunk_graph_status={chunk_graph_status}",
+                f"module_discovery_chunk_graph_candidate_count={chunk_graph_candidate_count}",
+                f"module_discovery_chunk_graph_script_edge_count={chunk_graph_script_edge_count}",
+                f"module_discovery_chunk_graph_runtime_loader_count={chunk_graph_runtime_loader_count}",
                 f"module_discovery_runtime_status={runtime_status}",
                 f"module_discovery_runtime_module_count={runtime_module_count}",
                 f"module_discovery_runtime_kinds={runtime_kinds}",
@@ -1174,6 +1183,10 @@ class NativeWebRuntime(WebReverseRuntime):
                         "status": result.status,
                         "script_count": script_count,
                         "module_count": module_count,
+                        "chunk_graph_status": chunk_graph_status,
+                        "chunk_graph_candidate_count": chunk_graph_candidate_count,
+                        "chunk_graph_script_edge_count": chunk_graph_script_edge_count,
+                        "chunk_graph_runtime_loader_count": chunk_graph_runtime_loader_count,
                         "runtime_status": runtime_status,
                         "runtime_module_count": runtime_module_count,
                         "runtime_kinds": runtime_kinds,
@@ -1192,15 +1205,21 @@ class NativeWebRuntime(WebReverseRuntime):
                     },
                 ),
             ]
-            next_action = "install_module_hook_from_candidate" if candidate_count else "provide_module_id_or_expand_source_context"
+            next_action = (
+                "install_module_hook_from_candidate"
+                if candidate_count
+                else "review_async_chunk_graph_before_loading"
+                if chunk_graph_candidate_count
+                else "provide_module_id_or_expand_source_context"
+            )
             return ProtectionResult(
                 protection_name=protection_name,
-                applied_actions=["discover_module_exports"] if module_count or candidate_count else [],
+                applied_actions=["discover_module_exports"] if module_count or candidate_count else ["discover_async_chunk_graph"] if chunk_graph_candidate_count else [],
                 verification=verification,
-                status=ExecutionStatus.SUCCESS if candidate_count else ExecutionStatus.PARTIAL if script_count else ExecutionStatus.FAILED,
+                status=ExecutionStatus.SUCCESS if candidate_count or chunk_graph_candidate_count else ExecutionStatus.PARTIAL if script_count else ExecutionStatus.FAILED,
                 artifacts=artifact_paths,
                 next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if candidate_count else ConfidenceLevel.LOW,
+                confidence=ConfidenceLevel.MEDIUM if candidate_count or chunk_graph_candidate_count else ConfidenceLevel.LOW,
             )
         if self._is_module_hook_request(protection_name, context):
             spec = ModuleHookSpec.from_context(context)
