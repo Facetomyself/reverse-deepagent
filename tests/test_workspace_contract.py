@@ -215,6 +215,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/async-chunk-traversal-loop-execution.json"].future_path, "/workspace/runtime/async-chunk-traversal-loop-execution.json")
         self.assertEqual(routes["workspace/custom-loader-traversal-loop-execution.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/custom-loader-traversal-loop-execution.json"].future_path, "/workspace/runtime/custom-loader-traversal-loop-execution.json")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-plan.json"].future_path, "/workspace/runtime/custom-loader-recursive-traversal-plan.json")
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].future_path, "/workspace/runtime/async-chunk-load-result.json")
         self.assertEqual(routes["workspace/module-federation-get-init-result.json"].virtual_folder, "/workspace/runtime/")

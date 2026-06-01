@@ -357,6 +357,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native custom loader recursive traversal plan",
+                    kind=EvidenceKind.HOOK,
+                    source="custom_loader_recursive_traversal_plan",
+                    details={"status": "ready_for_next_loop_review", "latest_graph_queue_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint timeline",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoint_timeline",
@@ -403,6 +410,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["custom-loader-traversal-workflow-execution.json"]["stage_count"], 3)
         self.assertEqual(payloads["custom-loader-traversal-loop-plan.json"]["planned_iteration_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-loop-execution.json"]["stage_count"], 3)
+        self.assertEqual(payloads["custom-loader-recursive-traversal-plan.json"]["latest_graph_queue_count"], 1)
         self.assertEqual(payloads["custom-loader-continuation-workflow.json"]["selected_candidate_index"], 1)
         self.assertEqual(payloads["custom-loader-continuation-journal.json"]["record_count"], 1)
         self.assertEqual(payloads["custom-loader-continuation-execution.json"]["stage_count"], 5)
@@ -429,6 +437,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_workflow_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_loop_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_loop_execution"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_custom_loader_recursive_traversal_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_continuation_workflow"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_continuation_journal"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_continuation_execution"), "audit")

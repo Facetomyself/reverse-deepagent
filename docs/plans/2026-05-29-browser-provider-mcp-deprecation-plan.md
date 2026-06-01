@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-154 is implemented through the review-gated bounded custom-loader traversal loop execution baseline after the review-only bounded custom-loader traversal loop plan baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-155 is implemented through the review-only custom-loader recursive traversal follow-up plan baseline after the review-gated bounded custom-loader traversal loop execution baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -1500,3 +1500,14 @@ README and the BrowserProvider runtime architecture document now split the previ
 Boundary: this is documentation-only governance work. It does not change artifact schemas, execute browser actions, alter provider registration, move workspace canonical paths, add MCP dependencies, or claim deeper recursive custom-loader / async-chunk / federation traversal is implemented.
 
 Validation covers `git diff --check` and manual diff review of the README / runtime architecture split.
+### Step 155 execution record: Review-only custom loader recursive traversal follow-up plan baseline
+
+Status: implemented as a review-only recursive follow-up checkpoint planner after one bounded custom-loader traversal loop execution, not automatic recursive custom-loader traversal, default recon behavior, graph rebuild execution, workflow replan execution, automatic queue advance, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`CustomLoaderRecursiveTraversalPlanManager` consumes the latest `custom_loader_traversal_loop_execution` plus optional refreshed `custom_loader_traversal_graph`, refreshed `custom_loader_traversal_workflow_plan`, and continuation journal evidence. It emits `reverse-deepagent.custom-loader-recursive-traversal-plan.v1`, classifying the next checkpoint as `ready_for_graph_rebuild`, `ready_for_workflow_replan`, `ready_for_next_loop_review`, `complete`, or blocked when the previous loop execution has not reached an execution status suitable for deeper traversal.
+
+`native-web` exposes this through explicit `custom-loader-recursive-traversal-plan` / `custom-loader-traversal-recursion-plan` / `plan-custom-loader-recursive-traversal` protection names and returns `virtual://workspace/custom-loader-recursive-traversal-plan.json`. The workspace contract indexes `workspace/custom-loader-recursive-traversal-plan.json` with future alias `/workspace/runtime/custom-loader-recursive-traversal-plan.json`; coordinator extraction / artifact category mapping classify it as `triage`; hook review warns with `custom_loader_recursive_traversal_plan_requires_review` when the next recursion checkpoint needs manual review.
+
+Boundary: this closes only the review-only follow-up planning surface after a bounded loop execution. It does not rebuild the traversal graph, replan the workflow, create the next loop plan, execute another loader, append journals, recurse until exhaustion, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper recursive custom-loader execution remains capability-gated follow-up work.
+
+Tests cover manager-level graph-rebuild / next-loop-review / blocked-without-executed-loop behavior, native-web route metadata and no-execution behavior, workspace route aliasing, coordinator payload extraction / category mapping, hook-subagent review warning wiring, and compileall.

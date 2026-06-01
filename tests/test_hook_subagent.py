@@ -350,6 +350,27 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["custom_loader_traversal_loop_execution_status"], "ready_for_review")
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_custom_loader_recursive_traversal_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "custom_loader_recursive_traversal_plan": {
+                "status": "ready_for_next_loop_review",
+                "recursive_plan": {
+                    "status": "ready_for_next_loop_review",
+                    "next_action": "review_next_custom_loader_traversal_loop_plan",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("custom_loader_recursive_traversal_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_custom_loader_recursive_traversal_plan")
+        self.assertEqual(result["summary"]["custom_loader_recursive_traversal_plan_status"], "ready_for_next_loop_review")
+        self.assertEqual(result["summary"]["custom_loader_recursive_traversal_plan_next_action"], "review_next_custom_loader_traversal_loop_plan")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
 
 
     def test_review_hook_artifacts_warns_for_custom_loader_continuation_workflow(self) -> None:

@@ -48,6 +48,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalLoopPlanSpec,
     CustomLoaderTraversalLoopExecutionManager,
     CustomLoaderTraversalLoopExecutionSpec,
+    CustomLoaderRecursiveTraversalPlanManager,
+    CustomLoaderRecursiveTraversalPlanSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1720,6 +1722,65 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_recursive_traversal_plan_request(protection_name, context):
+            spec = CustomLoaderRecursiveTraversalPlanSpec.from_context(context)
+            result = CustomLoaderRecursiveTraversalPlanManager().plan(spec)
+            recursive_plan = result.recursive_plan if isinstance(result.recursive_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"custom_loader_recursive_traversal_plan_status={result.status}",
+                f"custom_loader_recursive_traversal_plan_reason={result.reason or ''}",
+                f"custom_loader_recursive_traversal_plan_latest_loop_execution_status={recursive_plan.get('latest_loop_execution_status', '')}",
+                f"custom_loader_recursive_traversal_plan_latest_graph_queue_count={recursive_plan.get('latest_graph_queue_count', 0)}",
+                f"custom_loader_recursive_traversal_plan_latest_workflow_planned_step_count={recursive_plan.get('latest_workflow_planned_step_count', 0)}",
+                f"custom_loader_recursive_traversal_plan_bounded_recursion={policy.get('bounded_recursion', True)}",
+                f"custom_loader_recursive_traversal_plan_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"custom_loader_recursive_traversal_plan_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"custom_loader_recursive_traversal_plan_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-recursive-traversal-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader recursive traversal follow-up plan.",
+                    metadata={
+                        "status": result.status,
+                        "recursive_plan_status": recursive_plan.get("status"),
+                        "latest_loop_execution_status": recursive_plan.get("latest_loop_execution_status"),
+                        "latest_graph_status": recursive_plan.get("latest_graph_status"),
+                        "latest_graph_queue_count": recursive_plan.get("latest_graph_queue_count", 0),
+                        "latest_workflow_plan_status": recursive_plan.get("latest_workflow_plan_status"),
+                        "latest_workflow_planned_step_count": recursive_plan.get("latest_workflow_planned_step_count", 0),
+                        "next_action": recursive_plan.get("next_action"),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "plan_only": policy.get("plan_only", True),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = recursive_plan.get("next_action", "review_custom_loader_recursive_traversal_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = recursive_plan.get("next_action", "resolve_custom_loader_recursive_traversal_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_custom_loader_recursive_traversal_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review", "complete"} else ConfidenceLevel.LOW,
             )
         if self._is_custom_loader_traversal_loop_plan_request(protection_name, context):
             spec = CustomLoaderTraversalLoopPlanSpec.from_context(context)
@@ -3783,6 +3844,9 @@ class NativeWebRuntime(WebReverseRuntime):
             "execute-custom-loader-traversal-loop",
             "custom-loader-bounded-loop-execution",
             "reviewed-custom-loader-traversal-loop-execution",
+            "custom-loader-recursive-traversal-plan",
+            "custom-loader-traversal-recursion-plan",
+            "plan-custom-loader-recursive-traversal",
         } or any(
             key in context
             for key in (
@@ -3791,6 +3855,13 @@ class NativeWebRuntime(WebReverseRuntime):
                 "custom-loader-traversal-loop-execution",
                 "execute_custom_loader_traversal_loop",
                 "executeCustomLoaderTraversalLoop",
+                "custom_loader_recursive_traversal_plan",
+                "customLoaderRecursiveTraversalPlan",
+                "custom-loader-recursive-traversal-plan",
+                "custom_loader_traversal_recursion_plan",
+                "customLoaderTraversalRecursionPlan",
+                "plan_custom_loader_recursive_traversal",
+                "planCustomLoaderRecursiveTraversal",
             )
         ):
             return False
@@ -3811,6 +3882,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "customLoaderDeepTraversalLoop",
                 "plan_custom_loader_traversal_loop",
                 "planCustomLoaderTraversalLoop",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_recursive_traversal_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-recursive-traversal-plan",
+            "custom-loader-traversal-recursion-plan",
+            "plan-custom-loader-recursive-traversal",
+            "custom-loader-deeper-recursive-traversal",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_recursive_traversal_plan",
+                "customLoaderRecursiveTraversalPlan",
+                "custom-loader-recursive-traversal-plan",
+                "custom_loader_traversal_recursion_plan",
+                "customLoaderTraversalRecursionPlan",
+                "plan_custom_loader_recursive_traversal",
+                "planCustomLoaderRecursiveTraversal",
             )
         )
 
