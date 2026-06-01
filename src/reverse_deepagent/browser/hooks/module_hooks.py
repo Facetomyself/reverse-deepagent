@@ -473,6 +473,313 @@ class CustomLoaderTraversalPlanManager:
 
 
 @dataclass(slots=True)
+class ModuleFederationGetInitPlanSpec:
+    """Plan-only Module Federation container init/get analysis request."""
+
+    candidates: list[dict[str, Any]] = field(default_factory=list)
+    max_candidates: int = 20
+    max_preview_length: int = 240
+    review_approved: bool = False
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationGetInitPlanSpec | None":
+        context = context or {}
+        max_candidates = max(1, int(context.get("max_candidates", context.get("maxCandidates", 20)) or 20))
+        candidates = cls._candidate_records(context)
+        if not candidates:
+            candidate = cls._single_candidate_from_context(context)
+            if candidate:
+                candidates.append(candidate)
+        requested = bool(
+            context.get("module_federation_get_init")
+            or context.get("moduleFederationGetInit")
+            or context.get("federation_get_init_plan")
+            or context.get("federationGetInitPlan")
+            or context.get("module_federation_plan")
+            or context.get("moduleFederationPlan")
+        )
+        if not candidates and not requested:
+            return None
+        return cls(
+            candidates=cls._dedupe_candidates(candidates, max_candidates=max_candidates),
+            max_candidates=max_candidates,
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))),
+        )
+
+    @classmethod
+    def _candidate_records(cls, context: dict[str, Any]) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for key in (
+            "module_federation_candidate",
+            "moduleFederationCandidate",
+            "module_federation_candidates",
+            "moduleFederationCandidates",
+            "federation_candidate",
+            "federationCandidate",
+            "federation_candidates",
+            "federationCandidates",
+            "federation_modules",
+            "federationModules",
+            "module_federation_modules",
+            "moduleFederationModules",
+            "exposed_modules",
+            "exposedModules",
+        ):
+            value = context.get(key)
+            records.extend(cls._list_of_dicts(value))
+            if isinstance(value, dict):
+                records.append(value)
+        records.extend(cls._federation_records_from_module_candidates(context.get("module_candidates", context.get("moduleCandidates"))))
+        records.extend(cls._federation_records_from_runtime(context.get("runtime")))
+        records.extend(cls._federation_records_from_runtime(context.get("module_discovery_runtime", context.get("moduleDiscoveryRuntime"))))
+        module_discovery = context.get("module_discovery", context.get("moduleDiscovery"))
+        if isinstance(module_discovery, dict):
+            records.extend(cls._federation_records_from_module_candidates(module_discovery.get("modules")))
+            records.extend(cls._federation_records_from_runtime(module_discovery.get("runtime")))
+        return [dict(item) for item in records]
+
+    @staticmethod
+    def _single_candidate_from_context(context: dict[str, Any]) -> dict[str, Any] | None:
+        container_path = context.get("container_path", context.get("containerPath", context.get("runtime_path", context.get("runtimePath"))))
+        exposed_name = context.get("exposed_name", context.get("exposedName", context.get("module_id", context.get("moduleId"))))
+        remote_name = context.get("remote_name", context.get("remoteName"))
+        if container_path is None and exposed_name is None and remote_name is None:
+            return None
+        return {
+            "container_path": str(container_path or "").strip(),
+            "runtime_path": str(container_path or "").strip(),
+            "exposed_name": str(exposed_name or "").strip(),
+            "module_id": str(exposed_name or "").strip(),
+            "remote_name": str(remote_name or "").strip(),
+            "export_names": context.get("export_names", context.get("exportNames", [])),
+            "hook_paths": context.get("hook_paths", context.get("hookPaths", [])),
+            "discovery_source": str(context.get("discovery_source", context.get("discoverySource", "explicit_context")) or "explicit_context"),
+        }
+
+    @staticmethod
+    def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        return []
+
+    @classmethod
+    def _federation_records_from_module_candidates(cls, value: Any) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for item in cls._list_of_dicts(value):
+            if (
+                str(item.get("kind") or "").lower() == "module-federation"
+                or str(item.get("discovery_source") or item.get("discoverySource") or "").lower() == "module_federation"
+                or str(item.get("hook_kind") or item.get("hookKind") or "").lower() == "federation-exposed-module"
+            ):
+                records.append(item)
+        return records
+
+    @classmethod
+    def _federation_records_from_runtime(cls, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return []
+        records: list[dict[str, Any]] = []
+        records.extend(cls._list_of_dicts(value.get("federationModules")))
+        for runtime in cls._list_of_dicts(value.get("runtimes")):
+            runtime_path = runtime.get("runtimePath") or runtime.get("runtime_path") or value.get("runtimePath") or value.get("runtime_path")
+            for item in cls._list_of_dicts(runtime.get("federationModules")):
+                record = dict(item)
+                if runtime_path and not (record.get("runtime_path") or record.get("runtimePath") or record.get("container_path") or record.get("containerPath")):
+                    record["runtime_path"] = runtime_path
+                records.append(record)
+        return records
+
+    @staticmethod
+    def _dedupe_candidates(candidates: list[dict[str, Any]], *, max_candidates: int) -> list[dict[str, Any]]:
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for candidate in candidates:
+            container_path = str(candidate.get("container_path") or candidate.get("containerPath") or candidate.get("runtime_path") or candidate.get("runtimePath") or "")
+            exposed_name = str(candidate.get("exposed_name") or candidate.get("exposedName") or candidate.get("module_id") or candidate.get("moduleId") or "")
+            remote_name = str(candidate.get("remote_name") or candidate.get("remoteName") or "")
+            key = (container_path, exposed_name, remote_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+            if len(deduped) >= max_candidates:
+                break
+        return deduped
+
+
+@dataclass(slots=True)
+class ModuleFederationGetInitPlanResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "side_effect_policy": self.side_effect_policy,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class ModuleFederationGetInitPlanManager:
+    """Build a reviewable Module Federation init/get plan without executing remote code."""
+
+    def plan(self, spec: ModuleFederationGetInitPlanSpec | None) -> ModuleFederationGetInitPlanResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return ModuleFederationGetInitPlanResult(status="unsupported", reason="missing_module_federation_get_init_request", side_effect_policy=policy)
+        candidates = [self._candidate_plan(candidate, index=index, spec=spec) for index, candidate in enumerate(spec.candidates)]
+        summary = self._summary(candidates)
+        plan = {
+            "schema_version": "reverse-deepagent.module-federation-get-init-plan.v1",
+            "status": "ready_for_review" if candidates else "blocked",
+            "review_required": True,
+            "review_approved_input_ignored": bool(spec.review_approved),
+            "candidate_count": len(candidates),
+            "container_count": summary["container_count"],
+            "exposed_module_count": summary["exposed_module_count"],
+            "function_path_candidate_count": summary["function_path_candidate_count"],
+            "ready_for_review_count": summary["ready_for_review_count"],
+            "blocked_execution_count": summary["blocked_execution_count"],
+            "candidates": candidates,
+            "approval_requirements": [
+                "confirm_remote_container_origin",
+                "review_shared_scope_mutation_risk",
+                "review_container_init_side_effects",
+                "review_remote_get_side_effects",
+                "review_remote_factory_execution_risk",
+                "prefer_existing_function_path_candidate_when_available",
+            ],
+            "side_effect_policy": policy,
+            "next_action": "review_module_federation_get_init_plan" if candidates else "provide_module_federation_candidates_from_module_discovery",
+        }
+        return ModuleFederationGetInitPlanResult(status="planned" if candidates else "blocked", plan=plan, side_effect_policy=policy, reason=None if candidates else "no_module_federation_candidates")
+
+    @classmethod
+    def _candidate_plan(cls, candidate: dict[str, Any], *, index: int, spec: ModuleFederationGetInitPlanSpec) -> dict[str, Any]:
+        container_path = str(candidate.get("container_path") or candidate.get("containerPath") or candidate.get("runtime_path") or candidate.get("runtimePath") or "")[: spec.max_preview_length]
+        exposed_name = str(candidate.get("exposed_name") or candidate.get("exposedName") or candidate.get("module_id") or candidate.get("moduleId") or "")[: spec.max_preview_length]
+        remote_name = str(candidate.get("remote_name") or candidate.get("remoteName") or "")[: spec.max_preview_length]
+        export_names = cls._string_list(candidate.get("export_names") or candidate.get("exportNames"))[:20]
+        hook_paths = cls._string_list(candidate.get("hook_paths") or candidate.get("hookPaths"))[:20]
+        classification = cls._classify(container_path=container_path, exposed_name=exposed_name, hook_paths=hook_paths)
+        return {
+            "index": index,
+            "status": classification["status"],
+            "risk_level": classification["risk_level"],
+            "classification": classification["classification"],
+            "container_path": container_path,
+            "remote_name": remote_name,
+            "exposed_name": exposed_name,
+            "module_id": exposed_name,
+            "export_names": export_names,
+            "export_count": len(export_names),
+            "hook_paths": hook_paths,
+            "function_path_candidate_available": bool(hook_paths),
+            "discovery_source": str(candidate.get("discovery_source") or candidate.get("discoverySource") or "unknown"),
+            "execution_supported": False,
+            "automatic_execution": False,
+            "recommended_follow_up": classification["recommended_follow_up"],
+            "blocking_reasons": classification["blocking_reasons"],
+            "review_requirements": classification["review_requirements"],
+            "side_effect_policy": {
+                "would_execute_container_init_if_followed": True,
+                "would_call_remote_get_if_followed": bool(exposed_name),
+                "would_invoke_remote_factory_if_followed": bool(exposed_name),
+                "would_mutate_shared_scope_if_followed": True,
+                "executed_now": False,
+                "container_init_executed_now": False,
+                "remote_get_called_now": False,
+                "remote_factory_invoked_now": False,
+                "shared_scope_mutated_now": False,
+            },
+        }
+
+    @classmethod
+    def _classify(cls, *, container_path: str, exposed_name: str, hook_paths: list[str]) -> dict[str, Any]:
+        if not container_path:
+            return {
+                "status": "blocked",
+                "risk_level": "high",
+                "classification": "missing_container_path",
+                "recommended_follow_up": "provide_federation_container_path_from_module_discovery",
+                "blocking_reasons": ["module_federation_container_path_required"],
+                "review_requirements": ["identify_container_global_or_runtime_path"],
+            }
+        if not JS_DOTTED_PATH_RE.fullmatch(container_path):
+            return {
+                "status": "blocked",
+                "risk_level": "high",
+                "classification": "unsupported_container_path",
+                "recommended_follow_up": "provide_strict_dotted_container_path",
+                "blocking_reasons": ["dynamic_container_path_execution_not_supported"],
+                "review_requirements": ["replace_expression_with_strict_dotted_runtime_path"],
+            }
+        if hook_paths:
+            return {
+                "status": "ready_for_review",
+                "risk_level": "medium",
+                "classification": "function_path_candidate_available",
+                "recommended_follow_up": "prefer_hook_function_candidate_without_get_init_execution",
+                "blocking_reasons": ["module_federation_get_init_execution_not_supported"],
+                "review_requirements": ["review_existing_function_path_candidate", "avoid_container_get_init_when_function_path_is_available"],
+            }
+        if exposed_name:
+            return {
+                "status": "ready_for_review",
+                "risk_level": "high",
+                "classification": "remote_exposed_module_get_init_required",
+                "recommended_follow_up": "review_module_federation_get_init_before_any_execution",
+                "blocking_reasons": ["container_init_may_mutate_shared_scope", "container_get_may_return_remote_factory", "remote_factory_executes_remote_module_body"],
+                "review_requirements": ["review_remote_container_origin", "review_shared_scope", "prove_remote_factory_side_effects_are_safe"],
+            }
+        return {
+            "status": "ready_for_review",
+            "risk_level": "high",
+            "classification": "container_init_only_candidate",
+            "recommended_follow_up": "review_container_init_side_effects_before_any_execution",
+            "blocking_reasons": ["container_init_may_mutate_shared_scope"],
+            "review_requirements": ["review_shared_scope", "review_container_origin"],
+        }
+
+    @staticmethod
+    def _string_list(value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item) for item in value if item is not None]
+        return []
+
+    @staticmethod
+    def _summary(candidates: list[dict[str, Any]]) -> dict[str, int]:
+        return {
+            "container_count": len({item.get("container_path") for item in candidates if item.get("container_path")}),
+            "exposed_module_count": sum(1 for item in candidates if item.get("exposed_name")),
+            "function_path_candidate_count": sum(1 for item in candidates if item.get("function_path_candidate_available")),
+            "ready_for_review_count": sum(1 for item in candidates if item.get("status") == "ready_for_review"),
+            "blocked_execution_count": sum(1 for item in candidates if item.get("blocking_reasons")),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, bool]:
+        return {
+            "plan_only": True,
+            "container_init_executed": False,
+            "remote_get_called": False,
+            "remote_factory_invoked": False,
+            "shared_scope_mutated": False,
+            "remote_code_executed": False,
+            "network_request_sent": False,
+            "browser_state_mutated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 

@@ -7,6 +7,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalPlanSpec,
     ModuleDiscoveryManager,
     ModuleDiscoverySpec,
+    ModuleFederationGetInitPlanManager,
+    ModuleFederationGetInitPlanSpec,
     ModuleHookManager,
     ModuleHookSpec,
 )
@@ -196,6 +198,83 @@ class CustomLoaderTraversalPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.plan["status"], "blocked")
         self.assertEqual(result.plan["next_action"], "provide_custom_loader_candidates_from_chunk_graph")
         self.assertTrue(result.side_effect_policy["plan_only"])
+
+
+class ModuleFederationGetInitPlanManagerTests(unittest.TestCase):
+    def test_module_federation_get_init_plan_accepts_module_candidates_without_execution(self) -> None:
+        spec = ModuleFederationGetInitPlanSpec.from_context(
+            {
+                "module_candidates": [
+                    {
+                        "kind": "module-federation",
+                        "discovery_source": "module_federation",
+                        "runtime_path": "window.remoteApp",
+                        "module_id": "./sign",
+                        "export_names": ["sign"],
+                        "hook_paths": ["window.remoteApp.__reverseAgentExposes[\"./sign\"].sign"],
+                    },
+                    {
+                        "kind": "module-federation",
+                        "discovery_source": "module_federation",
+                        "runtime_path": "window.remoteOther",
+                        "module_id": "./token",
+                        "export_names": [],
+                        "hook_paths": [],
+                    },
+                ]
+            }
+        )
+
+        result = ModuleFederationGetInitPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "planned")
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["container_init_executed"])
+        self.assertFalse(result.side_effect_policy["remote_get_called"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["shared_scope_mutated"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        plan = result.plan
+        self.assertEqual(plan["schema_version"], "reverse-deepagent.module-federation-get-init-plan.v1")
+        self.assertEqual(plan["status"], "ready_for_review")
+        self.assertEqual(plan["candidate_count"], 2)
+        self.assertEqual(plan["container_count"], 2)
+        self.assertEqual(plan["exposed_module_count"], 2)
+        self.assertEqual(plan["function_path_candidate_count"], 1)
+        by_module = {item["module_id"]: item for item in plan["candidates"]}
+        self.assertEqual(by_module["./sign"]["classification"], "function_path_candidate_available")
+        self.assertEqual(by_module["./sign"]["recommended_follow_up"], "prefer_hook_function_candidate_without_get_init_execution")
+        self.assertEqual(by_module["./token"]["classification"], "remote_exposed_module_get_init_required")
+        self.assertIn("remote_factory_executes_remote_module_body", by_module["./token"]["blocking_reasons"])
+
+    def test_module_federation_get_init_plan_blocks_unsafe_container_path(self) -> None:
+        spec = ModuleFederationGetInitPlanSpec.from_context(
+            {
+                "container_path": "window.remoteApp.init(window.__webpack_share_scopes__.default)",
+                "exposed_name": "./sign",
+            }
+        )
+
+        result = ModuleFederationGetInitPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "planned")
+        candidate = result.plan["candidates"][0]
+        self.assertEqual(candidate["status"], "blocked")
+        self.assertEqual(candidate["classification"], "unsupported_container_path")
+        self.assertIn("dynamic_container_path_execution_not_supported", candidate["blocking_reasons"])
+        self.assertFalse(candidate["side_effect_policy"]["executed_now"])
+
+    def test_module_federation_get_init_plan_blocks_empty_explicit_request(self) -> None:
+        spec = ModuleFederationGetInitPlanSpec.from_context({"module_federation_get_init": True})
+
+        result = ModuleFederationGetInitPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "no_module_federation_candidates")
+        self.assertEqual(result.plan["status"], "blocked")
+        self.assertEqual(result.plan["next_action"], "provide_module_federation_candidates_from_module_discovery")
 
 
 class ModuleDiscoveryManagerTests(unittest.TestCase):

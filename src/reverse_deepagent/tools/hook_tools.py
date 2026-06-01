@@ -45,6 +45,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "custom-loader-traversal-plan",
             "customLoaderTraversalPlan",
         )
+        module_federation_get_init_plan = _object_alias(
+            payload,
+            "module_federation_get_init_plan",
+            "module-federation-get-init-plan",
+            "moduleFederationGetInitPlan",
+        )
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -73,6 +79,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_plan,
                 async_chunk_result,
                 custom_loader_traversal_plan,
+                module_federation_get_init_plan,
             )
         ) + sum(bool(items) for items in (module_candidates, function_candidates))
         if not artifact_count:
@@ -85,12 +92,20 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("async_chunk_load_failed")
         if _status(custom_loader_traversal_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_traversal_plan_blocked")
-        plan_status = _nested_status(custom_loader_traversal_plan, "plan")
+        custom_loader_plan_status = _nested_status(custom_loader_traversal_plan, "plan")
         if custom_loader_traversal_plan and (
             _status(custom_loader_traversal_plan) in {"ready_for_review", "planned"}
-            or plan_status == "ready_for_review"
+            or custom_loader_plan_status == "ready_for_review"
         ):
             warnings.append("custom_loader_traversal_requires_review")
+        if _status(module_federation_get_init_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("module_federation_get_init_plan_blocked")
+        federation_plan_status = _nested_status(module_federation_get_init_plan, "plan")
+        if module_federation_get_init_plan and (
+            _status(module_federation_get_init_plan) in {"ready_for_review", "planned"}
+            or federation_plan_status == "ready_for_review"
+        ):
+            warnings.append("module_federation_get_init_requires_review")
         if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
             warnings.append("async_chunk_load_requires_review")
         if missing_count:
@@ -120,10 +135,15 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "generic_hook_event_count": _event_count(generic_timeline, generic_events),
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
-                "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or plan_status,
+                "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or custom_loader_plan_status,
                 "custom_loader_traversal_candidate_count": _intish(custom_loader_traversal_plan.get("candidate_count") or _nested_get(custom_loader_traversal_plan, "plan", "candidate_count")),
                 "custom_loader_traversal_ready_for_review_count": _intish(custom_loader_traversal_plan.get("ready_for_review_count") or _nested_get(custom_loader_traversal_plan, "plan", "ready_for_review_count")),
                 "custom_loader_traversal_blocked_execution_count": _intish(custom_loader_traversal_plan.get("blocked_execution_count") or _nested_get(custom_loader_traversal_plan, "plan", "blocked_execution_count")),
+                "module_federation_get_init_plan_status": _status(module_federation_get_init_plan) or federation_plan_status,
+                "module_federation_get_init_candidate_count": _intish(module_federation_get_init_plan.get("candidate_count") or _nested_get(module_federation_get_init_plan, "plan", "candidate_count")),
+                "module_federation_get_init_container_count": _intish(module_federation_get_init_plan.get("container_count") or _nested_get(module_federation_get_init_plan, "plan", "container_count")),
+                "module_federation_get_init_exposed_module_count": _intish(module_federation_get_init_plan.get("exposed_module_count") or _nested_get(module_federation_get_init_plan, "plan", "exposed_module_count")),
+                "module_federation_get_init_blocked_execution_count": _intish(module_federation_get_init_plan.get("blocked_execution_count") or _nested_get(module_federation_get_init_plan, "plan", "blocked_execution_count")),
                 "async_chunk_load_execution_attempted": bool(async_chunk_result.get("execution", {}).get("attempted") if isinstance(async_chunk_result.get("execution"), dict) else async_chunk_result.get("execution_attempted", False)),
                 "async_chunk_load_added_registry_key_count": len(_listish(async_chunk_result.get("addedRegistryKeys") or async_chunk_result.get("added_registry_keys"))),
                 "timeline_event_count": timeline_event_count,
@@ -143,6 +163,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_plan,
                 async_chunk_result,
                 custom_loader_traversal_plan,
+                module_federation_get_init_plan,
             ),
             "side_effect_policy": {
                 "read_only": True,
@@ -285,6 +306,8 @@ def _installed_targets(payload: dict[str, Any]) -> list[str]:
 def _next_action(blockers: list[str], warnings: list[str]) -> str:
     if "hook_artifact_reports_failure" in blockers:
         return "inspect_hook_failure_and_adjust_target_paths"
+    if "module_federation_get_init_plan_blocked" in blockers:
+        return "provide_module_federation_candidates_from_module_discovery"
     if "custom_loader_traversal_plan_blocked" in blockers:
         return "choose_supported_async_chunk_or_static_source_path"
     if "async_chunk_load_plan_blocked" in blockers:
@@ -293,6 +316,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "inspect_async_chunk_load_failure"
     if "no_hook_artifacts_provided" in warnings:
         return "collect_hook_artifacts_before_review"
+    if "module_federation_get_init_requires_review" in warnings:
+        return "review_module_federation_get_init_plan"
     if "custom_loader_traversal_requires_review" in warnings:
         return "review_custom_loader_traversal_plan"
     if "async_chunk_load_requires_review" in warnings:
@@ -317,6 +342,7 @@ def _review_required_items(
     async_chunk_plan: dict[str, Any],
     async_chunk_result: dict[str, Any],
     custom_loader_traversal_plan: dict[str, Any],
+    module_federation_get_init_plan: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for code in blockers + warnings:
@@ -331,11 +357,13 @@ def _review_required_items(
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or _nested_status(custom_loader_traversal_plan, "plan"),
+                "module_federation_get_init_plan_status": _status(module_federation_get_init_plan) or _nested_status(module_federation_get_init_plan, "plan"),
                 "function_hook_error": str(function_hooks.get("error") or ""),
                 "module_hook_error": str(module_hooks.get("error") or ""),
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
                 "async_chunk_load_error": str(async_chunk_result.get("error") or async_chunk_plan.get("error") or ""),
                 "custom_loader_traversal_error": str(custom_loader_traversal_plan.get("error") or ""),
+                "module_federation_get_init_error": str(module_federation_get_init_plan.get("error") or ""),
             }
         )
     return items

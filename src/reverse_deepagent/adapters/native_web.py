@@ -12,6 +12,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
+    ModuleFederationGetInitPlanManager,
+    ModuleFederationGetInitPlanSpec,
     BreakpointManager,
     BreakpointSpec,
     BrowserHookManager,
@@ -1267,6 +1269,62 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
+        if self._is_module_federation_get_init_request(protection_name, context):
+            spec = ModuleFederationGetInitPlanSpec.from_context(context)
+            result = ModuleFederationGetInitPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            verification = [
+                f"module_federation_get_init_plan_status={result.status}",
+                f"module_federation_get_init_candidate_count={plan.get('candidate_count', 0)}",
+                f"module_federation_get_init_container_count={plan.get('container_count', 0)}",
+                f"module_federation_get_init_exposed_module_count={plan.get('exposed_module_count', 0)}",
+                f"module_federation_get_init_function_path_candidate_count={plan.get('function_path_candidate_count', 0)}",
+                f"module_federation_get_init_blocked_execution_count={plan.get('blocked_execution_count', 0)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"module_federation_get_init_reason={result.reason}")
+            if result.error:
+                verification.append(f"module_federation_get_init_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-get-init-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Module Federation get/init plan.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "candidate_count": plan.get("candidate_count", 0),
+                        "container_count": plan.get("container_count", 0),
+                        "exposed_module_count": plan.get("exposed_module_count", 0),
+                        "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
+                        "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                        "review_required": plan.get("review_required", True),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status == "planned":
+                next_action = "review_module_federation_get_init_plan"
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_module_federation_get_init"]
+            elif result.status == "blocked":
+                next_action = "provide_module_federation_candidates_from_module_discovery"
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_get_init"]
+            else:
+                next_action = "inspect_module_federation_get_init_request"
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
         if self._is_custom_loader_traversal_request(protection_name, context):
             spec = CustomLoaderTraversalPlanSpec.from_context(context)
             result = CustomLoaderTraversalPlanManager().plan(spec)
@@ -1971,6 +2029,42 @@ class NativeWebRuntime(WebReverseRuntime):
                 "moduleDiscovery",
                 "module_query",
                 "moduleQuery",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_get_init_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "module-federation-get-init",
+            "module-federation-get-init-plan",
+            "federation-get-init",
+            "federation-get-init-plan",
+            "module-federation-plan",
+            "federation-analysis-plan",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "module_federation_get_init",
+                "moduleFederationGetInit",
+                "federation_get_init_plan",
+                "federationGetInitPlan",
+                "module_federation_plan",
+                "moduleFederationPlan",
+                "module_federation_candidate",
+                "moduleFederationCandidate",
+                "module_federation_candidates",
+                "moduleFederationCandidates",
+                "federation_candidate",
+                "federationCandidate",
+                "federation_candidates",
+                "federationCandidates",
+                "federation_modules",
+                "federationModules",
+                "exposed_modules",
+                "exposedModules",
             )
         )
 

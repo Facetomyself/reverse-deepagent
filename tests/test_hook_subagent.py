@@ -103,6 +103,33 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["custom_loader_traversal_blocked_execution_count"], 1)
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_module_federation_get_init_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_get_init_plan": {
+                "status": "planned",
+                "plan": {
+                    "status": "ready_for_review",
+                    "candidate_count": 1,
+                    "container_count": 1,
+                    "exposed_module_count": 1,
+                    "blocked_execution_count": 1,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_get_init_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_get_init_plan")
+        self.assertEqual(result["summary"]["module_federation_get_init_plan_status"], "planned")
+        self.assertEqual(result["summary"]["module_federation_get_init_candidate_count"], 1)
+        self.assertEqual(result["summary"]["module_federation_get_init_container_count"], 1)
+        self.assertEqual(result["summary"]["module_federation_get_init_exposed_module_count"], 1)
+        self.assertEqual(result["summary"]["module_federation_get_init_blocked_execution_count"], 1)
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_review_hook_artifacts_passes_reviewed_async_chunk_load_result(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

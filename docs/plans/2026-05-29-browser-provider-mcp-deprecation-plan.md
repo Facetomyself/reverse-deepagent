@@ -1184,3 +1184,15 @@ Native Web recognizes `custom-loader-traversal`, `custom-loader-traversal-plan`,
 Boundary: this is plan-only and side-effect-free. It does not invoke custom loaders, execute webpack loaders, request chunk URLs, run dynamic imports, invoke module factories, execute module federation `get/init`, mutate browser state, call MCP, or touch Android / iOS / mini-program full runtime chains. Execution-style arbitrary custom loader traversal, deeper async chunk traversal, and federation execution remain capability-gated follow-ups.
 
 Validation: `tests.test_module_hooks`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, `tests.test_coordinator`, and `tests.test_hook_subagent` targeted tests passed locally.
+
+### Step 129 execution record: Module Federation get/init plan baseline
+
+Status: implemented as a review-only Module Federation `get/init` planning baseline, not `container.init()` execution, `container.get()` execution, remote factory invocation, shared-scope mutation, remote module execution, default recon behavior, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`ModuleFederationGetInitPlanManager` now consumes explicit federation candidates, module discovery candidates, runtime federation module metadata, and explicit container / exposed module context. It emits `reverse-deepagent.module-federation-get-init-plan.v1`, classifying strict dotted container paths, exposed modules, existing function-path candidates, missing / unsupported container paths, shared-scope mutation risk, `get()` risk, and remote factory execution risk. Existing function-path candidates are directed toward `hook-function` review instead of federation `get/init` execution.
+
+Native Web recognizes `module-federation-get-init`, `module-federation-get-init-plan`, `federation-get-init`, `federation-get-init-plan`, `module-federation-plan`, and `federation-analysis-plan` protection requests, plus explicit federation candidate context keys. It emits `virtual://workspace/module-federation-get-init-plan.json`; workspace contract, backend artifact manifest category mapping, coordinator payload extraction, and hook subagent review are registered under `workspace_module_federation_get_init_plan`.
+
+Boundary: this is plan-only and side-effect-free. It does not execute `container.init`, does not call `container.get`, does not invoke returned remote factories, does not mutate shared scope, does not execute remote module code, does not send network requests, does not mutate browser state, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Execution-style federation `get/init` and remote factory analysis remain capability-gated follow-ups.
+
+Validation: `tests.test_module_hooks`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, `tests.test_coordinator`, and `tests.test_hook_subagent` targeted tests passed locally.

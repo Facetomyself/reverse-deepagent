@@ -981,6 +981,40 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["custom_candidate_count"], 1)
         self.assertTrue(result.artifacts[0].metadata["plan_only"])
 
+    def test_native_web_runtime_plans_module_federation_get_init_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "module-federation-get-init-plan",
+            {
+                "module_federation_candidates": [
+                    {
+                        "runtime_path": "window.remoteApp",
+                        "module_id": "./sign",
+                        "export_names": ["sign"],
+                        "hook_paths": ["window.remoteApp.__reverseAgentExposes[\"./sign\"].sign"],
+                        "discovery_source": "module_federation",
+                    }
+                ]
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_module_federation_get_init"])
+        self.assertEqual(page.async_chunk_loads, [])
+        self.assertIn("module_federation_get_init_plan_status=planned", result.verification)
+        self.assertIn("module_federation_get_init_candidate_count=1", result.verification)
+        self.assertIn("module_federation_get_init_container_count=1", result.verification)
+        self.assertIn("module_federation_get_init_exposed_module_count=1", result.verification)
+        self.assertIn("module_federation_get_init_function_path_candidate_count=1", result.verification)
+        self.assertEqual(result.next_action, "review_module_federation_get_init_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-get-init-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["plan_status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["container_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+
     def test_native_web_runtime_executes_reviewed_async_chunk_load(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
