@@ -1050,6 +1050,337 @@ class ModuleFederationGetInitProbeManager:
 
 
 @dataclass(slots=True)
+class ModuleFederationFactoryInvokeSpec:
+    """Review-gated remote factory invocation request derived from a federation candidate."""
+
+    candidate: dict[str, Any] = field(default_factory=dict)
+    execute_factory: bool = False
+    review_approved: bool = False
+    share_scope_path: str = "window.__webpack_share_scopes__.default"
+    max_preview_length: int = 240
+    export_preview_limit: int = 30
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationFactoryInvokeSpec | None":
+        context = context or {}
+        execute_factory = bool(
+            context.get("execute_module_federation_factory")
+            or context.get("executeModuleFederationFactory")
+            or context.get("invoke_module_federation_factory")
+            or context.get("invokeModuleFederationFactory")
+            or context.get("execute_remote_factory")
+            or context.get("executeRemoteFactory")
+            or context.get("invoke_remote_factory")
+            or context.get("invokeRemoteFactory")
+        )
+        plan_spec = ModuleFederationGetInitPlanSpec.from_context(context)
+        if plan_spec is None and not execute_factory:
+            return None
+        candidate = plan_spec.candidates[0] if plan_spec and plan_spec.candidates else {}
+        return cls(
+            candidate=dict(candidate),
+            execute_factory=execute_factory,
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))),
+            share_scope_path=str(context.get("share_scope_path", context.get("shareScopePath", "window.__webpack_share_scopes__.default")) or "window.__webpack_share_scopes__.default"),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            export_preview_limit=max(1, int(context.get("export_preview_limit", context.get("exportPreviewLimit", 30)) or 30)),
+        )
+
+    def to_probe_spec(self) -> ModuleFederationGetInitProbeSpec:
+        return ModuleFederationGetInitProbeSpec(
+            candidate=dict(self.candidate),
+            execute_get_init=self.execute_factory,
+            review_approved=self.review_approved,
+            share_scope_path=self.share_scope_path,
+            max_preview_length=self.max_preview_length,
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationFactoryInvokeResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    get_init_execution: dict[str, Any] = field(default_factory=dict)
+    factory_execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "get_init_execution": self.get_init_execution,
+            "factory_execution": self.factory_execution,
+            "side_effect_policy": self.side_effect_policy,
+            "error": self.error,
+            "reason": self.reason,
+        }
+
+
+class ModuleFederationFactoryInvokeManager:
+    """Explicitly invoke a reviewed Module Federation remote factory and summarize exports."""
+
+    def plan_or_invoke(self, page: BrowserPage, spec: ModuleFederationFactoryInvokeSpec | None) -> ModuleFederationFactoryInvokeResult:
+        if spec is None:
+            return ModuleFederationFactoryInvokeResult(status="unsupported", reason="missing_module_federation_factory_request")
+        probe_result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec.to_probe_spec())
+        if not spec.execute_factory:
+            return ModuleFederationFactoryInvokeResult(
+                status="planned",
+                plan=probe_result.plan,
+                get_init_execution=probe_result.execution,
+                factory_execution={"attempted": False, "reason": "execute_module_federation_factory_not_requested"},
+                side_effect_policy=probe_result.side_effect_policy,
+            )
+        if probe_result.status != "success":
+            return ModuleFederationFactoryInvokeResult(
+                status=probe_result.status,
+                plan=probe_result.plan,
+                get_init_execution=probe_result.execution,
+                factory_execution={"attempted": False, "reason": probe_result.reason or probe_result.error or "get_init_probe_not_successful"},
+                side_effect_policy=probe_result.side_effect_policy,
+                error=probe_result.error,
+                reason=probe_result.reason,
+            )
+        candidates = probe_result.plan.get("candidates") if isinstance(probe_result.plan.get("candidates"), list) else []
+        candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+        readiness_error = self._execution_readiness_error(candidate, spec, probe_result.execution)
+        if readiness_error:
+            return ModuleFederationFactoryInvokeResult(
+                status="blocked",
+                plan=probe_result.plan,
+                get_init_execution=probe_result.execution,
+                factory_execution={"attempted": False, "reason": readiness_error},
+                side_effect_policy=probe_result.side_effect_policy,
+                reason=readiness_error,
+            )
+        try:
+            payload = page.evaluate(self._factory_expression(candidate, spec))
+        except Exception as exc:
+            return ModuleFederationFactoryInvokeResult(
+                status="failed",
+                plan=probe_result.plan,
+                get_init_execution=probe_result.execution,
+                factory_execution={"attempted": True, "ok": False, "error": str(exc)},
+                side_effect_policy=self._executed_side_effect_policy(),
+                error=str(exc),
+            )
+        factory_execution = payload if isinstance(payload, dict) else {"attempted": True, "ok": False, "result": payload}
+        status = "success" if factory_execution.get("ok") else "failed"
+        return ModuleFederationFactoryInvokeResult(
+            status=status,
+            plan=probe_result.plan,
+            get_init_execution=probe_result.execution,
+            factory_execution=factory_execution,
+            side_effect_policy=self._executed_side_effect_policy(),
+        )
+
+    @staticmethod
+    def _execution_readiness_error(candidate: dict[str, Any], spec: ModuleFederationFactoryInvokeSpec, get_init_execution: dict[str, Any]) -> str | None:
+        if not spec.review_approved:
+            return "review_approval_required"
+        if not candidate:
+            return "no_module_federation_candidate"
+        if candidate.get("function_path_candidate_available"):
+            return "prefer_existing_function_path_candidate"
+        if not get_init_execution.get("remoteGetCalled"):
+            return "remote_get_not_called"
+        if get_init_execution.get("remoteFactoryInvoked"):
+            return "factory_already_invoked_by_probe_unexpected"
+        if not JS_DOTTED_PATH_RE.fullmatch(str(candidate.get("container_path") or "")):
+            return "strict_dotted_container_path_required"
+        if not str(candidate.get("exposed_name") or ""):
+            return "exposed_module_name_required"
+        if not JS_DOTTED_PATH_RE.fullmatch(spec.share_scope_path):
+            return "strict_dotted_share_scope_path_required"
+        return None
+
+    @staticmethod
+    def _executed_side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only_by_default": False,
+            "requires_execute_module_federation_factory": True,
+            "requires_review_approval": True,
+            "container_init_executed": True,
+            "remote_get_called": True,
+            "remote_factory_invoked": True,
+            "remote_code_executed": True,
+            "shared_scope_may_mutate": True,
+            "network_request_may_be_sent": True,
+            "browser_state_mutated": True,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @classmethod
+    def _factory_expression(cls, candidate: dict[str, Any], spec: ModuleFederationFactoryInvokeSpec) -> str:
+        container_path = json.dumps(str(candidate.get("container_path") or ""), ensure_ascii=False)
+        exposed_name = json.dumps(str(candidate.get("exposed_name") or ""), ensure_ascii=False)
+        share_scope_path = json.dumps(spec.share_scope_path, ensure_ascii=False)
+        container_parts = json.dumps(ModuleFederationGetInitProbeManager._path_parts(str(candidate.get("container_path") or "")), ensure_ascii=False)
+        share_scope_parts = json.dumps(ModuleFederationGetInitProbeManager._path_parts(spec.share_scope_path), ensure_ascii=False)
+        max_preview_length = max(1, int(spec.max_preview_length))
+        export_preview_limit = max(1, int(spec.export_preview_limit))
+        return f"""
+(async () => {{
+  const marker = "__REVERSE_AGENT_MODULE_FEDERATION_FACTORY_INVOKE__";
+  const containerPath = {container_path};
+  const exposedName = {exposed_name};
+  const shareScopePath = {share_scope_path};
+  const containerParts = {container_parts};
+  const shareScopeParts = {share_scope_parts};
+  const maxPreviewLength = {max_preview_length};
+  const exportPreviewLimit = {export_preview_limit};
+  const describeError = (error) => String(error && (error.stack || error.message) || error).slice(0, maxPreviewLength);
+  const resolvePath = (parts) => {{
+    try {{
+      let value = window;
+      for (const part of parts) {{
+        if (!part || !/^[A-Za-z_$][\\w$]*$/.test(part)) return {{ ok: false, error: "unsafe_path_segment" }};
+        value = value && value[part];
+      }}
+      return {{ ok: true, value }};
+    }} catch (error) {{
+      return {{ ok: false, error: describeError(error) }};
+    }}
+  }};
+  const keys = (value) => value && (typeof value === "object" || typeof value === "function") ? Object.keys(value).map(String).sort() : [];
+  const diffKeys = (before, after) => after.filter((item) => !before.includes(item));
+  const previewValue = (value) => {{
+    const type = typeof value;
+    if (value === null) return {{ type: "null", preview: "null" }};
+    if (type === "string" || type === "number" || type === "boolean" || type === "undefined" || type === "bigint") {{
+      return {{ type, preview: String(value).slice(0, maxPreviewLength) }};
+    }}
+    if (type === "function") {{
+      return {{ type, name: String(value.name || ""), preview: String(value).slice(0, maxPreviewLength) }};
+    }}
+    return {{ type, constructorName: value && value.constructor && value.constructor.name || "", keys: keys(value).slice(0, exportPreviewLimit) }};
+  }};
+  const containerResolved = resolvePath(containerParts);
+  if (!containerResolved.ok || !containerResolved.value) {{
+    return {{ marker, attempted: true, ok: false, status: "failed", reason: "container_unavailable", containerPath, exposedName, error: containerResolved.error }};
+  }}
+  const container = containerResolved.value;
+  const shareScopeResolved = resolvePath(shareScopeParts);
+  const shareScope = shareScopeResolved.ok && shareScopeResolved.value && typeof shareScopeResolved.value === "object" ? shareScopeResolved.value : {{}};
+  const beforeSharedScopeKeys = keys(shareScope);
+  const beforeContainerKeys = keys(container);
+  let containerInitCalled = false;
+  let remoteGetCalled = false;
+  let remoteFactoryInvoked = false;
+  try {{
+    if (typeof container.init === "function") {{
+      containerInitCalled = true;
+      await container.init(shareScope);
+    }}
+    if (typeof container.get !== "function") {{
+      return {{
+        marker,
+        attempted: true,
+        ok: false,
+        status: "failed",
+        reason: "container_get_missing",
+        containerPath,
+        exposedName,
+        containerInitCalled,
+        remoteGetCalled: false,
+        remoteFactoryInvoked: false,
+        beforeSharedScopeKeys,
+        afterSharedScopeKeys: keys(shareScope),
+        addedSharedScopeKeys: diffKeys(beforeSharedScopeKeys, keys(shareScope)),
+        beforeContainerKeys,
+        afterContainerKeys: keys(container)
+      }};
+    }}
+    remoteGetCalled = true;
+    const factory = await container.get(exposedName);
+    const factoryType = typeof factory;
+    if (factoryType !== "function") {{
+      return {{
+        marker,
+        attempted: true,
+        ok: false,
+        status: "failed",
+        reason: "remote_factory_not_function",
+        containerPath,
+        exposedName,
+        containerInitCalled,
+        remoteGetCalled,
+        remoteFactoryInvoked: false,
+        factoryType,
+        beforeSharedScopeKeys,
+        afterSharedScopeKeys: keys(shareScope),
+        addedSharedScopeKeys: diffKeys(beforeSharedScopeKeys, keys(shareScope)),
+        beforeContainerKeys,
+        afterContainerKeys: keys(container)
+      }};
+    }}
+    remoteFactoryInvoked = true;
+    const moduleValue = factory();
+    const moduleType = moduleValue === null ? "null" : typeof moduleValue;
+    const exportNames = keys(moduleValue).slice(0, exportPreviewLimit);
+    const exportPreviews = {{}};
+    for (const name of exportNames) {{
+      try {{
+        exportPreviews[name] = previewValue(moduleValue[name]);
+      }} catch (error) {{
+        exportPreviews[name] = {{ type: "error", preview: describeError(error) }};
+      }}
+    }}
+    const afterSharedScopeKeys = keys(shareScope);
+    const afterContainerKeys = keys(container);
+    return {{
+      marker,
+      attempted: true,
+      ok: true,
+      status: "success",
+      containerPath,
+      exposedName,
+      shareScopePath,
+      containerInitCalled,
+      remoteGetCalled,
+      remoteFactoryInvoked,
+      remoteCodeExecuted: true,
+      factoryType,
+      moduleType,
+      exportNames,
+      exportCount: exportNames.length,
+      exportPreviews,
+      beforeSharedScopeKeys,
+      afterSharedScopeKeys,
+      addedSharedScopeKeys: diffKeys(beforeSharedScopeKeys, afterSharedScopeKeys),
+      beforeContainerKeys,
+      afterContainerKeys,
+      addedContainerKeys: diffKeys(beforeContainerKeys, afterContainerKeys)
+    }};
+  }} catch (error) {{
+    return {{
+      marker,
+      attempted: true,
+      ok: false,
+      status: "failed",
+      reason: "module_federation_factory_invoke_error",
+      containerPath,
+      exposedName,
+      containerInitCalled,
+      remoteGetCalled,
+      remoteFactoryInvoked,
+      remoteCodeExecuted: remoteFactoryInvoked,
+      error: describeError(error),
+      beforeSharedScopeKeys,
+      afterSharedScopeKeys: keys(shareScope),
+      addedSharedScopeKeys: diffKeys(beforeSharedScopeKeys, keys(shareScope)),
+      beforeContainerKeys,
+      afterContainerKeys: keys(container)
+    }};
+  }}
+}})()
+"""
+
+
+@dataclass(slots=True)
 class AsyncChunkLoadSpec:
     """Review-gated async chunk load request derived from chunk graph candidates."""
 

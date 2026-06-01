@@ -1224,3 +1224,17 @@ Native Web recognizes the probe through the existing `module-federation-get-init
 Boundary: this may mutate browser state, shared scope, and network state because `container.init` / `container.get` can run container code, so it is never part of default recon and remains explicit-review-only. It does not invoke returned factories, does not execute remote module bodies, does not recursively traverse remotes, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Remote factory invocation / remote module body analysis remains a follow-up capability-gated step.
 
 Validation: `tests.test_module_hooks`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, `tests.test_coordinator`, and `tests.test_hook_subagent` targeted tests passed locally.
+
+### Step 132 execution record: Review-gated Module Federation remote factory invoke baseline
+
+Status: implemented as an explicit review-gated remote factory invocation / export-summary baseline, not default recon behavior, automatic remote export hook installation, recursive federation traversal, arbitrary custom loader execution, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`ModuleFederationFactoryInvokeManager` now reuses the existing get/init candidate normalization and reviewed probe path. It only runs when `execute_module_federation_factory=true` / `invoke_module_federation_factory=true` (or documented remote-factory aliases) and `review_approved=true` are both present. Without the execute flag it returns a plan; without review approval it blocks through the get/init probe gate; if an existing function-path candidate is available it keeps preferring the safer `hook-function` path.
+
+The reviewed factory baseline resolves only strict dotted container and share-scope paths, calls `container.init(shareScope)`, calls `container.get(exposedName)`, invokes the returned factory only if it is a function, and records module type, export names, export previews, shared-scope diff, container diff, `remoteFactoryInvoked=true`, and `remoteCodeExecuted=true` into `virtual://workspace/module-federation-factory-invoke-result.json`. The hook review tool treats a successful factory invoke as a warning requiring `review_module_federation_factory_exports_before_hooking`.
+
+Native Web recognizes the factory baseline through the existing `module-federation-get-init` protection family plus explicit factory execute / approval context flags. Workspace contract, backend artifact manifest category mapping, coordinator payload extraction, native-web artifact metadata, and hook subagent review are registered under `workspace_module_federation_factory_invoke_result`.
+
+Boundary: this is intentionally higher risk than the get/init probe because invoking the returned factory executes remote module code and can mutate browser state or trigger network work. It is never part of default recon, does not recursively traverse remotes, does not auto-install hooks for returned exports, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Remote export hook selection and deeper federation traversal remain capability-gated follow-ups.
+
+Validation: `tests.test_module_hooks`, `tests.test_native_web_runtime`, `tests.test_workspace_contract`, `tests.test_coordinator`, and `tests.test_hook_subagent` targeted tests passed locally.

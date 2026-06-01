@@ -12,6 +12,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkLoadSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
+    ModuleFederationFactoryInvokeManager,
+    ModuleFederationFactoryInvokeSpec,
     ModuleFederationGetInitPlanManager,
     ModuleFederationGetInitPlanSpec,
     ModuleFederationGetInitProbeManager,
@@ -1272,6 +1274,90 @@ class NativeWebRuntime(WebReverseRuntime):
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_get_init_request(protection_name, context):
+            if self._is_module_federation_factory_invoke_request(context):
+                spec = ModuleFederationFactoryInvokeSpec.from_context(context)
+                result = ModuleFederationFactoryInvokeManager().plan_or_invoke(page, spec)
+                get_init_execution = result.get_init_execution if isinstance(result.get_init_execution, dict) else {}
+                factory_execution = result.factory_execution if isinstance(result.factory_execution, dict) else {}
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                verification = [
+                    f"module_federation_factory_invoke_status={result.status}",
+                    f"module_federation_get_init_plan_status={plan.get('status', 'missing')}",
+                    f"module_federation_get_init_execution_attempted={get_init_execution.get('attempted', False)}",
+                    f"module_federation_get_init_remote_get_called={get_init_execution.get('remoteGetCalled', False)}",
+                    f"module_federation_factory_execution_attempted={factory_execution.get('attempted', False)}",
+                    f"module_federation_factory_execution_ok={factory_execution.get('ok', False)}",
+                    f"module_federation_factory_remote_factory_invoked={factory_execution.get('remoteFactoryInvoked', False)}",
+                    f"module_federation_factory_remote_code_executed={factory_execution.get('remoteCodeExecuted', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if factory_execution.get("exportNames") is not None:
+                    verification.append(f"module_federation_factory_export_count={len(factory_execution.get('exportNames') or [])}")
+                if factory_execution.get("moduleType"):
+                    verification.append(f"module_federation_factory_module_type={factory_execution.get('moduleType')}")
+                if factory_execution.get("reason"):
+                    verification.append(f"module_federation_factory_execution_reason={factory_execution['reason']}")
+                if result.reason:
+                    verification.append(f"module_federation_factory_reason={result.reason}")
+                if result.error:
+                    verification.append(f"module_federation_factory_error={result.error}")
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-get-init-plan.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-only Module Federation get/init plan.",
+                        metadata={
+                            "status": result.status,
+                            "plan_status": plan.get("status"),
+                            "candidate_count": plan.get("candidate_count", 0),
+                            "container_count": plan.get("container_count", 0),
+                            "exposed_module_count": plan.get("exposed_module_count", 0),
+                            "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
+                            "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                            "review_required": plan.get("review_required", True),
+                        },
+                    ),
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-factory-invoke-result.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-gated Module Federation remote factory invocation evidence.",
+                        metadata={
+                            "status": result.status,
+                            "get_init_attempted": get_init_execution.get("attempted", False),
+                            "factory_attempted": factory_execution.get("attempted", False),
+                            "factory_ok": factory_execution.get("ok", False),
+                            "remote_factory_invoked": factory_execution.get("remoteFactoryInvoked", False),
+                            "remote_code_executed": factory_execution.get("remoteCodeExecuted", False),
+                            "export_count": len(factory_execution.get("exportNames") or []),
+                            "module_type": factory_execution.get("moduleType"),
+                        },
+                    ),
+                ]
+                if result.status == "success":
+                    next_action = "review_module_federation_factory_exports_before_hooking"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["invoke_module_federation_factory"]
+                elif result.status == "planned":
+                    next_action = "review_module_federation_factory_invoke_plan"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["plan_module_federation_factory_invoke"]
+                elif result.status == "blocked":
+                    next_action = "approve_module_federation_factory_or_choose_function_path_candidate"
+                    status = ExecutionStatus.PARTIAL
+                    applied_actions = ["plan_module_federation_factory_invoke"]
+                else:
+                    next_action = "inspect_module_federation_factory_invoke_failure"
+                    status = ExecutionStatus.FAILED
+                    applied_actions = []
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=applied_actions,
+                    verification=verification,
+                    status=status,
+                    artifacts=artifact_paths,
+                    next_action=next_action,
+                    confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
+                )
             if self._is_module_federation_get_init_probe_request(context):
                 spec = ModuleFederationGetInitProbeSpec.from_context(context)
                 result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
@@ -2163,6 +2249,22 @@ class NativeWebRuntime(WebReverseRuntime):
                 "probeModuleFederationGetInit",
                 "execute_get_init",
                 "executeGetInit",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_factory_invoke_request(context: dict[str, Any]) -> bool:
+        return any(
+            bool(context.get(key))
+            for key in (
+                "execute_module_federation_factory",
+                "executeModuleFederationFactory",
+                "invoke_module_federation_factory",
+                "invokeModuleFederationFactory",
+                "execute_remote_factory",
+                "executeRemoteFactory",
+                "invoke_remote_factory",
+                "invokeRemoteFactory",
             )
         )
 

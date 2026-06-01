@@ -185,6 +185,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/async-chunk-load-result.json"].future_path, "/workspace/runtime/async-chunk-load-result.json")
         self.assertEqual(routes["workspace/module-federation-get-init-result.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(routes["workspace/module-federation-get-init-result.json"].future_path, "/workspace/runtime/module-federation-get-init-result.json")
+        self.assertEqual(routes["workspace/module-federation-factory-invoke-result.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/module-federation-factory-invoke-result.json"].future_path, "/workspace/runtime/module-federation-factory-invoke-result.json")
         self.assertEqual(routes["workspace/source-map-fetch-plan.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(routes["workspace/source-map-fetch-plan.json"].future_path, "/workspace/debugger/source-map-fetch-plan.json")
         self.assertEqual(routes["workspace/source-map-fetch-result.json"].virtual_folder, "/workspace/debugger/")

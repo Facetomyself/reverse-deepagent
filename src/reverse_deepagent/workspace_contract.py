@@ -329,6 +329,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_custom_loader_traversal_plan", "workspace/custom-loader-traversal-plan.json", "/workspace/runtime/", "custom-loader-traversal-plan.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_module_federation_get_init_plan", "workspace/module-federation-get-init-plan.json", "/workspace/runtime/", "module-federation-get-init-plan.json", "triage", ("hook", "browser_runtime", "review")),
         ("workspace_module_federation_get_init_result", "workspace/module-federation-get-init-result.json", "/workspace/runtime/", "module-federation-get-init-result.json", "trace", ("hook", "browser_runtime", "review")),
+        ("workspace_module_federation_factory_invoke_result", "workspace/module-federation-factory-invoke-result.json", "/workspace/runtime/", "module-federation-factory-invoke-result.json", "trace", ("hook", "browser_runtime", "review")),
         ("workspace_async_chunk_load_result", "workspace/async-chunk-load-result.json", "/workspace/runtime/", "async-chunk-load-result.json", "trace", ("hook", "browser_runtime", "review")),
         ("workspace_source_map_fetch_plan", "workspace/source-map-fetch-plan.json", "/workspace/debugger/", "source-map-fetch-plan.json", "triage", ("debugger", "hook", "review")),
         ("workspace_source_map_fetch_result", "workspace/source-map-fetch-result.json", "/workspace/debugger/", "source-map-fetch-result.json", "trace", ("debugger", "hook", "review")),

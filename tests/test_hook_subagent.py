@@ -182,6 +182,37 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["module_federation_get_init_added_shared_scope_key_count"], 1)
         self.assertEqual(result["review_required_items"][0]["module_federation_get_init_result_status"], "success")
 
+    def test_review_hook_artifacts_warns_for_module_federation_factory_invoke_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_get_init_plan": {
+                "status": "planned",
+                "plan": {"status": "ready_for_review", "candidate_count": 1},
+            },
+            "module_federation_factory_invoke_result": {
+                "status": "success",
+                "factory_execution": {
+                    "attempted": True,
+                    "ok": True,
+                    "remoteFactoryInvoked": True,
+                    "remoteCodeExecuted": True,
+                    "exportNames": ["sign"],
+                },
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_factory_exports_require_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_factory_exports_before_hooking")
+        self.assertEqual(result["summary"]["module_federation_factory_invoke_result_status"], "success")
+        self.assertTrue(result["summary"]["module_federation_factory_execution_attempted"])
+        self.assertTrue(result["summary"]["module_federation_factory_remote_factory_invoked"])
+        self.assertTrue(result["summary"]["module_federation_factory_remote_code_executed"])
+        self.assertEqual(result["summary"]["module_federation_factory_export_count"], 1)
+        self.assertEqual(result["review_required_items"][0]["module_federation_factory_invoke_result_status"], "success")
+
 
     def test_review_hook_artifacts_reads_artifact_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
