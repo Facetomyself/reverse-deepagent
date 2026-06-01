@@ -210,6 +210,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native custom loader continuation journal",
+                    kind=EvidenceKind.NOTE,
+                    source="custom_loader_continuation_journal",
+                    details={"status": "journal_appended", "record_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native custom loader execution preflight",
                     kind=EvidenceKind.NOTE,
                     source="custom_loader_execution_preflight",
@@ -310,6 +317,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["async-chunk-module-diff.json"]["candidate_count"], 1)
         self.assertEqual(payloads["custom-loader-traversal-plan.json"]["candidate_count"], 1)
         self.assertEqual(payloads["custom-loader-continuation-workflow.json"]["selected_candidate_index"], 1)
+        self.assertEqual(payloads["custom-loader-continuation-journal.json"]["record_count"], 1)
         self.assertEqual(payloads["custom-loader-execution-preflight.json"]["status"], "ready_for_execution_review")
         self.assertEqual(payloads["custom-loader-execution-result.json"]["addedRegistryKeys"], ["884"])
         self.assertEqual(payloads["custom-loader-module-diff.json"]["candidate_count"], 1)
@@ -330,6 +338,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_continuation_workflow"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_custom_loader_continuation_journal"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_execution_preflight"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_execution_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_module_diff"), "triage")

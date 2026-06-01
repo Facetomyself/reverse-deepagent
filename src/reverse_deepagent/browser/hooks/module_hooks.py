@@ -881,6 +881,263 @@ class CustomLoaderContinuationWorkflowManager:
 
 
 @dataclass(slots=True)
+class CustomLoaderContinuationJournalSpec:
+    """Review-gated append-only journal record for one custom-loader continuation step."""
+
+    workflow: dict[str, Any] = field(default_factory=dict)
+    existing_journal: dict[str, Any] = field(default_factory=dict)
+    preflight: dict[str, Any] = field(default_factory=dict)
+    execution_result: dict[str, Any] = field(default_factory=dict)
+    module_diff: dict[str, Any] = field(default_factory=dict)
+    module_hook_result: dict[str, Any] = field(default_factory=dict)
+    next_traversal_plan: dict[str, Any] = field(default_factory=dict)
+    review_approved: bool = False
+    write_journal: bool = False
+    reviewer: str = ""
+    journal_id: str = "custom-loader-continuation-journal"
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderContinuationJournalSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("custom_loader_continuation_journal")
+            or context.get("customLoaderContinuationJournal")
+            or context.get("custom-loader-continuation-journal")
+            or context.get("append_custom_loader_continuation_journal")
+            or context.get("appendCustomLoaderContinuationJournal")
+        )
+        workflow = (
+            context.get("custom_loader_continuation_workflow")
+            or context.get("custom-loader-continuation-workflow")
+            or context.get("customLoaderContinuationWorkflow")
+            or context.get("continuation_workflow")
+            or context.get("continuationWorkflow")
+        )
+        if isinstance(workflow, dict) and isinstance(workflow.get("workflow"), dict):
+            workflow = workflow["workflow"]
+        if not isinstance(workflow, dict):
+            return None if not requested else cls()
+        existing = (
+            context.get("custom_loader_continuation_journal")
+            or context.get("custom-loader-continuation-journal")
+            or context.get("customLoaderContinuationJournal")
+            or context.get("existing_custom_loader_continuation_journal")
+            or context.get("existingCustomLoaderContinuationJournal")
+            or {}
+        )
+        return cls(
+            workflow=dict(workflow),
+            existing_journal=dict(existing) if isinstance(existing, dict) else {},
+            preflight=cls._object_alias(context, "custom_loader_execution_preflight", "custom-loader-execution-preflight", "customLoaderExecutionPreflight"),
+            execution_result=cls._object_alias(context, "custom_loader_execution_result", "custom-loader-execution-result", "customLoaderExecutionResult"),
+            module_diff=cls._object_alias(context, "custom_loader_module_diff", "custom-loader-module-diff", "customLoaderModuleDiff"),
+            module_hook_result=cls._object_alias(context, "custom_loader_module_hook_result", "custom-loader-module-hook-result", "customLoaderModuleHookResult", "module_hooks", "module-hooks"),
+            next_traversal_plan=cls._object_alias(context, "next_custom_loader_traversal_plan", "next-custom-loader-traversal-plan", "nextCustomLoaderTraversalPlan", "custom_loader_traversal_plan", "custom-loader-traversal-plan"),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            write_journal=bool(
+                context.get("write_journal")
+                or context.get("writeJournal")
+                or context.get("append_journal")
+                or context.get("appendJournal")
+                or context.get("append_custom_loader_continuation_journal")
+                or context.get("appendCustomLoaderContinuationJournal")
+            ),
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip(),
+            journal_id=str(context.get("journal_id") or context.get("journalId") or "custom-loader-continuation-journal").strip() or "custom-loader-continuation-journal",
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+    @staticmethod
+    def _object_alias(context: dict[str, Any], *keys: str) -> dict[str, Any]:
+        for key in keys:
+            value = context.get(key)
+            if isinstance(value, dict):
+                return dict(value)
+        return {}
+
+
+@dataclass(slots=True)
+class CustomLoaderContinuationJournalResult:
+    status: str
+    journal: dict[str, Any] = field(default_factory=dict)
+    entry: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "journal": self.journal,
+            "entry": self.entry,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class CustomLoaderContinuationJournalManager:
+    """Append a reviewed custom-loader continuation journal payload without executing loaders."""
+
+    def plan_or_append(self, spec: CustomLoaderContinuationJournalSpec | None) -> CustomLoaderContinuationJournalResult:
+        policy = self._side_effect_policy(write_journal=bool(spec and spec.write_journal), review_approved=bool(spec and spec.review_approved))
+        if spec is None or not spec.workflow:
+            return CustomLoaderContinuationJournalResult(status="unsupported", reason="missing_custom_loader_continuation_workflow", side_effect_policy=policy)
+        existing_records = self._existing_records(spec.existing_journal)
+        entry = self._entry(spec, existing_record_count=len(existing_records))
+        blockers = self._blocking_reasons(spec, entry, existing_records)
+        if blockers:
+            status = "blocked"
+        elif spec.write_journal:
+            status = "journal_appended"
+        else:
+            status = "ready_for_review"
+        journal_records = existing_records + ([entry] if status == "journal_appended" else [])
+        journal = {
+            "schema_version": "reverse-deepagent.custom-loader-continuation-journal.v1",
+            "journal_id": spec.journal_id,
+            "status": status,
+            "append_only": True,
+            "review_required": True,
+            "review_approved": bool(spec.review_approved),
+            "write_requested": bool(spec.write_journal),
+            "writes_journal_now": status == "journal_appended",
+            "record_count": len(journal_records),
+            "existing_record_count": len(existing_records),
+            "blocking_reasons": blockers,
+            "pending_entry": entry if status != "journal_appended" else {},
+            "records": journal_records,
+            "side_effect_policy": self._side_effect_policy(write_journal=status == "journal_appended", review_approved=spec.review_approved),
+            "next_action": self._next_action(status=status, blockers=blockers),
+        }
+        reason = blockers[0] if blockers else None
+        return CustomLoaderContinuationJournalResult(
+            status=status,
+            journal=journal,
+            entry=entry,
+            side_effect_policy=journal["side_effect_policy"],
+            reason=reason,
+        )
+
+    @classmethod
+    def _entry(cls, spec: CustomLoaderContinuationJournalSpec, *, existing_record_count: int) -> dict[str, Any]:
+        workflow = spec.workflow
+        candidate = workflow.get("selected_candidate") if isinstance(workflow.get("selected_candidate"), dict) else {}
+        fingerprint = str(candidate.get("fingerprint") or cls._candidate_fingerprint(candidate))
+        workflow_id = str(workflow.get("workflow_id") or "custom-loader-continuation-workflow-1")[: spec.max_preview_length]
+        selected_index = workflow.get("selected_candidate_index")
+        entry_id = f"{spec.journal_id}:{workflow_id}:{selected_index}:{fingerprint or 'missing'}"
+        execution = spec.execution_result.get("execution") if isinstance(spec.execution_result.get("execution"), dict) else spec.execution_result
+        stage_status = cls._stage_status(spec)
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-continuation-journal-entry.v1",
+            "entry_id": entry_id,
+            "sequence": existing_record_count + 1,
+            "workflow_id": workflow_id,
+            "workflow_status": workflow.get("status"),
+            "selected_candidate_index": selected_index,
+            "candidate_fingerprint": fingerprint,
+            "loader_path": str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or "")[: spec.max_preview_length],
+            "selected_candidate": candidate,
+            "reviewer": spec.reviewer,
+            "review_approved": bool(spec.review_approved),
+            "stage_status": stage_status,
+            "artifact_status": {
+                "workflow_recorded": bool(workflow),
+                "preflight_recorded": bool(spec.preflight),
+                "execution_result_recorded": bool(spec.execution_result),
+                "execution_success": bool(spec.execution_result.get("status") == "success" or execution.get("ok") is True),
+                "module_diff_recorded": bool(spec.module_diff),
+                "module_hook_result_recorded": bool(spec.module_hook_result),
+                "next_traversal_plan_recorded": bool(spec.next_traversal_plan),
+            },
+            "artifact_refs": {
+                "workflow": "workspace/custom-loader-continuation-workflow.json",
+                "preflight": "workspace/custom-loader-execution-preflight.json" if spec.preflight else "",
+                "execution_result": "workspace/custom-loader-execution-result.json" if spec.execution_result else "",
+                "module_diff": "workspace/custom-loader-module-diff.json" if spec.module_diff else "",
+                "module_hooks": "workspace/module-hooks.json" if spec.module_hook_result else "",
+                "next_traversal_plan": "workspace/custom-loader-traversal-plan.json" if spec.next_traversal_plan else "",
+            },
+            "side_effect_policy": {
+                "records_journal_entry": True,
+                "loader_invoked_by_journal": False,
+                "custom_loader_executed_by_journal": False,
+                "preflight_executed_by_journal": False,
+                "module_diff_executed_by_journal": False,
+                "module_hook_installed_by_journal": False,
+                "automatic_recursive_traversal": False,
+            },
+        }
+
+    @staticmethod
+    def _stage_status(spec: CustomLoaderContinuationJournalSpec) -> str:
+        execution = spec.execution_result.get("execution") if isinstance(spec.execution_result.get("execution"), dict) else spec.execution_result
+        if spec.module_hook_result:
+            return "module_hook_result_recorded"
+        if spec.module_diff:
+            return "module_diff_recorded"
+        if spec.execution_result and (spec.execution_result.get("status") == "success" or execution.get("ok") is True):
+            return "execution_result_recorded"
+        if spec.preflight:
+            return "preflight_recorded"
+        return "planned_continuation_recorded"
+
+    @staticmethod
+    def _candidate_fingerprint(candidate: dict[str, Any]) -> str:
+        return "|".join(CustomLoaderTraversalPlanManager._candidate_fingerprint(candidate))
+
+    @staticmethod
+    def _existing_records(journal: dict[str, Any]) -> list[dict[str, Any]]:
+        records = journal.get("records") if isinstance(journal, dict) else []
+        if isinstance(records, list):
+            return [dict(item) for item in records if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _blocking_reasons(spec: CustomLoaderContinuationJournalSpec, entry: dict[str, Any], existing_records: list[dict[str, Any]]) -> list[str]:
+        blockers: list[str] = []
+        if spec.workflow.get("status") in {"blocked", "failed", "unsupported"}:
+            blockers.append("custom_loader_continuation_workflow_not_journalable")
+        if not spec.write_journal:
+            return blockers
+        if not spec.review_approved:
+            blockers.append("review_approval_required")
+        fingerprint = entry.get("candidate_fingerprint")
+        workflow_id = entry.get("workflow_id")
+        if fingerprint and any(record.get("candidate_fingerprint") == fingerprint and record.get("workflow_id") == workflow_id for record in existing_records):
+            blockers.append("custom_loader_continuation_journal_duplicate_entry")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if status == "journal_appended":
+            return "run_or_review_next_custom_loader_continuation_step"
+        if "review_approval_required" in blockers:
+            return "approve_custom_loader_continuation_journal_append"
+        if blockers:
+            return "revise_custom_loader_continuation_journal_inputs"
+        return "review_custom_loader_continuation_journal_append"
+
+    @staticmethod
+    def _side_effect_policy(*, write_journal: bool, review_approved: bool) -> dict[str, Any]:
+        return {
+            "plan_only": not write_journal,
+            "review_approved": review_approved,
+            "writes_journal": write_journal,
+            "loader_invoked": False,
+            "custom_loader_executed": False,
+            "preflight_executed": False,
+            "module_diff_executed": False,
+            "module_hook_installed": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class CustomLoaderExecutionPreflightSpec:
     """Side-effect-free preflight for a reviewed custom loader execution candidate."""
 

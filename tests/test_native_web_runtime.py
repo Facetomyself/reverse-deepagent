@@ -1223,6 +1223,53 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["selected_candidate_index"], 1)
         self.assertFalse(result.artifacts[0].metadata["writes_journal"])
 
+    def test_native_web_runtime_appends_custom_loader_continuation_journal_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        workflow = {
+            "schema_version": "reverse-deepagent.custom-loader-continuation-workflow.v1",
+            "workflow_id": "native-continuation",
+            "status": "ready_for_review",
+            "selected_candidate_index": 1,
+            "selected_candidate": {
+                "index": 1,
+                "status": "ready_for_review",
+                "classification": "arbitrary_custom_loader",
+                "loader_path": "window.__customLoader.loadChild",
+                "target": "window.__customLoader.loadChild",
+                "chunk_id": "custom-sign-child",
+                "fingerprint": "window.__customLoader.loadChild|window.__customLoader.loadChild|custom-sign-child",
+                "continuation_supported": True,
+            },
+        }
+
+        result = runtime.apply_minimal_protection(
+            "custom-loader-continuation-journal",
+            {
+                "custom_loader_continuation_workflow": workflow,
+                "write_journal": True,
+                "review_approved": True,
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "execution": {"attempted": True, "ok": True, "loaderInvoked": True},
+                },
+                "custom_loader_module_diff": {"status": "planned", "diff": {"matched_module_count": 1}},
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["append_custom_loader_continuation_journal"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_continuation_journal_status=journal_appended", result.verification)
+        self.assertIn("custom_loader_continuation_journal_writes_journal=True", result.verification)
+        self.assertIn("custom_loader_continuation_journal_loader_invoked=False", result.verification)
+        self.assertEqual(result.next_action, "run_or_review_next_custom_loader_continuation_step")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-continuation-journal.json")
+        self.assertEqual(result.artifacts[0].metadata["record_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["writes_journal"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+
     def test_native_web_runtime_preflights_reviewed_custom_loader_execution_without_running_loader(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

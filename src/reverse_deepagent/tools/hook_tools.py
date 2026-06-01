@@ -70,6 +70,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "custom-loader-continuation-workflow",
             "customLoaderContinuationWorkflow",
         )
+        custom_loader_continuation_journal = _object_alias(
+            payload,
+            "custom_loader_continuation_journal",
+            "custom-loader-continuation-journal",
+            "customLoaderContinuationJournal",
+        )
         module_federation_get_init_plan = _object_alias(
             payload,
             "module_federation_get_init_plan",
@@ -124,6 +130,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_module_diff,
                 custom_loader_traversal_plan,
                 custom_loader_continuation_workflow,
+                custom_loader_continuation_journal,
                 custom_loader_execution_preflight,
                 custom_loader_execution_result,
                 custom_loader_module_diff,
@@ -147,6 +154,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("custom_loader_traversal_plan_blocked")
         if _status(custom_loader_continuation_workflow) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_continuation_workflow_blocked")
+        if _status(custom_loader_continuation_journal) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("custom_loader_continuation_journal_blocked")
         if _status(custom_loader_execution_preflight) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("custom_loader_execution_preflight_blocked")
         if _status(custom_loader_execution_result) in {"failed", "failure", "error", "unsupported"}:
@@ -155,16 +164,22 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("custom_loader_module_diff_blocked")
         custom_loader_plan_status = _nested_status(custom_loader_traversal_plan, "plan")
         custom_loader_continuation_workflow_status = _nested_status(custom_loader_continuation_workflow, "workflow")
+        custom_loader_continuation_journal_status = _nested_status(custom_loader_continuation_journal, "journal")
         custom_loader_preflight_status = _nested_status(custom_loader_execution_preflight, "preflight")
         custom_loader_module_diff_status = _nested_status(custom_loader_module_diff, "diff")
         ready_continuation_count = _intish(custom_loader_traversal_plan.get("ready_continuation_count") or _nested_get(custom_loader_traversal_plan, "plan", "ready_continuation_count"))
         if ready_continuation_count and not custom_loader_continuation_workflow and not custom_loader_execution_preflight:
             warnings.append("custom_loader_continuation_workflow_required")
-        if custom_loader_continuation_workflow and not custom_loader_execution_preflight and (
+        if custom_loader_continuation_workflow and not custom_loader_continuation_journal and not custom_loader_execution_preflight and (
             _status(custom_loader_continuation_workflow) in {"ready_for_review", "approved_for_preflight"}
             or custom_loader_continuation_workflow_status in {"ready_for_review", "approved_for_preflight"}
         ):
             warnings.append("custom_loader_continuation_workflow_requires_review")
+        if custom_loader_continuation_journal and not custom_loader_execution_preflight and (
+            _status(custom_loader_continuation_journal) == "ready_for_review"
+            or custom_loader_continuation_journal_status == "ready_for_review"
+        ):
+            warnings.append("custom_loader_continuation_journal_requires_review")
         if custom_loader_traversal_plan and (
             _status(custom_loader_traversal_plan) in {"ready_for_review", "planned"}
             or custom_loader_plan_status == "ready_for_review"
@@ -248,6 +263,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or async_chunk_diff_status,
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or custom_loader_plan_status,
                 "custom_loader_continuation_workflow_status": _status(custom_loader_continuation_workflow) or custom_loader_continuation_workflow_status,
+                "custom_loader_continuation_journal_status": _status(custom_loader_continuation_journal) or custom_loader_continuation_journal_status,
+                "custom_loader_continuation_journal_record_count": _intish(custom_loader_continuation_journal.get("record_count") or _nested_get(custom_loader_continuation_journal, "journal", "record_count")),
                 "custom_loader_execution_preflight_status": _status(custom_loader_execution_preflight) or custom_loader_preflight_status,
                 "custom_loader_execution_result_status": _status(custom_loader_execution_result),
                 "custom_loader_module_diff_status": _status(custom_loader_module_diff) or custom_loader_module_diff_status,
@@ -259,6 +276,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "custom_loader_traversal_previous_execution_count": _intish(custom_loader_traversal_plan.get("previous_execution_count") or _nested_get(custom_loader_traversal_plan, "plan", "previous_execution_count")),
                 "custom_loader_continuation_workflow_selected_candidate_index": _nested_get(custom_loader_continuation_workflow, "workflow", "selected_candidate_index") if custom_loader_continuation_workflow else None,
                 "custom_loader_continuation_workflow_review_approved": bool(custom_loader_continuation_workflow.get("review_approved") or _nested_get(custom_loader_continuation_workflow, "workflow", "review_approved")),
+                "custom_loader_continuation_journal_writes_journal": bool(custom_loader_continuation_journal.get("writes_journal_now") or _nested_get(custom_loader_continuation_journal, "journal", "writes_journal_now")),
                 "custom_loader_execution_attempted": bool(custom_loader_execution_result.get("execution", {}).get("attempted") if isinstance(custom_loader_execution_result.get("execution"), dict) else custom_loader_execution_result.get("execution_attempted", False)),
                 "custom_loader_execution_loader_invoked": bool(custom_loader_execution_result.get("execution", {}).get("loaderInvoked") if isinstance(custom_loader_execution_result.get("execution"), dict) else custom_loader_execution_result.get("loader_invoked", False)),
                 "custom_loader_execution_added_registry_key_count": len(_listish(custom_loader_execution_result.get("addedRegistryKeys") or custom_loader_execution_result.get("added_registry_keys") or _nested_get(custom_loader_execution_result, "execution", "addedRegistryKeys"))),
@@ -306,6 +324,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 async_chunk_module_diff,
                 custom_loader_traversal_plan,
                 custom_loader_continuation_workflow,
+                custom_loader_continuation_journal,
                 custom_loader_execution_preflight,
                 custom_loader_execution_result,
                 custom_loader_module_diff,
@@ -467,6 +486,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "inspect_custom_loader_execution_failure"
     if "custom_loader_continuation_workflow_blocked" in blockers:
         return "revise_custom_loader_continuation_workflow_inputs"
+    if "custom_loader_continuation_journal_blocked" in blockers:
+        return "revise_custom_loader_continuation_journal_inputs"
     if "custom_loader_execution_preflight_blocked" in blockers:
         return "resolve_custom_loader_preflight_blockers"
     if "custom_loader_traversal_plan_blocked" in blockers:
@@ -495,6 +516,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "plan_custom_loader_continuation_workflow"
     if "custom_loader_continuation_workflow_requires_review" in warnings:
         return "review_custom_loader_continuation_workflow"
+    if "custom_loader_continuation_journal_requires_review" in warnings:
+        return "review_custom_loader_continuation_journal_append"
     if "custom_loader_execution_requires_review" in warnings:
         return "execute_custom_loader_with_review_approval"
     if "custom_loader_module_diff_required" in warnings:
@@ -529,6 +552,7 @@ def _review_required_items(
     async_chunk_module_diff: dict[str, Any],
     custom_loader_traversal_plan: dict[str, Any],
     custom_loader_continuation_workflow: dict[str, Any],
+    custom_loader_continuation_journal: dict[str, Any],
     custom_loader_execution_preflight: dict[str, Any],
     custom_loader_execution_result: dict[str, Any],
     custom_loader_module_diff: dict[str, Any],
@@ -552,6 +576,7 @@ def _review_required_items(
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),
                 "custom_loader_traversal_plan_status": _status(custom_loader_traversal_plan) or _nested_status(custom_loader_traversal_plan, "plan"),
                 "custom_loader_continuation_workflow_status": _status(custom_loader_continuation_workflow) or _nested_status(custom_loader_continuation_workflow, "workflow"),
+                "custom_loader_continuation_journal_status": _status(custom_loader_continuation_journal) or _nested_status(custom_loader_continuation_journal, "journal"),
                 "custom_loader_execution_preflight_status": _status(custom_loader_execution_preflight) or _nested_status(custom_loader_execution_preflight, "preflight"),
                 "custom_loader_execution_result_status": _status(custom_loader_execution_result),
                 "custom_loader_module_diff_status": _status(custom_loader_module_diff) or _nested_status(custom_loader_module_diff, "diff"),
@@ -566,6 +591,7 @@ def _review_required_items(
                 "async_chunk_module_diff_error": str(async_chunk_module_diff.get("error") or ""),
                 "custom_loader_traversal_error": str(custom_loader_traversal_plan.get("error") or ""),
                 "custom_loader_continuation_workflow_error": str(custom_loader_continuation_workflow.get("error") or ""),
+                "custom_loader_continuation_journal_error": str(custom_loader_continuation_journal.get("error") or ""),
                 "custom_loader_execution_error": str(custom_loader_execution_result.get("error") or custom_loader_execution_preflight.get("error") or ""),
                 "custom_loader_module_diff_error": str(custom_loader_module_diff.get("error") or ""),
                 "module_federation_get_init_error": str(module_federation_get_init_result.get("error") or module_federation_get_init_plan.get("error") or ""),

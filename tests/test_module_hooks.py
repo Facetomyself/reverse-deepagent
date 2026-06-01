@@ -9,6 +9,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
     CustomLoaderExecutionManager,
+    CustomLoaderContinuationJournalManager,
+    CustomLoaderContinuationJournalSpec,
     CustomLoaderContinuationWorkflowManager,
     CustomLoaderContinuationWorkflowSpec,
     CustomLoaderExecutionPreflightManager,
@@ -508,6 +510,105 @@ class CustomLoaderContinuationWorkflowManagerTests(unittest.TestCase):
         self.assertEqual(result.reason, "custom_loader_candidate_already_executed")
         self.assertIn("custom_loader_candidate_already_executed", result.workflow["blocking_reasons"])
         self.assertFalse(result.side_effect_policy["custom_loader_executed"])
+
+
+class CustomLoaderContinuationJournalManagerTests(unittest.TestCase):
+    def _workflow(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-continuation-workflow.v1",
+            "workflow_id": "unit-continuation",
+            "status": "ready_for_review",
+            "review_required": True,
+            "selected_candidate_index": 1,
+            "selected_candidate": {
+                "index": 1,
+                "status": "ready_for_review",
+                "classification": "arbitrary_custom_loader",
+                "loader_path": "window.__customLoader.loadChild",
+                "target": "window.__customLoader.loadChild",
+                "chunk_id": "custom-sign-child",
+                "fingerprint": "window.__customLoader.loadChild|window.__customLoader.loadChild|custom-sign-child",
+                "continuation_supported": True,
+            },
+        }
+
+    def test_plans_append_only_journal_entry_without_writing_by_default(self) -> None:
+        spec = CustomLoaderContinuationJournalSpec.from_context(
+            {
+                "custom_loader_continuation_journal": True,
+                "custom_loader_continuation_workflow": self._workflow(),
+                "reviewer": "analyst",
+            }
+        )
+
+        result = CustomLoaderContinuationJournalManager().plan_or_append(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.journal["schema_version"], "reverse-deepagent.custom-loader-continuation-journal.v1")
+        self.assertFalse(result.journal["writes_journal_now"])
+        self.assertEqual(result.journal["record_count"], 0)
+        self.assertEqual(result.entry["stage_status"], "planned_continuation_recorded")
+        self.assertEqual(result.entry["reviewer"], "analyst")
+        self.assertFalse(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["custom_loader_executed"])
+
+    def test_review_approved_append_records_execution_artifacts_without_running_them(self) -> None:
+        spec = CustomLoaderContinuationJournalSpec.from_context(
+            {
+                "custom_loader_continuation_workflow": self._workflow(),
+                "write_journal": True,
+                "review_approved": True,
+                "custom_loader_execution_result": {
+                    "status": "success",
+                    "execution": {"attempted": True, "ok": True, "loaderInvoked": True},
+                },
+                "custom_loader_module_diff": {"status": "planned", "diff": {"matched_module_count": 1}},
+                "module_hooks": {"status": "success", "installed": [{"hookPath": "window.__webpack_require__(42).sign"}]},
+            }
+        )
+
+        result = CustomLoaderContinuationJournalManager().plan_or_append(spec)
+
+        self.assertEqual(result.status, "journal_appended")
+        self.assertTrue(result.journal["writes_journal_now"])
+        self.assertEqual(result.journal["record_count"], 1)
+        self.assertEqual(result.journal["records"][0]["stage_status"], "module_hook_result_recorded")
+        self.assertTrue(result.journal["records"][0]["artifact_status"]["execution_success"])
+        self.assertTrue(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+
+    def test_blocks_duplicate_or_unapproved_journal_append(self) -> None:
+        workflow = self._workflow()
+        existing = {
+            "records": [
+                {
+                    "workflow_id": "unit-continuation",
+                    "candidate_fingerprint": "window.__customLoader.loadChild|window.__customLoader.loadChild|custom-sign-child",
+                }
+            ]
+        }
+
+        unapproved = CustomLoaderContinuationJournalManager().plan_or_append(
+            CustomLoaderContinuationJournalSpec.from_context(
+                {"custom_loader_continuation_workflow": workflow, "write_journal": True}
+            )
+        )
+        duplicate = CustomLoaderContinuationJournalManager().plan_or_append(
+            CustomLoaderContinuationJournalSpec.from_context(
+                {
+                    "custom_loader_continuation_workflow": workflow,
+                    "custom_loader_continuation_journal": existing,
+                    "write_journal": True,
+                    "review_approved": True,
+                }
+            )
+        )
+
+        self.assertEqual(unapproved.status, "blocked")
+        self.assertIn("review_approval_required", unapproved.journal["blocking_reasons"])
+        self.assertEqual(duplicate.status, "blocked")
+        self.assertIn("custom_loader_continuation_journal_duplicate_entry", duplicate.journal["blocking_reasons"])
 
 
 class CustomLoaderExecutionPreflightManagerTests(unittest.TestCase):

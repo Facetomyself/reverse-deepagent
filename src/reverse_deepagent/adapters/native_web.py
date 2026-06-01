@@ -15,6 +15,8 @@ from reverse_deepagent.browser.hooks import (
     AsyncChunkModuleHookManager,
     AsyncChunkModuleHookSpec,
     CustomLoaderExecutionManager,
+    CustomLoaderContinuationJournalManager,
+    CustomLoaderContinuationJournalSpec,
     CustomLoaderContinuationWorkflowManager,
     CustomLoaderContinuationWorkflowSpec,
     CustomLoaderExecutionPreflightManager,
@@ -1696,6 +1698,63 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_continuation_journal_request(protection_name, context):
+            spec = CustomLoaderContinuationJournalSpec.from_context(context)
+            result = CustomLoaderContinuationJournalManager().plan_or_append(spec)
+            journal = result.journal if isinstance(result.journal, dict) else {}
+            entry = result.entry if isinstance(result.entry, dict) else {}
+            verification = [
+                f"custom_loader_continuation_journal_status={result.status}",
+                f"custom_loader_continuation_journal_reason={result.reason or ''}",
+                f"custom_loader_continuation_journal_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"custom_loader_continuation_journal_writes_journal={result.side_effect_policy.get('writes_journal', False)}",
+                f"custom_loader_continuation_journal_record_count={journal.get('record_count', 0)}",
+                f"custom_loader_continuation_journal_stage_status={entry.get('stage_status', '')}",
+                f"custom_loader_continuation_journal_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-continuation-journal.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated custom loader continuation journal.",
+                    metadata={
+                        "status": result.status,
+                        "journal_status": journal.get("status"),
+                        "record_count": journal.get("record_count", 0),
+                        "existing_record_count": journal.get("existing_record_count", 0),
+                        "selected_candidate_index": entry.get("selected_candidate_index"),
+                        "candidate_fingerprint": entry.get("candidate_fingerprint"),
+                        "stage_status": entry.get("stage_status"),
+                        "review_required": journal.get("review_required", True),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                        "writes_journal": result.side_effect_policy.get("writes_journal", False),
+                        "blocking_count": len(journal.get("blocking_reasons") or []),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                next_action = journal.get("next_action", "review_custom_loader_continuation_journal_append")
+                applied_actions = ["append_custom_loader_continuation_journal"] if result.status == "journal_appended" else ["plan_custom_loader_continuation_journal_append"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = journal.get("next_action", "revise_custom_loader_continuation_journal_inputs")
+                applied_actions = ["plan_custom_loader_continuation_journal_append"]
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_continuation_journal_request"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "journal_appended"} else ConfidenceLevel.LOW,
+            )
         if self._is_custom_loader_continuation_workflow_request(protection_name, context):
             spec = CustomLoaderContinuationWorkflowSpec.from_context(context)
             result = CustomLoaderContinuationWorkflowManager().plan(spec)
@@ -2934,6 +2993,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 "custom-loader-continuation-workflow",
                 "plan_custom_loader_continuation_workflow",
                 "planCustomLoaderContinuationWorkflow",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_continuation_journal_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-continuation-journal",
+            "append-custom-loader-continuation-journal",
+            "custom-loader-continuation-journal-append",
+            "review-custom-loader-continuation-journal",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_continuation_journal",
+                "customLoaderContinuationJournal",
+                "custom-loader-continuation-journal",
+                "append_custom_loader_continuation_journal",
+                "appendCustomLoaderContinuationJournal",
             )
         )
 
