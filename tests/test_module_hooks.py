@@ -24,6 +24,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderModuleHookSpec,
     CustomLoaderTraversalGraphManager,
     CustomLoaderTraversalGraphSpec,
+    CustomLoaderTraversalWorkflowPlanManager,
+    CustomLoaderTraversalWorkflowPlanSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
@@ -541,6 +543,80 @@ class CustomLoaderTraversalGraphManagerTests(unittest.TestCase):
         self.assertEqual(result.graph["queue_count"], 0)
         self.assertEqual(result.graph["duplicate_executed_count"], 2)
         self.assertEqual(result.graph["next_action"], "custom_loader_traversal_graph_complete_or_provide_new_candidates")
+
+
+class CustomLoaderTraversalWorkflowPlanManagerTests(unittest.TestCase):
+    def _graph(self, *, status: str = "ready_for_review", queue: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        queue = queue if queue is not None else [
+            {
+                "node_id": "custom-loader-node-1",
+                "candidate_index": 1,
+                "loader_path": "window.__customLoader.loadChild",
+                "target": "window.__customLoader.loadChild",
+                "chunk_id": "custom-sign-child",
+                "depth": 2,
+                "fingerprint": "window.__customLoader.loadChild|window.__customLoader.loadChild|custom-sign-child",
+                "queue_status": "ready_for_review",
+            }
+        ]
+        return {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-graph.v1",
+            "graph_id": "custom-loader-traversal-graph",
+            "status": status,
+            "queue_count": len(queue),
+            "depth_blocked_count": 0,
+            "review_queue": queue,
+        }
+
+    def test_builds_multi_step_workflow_plan_from_graph_queue_without_execution(self) -> None:
+        spec = CustomLoaderTraversalWorkflowPlanSpec.from_context(
+            {
+                "custom_loader_traversal_workflow_plan": True,
+                "custom_loader_traversal_graph": self._graph(),
+                "max_planned_steps": 1,
+            }
+        )
+
+        result = CustomLoaderTraversalWorkflowPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        plan = result.workflow_plan
+        self.assertEqual(plan["schema_version"], "reverse-deepagent.custom-loader-traversal-workflow-plan.v1")
+        self.assertEqual(plan["planned_step_count"], 1)
+        self.assertEqual(plan["planned_steps"][0]["candidate_index"], 1)
+        self.assertEqual(plan["planned_steps"][0]["references"]["continuation_execution_artifact"], "workspace/custom-loader-continuation-execution.json")
+        self.assertEqual(plan["next_action"], "review_custom_loader_traversal_workflow_plan")
+        self.assertTrue(plan["manual_checkpoint_required"])
+        self.assertTrue(plan["execute_at_most_one_loader_step_per_review"])
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["preflight_executed"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["custom_loader_executed"])
+        self.assertFalse(result.side_effect_policy["module_diff_executed"])
+        self.assertFalse(result.side_effect_policy["module_hook_installed"])
+        self.assertFalse(result.side_effect_policy["writes_journal"])
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_blocks_without_traversal_graph(self) -> None:
+        result = CustomLoaderTraversalWorkflowPlanManager().plan(
+            CustomLoaderTraversalWorkflowPlanSpec.from_context({"custom_loader_traversal_workflow_plan": True})
+        )
+
+        self.assertEqual(result.status, "unsupported")
+        self.assertEqual(result.reason, "missing_custom_loader_traversal_graph")
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+
+    def test_marks_complete_when_graph_is_complete(self) -> None:
+        result = CustomLoaderTraversalWorkflowPlanManager().plan(
+            CustomLoaderTraversalWorkflowPlanSpec.from_context({"custom_loader_traversal_graph": self._graph(status="complete", queue=[])})
+        )
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.workflow_plan["planned_step_count"], 0)
+        self.assertEqual(result.workflow_plan["next_action"], "custom_loader_traversal_graph_complete_or_provide_new_candidates")
+
 
 
 class CustomLoaderContinuationWorkflowManagerTests(unittest.TestCase):

@@ -1233,6 +1233,69 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.next_action, "review_custom_loader_traversal_depth_before_continuing")
         self.assertEqual(result.artifacts[0].metadata["depth_blocked_count"], 1)
 
+
+    def test_native_web_runtime_plans_custom_loader_traversal_workflow_plan_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "custom-loader-traversal-workflow-plan",
+            {
+                "custom_loader_traversal_graph": {
+                    "schema_version": "reverse-deepagent.custom-loader-traversal-graph.v1",
+                    "status": "ready_for_review",
+                    "queue_count": 1,
+                    "review_queue": [
+                        {
+                            "node_id": "custom-loader-node-1",
+                            "candidate_index": 1,
+                            "loader_path": "window.__customLoader.loadChild",
+                            "target": "window.__customLoader.loadChild",
+                            "chunk_id": "custom-sign-child",
+                            "depth": 2,
+                            "queue_status": "ready_for_review",
+                        }
+                    ],
+                }
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_traversal_workflow"])
+        self.assertEqual(page.custom_loader_executions, [])
+        self.assertIn("custom_loader_traversal_workflow_plan_status=ready_for_review", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_plan_planned_step_count=1", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_plan_automatic_recursive_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_custom_loader_traversal_workflow_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/custom-loader-traversal-workflow-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["planned_step_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+
+    def test_native_web_runtime_blocks_custom_loader_traversal_workflow_plan_without_queue(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "plan-custom-loader-traversal-workflow",
+            {
+                "custom_loader_traversal_graph": {
+                    "schema_version": "reverse-deepagent.custom-loader-traversal-graph.v1",
+                    "status": "blocked",
+                    "queue_count": 0,
+                    "depth_blocked_count": 1,
+                    "review_queue": [],
+                }
+            },
+        )
+
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, ["plan_custom_loader_traversal_workflow"])
+        self.assertIn("custom_loader_traversal_workflow_plan_status=blocked", result.verification)
+        self.assertIn("custom_loader_traversal_workflow_plan_reason=custom_loader_traversal_graph_blocked", result.verification)
+        self.assertEqual(result.next_action, "revise_custom_loader_traversal_graph_inputs")
+        self.assertEqual(result.artifacts[0].metadata["planned_step_count"], 0)
+
+
     def test_native_web_runtime_plans_custom_loader_continuation_workflow_without_execution(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

@@ -30,6 +30,8 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderModuleHookSpec,
     CustomLoaderTraversalGraphManager,
     CustomLoaderTraversalGraphSpec,
+    CustomLoaderTraversalWorkflowPlanManager,
+    CustomLoaderTraversalWorkflowPlanSpec,
     CustomLoaderTraversalPlanManager,
     CustomLoaderTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
@@ -1703,6 +1705,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
             )
+        if self._is_custom_loader_traversal_workflow_plan_request(protection_name, context):
+            spec = CustomLoaderTraversalWorkflowPlanSpec.from_context(context)
+            result = CustomLoaderTraversalWorkflowPlanManager().plan(spec)
+            workflow_plan = result.workflow_plan if isinstance(result.workflow_plan, dict) else {}
+            verification = [
+                f"custom_loader_traversal_workflow_plan_status={result.status}",
+                f"custom_loader_traversal_workflow_plan_reason={result.reason or ''}",
+                f"custom_loader_traversal_workflow_plan_planned_step_count={workflow_plan.get('planned_step_count', 0)}",
+                f"custom_loader_traversal_workflow_plan_source_graph_queue_count={workflow_plan.get('source_graph_queue_count', 0)}",
+                f"custom_loader_traversal_workflow_plan_manual_checkpoint_required={result.side_effect_policy.get('manual_checkpoint_required', True)}",
+                f"custom_loader_traversal_workflow_plan_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-workflow-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only multi-step custom loader traversal workflow plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_plan_status": workflow_plan.get("status"),
+                        "planned_step_count": workflow_plan.get("planned_step_count", 0),
+                        "source_graph_status": workflow_plan.get("source_graph_status"),
+                        "source_graph_queue_count": workflow_plan.get("source_graph_queue_count", 0),
+                        "max_planned_steps": workflow_plan.get("max_planned_steps"),
+                        "next_action": workflow_plan.get("next_action"),
+                        "manual_checkpoint_required": result.side_effect_policy.get("manual_checkpoint_required", True),
+                        "execute_at_most_one_loader_step_per_review": result.side_effect_policy.get("execute_at_most_one_loader_step_per_review", True),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "review_custom_loader_traversal_workflow_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "provide_custom_loader_traversal_graph_with_queue")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_custom_loader_traversal_workflow_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
         if self._is_custom_loader_traversal_graph_request(protection_name, context):
             spec = CustomLoaderTraversalGraphSpec.from_context(context)
             result = CustomLoaderTraversalGraphManager().plan(spec)
@@ -3138,6 +3194,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "custom-loader-continuation-execution",
                 "execute_custom_loader_continuation_step",
                 "executeCustomLoaderContinuationStep",
+            )
+        )
+
+    @staticmethod
+    def _is_custom_loader_traversal_workflow_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "custom-loader-traversal-workflow-plan",
+            "custom-loader-deep-traversal-workflow",
+            "plan-custom-loader-traversal-workflow",
+            "custom-loader-multi-step-traversal-plan",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "custom_loader_traversal_workflow_plan",
+                "customLoaderTraversalWorkflowPlan",
+                "custom-loader-traversal-workflow-plan",
+                "custom_loader_deep_traversal_workflow",
+                "customLoaderDeepTraversalWorkflow",
+                "plan_custom_loader_traversal_workflow",
+                "planCustomLoaderTraversalWorkflow",
             )
         )
 

@@ -1734,6 +1734,267 @@ class CustomLoaderTraversalGraphManager:
 
 
 @dataclass(slots=True)
+class CustomLoaderTraversalWorkflowPlanSpec:
+    """Review-only multi-step workflow planner over a custom-loader traversal graph."""
+
+    traversal_graph: dict[str, Any] = field(default_factory=dict)
+    max_planned_steps: int = 3
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "CustomLoaderTraversalWorkflowPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("custom_loader_traversal_workflow_plan")
+            or context.get("customLoaderTraversalWorkflowPlan")
+            or context.get("custom-loader-traversal-workflow-plan")
+            or context.get("custom_loader_deep_traversal_workflow")
+            or context.get("customLoaderDeepTraversalWorkflow")
+            or context.get("plan_custom_loader_traversal_workflow")
+            or context.get("planCustomLoaderTraversalWorkflow")
+        )
+        graph = (
+            context.get("custom_loader_traversal_graph")
+            or context.get("customLoaderTraversalGraph")
+            or context.get("custom-loader-traversal-graph")
+            or context.get("traversal_graph")
+            or context.get("traversalGraph")
+        )
+        if isinstance(graph, dict) and isinstance(graph.get("graph"), dict):
+            graph = graph["graph"]
+        if not isinstance(graph, dict):
+            return None if not requested else cls()
+        return cls(
+            traversal_graph=dict(graph),
+            max_planned_steps=max(1, int(context.get("max_planned_steps", context.get("maxPlannedSteps", 3)) or 3)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class CustomLoaderTraversalWorkflowPlanResult:
+    status: str
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "workflow_plan": self.workflow_plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class CustomLoaderTraversalWorkflowPlanManager:
+    """Compose bounded review-only workflow steps from a traversal graph queue."""
+
+    def plan(self, spec: CustomLoaderTraversalWorkflowPlanSpec | None) -> CustomLoaderTraversalWorkflowPlanResult:
+        policy = self._side_effect_policy()
+        if spec is None or not spec.traversal_graph:
+            return CustomLoaderTraversalWorkflowPlanResult(status="unsupported", reason="missing_custom_loader_traversal_graph", side_effect_policy=policy)
+        graph = spec.traversal_graph
+        graph_status = str(graph.get("status") or "").strip()
+        queue = self._review_queue(graph)
+        if graph_status == "complete":
+            status = "complete"
+            reason = None
+            selected_queue: list[dict[str, Any]] = []
+        elif not queue:
+            status = "blocked"
+            reason = self._blocked_reason(graph)
+            selected_queue = []
+        else:
+            status = "ready_for_review"
+            reason = None
+            selected_queue = queue[: spec.max_planned_steps]
+        planned_steps = [self._planned_step(item, step_index=index, spec=spec) for index, item in enumerate(selected_queue)]
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.custom-loader-traversal-workflow-plan.v1",
+            "status": status,
+            "reason": reason,
+            "plan_id": "custom-loader-traversal-workflow-plan",
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "execute_at_most_one_loader_step_per_review": True,
+            "source_graph_id": graph.get("graph_id", "custom-loader-traversal-graph"),
+            "source_graph_status": graph_status,
+            "source_graph_queue_count": int(graph.get("queue_count") or len(queue)),
+            "source_graph_depth_blocked_count": int(graph.get("depth_blocked_count") or 0),
+            "max_planned_steps": spec.max_planned_steps,
+            "planned_step_count": len(planned_steps),
+            "planned_steps": planned_steps,
+            "workflow_sequence": self._workflow_sequence(),
+            "blocking_reasons": [reason] if reason else [],
+            "next_action": self._next_action(status=status, reason=reason),
+            "side_effect_policy": policy,
+        }
+        return CustomLoaderTraversalWorkflowPlanResult(status=status, workflow_plan=workflow_plan, side_effect_policy=policy, reason=reason)
+
+    @classmethod
+    def _review_queue(cls, graph: dict[str, Any]) -> list[dict[str, Any]]:
+        queue = graph.get("review_queue")
+        if isinstance(queue, list):
+            return [dict(item) for item in queue if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _blocked_reason(graph: dict[str, Any]) -> str:
+        graph_status = str(graph.get("status") or "").strip()
+        if graph_status in {"blocked", "unsupported", "failed", "failure", "error"}:
+            return "custom_loader_traversal_graph_blocked"
+        if int(graph.get("depth_blocked_count") or 0):
+            return "custom_loader_traversal_depth_review_required"
+        return "no_custom_loader_traversal_queue"
+
+    @classmethod
+    def _planned_step(cls, queue_item: dict[str, Any], *, step_index: int, spec: CustomLoaderTraversalWorkflowPlanSpec) -> dict[str, Any]:
+        loader_path = str(queue_item.get("loader_path") or queue_item.get("loaderPath") or queue_item.get("target") or "")[: spec.max_preview_length]
+        target = str(queue_item.get("target") or loader_path)[: spec.max_preview_length]
+        chunk_id = str(queue_item.get("chunk_id") or queue_item.get("chunkId") or target)[: spec.max_preview_length]
+        return {
+            "step_index": step_index,
+            "step_id": f"custom-loader-traversal-step-{step_index}",
+            "queue_node_id": queue_item.get("node_id"),
+            "candidate_index": queue_item.get("candidate_index", queue_item.get("index", step_index)),
+            "candidate_fingerprint": queue_item.get("fingerprint"),
+            "loader_path": loader_path,
+            "target": target,
+            "chunk_id": chunk_id,
+            "depth": queue_item.get("depth"),
+            "queue_status": queue_item.get("queue_status"),
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "automatic_execution": False,
+            "execute_at_most_one_loader_step_per_review": True,
+            "references": {
+                "traversal_graph_artifact": "workspace/custom-loader-traversal-graph.json",
+                "continuation_workflow_artifact": "workspace/custom-loader-continuation-workflow.json",
+                "execution_preflight_artifact": "workspace/custom-loader-execution-preflight.json",
+                "continuation_execution_artifact": "workspace/custom-loader-continuation-execution.json",
+                "module_diff_artifact": "workspace/custom-loader-module-diff.json",
+                "module_hook_artifact": "workspace/module-hooks.json",
+                "continuation_journal_artifact": "workspace/custom-loader-continuation-journal.json",
+            },
+            "review_sequence": cls._workflow_sequence(),
+            "next_action": "review_custom_loader_traversal_workflow_step",
+        }
+
+    @staticmethod
+    def _workflow_sequence() -> list[dict[str, Any]]:
+        return [
+            {
+                "order": 1,
+                "action": "select_one_review_queue_candidate",
+                "input_artifact": "workspace/custom-loader-traversal-graph.json",
+                "output_artifact": None,
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 2,
+                "action": "plan_custom_loader_continuation_workflow",
+                "input_artifact": "workspace/custom-loader-traversal-plan.json",
+                "output_artifact": "workspace/custom-loader-continuation-workflow.json",
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 3,
+                "action": "run_custom_loader_execution_preflight",
+                "input_artifact": "workspace/custom-loader-continuation-workflow.json",
+                "output_artifact": "workspace/custom-loader-execution-preflight.json",
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 4,
+                "action": "execute_one_reviewed_custom_loader_continuation_step",
+                "input_artifact": "workspace/custom-loader-execution-preflight.json",
+                "output_artifact": "workspace/custom-loader-continuation-execution.json",
+                "review_required": True,
+                "executes_runtime": True,
+                "requires_review_approved": True,
+            },
+            {
+                "order": 5,
+                "action": "run_custom_loader_module_diff_after_reviewed_execution",
+                "input_artifact": "workspace/custom-loader-continuation-execution.json",
+                "output_artifact": "workspace/custom-loader-module-diff.json",
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 6,
+                "action": "optionally_install_reviewed_custom_loader_module_hook",
+                "input_artifact": "workspace/custom-loader-module-diff.json",
+                "output_artifact": "workspace/module-hooks.json",
+                "review_required": True,
+                "executes_runtime": True,
+                "requires_review_approved": True,
+            },
+            {
+                "order": 7,
+                "action": "append_custom_loader_continuation_journal",
+                "input_artifact": "workspace/custom-loader-continuation-execution.json",
+                "output_artifact": "workspace/custom-loader-continuation-journal.json",
+                "review_required": True,
+                "executes_runtime": False,
+                "requires_review_approved": True,
+            },
+            {
+                "order": 8,
+                "action": "rebuild_custom_loader_traversal_graph_after_new_evidence",
+                "input_artifact": "workspace/custom-loader-continuation-journal.json",
+                "output_artifact": "workspace/custom-loader-traversal-graph.json",
+                "review_required": True,
+                "executes_runtime": False,
+            },
+            {
+                "order": 9,
+                "action": "stop_before_recursive_execution_and_request_next_review",
+                "input_artifact": "workspace/custom-loader-traversal-graph.json",
+                "output_artifact": None,
+                "review_required": True,
+                "executes_runtime": False,
+            },
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, reason: str | None) -> str:
+        if status == "ready_for_review":
+            return "review_custom_loader_traversal_workflow_plan"
+        if status == "complete":
+            return "custom_loader_traversal_graph_complete_or_provide_new_candidates"
+        if reason == "custom_loader_traversal_depth_review_required":
+            return "review_custom_loader_traversal_depth_before_continuing"
+        if reason == "custom_loader_traversal_graph_blocked":
+            return "revise_custom_loader_traversal_graph_inputs"
+        return "provide_custom_loader_traversal_graph_with_queue"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "execute_at_most_one_loader_step_per_review": True,
+            "preflight_executed": False,
+            "loader_invoked": False,
+            "custom_loader_executed": False,
+            "module_diff_executed": False,
+            "module_hook_installed": False,
+            "writes_journal": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class CustomLoaderExecutionPreflightSpec:
     """Side-effect-free preflight for a reviewed custom loader execution candidate."""
 
