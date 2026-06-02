@@ -162,6 +162,18 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "module-federation-export-hook-plan",
             "moduleFederationExportHookPlan",
         )
+        module_federation_traversal_graph = _object_alias(
+            payload,
+            "module_federation_traversal_graph",
+            "module-federation-traversal-graph",
+            "moduleFederationTraversalGraph",
+        )
+        module_federation_traversal_workflow_plan = _object_alias(
+            payload,
+            "module_federation_traversal_workflow_plan",
+            "module-federation-traversal-workflow-plan",
+            "moduleFederationTraversalWorkflowPlan",
+        )
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -214,6 +226,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_get_init_result,
                 module_federation_factory_invoke_result,
                 module_federation_export_hook_plan,
+                module_federation_traversal_graph,
+                module_federation_traversal_workflow_plan,
             )
         ) + sum(bool(items) for items in (module_candidates, function_candidates))
         if not artifact_count:
@@ -382,6 +396,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("module_federation_factory_invoke_failed")
         if _status(module_federation_export_hook_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("module_federation_export_hook_plan_blocked")
+        if _status(module_federation_traversal_graph) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("module_federation_traversal_graph_blocked")
+        if _status(module_federation_traversal_workflow_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("module_federation_traversal_workflow_plan_blocked")
         federation_plan_status = _nested_status(module_federation_get_init_plan, "plan")
         if module_federation_get_init_plan and (
             _status(module_federation_get_init_plan) in {"ready_for_review", "planned"}
@@ -400,6 +418,18 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             or export_hook_plan_status == "ready_for_review"
         ):
             warnings.append("module_federation_export_hook_plan_requires_review")
+        federation_traversal_graph_status = _nested_status(module_federation_traversal_graph, "graph")
+        if module_federation_traversal_graph and not module_federation_traversal_workflow_plan and (
+            _status(module_federation_traversal_graph) == "ready_for_review"
+            or federation_traversal_graph_status == "ready_for_review"
+        ):
+            warnings.append("module_federation_traversal_graph_requires_review")
+        federation_traversal_workflow_status = _nested_status(module_federation_traversal_workflow_plan, "workflow_plan")
+        if module_federation_traversal_workflow_plan and (
+            _status(module_federation_traversal_workflow_plan) == "ready_for_review"
+            or federation_traversal_workflow_status == "ready_for_review"
+        ):
+            warnings.append("module_federation_traversal_workflow_plan_requires_review")
         if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
             warnings.append("async_chunk_load_requires_review")
         async_chunk_diff_status = _nested_status(async_chunk_module_diff, "diff")
@@ -567,6 +597,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "module_federation_factory_export_count": len(_listish(federation_factory_execution.get("exportNames") or module_federation_factory_invoke_result.get("export_names"))),
                 "module_federation_export_hook_candidate_count": _intish(module_federation_export_hook_plan.get("candidate_count") or _nested_get(module_federation_export_hook_plan, "plan", "candidate_count")),
                 "module_federation_export_hook_hookable_candidate_count": _intish(module_federation_export_hook_plan.get("hookable_candidate_count") or _nested_get(module_federation_export_hook_plan, "plan", "hookable_candidate_count")),
+                "module_federation_traversal_graph_status": _status(module_federation_traversal_graph) or _nested_status(module_federation_traversal_graph, "graph"),
+                "module_federation_traversal_graph_queue_count": _intish(module_federation_traversal_graph.get("queue_count") or _nested_get(module_federation_traversal_graph, "graph", "queue_count")),
+                "module_federation_traversal_workflow_plan_status": _status(module_federation_traversal_workflow_plan) or _nested_status(module_federation_traversal_workflow_plan, "workflow_plan"),
+                "module_federation_traversal_workflow_planned_step_count": _intish(module_federation_traversal_workflow_plan.get("planned_step_count") or _nested_get(module_federation_traversal_workflow_plan, "workflow_plan", "planned_step_count")),
                 "async_chunk_load_execution_attempted": bool(async_chunk_result.get("execution", {}).get("attempted") if isinstance(async_chunk_result.get("execution"), dict) else async_chunk_result.get("execution_attempted", False)),
                 "async_chunk_load_added_registry_key_count": len(_listish(async_chunk_result.get("addedRegistryKeys") or async_chunk_result.get("added_registry_keys"))),
                 "async_chunk_module_diff_matched_module_count": _intish(async_chunk_module_diff.get("matched_module_count") or _nested_get(async_chunk_module_diff, "diff", "matched_module_count")),
@@ -762,6 +796,10 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "inspect_module_federation_factory_invoke_failure"
     if "module_federation_export_hook_plan_blocked" in blockers:
         return "inspect_remote_export_shapes_before_hooking"
+    if "module_federation_traversal_graph_blocked" in blockers:
+        return "provide_module_federation_traversal_inputs"
+    if "module_federation_traversal_workflow_plan_blocked" in blockers:
+        return "revise_module_federation_traversal_workflow_plan_inputs"
     if "custom_loader_execution_failed" in blockers:
         return "inspect_custom_loader_execution_failure"
     if "custom_loader_traversal_loop_execution_blocked" in blockers:
@@ -822,6 +860,10 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_module_federation_factory_exports_before_hooking"
     if "module_federation_export_hook_plan_requires_review" in warnings:
         return "review_module_federation_export_hook_plan"
+    if "module_federation_traversal_graph_requires_review" in warnings:
+        return "review_module_federation_traversal_graph"
+    if "module_federation_traversal_workflow_plan_requires_review" in warnings:
+        return "review_module_federation_traversal_workflow_plan"
     if "custom_loader_traversal_requires_review" in warnings:
         return "review_custom_loader_traversal_plan"
     if "custom_loader_traversal_loop_plan_requires_review" in warnings:

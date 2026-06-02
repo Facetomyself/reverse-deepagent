@@ -816,6 +816,52 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["summary"]["module_federation_factory_export_count"], 1)
         self.assertEqual(result["review_required_items"][0]["module_federation_factory_invoke_result_status"], "success")
 
+
+    def test_review_hook_artifacts_warns_for_module_federation_traversal_graph(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_traversal_graph": {
+                "status": "ready_for_review",
+                "graph": {
+                    "status": "ready_for_review",
+                    "queue_count": 1,
+                    "next_action": "review_module_federation_traversal_workflow_plan",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_traversal_graph_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_traversal_graph")
+        self.assertEqual(result["summary"]["module_federation_traversal_graph_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["module_federation_traversal_graph_queue_count"], 1)
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_hook_artifacts_warns_for_module_federation_traversal_workflow_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_traversal_workflow_plan": {
+                "status": "ready_for_review",
+                "workflow_plan": {
+                    "status": "ready_for_review",
+                    "planned_step_count": 1,
+                    "next_action": "review_module_federation_traversal_workflow_plan",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_traversal_workflow_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_traversal_workflow_plan")
+        self.assertEqual(result["summary"]["module_federation_traversal_workflow_plan_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["module_federation_traversal_workflow_planned_step_count"], 1)
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+
     def test_review_hook_artifacts_warns_for_module_federation_export_hook_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

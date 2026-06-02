@@ -68,6 +68,10 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationExportHookInstallSpec,
     ModuleFederationFactoryInvokeManager,
     ModuleFederationFactoryInvokeSpec,
+    ModuleFederationTraversalGraphManager,
+    ModuleFederationTraversalGraphSpec,
+    ModuleFederationTraversalWorkflowPlanManager,
+    ModuleFederationTraversalWorkflowPlanSpec,
     ModuleFederationGetInitPlanManager,
     ModuleFederationGetInitPlanSpec,
     ModuleFederationGetInitProbeManager,
@@ -1326,6 +1330,112 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_traversal_graph_request(protection_name, context):
+            spec = ModuleFederationTraversalGraphSpec.from_context(context)
+            result = ModuleFederationTraversalGraphManager().build(spec)
+            graph = result.graph if isinstance(result.graph, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"module_federation_traversal_graph_status={result.status}",
+                f"module_federation_traversal_graph_reason={result.reason or ''}",
+                f"module_federation_traversal_graph_node_count={graph.get('node_count', 0)}",
+                f"module_federation_traversal_graph_queue_count={graph.get('queue_count', 0)}",
+                f"module_federation_traversal_graph_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_traversal_graph_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_traversal_graph_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_traversal_graph_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-traversal-graph.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Module Federation traversal graph.",
+                    metadata={
+                        "status": result.status,
+                        "graph_status": graph.get("status"),
+                        "node_count": graph.get("node_count", 0),
+                        "queue_count": graph.get("queue_count", 0),
+                        "review_required": graph.get("review_required", True),
+                        "plan_only": policy.get("plan_only", True),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_module_federation_traversal_graph"]
+                next_action = graph.get("next_action", "review_module_federation_traversal_graph")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_traversal_graph"]
+                next_action = graph.get("next_action", "provide_module_federation_traversal_inputs")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_module_federation_traversal_graph_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_traversal_workflow_plan_request(protection_name, context):
+            spec = ModuleFederationTraversalWorkflowPlanSpec.from_context(context)
+            result = ModuleFederationTraversalWorkflowPlanManager().plan(spec)
+            workflow_plan = result.workflow_plan if isinstance(result.workflow_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"module_federation_traversal_workflow_plan_status={result.status}",
+                f"module_federation_traversal_workflow_plan_reason={result.reason or ''}",
+                f"module_federation_traversal_workflow_planned_step_count={workflow_plan.get('planned_step_count', 0)}",
+                f"module_federation_traversal_workflow_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_traversal_workflow_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_traversal_workflow_executed={policy.get('workflow_executed', False)}",
+                f"module_federation_traversal_workflow_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-traversal-workflow-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Module Federation traversal workflow plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_plan_status": workflow_plan.get("status"),
+                        "planned_step_count": workflow_plan.get("planned_step_count", 0),
+                        "review_required": workflow_plan.get("review_required", True),
+                        "plan_only": policy.get("plan_only", True),
+                        "workflow_executed": policy.get("workflow_executed", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_module_federation_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "review_module_federation_traversal_workflow_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "provide_module_federation_traversal_graph")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_module_federation_traversal_workflow_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_get_init_request(protection_name, context):
             if self._is_module_federation_export_hook_install_request(protection_name, context):
@@ -3932,6 +4042,70 @@ class NativeWebRuntime(WebReverseRuntime):
                 "moduleDiscovery",
                 "module_query",
                 "moduleQuery",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_traversal_graph_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "module-federation-traversal-workflow-plan",
+            "module-federation-remote-traversal-workflow-plan",
+            "federation-traversal-workflow-plan",
+            "remote-module-traversal-workflow-plan",
+            "plan-module-federation-traversal-workflow",
+        } or any(key in context for key in (
+            "module_federation_traversal_workflow_plan",
+            "moduleFederationTraversalWorkflowPlan",
+            "module-federation-traversal-workflow-plan",
+            "federation_traversal_workflow_plan",
+            "federationTraversalWorkflowPlan",
+            "plan_module_federation_traversal_workflow",
+            "planModuleFederationTraversalWorkflow",
+        )):
+            return False
+        if normalized in {
+            "module-federation-traversal-graph",
+            "module-federation-remote-traversal-graph",
+            "federation-traversal-graph",
+            "remote-module-traversal-graph",
+            "plan-module-federation-traversal-graph",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "module_federation_traversal_graph",
+                "moduleFederationTraversalGraph",
+                "module-federation-traversal-graph",
+                "federation_traversal_graph",
+                "federationTraversalGraph",
+                "remote_module_traversal_graph",
+                "remoteModuleTraversalGraph",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_traversal_workflow_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "module-federation-traversal-workflow-plan",
+            "module-federation-remote-traversal-workflow-plan",
+            "federation-traversal-workflow-plan",
+            "remote-module-traversal-workflow-plan",
+            "plan-module-federation-traversal-workflow",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "module_federation_traversal_workflow_plan",
+                "moduleFederationTraversalWorkflowPlan",
+                "module-federation-traversal-workflow-plan",
+                "federation_traversal_workflow_plan",
+                "federationTraversalWorkflowPlan",
+                "plan_module_federation_traversal_workflow",
+                "planModuleFederationTraversalWorkflow",
             )
         )
 

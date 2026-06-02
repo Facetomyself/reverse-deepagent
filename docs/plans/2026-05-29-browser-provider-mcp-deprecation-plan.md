@@ -416,7 +416,7 @@ The MCP deprecation path is complete when:
 
 ## Current active execution snapshot
 
-See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-158 is implemented through the review-gated async chunk recursive traversal checkpoint / follow-up / next-loop execution baseline after the review-gated bounded async chunk traversal loop execution baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
+See `.codex/plans/browser-provider-mcp-deprecation-plan.md` for the detailed execution records. Current status: Phase 0-159 is implemented through the review-only Module Federation traversal graph / workflow plan baseline after the review-gated async chunk recursive traversal checkpoint / follow-up / next-loop execution baseline. The remaining active work is capability-gated Web / BrowserProvider / workspace / delivery hardening; Android / iOS / mini-program full runtime chains remain deferred.
 
 
 Step 19 execution record: materialization transaction log baseline is implemented as transaction-log-only output with `auto_stitch_materialization_transactions`, `auto_stitch_materialization_transaction_summary`, and `virtual://workspace/stitched-flow-materialization-transactions.json`; it aggregates result / audit / rollback-plan links but does not execute rollback or recompute review gates.
@@ -1552,3 +1552,16 @@ Status: implemented as the async-chunk counterpart to the custom-loader recursiv
 Boundary: this closes the reviewed async recursive checkpoint baseline after bounded loop execution. It does not recurse until exhaustion, does not automatically rebuild graph after execution, does not automatically replan workflow after execution, does not create another loop plan after execution, does not advance the queue automatically, does not call MCP, and does not touch Android / iOS / mini-program full runtime chains. Deeper automatic or multi-iteration recursive async chunk traversal remains capability-gated follow-up work.
 
 Tests cover manager-level plan-only / reviewed followup / reviewed next-loop execution / approval blocking behavior, native-web route metadata and no-automatic-recursion behavior, workspace route aliasing, coordinator payload extraction / category mapping, hook-subagent review warning wiring, and related module / native-web / workspace / coordinator / hook regressions.
+
+
+### Step 159：Review-only Module Federation traversal graph / workflow plan baseline
+
+Status: implemented as a review-only federation traversal graph and workflow planning baseline, not recursive federation execution, default recon behavior, automatic `container.init/get`, remote factory invocation, remote export hook installation, MCP integration, or Android / iOS / mini-program full runtime chain.
+
+`ModuleFederationTraversalGraphManager` consumes existing Module Federation get/init plan evidence, optional get/init probe / factory invoke / export hook plan evidence, and emits `reverse-deepagent.module-federation-traversal-graph.v1`. It builds review-only remote-module, remote-factory, remote-export, nested-container-candidate, and remote-export-hook-candidate nodes plus a bounded `review_queue` while keeping side-effect policy fields such as `remote_factory_invoked=false`, `remote_code_executed=false`, `automatic_queue_advance=false`, and `recursive_federation_traversal=false`.
+
+`ModuleFederationTraversalWorkflowPlanManager` consumes the traversal graph queue and emits `reverse-deepagent.module-federation-traversal-workflow-plan.v1`, composing review steps such as reviewing factory invocation, preferring existing function-path candidates, reviewing nested container candidates, and reviewing export hook plans. The workflow is plan-only: it does not call providers, evaluate JavaScript, mutate shared scope, install hooks, advance the queue, or recurse.
+
+`native-web` exposes this through explicit `module-federation-traversal-graph` / `module-federation-remote-traversal-graph` and `module-federation-traversal-workflow-plan` / `plan-module-federation-traversal-workflow` protection names. The workspace contract indexes `workspace/module-federation-traversal-graph.json` and `workspace/module-federation-traversal-workflow-plan.json` under `/workspace/runtime/`; coordinator extraction / artifact category mapping classify both as `triage`; hook review summarizes queue / step counts and warns when either artifact still needs review.
+
+Boundary: this closes only the review-only traversal planning surface for remote modules. It does not execute `container.init`, call `container.get`, invoke remote factories, install remote export hooks, rebuild a graph after execution, run recursive loops, call MCP, or touch Android / iOS / mini-program full runtime chains. Deeper federation traversal execution remains capability-gated follow-up work.

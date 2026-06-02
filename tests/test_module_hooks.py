@@ -58,6 +58,10 @@ from reverse_deepagent.browser.hooks import (
     CustomLoaderTraversalPlanSpec,
     ModuleFederationFactoryInvokeManager,
     ModuleFederationFactoryInvokeSpec,
+    ModuleFederationTraversalGraphManager,
+    ModuleFederationTraversalGraphSpec,
+    ModuleFederationTraversalWorkflowPlanManager,
+    ModuleFederationTraversalWorkflowPlanSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
     ModuleFederationExportHookInstallManager,
@@ -1764,6 +1768,139 @@ class ModuleFederationGetInitPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.reason, "no_module_federation_candidates")
         self.assertEqual(result.plan["status"], "blocked")
         self.assertEqual(result.plan["next_action"], "provide_module_federation_candidates_from_module_discovery")
+
+
+class ModuleFederationTraversalGraphManagerTests(unittest.TestCase):
+    def _get_init_plan(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.module-federation-get-init-plan.v1",
+            "status": "ready_for_review",
+            "candidates": [
+                {
+                    "index": 0,
+                    "status": "ready_for_review",
+                    "container_path": "window.remoteApp",
+                    "exposed_name": "./sign",
+                    "module_id": "./sign",
+                    "function_path_candidate_available": False,
+                    "export_names": [],
+                },
+                {
+                    "index": 1,
+                    "status": "ready_for_review",
+                    "container_path": "window.remoteDirect",
+                    "exposed_name": "./token",
+                    "module_id": "./token",
+                    "function_path_candidate_available": True,
+                    "hook_paths": ["window.remoteDirect.__exposes.token"],
+                },
+            ],
+        }
+
+    def _factory_result(self) -> dict[str, Any]:
+        return {
+            "status": "success",
+            "factory_execution": {
+                "attempted": True,
+                "ok": True,
+                "remoteFactoryInvoked": True,
+                "remoteCodeExecuted": True,
+                "containerPath": "window.remoteApp",
+                "exposedName": "./sign",
+                "moduleType": "object",
+                "exportNames": ["sign", "nestedRemote"],
+                "exportPreviews": {
+                    "sign": {"type": "function", "name": "sign"},
+                    "nestedRemote": {"type": "object", "keys": ["get", "init"]},
+                },
+            },
+        }
+
+    def test_builds_review_only_federation_traversal_graph_from_get_init_plan(self) -> None:
+        spec = ModuleFederationTraversalGraphSpec.from_context(
+            {
+                "module_federation_traversal_graph": True,
+                "module_federation_get_init_plan": self._get_init_plan(),
+            }
+        )
+
+        result = ModuleFederationTraversalGraphManager().build(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.graph["schema_version"], "reverse-deepagent.module-federation-traversal-graph.v1")
+        self.assertEqual(result.graph["node_count"], 2)
+        self.assertEqual(result.graph["queue_count"], 2)
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+        statuses = {node["exposed_name"]: node["status"] for node in result.graph["nodes"]}
+        self.assertEqual(statuses["./sign"], "requires_factory_review")
+        self.assertEqual(statuses["./token"], "function_path_available")
+
+    def test_builds_nested_remote_container_candidate_from_factory_result(self) -> None:
+        spec = ModuleFederationTraversalGraphSpec.from_context(
+            {
+                "module_federation_traversal_graph": True,
+                "module_federation_factory_invoke_result": self._factory_result(),
+            }
+        )
+
+        result = ModuleFederationTraversalGraphManager().build(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        nested = [node for node in result.graph["nodes"] if node.get("export_name") == "nestedRemote"]
+        self.assertEqual(nested[0]["status"], "nested_container_candidate")
+        self.assertEqual(result.graph["review_queue"][0]["next_action"], "review_nested_module_federation_container_candidate")
+
+    def test_blocks_without_federation_traversal_inputs(self) -> None:
+        result = ModuleFederationTraversalGraphManager().build(
+            ModuleFederationTraversalGraphSpec.from_context({"module_federation_traversal_graph": True})
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "missing_module_federation_traversal_inputs")
+
+
+class ModuleFederationTraversalWorkflowPlanManagerTests(unittest.TestCase):
+    def test_plans_review_only_workflow_from_federation_graph_queue(self) -> None:
+        graph = ModuleFederationTraversalGraphManager().build(
+            ModuleFederationTraversalGraphSpec.from_context(
+                {
+                    "module_federation_traversal_graph": True,
+                    "module_federation_get_init_plan": ModuleFederationTraversalGraphManagerTests()._get_init_plan(),
+                }
+            )
+        ).graph
+        spec = ModuleFederationTraversalWorkflowPlanSpec.from_context(
+            {
+                "module_federation_traversal_workflow_plan": True,
+                "module_federation_traversal_graph": graph,
+            }
+        )
+
+        result = ModuleFederationTraversalWorkflowPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.workflow_plan["schema_version"], "reverse-deepagent.module-federation-traversal-workflow-plan.v1")
+        self.assertEqual(result.workflow_plan["planned_step_count"], 2)
+        self.assertEqual(result.workflow_plan["planned_steps"][0]["action"], "review_module_federation_factory_invoke_for_traversal")
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["workflow_executed"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_workflow_plan_completes_when_graph_queue_is_empty(self) -> None:
+        spec = ModuleFederationTraversalWorkflowPlanSpec.from_context(
+            {
+                "module_federation_traversal_workflow_plan": True,
+                "module_federation_traversal_graph": {"status": "complete", "nodes": [], "review_queue": []},
+            }
+        )
+
+        result = ModuleFederationTraversalWorkflowPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.workflow_plan["planned_step_count"], 0)
+        self.assertEqual(result.workflow_plan["next_action"], "module_federation_traversal_complete_or_provide_more_evidence")
 
 
 class ModuleFederationGetInitProbeManagerTests(unittest.TestCase):

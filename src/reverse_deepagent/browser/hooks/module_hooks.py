@@ -4270,6 +4270,495 @@ class CustomLoaderExecutionManager:
 """
 
 
+def _first_dict(context: dict[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        value = context.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+    return {}
+
+
+def _list_dicts(value: Any) -> list[dict[str, Any]]:
+    return [dict(item) for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _string_list(value: Any) -> list[str]:
+    return [str(item) for item in value if item is not None] if isinstance(value, list) else []
+
+
+def _clip(value: Any, max_length: int) -> str:
+    return str(value or "").strip()[: max(1, max_length)]
+
+
+@dataclass(slots=True)
+class ModuleFederationTraversalGraphSpec:
+    """Review-only Module Federation remote traversal graph request."""
+
+    get_init_plan: dict[str, Any] = field(default_factory=dict)
+    get_init_result: dict[str, Any] = field(default_factory=dict)
+    factory_invoke_result: dict[str, Any] = field(default_factory=dict)
+    export_hook_plan: dict[str, Any] = field(default_factory=dict)
+    previous_graph: dict[str, Any] = field(default_factory=dict)
+    max_queue_size: int = 20
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationTraversalGraphSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("module_federation_traversal_graph")
+            or context.get("moduleFederationTraversalGraph")
+            or context.get("module-federation-traversal-graph")
+            or context.get("federation_traversal_graph")
+            or context.get("federationTraversalGraph")
+            or context.get("remote_module_traversal_graph")
+            or context.get("remoteModuleTraversalGraph")
+        )
+        get_init_plan = _first_dict(
+            context,
+            "module_federation_get_init_plan",
+            "moduleFederationGetInitPlan",
+            "module-federation-get-init-plan",
+            "get_init_plan",
+            "getInitPlan",
+        )
+        get_init_result = _first_dict(
+            context,
+            "module_federation_get_init_result",
+            "moduleFederationGetInitResult",
+            "module-federation-get-init-result",
+            "get_init_result",
+            "getInitResult",
+        )
+        factory_invoke_result = _first_dict(
+            context,
+            "module_federation_factory_invoke_result",
+            "moduleFederationFactoryInvokeResult",
+            "module-federation-factory-invoke-result",
+            "factory_invoke_result",
+            "factoryInvokeResult",
+        )
+        export_hook_plan = _first_dict(
+            context,
+            "module_federation_export_hook_plan",
+            "moduleFederationExportHookPlan",
+            "module-federation-export-hook-plan",
+            "export_hook_plan",
+            "exportHookPlan",
+        )
+        previous_graph = _first_dict(
+            context,
+            "previous_module_federation_traversal_graph",
+            "previousModuleFederationTraversalGraph",
+            "module_federation_traversal_graph_previous",
+            "moduleFederationTraversalGraphPrevious",
+        )
+        if not any((get_init_plan, get_init_result, factory_invoke_result, export_hook_plan, previous_graph)) and not requested:
+            return None
+        return cls(
+            get_init_plan=get_init_plan,
+            get_init_result=get_init_result,
+            factory_invoke_result=factory_invoke_result,
+            export_hook_plan=export_hook_plan,
+            previous_graph=previous_graph,
+            max_queue_size=max(1, int(context.get("max_queue_size", context.get("maxQueueSize", 20)) or 20)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationTraversalGraphResult:
+    status: str
+    graph: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "graph": self.graph,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ModuleFederationTraversalGraphManager:
+    """Build a review-only traversal graph for Module Federation remotes."""
+
+    def build(self, spec: ModuleFederationTraversalGraphSpec | None) -> ModuleFederationTraversalGraphResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return ModuleFederationTraversalGraphResult(status="unsupported", reason="missing_module_federation_traversal_graph_request", side_effect_policy=policy)
+
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
+        queue: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for candidate in self._candidate_records(spec.get_init_plan):
+            node = self._candidate_node(candidate, spec=spec)
+            self._add_node(node, nodes=nodes, queue=queue, seen=seen, max_queue_size=spec.max_queue_size)
+
+        factory_execution = self._factory_execution(spec.factory_invoke_result)
+        if factory_execution:
+            factory_node = self._factory_node(factory_execution, spec=spec)
+            self._add_node(factory_node, nodes=nodes, queue=queue, seen=seen, max_queue_size=spec.max_queue_size)
+            for export_node in self._export_nodes(factory_execution, spec=spec):
+                self._add_node(export_node, nodes=nodes, queue=queue, seen=seen, max_queue_size=spec.max_queue_size)
+                edges.append({"from": factory_node["node_id"], "to": export_node["node_id"], "edge_type": "remote-export"})
+
+        export_plan = self._plan_payload(spec.export_hook_plan)
+        for hook_candidate in _list_dicts(export_plan.get("candidates")):
+            hook_node = self._hook_candidate_node(hook_candidate, spec=spec)
+            self._add_node(hook_node, nodes=nodes, queue=queue, seen=seen, max_queue_size=spec.max_queue_size)
+
+        if not nodes:
+            graph = self._graph_payload(spec=spec, status="blocked", reason="missing_module_federation_traversal_inputs", nodes=[], edges=[], queue=[])
+            return ModuleFederationTraversalGraphResult(status="blocked", graph=graph, side_effect_policy=policy, reason="missing_module_federation_traversal_inputs")
+
+        queue = queue[: spec.max_queue_size]
+        status = "ready_for_review" if queue else "complete"
+        graph = self._graph_payload(spec=spec, status=status, reason=None, nodes=nodes, edges=edges, queue=queue)
+        return ModuleFederationTraversalGraphResult(status=status, graph=graph, side_effect_policy=policy)
+
+    @classmethod
+    def _candidate_records(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        plan = cls._plan_payload(payload)
+        return _list_dicts(plan.get("candidates"))
+
+    @staticmethod
+    def _plan_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(payload.get("plan"), dict):
+            return payload["plan"]
+        if isinstance(payload.get("traversal_graph"), dict):
+            return payload["traversal_graph"]
+        if isinstance(payload.get("graph"), dict):
+            return payload["graph"]
+        return payload if isinstance(payload, dict) else {}
+
+    @classmethod
+    def _factory_execution(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(payload.get("factory_execution"), dict):
+            return payload["factory_execution"]
+        if isinstance(payload.get("factoryExecution"), dict):
+            return payload["factoryExecution"]
+        if payload.get("remoteFactoryInvoked") is not None or payload.get("exportNames") is not None:
+            return payload
+        return {}
+
+    @classmethod
+    def _candidate_node(cls, candidate: dict[str, Any], *, spec: ModuleFederationTraversalGraphSpec) -> dict[str, Any]:
+        container_path = _clip(candidate.get("container_path") or candidate.get("containerPath") or candidate.get("runtime_path") or candidate.get("runtimePath"), spec.max_preview_length)
+        exposed_name = _clip(candidate.get("exposed_name") or candidate.get("exposedName") or candidate.get("module_id") or candidate.get("moduleId"), spec.max_preview_length)
+        node_id = cls._node_id("remote-module", container_path, exposed_name)
+        candidate_status = str(candidate.get("status") or "ready_for_review")
+        if candidate_status == "blocked":
+            status = "blocked"
+            next_action = "resolve_module_federation_candidate_blockers"
+            blocking_reasons = _string_list(candidate.get("blocking_reasons") or candidate.get("blockingReasons")) or ["module_federation_candidate_blocked"]
+        elif bool(candidate.get("function_path_candidate_available") or candidate.get("functionPathCandidateAvailable")):
+            status = "function_path_available"
+            next_action = "review_existing_function_path_candidate_before_remote_execution"
+            blocking_reasons = ["prefer_existing_function_path_candidate"]
+        else:
+            status = "requires_factory_review"
+            next_action = "review_module_federation_factory_invoke_before_deeper_traversal"
+            blocking_reasons = ["remote_factory_execution_requires_review"]
+        return {
+            "node_id": node_id,
+            "node_type": "remote-module-candidate",
+            "status": status,
+            "container_path": container_path,
+            "exposed_name": exposed_name,
+            "remote_name": _clip(candidate.get("remote_name") or candidate.get("remoteName"), spec.max_preview_length),
+            "export_names": _string_list(candidate.get("export_names") or candidate.get("exportNames"))[:20],
+            "hook_paths": _string_list(candidate.get("hook_paths") or candidate.get("hookPaths"))[:20],
+            "discovery_source": str(candidate.get("discovery_source") or candidate.get("discoverySource") or "unknown"),
+            "queueable": status in {"requires_factory_review", "function_path_available"},
+            "next_action": next_action,
+            "blocking_reasons": blocking_reasons,
+            "review_required": True,
+            "executes_remote_code_now": False,
+            "automatic_traversal": False,
+        }
+
+    @classmethod
+    def _factory_node(cls, execution: dict[str, Any], *, spec: ModuleFederationTraversalGraphSpec) -> dict[str, Any]:
+        container_path = _clip(execution.get("containerPath") or execution.get("container_path"), spec.max_preview_length)
+        exposed_name = _clip(execution.get("exposedName") or execution.get("exposed_name"), spec.max_preview_length)
+        export_names = _string_list(execution.get("exportNames") or execution.get("export_names"))[:50]
+        return {
+            "node_id": cls._node_id("factory", container_path, exposed_name),
+            "node_type": "remote-factory-result",
+            "status": "factory_invoked" if execution.get("remoteFactoryInvoked") else "factory_not_invoked",
+            "container_path": container_path,
+            "exposed_name": exposed_name,
+            "module_type": str(execution.get("moduleType") or execution.get("module_type") or ""),
+            "export_names": export_names,
+            "export_count": len(export_names),
+            "queueable": False,
+            "next_action": "plan_module_federation_export_hooks_or_nested_remote_candidates",
+            "review_required": False,
+            "executes_remote_code_now": False,
+            "automatic_traversal": False,
+        }
+
+    @classmethod
+    def _export_nodes(cls, execution: dict[str, Any], *, spec: ModuleFederationTraversalGraphSpec) -> list[dict[str, Any]]:
+        container_path = _clip(execution.get("containerPath") or execution.get("container_path"), spec.max_preview_length)
+        exposed_name = _clip(execution.get("exposedName") or execution.get("exposed_name"), spec.max_preview_length)
+        previews = execution.get("exportPreviews") if isinstance(execution.get("exportPreviews"), dict) else {}
+        nodes: list[dict[str, Any]] = []
+        for export_name in _string_list(execution.get("exportNames") or execution.get("export_names"))[:50]:
+            preview = previews.get(export_name) if isinstance(previews.get(export_name), dict) else {}
+            keys = _string_list(preview.get("keys"))
+            looks_like_container = {"get", "init"}.issubset(set(keys))
+            status = "nested_container_candidate" if looks_like_container else "export_observed"
+            next_action = "review_nested_module_federation_container_candidate" if looks_like_container else "review_remote_export_hook_or_manual_inspection"
+            nodes.append(
+                {
+                    "node_id": cls._node_id("export", container_path, exposed_name, export_name),
+                    "node_type": "remote-export",
+                    "status": status,
+                    "container_path": container_path,
+                    "exposed_name": exposed_name,
+                    "export_name": export_name,
+                    "export_type": str(preview.get("type") or "unknown"),
+                    "export_keys": keys[:20],
+                    "queueable": looks_like_container,
+                    "next_action": next_action,
+                    "blocking_reasons": ["nested_container_requires_separate_get_init_review"] if looks_like_container else [],
+                    "review_required": looks_like_container,
+                    "executes_remote_code_now": False,
+                    "automatic_traversal": False,
+                }
+            )
+        return nodes
+
+    @classmethod
+    def _hook_candidate_node(cls, candidate: dict[str, Any], *, spec: ModuleFederationTraversalGraphSpec) -> dict[str, Any]:
+        container_path = _clip(candidate.get("container_path") or candidate.get("containerPath"), spec.max_preview_length)
+        exposed_name = _clip(candidate.get("exposed_name") or candidate.get("exposedName"), spec.max_preview_length)
+        export_name = _clip(candidate.get("export_name") or candidate.get("exportName"), spec.max_preview_length)
+        hookable = bool(candidate.get("hookable", False))
+        return {
+            "node_id": cls._node_id("hook", container_path, exposed_name, export_name),
+            "node_type": "remote-export-hook-candidate",
+            "status": "hook_review_ready" if hookable else "manual_inspection_required",
+            "container_path": container_path,
+            "exposed_name": exposed_name,
+            "export_name": export_name,
+            "hook_kind": str(candidate.get("hook_kind") or candidate.get("hookKind") or ""),
+            "queueable": hookable,
+            "next_action": "review_module_federation_export_hook_plan" if hookable else "inspect_remote_export_shape",
+            "blocking_reasons": [] if hookable else _string_list(candidate.get("blocking_reasons") or candidate.get("blockingReasons")),
+            "review_required": True,
+            "executes_remote_code_now": False,
+            "automatic_traversal": False,
+        }
+
+    @classmethod
+    def _add_node(cls, node: dict[str, Any], *, nodes: list[dict[str, Any]], queue: list[dict[str, Any]], seen: set[str], max_queue_size: int) -> None:
+        node_id = str(node.get("node_id") or "")
+        if not node_id or node_id in seen:
+            return
+        seen.add(node_id)
+        nodes.append(node)
+        if node.get("queueable") and len(queue) < max_queue_size:
+            queue.append(
+                {
+                    "queue_index": len(queue),
+                    "node_id": node_id,
+                    "node_type": node.get("node_type"),
+                    "status": node.get("status"),
+                    "next_action": node.get("next_action"),
+                    "review_required": True,
+                    "executes_remote_code_now": False,
+                    "automatic_execution": False,
+                }
+            )
+
+    @staticmethod
+    def _node_id(*parts: str) -> str:
+        cleaned = [str(part or "").strip() for part in parts]
+        return ":".join(cleaned)
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "container_init_executed": False,
+            "remote_get_called": False,
+            "remote_factory_invoked": False,
+            "remote_code_executed": False,
+            "shared_scope_mutated": False,
+            "export_hook_installed": False,
+            "recursive_federation_traversal": False,
+            "automatic_queue_advance": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @classmethod
+    def _graph_payload(cls, *, spec: ModuleFederationTraversalGraphSpec, status: str, reason: str | None, nodes: list[dict[str, Any]], edges: list[dict[str, Any]], queue: list[dict[str, Any]]) -> dict[str, Any]:
+        policy = cls._side_effect_policy()
+        return {
+            "schema_version": "reverse-deepagent.module-federation-traversal-graph.v1",
+            "status": status,
+            "reason": reason,
+            "review_required": True,
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "queue_count": len(queue),
+            "max_queue_size": spec.max_queue_size,
+            "nodes": nodes,
+            "edges": edges,
+            "review_queue": queue,
+            "side_effect_policy": policy,
+            "next_action": "review_module_federation_traversal_workflow_plan" if queue else "module_federation_traversal_complete_or_provide_more_evidence",
+        }
+
+
+@dataclass(slots=True)
+class ModuleFederationTraversalWorkflowPlanSpec:
+    """Review-only workflow planner for one or more federation traversal graph queue entries."""
+
+    traversal_graph: dict[str, Any] = field(default_factory=dict)
+    max_steps: int = 5
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationTraversalWorkflowPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("module_federation_traversal_workflow_plan")
+            or context.get("moduleFederationTraversalWorkflowPlan")
+            or context.get("module-federation-traversal-workflow-plan")
+            or context.get("federation_traversal_workflow_plan")
+            or context.get("federationTraversalWorkflowPlan")
+            or context.get("plan_module_federation_traversal_workflow")
+            or context.get("planModuleFederationTraversalWorkflow")
+        )
+        graph = _first_dict(
+            context,
+            "module_federation_traversal_graph",
+            "moduleFederationTraversalGraph",
+            "module-federation-traversal-graph",
+            "traversal_graph",
+            "traversalGraph",
+        )
+        if isinstance(graph.get("graph"), dict):
+            graph = graph["graph"]
+        if not graph and not requested:
+            return None
+        return cls(
+            traversal_graph=graph,
+            max_steps=max(1, int(context.get("max_steps", context.get("maxSteps", 5)) or 5)),
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationTraversalWorkflowPlanResult:
+    status: str
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "workflow_plan": self.workflow_plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ModuleFederationTraversalWorkflowPlanManager:
+    """Turn a federation traversal graph queue into review-only workflow steps."""
+
+    def plan(self, spec: ModuleFederationTraversalWorkflowPlanSpec | None) -> ModuleFederationTraversalWorkflowPlanResult:
+        policy = self._side_effect_policy()
+        if spec is None or not spec.traversal_graph:
+            return ModuleFederationTraversalWorkflowPlanResult(status="unsupported", reason="missing_module_federation_traversal_graph", side_effect_policy=policy)
+        queue = _list_dicts(spec.traversal_graph.get("review_queue"))[: spec.max_steps]
+        nodes = {str(node.get("node_id")): node for node in _list_dicts(spec.traversal_graph.get("nodes"))}
+        if not queue:
+            workflow_plan = self._workflow_payload(spec=spec, status="complete", reason=None, steps=[], policy=policy)
+            return ModuleFederationTraversalWorkflowPlanResult(status="complete", workflow_plan=workflow_plan, side_effect_policy=policy)
+        steps = [self._step_for_queue_item(item, node=nodes.get(str(item.get("node_id")), {}), index=index) for index, item in enumerate(queue)]
+        workflow_plan = self._workflow_payload(spec=spec, status="ready_for_review", reason=None, steps=steps, policy=policy)
+        return ModuleFederationTraversalWorkflowPlanResult(status="ready_for_review", workflow_plan=workflow_plan, side_effect_policy=policy)
+
+    @staticmethod
+    def _step_for_queue_item(item: dict[str, Any], *, node: dict[str, Any], index: int) -> dict[str, Any]:
+        node_type = str(node.get("node_type") or item.get("node_type") or "")
+        node_status = str(node.get("status") or item.get("status") or "")
+        action = "review_module_federation_traversal_node"
+        required_artifact = "workspace/module-federation-traversal-graph.json"
+        output_artifact = None
+        if node_type == "remote-module-candidate" and node_status == "requires_factory_review":
+            action = "review_module_federation_factory_invoke_for_traversal"
+            output_artifact = "workspace/module-federation-factory-invoke-result.json"
+        elif node_type == "remote-module-candidate" and node_status == "function_path_available":
+            action = "review_existing_function_path_candidate_before_remote_execution"
+            output_artifact = "workspace/function-candidates.json"
+        elif node_type == "remote-export-hook-candidate":
+            action = "review_module_federation_export_hook_plan_for_traversal"
+            output_artifact = "workspace/function-hooks.json"
+        elif node_type == "remote-export" and node_status == "nested_container_candidate":
+            action = "review_nested_module_federation_container_candidate"
+            output_artifact = "workspace/module-federation-get-init-plan.json"
+        return {
+            "step_index": index,
+            "node_id": item.get("node_id"),
+            "node_type": node_type,
+            "node_status": node_status,
+            "action": action,
+            "input_artifact": required_artifact,
+            "output_artifact": output_artifact,
+            "review_required": True,
+            "executes_remote_code_now": False,
+            "automatic_execution": False,
+            "blocking_reasons": _string_list(node.get("blocking_reasons") or item.get("blocking_reasons")),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "plan_only": True,
+            "review_required": True,
+            "container_init_executed": False,
+            "remote_get_called": False,
+            "remote_factory_invoked": False,
+            "remote_code_executed": False,
+            "export_hook_installed": False,
+            "workflow_executed": False,
+            "automatic_queue_advance": False,
+            "recursive_federation_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @classmethod
+    def _workflow_payload(cls, *, spec: ModuleFederationTraversalWorkflowPlanSpec, status: str, reason: str | None, steps: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.module-federation-traversal-workflow-plan.v1",
+            "status": status,
+            "reason": reason,
+            "review_required": True,
+            "planned_step_count": len(steps),
+            "max_steps": spec.max_steps,
+            "planned_steps": steps,
+            "side_effect_policy": policy,
+            "next_action": "review_module_federation_traversal_workflow_plan" if steps else "module_federation_traversal_complete_or_provide_more_evidence",
+        }
+
+
+
 @dataclass(slots=True)
 class ModuleFederationGetInitPlanSpec:
     """Plan-only Module Federation container init/get analysis request."""
