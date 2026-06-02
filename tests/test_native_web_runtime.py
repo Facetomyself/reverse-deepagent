@@ -2962,6 +2962,50 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["workflow_executed"])
 
 
+
+    def test_native_web_runtime_executes_one_reviewed_module_federation_traversal_workflow_step(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.module-federation-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "planned_steps": [
+                {
+                    "step_index": 0,
+                    "node_id": "remote-module:window.remoteOther:./token",
+                    "node_type": "remote-module-candidate",
+                    "node_status": "requires_factory_review",
+                    "action": "review_module_federation_factory_invoke_for_traversal",
+                    "container_path": "window.remoteOther",
+                    "exposed_name": "./token",
+                    "node": {"container_path": "window.remoteOther", "exposed_name": "./token"},
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "module-federation-traversal-workflow-execution",
+            {
+                "module_federation_traversal_workflow_plan": workflow_plan,
+                "invoke_remote_factory": True,
+                "review_approved": True,
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_module_federation_traversal_workflow_step"])
+        self.assertEqual(page.module_federation_get_init_probes, ["./token"])
+        self.assertEqual(page.module_federation_factory_invocations, ["./token"])
+        self.assertIn("module_federation_traversal_workflow_execution_status=factory_invoke_success", result.verification)
+        self.assertIn("module_federation_traversal_workflow_execution_remote_factory_invoked=True", result.verification)
+        self.assertIn("module_federation_traversal_workflow_execution_automatic_queue_advance=False", result.verification)
+        self.assertIn("module_federation_traversal_workflow_execution_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "plan_module_federation_export_hook_after_reviewed_factory_invoke")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-traversal-workflow-execution.json")
+        self.assertTrue(result.artifacts[0].metadata["remote_factory_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_queue_advance"])
+
     def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

@@ -862,6 +862,32 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
 
+
+    def test_review_hook_artifacts_warns_for_module_federation_traversal_workflow_execution(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_traversal_workflow_execution": {
+                "status": "factory_invoke_success",
+                "execution": {
+                    "status": "factory_invoke_success",
+                    "stages": [{"stage": "invoke_one_reviewed_module_federation_remote_factory", "status": "success"}],
+                    "next_action": "plan_module_federation_export_hook_after_reviewed_factory_invoke",
+                    "module_federation_factory_invoke_result": {"factory_execution": {"remoteFactoryInvoked": True}},
+                },
+                "side_effect_policy": {"remote_factory_invoked": True, "export_hook_installed": False},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_traversal_workflow_execution_next_stage_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_traversal_workflow_execution_next_stage")
+        self.assertEqual(result["summary"]["module_federation_traversal_workflow_execution_status"], "factory_invoke_success")
+        self.assertEqual(result["summary"]["module_federation_traversal_workflow_execution_stage_count"], 1)
+        self.assertTrue(result["summary"]["module_federation_traversal_workflow_execution_remote_factory_invoked"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_review_hook_artifacts_warns_for_module_federation_export_hook_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

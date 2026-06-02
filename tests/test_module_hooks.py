@@ -62,6 +62,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationTraversalGraphSpec,
     ModuleFederationTraversalWorkflowPlanManager,
     ModuleFederationTraversalWorkflowPlanSpec,
+    ModuleFederationTraversalWorkflowExecutionManager,
+    ModuleFederationTraversalWorkflowExecutionSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
     ModuleFederationExportHookInstallManager,
@@ -1902,6 +1904,105 @@ class ModuleFederationTraversalWorkflowPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.workflow_plan["planned_step_count"], 0)
         self.assertEqual(result.workflow_plan["next_action"], "module_federation_traversal_complete_or_provide_more_evidence")
 
+
+
+
+class ModuleFederationTraversalWorkflowExecutionManagerTests(unittest.TestCase):
+    def _workflow_plan(self) -> dict[str, Any]:
+        graph = ModuleFederationTraversalGraphManager().build(
+            ModuleFederationTraversalGraphSpec.from_context(
+                {
+                    "module_federation_traversal_graph": True,
+                    "module_federation_get_init_plan": ModuleFederationTraversalGraphManagerTests()._get_init_plan(),
+                }
+            )
+        ).graph
+        return ModuleFederationTraversalWorkflowPlanManager().plan(
+            ModuleFederationTraversalWorkflowPlanSpec.from_context(
+                {"module_federation_traversal_workflow_plan": True, "module_federation_traversal_graph": graph}
+            )
+        ).workflow_plan
+
+    def test_plans_one_step_federation_traversal_execution_without_side_effects(self) -> None:
+        page = ModuleFederationFactoryPage()
+        spec = ModuleFederationTraversalWorkflowExecutionSpec.from_context(
+            {
+                "module_federation_traversal_workflow_execution": True,
+                "module_federation_traversal_workflow_plan": self._workflow_plan(),
+            }
+        )
+
+        result = ModuleFederationTraversalWorkflowExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.execution["schema_version"], "reverse-deepagent.module-federation-traversal-workflow-execution.v1")
+        self.assertEqual(result.execution["selected_step_index"], 0)
+        self.assertEqual(page.factory_invocations, [])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_invokes_one_reviewed_remote_factory_and_stops_before_queue_advance(self) -> None:
+        page = ModuleFederationFactoryPage()
+        spec = ModuleFederationTraversalWorkflowExecutionSpec.from_context(
+            {
+                "module_federation_traversal_workflow_execution": True,
+                "module_federation_traversal_workflow_plan": self._workflow_plan(),
+                "invoke_remote_factory": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ModuleFederationTraversalWorkflowExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "factory_invoke_success")
+        self.assertEqual(page.factory_invocations, ["./sign"])
+        self.assertTrue(result.side_effect_policy["remote_factory_invoked"])
+        self.assertTrue(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertEqual(result.execution["next_action"], "plan_module_federation_export_hook_after_reviewed_factory_invoke")
+
+    def test_blocks_remote_factory_invocation_without_review_approval(self) -> None:
+        result = ModuleFederationTraversalWorkflowExecutionManager().execute(
+            ModuleFederationFactoryPage(),
+            ModuleFederationTraversalWorkflowExecutionSpec.from_context(
+                {
+                    "module_federation_traversal_workflow_execution": True,
+                    "module_federation_traversal_workflow_plan": self._workflow_plan(),
+                    "invoke_remote_factory": True,
+                }
+            ),
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+
+    def test_plans_export_hook_from_observed_factory_result(self) -> None:
+        factory_result = ModuleFederationFactoryInvokeManager().plan_or_invoke(
+            ModuleFederationFactoryPage(),
+            ModuleFederationFactoryInvokeSpec.from_context(
+                {
+                    "module_federation_candidates": [{"container_path": "window.remoteApp", "exposed_name": "./sign"}],
+                    "execute_module_federation_factory": True,
+                    "review_approved": True,
+                }
+            ),
+        ).to_dict()
+        spec = ModuleFederationTraversalWorkflowExecutionSpec.from_context(
+            {
+                "module_federation_traversal_workflow_execution": True,
+                "module_federation_traversal_workflow_plan": self._workflow_plan(),
+                "module_federation_factory_invoke_result": factory_result,
+                "plan_export_hook": True,
+            }
+        )
+
+        result = ModuleFederationTraversalWorkflowExecutionManager().execute(ModuleFederationFactoryPage(), spec)
+
+        self.assertEqual(result.status, "export_hook_plan_ready")
+        self.assertEqual(result.execution["module_federation_export_hook_plan"]["plan"]["hookable_candidate_count"], 1)
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
 
 class ModuleFederationGetInitProbeManagerTests(unittest.TestCase):
     def test_module_federation_get_init_probe_plans_without_execute_flag(self) -> None:
