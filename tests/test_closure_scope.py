@@ -4,6 +4,8 @@ from reverse_deepagent.browser.hooks import (
     BreakpointManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperRestoreExecutionManager,
+    ClosureWrapperRestoreExecutionSpec,
     ClosureWrapperReplacementExecutionManager,
     ClosureWrapperReplacementExecutionSpec,
     ClosureWrapperReplacementPlanManager,
@@ -51,6 +53,18 @@ class ClosureScopeCDPSession:
                 return {"result": {"type": "string", "value": "function", "description": "function"}}
             if expression == "typeof nonce":
                 return {"result": {"type": "string", "value": "string", "description": "string"}}
+            if isinstance(expression, str) and "__rdgOriginal" in expression and "__reverseDeepAgentClosureWrappers" in expression:
+                return {
+                    "result": {
+                        "type": "object",
+                        "value": {
+                            "ok": True,
+                            "functionName": "buildSign",
+                            "restored": True,
+                        },
+                        "description": "Object",
+                    }
+                }
             if isinstance(expression, str) and "__reverseDeepAgentClosureWrappers" in expression:
                 return {
                     "result": {
@@ -288,6 +302,98 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
         self.assertGreaterEqual(len(eval_calls), 2)
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
         self.assertIn("buildSign =", eval_calls[-1]["expression"])
+        self.assertIn("__reverseDeepAgentClosureWrappers", eval_calls[-1]["expression"])
+
+
+class ClosureWrapperRestoreExecutionManagerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    def tearDown(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    def _installed_wrapper(self) -> tuple[ClosureScopeCDPSession, ClosureScopePage, dict]:
+        session = ClosureScopeCDPSession()
+        page = ClosureScopePage(session)
+        discovery_spec = ClosureScopeDiscoverySpec.from_context(
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 12,
+                "closure_function_names": ["buildSign"],
+                "trigger_expression": "debugger; 'scheduled'",
+                "preserve_pause_state": True,
+                "pause_session_id": "closure-restore-session",
+            }
+        )
+        discovery = ClosureScopeDiscoveryManager().discover(page, discovery_spec)
+        self.assertEqual(discovery.status, "success")
+        plan = ClosureWrapperReplacementPlanManager().plan(
+            ClosureWrapperReplacementPlanSpec.from_context(
+                {
+                    "closure_function_candidates": discovery.candidates,
+                    "candidate_id": "closure:cf-closure-1:buildSign",
+                }
+            )
+        )
+        install = ClosureWrapperReplacementExecutionManager().execute(
+            page,
+            ClosureWrapperReplacementExecutionSpec.from_context(
+                {
+                    "closure_wrapper_replacement_execution": True,
+                    "closure_wrapper_replacement_plan": plan.plan,
+                    "pause_session_id": "closure-restore-session",
+                    "execute_closure_wrapper_replacement": True,
+                    "review_approved": True,
+                }
+            ),
+        )
+        self.assertEqual(install.status, "applied")
+        return session, page, install.execution["restore_plan"]
+
+    def test_blocks_without_review_approval_or_cdp_side_effects(self) -> None:
+        session, page, restore_plan = self._installed_wrapper()
+        before = sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame")
+        spec = ClosureWrapperRestoreExecutionSpec.from_context(
+            {
+                "closure_wrapper_restore_execution": True,
+                "closure_wrapper_restore_plan": restore_plan,
+                "pause_session_id": "closure-restore-session",
+                "execute_closure_wrapper_restore": True,
+            }
+        )
+
+        result = ClosureWrapperRestoreExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), before)
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+
+    def test_executes_reviewed_restore_from_retained_pause(self) -> None:
+        session, page, restore_plan = self._installed_wrapper()
+        spec = ClosureWrapperRestoreExecutionSpec.from_context(
+            {
+                "closure_wrapper_restore_execution": True,
+                "closure_wrapper_restore_plan": restore_plan,
+                "pause_session_id": "closure-restore-session",
+                "execute_closure_wrapper_restore": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ClosureWrapperRestoreExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "restored")
+        self.assertEqual(result.execution["schema_version"], "reverse-deepagent.closure-wrapper-restore-execution.v1")
+        self.assertTrue(result.execution["wrapper_restored"])
+        self.assertTrue(result.execution["runtime_mutated"])
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        eval_calls = [params for method, params in session.calls if method == "Debugger.evaluateOnCallFrame"]
+        self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
+        self.assertIn("__rdgOriginal", eval_calls[-1]["expression"])
         self.assertIn("__reverseDeepAgentClosureWrappers", eval_calls[-1]["expression"])
 
 

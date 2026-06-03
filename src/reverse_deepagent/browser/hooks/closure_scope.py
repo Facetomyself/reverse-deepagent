@@ -896,6 +896,8 @@ class ClosureWrapperReplacementExecutionManager:
             "restore_plan": {
                 "available": True,
                 "requires_review": True,
+                "function_name": function_name,
+                "marker": marker,
                 "restore_expression": self._restore_expression(function_name=function_name, marker=marker),
                 "next_action": "review_restore_expression_before_uninstalling_closure_wrapper",
             },
@@ -944,6 +946,320 @@ class ClosureWrapperReplacementExecutionManager:
             "cdp_command_sent": cdp_command_sent,
             "callframe_evaluated": callframe_evaluated,
             "wrapper_installed": wrapper_installed,
+            "runtime_mutated": runtime_mutated,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
+class ClosureWrapperRestoreExecutionSpec:
+    """Explicit reviewed restore request for a previously installed closure wrapper."""
+
+    restore_plan: dict[str, Any] = field(default_factory=dict)
+    pause_session_id: str | None = None
+    callframe_index: int = 0
+    expected_callframe_id: str | None = None
+    function_name: str | None = None
+    marker: str | None = None
+    review_approved: bool = False
+    execute: bool = False
+    reviewer_note: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperRestoreExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_restore_execution")
+            or context.get("closureWrapperRestoreExecution")
+            or context.get("execute_closure_wrapper_restore")
+            or context.get("executeClosureWrapperRestore")
+            or context.get("reviewed_closure_wrapper_restore")
+            or context.get("reviewedClosureWrapperRestore")
+        )
+        raw_plan = (
+            context.get("closure_wrapper_restore_plan")
+            or context.get("closureWrapperRestorePlan")
+            or context.get("closure-wrapper-restore-plan")
+            or context.get("restore_plan")
+            or context.get("restorePlan")
+            or context.get("closure_wrapper_replacement_execution")
+            or context.get("closureWrapperReplacementExecution")
+        )
+        restore_plan = cls._coerce_restore_plan(raw_plan)
+        if not requested and not restore_plan:
+            return None
+        return cls(
+            restore_plan=restore_plan,
+            pause_session_id=_string_or_none(
+                context.get(
+                    "pause_session_id",
+                    context.get("pauseSessionId", context.get("debugger_session_id", context.get("debuggerSessionId"))),
+                )
+            ),
+            callframe_index=int(context.get("callframe_index", context.get("callFrameIndex", 0)) or 0),
+            expected_callframe_id=_string_or_none(
+                context.get(
+                    "expected_callframe_id",
+                    context.get("expectedCallFrameId", context.get("callframe_id", context.get("callFrameId"))),
+                )
+            ),
+            function_name=_string_or_none(context.get("function_name", context.get("functionName", restore_plan.get("function_name")))),
+            marker=_string_or_none(context.get("marker", restore_plan.get("marker"))),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            execute=bool(context.get("execute_closure_wrapper_restore", context.get("executeClosureWrapperRestore", requested))),
+            reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
+        )
+
+    @staticmethod
+    def _coerce_restore_plan(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        if isinstance(value.get("execution"), dict) and isinstance(value["execution"].get("restore_plan"), dict):
+            plan = dict(value["execution"]["restore_plan"])
+            if value["execution"].get("function_name") and "function_name" not in plan:
+                plan["function_name"] = value["execution"].get("function_name")
+            if value["execution"].get("marker") and "marker" not in plan:
+                plan["marker"] = value["execution"].get("marker")
+            return plan
+        if isinstance(value.get("restore_plan"), dict):
+            plan = dict(value["restore_plan"])
+            if value.get("function_name") and "function_name" not in plan:
+                plan["function_name"] = value.get("function_name")
+            if value.get("marker") and "marker" not in plan:
+                plan["marker"] = value.get("marker")
+            return plan
+        return dict(value)
+
+
+@dataclass(slots=True)
+class ClosureWrapperRestoreExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    callframe_evaluations: list[dict[str, Any]] = field(default_factory=list)
+    mutation_audit: list[dict[str, Any]] = field(default_factory=list)
+    continuation_preflight: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-restore-execution.v1",
+            "status": self.status,
+            "execution": self.execution,
+            "callframe_evaluations": self.callframe_evaluations,
+            "mutation_audit": self.mutation_audit,
+            "continuation_preflight": self.continuation_preflight,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ClosureWrapperRestoreExecutionManager:
+    """Run one explicitly reviewed closure wrapper restore from a retained pause."""
+
+    def execute(self, page: BrowserPage, spec: ClosureWrapperRestoreExecutionSpec | None) -> ClosureWrapperRestoreExecutionResult:
+        if spec is None:
+            return self._blocked("unsupported", "missing_closure_wrapper_restore_execution_spec", spec=None)
+        reason = self._blocker(spec)
+        if reason:
+            return self._blocked("blocked", reason, spec=spec)
+        expression = str(spec.restore_plan.get("restore_expression") or "")
+        action_spec = PausedSessionActionSpec(
+            pause_session_id=str(spec.pause_session_id),
+            action="evaluate",
+            callframe_evaluations=[expression],
+            callframe_index=spec.callframe_index,
+            callframe_evaluation_policy="allow_side_effects",
+            debugger_actions=[],
+        )
+        breakpoint_result = BreakpointManager().run_paused_session_action(page, action_spec)
+        evaluation = breakpoint_result.callframe_evaluations[0] if breakpoint_result.callframe_evaluations else {}
+        post_reason = self._post_execution_reason(spec, evaluation)
+        status = "restored" if breakpoint_result.status == "success" and post_reason is None else "failed"
+        side_effect_policy = self._side_effect_policy(
+            spec=spec,
+            cdp_command_sent=bool(breakpoint_result.callframe_evaluations),
+            callframe_evaluated=bool(breakpoint_result.callframe_evaluations),
+            runtime_mutated=status == "restored",
+            wrapper_restored=status == "restored",
+        )
+        execution = self._execution_payload(
+            spec=spec,
+            expression=expression,
+            evaluation=evaluation,
+            status=status,
+            reason=post_reason or breakpoint_result.reason,
+            side_effect_policy=side_effect_policy,
+        )
+        return ClosureWrapperRestoreExecutionResult(
+            status=status,
+            execution=execution,
+            callframe_evaluations=list(breakpoint_result.callframe_evaluations),
+            mutation_audit=list(breakpoint_result.mutation_audit),
+            continuation_preflight=dict(breakpoint_result.continuation_preflight),
+            side_effect_policy=side_effect_policy,
+            reason=post_reason or breakpoint_result.reason,
+            error=breakpoint_result.error,
+        )
+
+    def _blocked(
+        self,
+        status: str,
+        reason: str,
+        *,
+        spec: ClosureWrapperRestoreExecutionSpec | None,
+    ) -> ClosureWrapperRestoreExecutionResult:
+        side_effect_policy = self._side_effect_policy(spec=spec, cdp_command_sent=False, callframe_evaluated=False, runtime_mutated=False, wrapper_restored=False)
+        execution = {
+            "schema_version": "reverse-deepagent.closure-wrapper-restore-execution.v1",
+            "status": status,
+            "reason": reason,
+            "plan_id": "closure-wrapper-restore-execution",
+            "requires_review": True,
+            "review_approved": bool(spec.review_approved) if spec else False,
+            "execute_requested": bool(spec.execute) if spec else False,
+            "restore_plan": dict(spec.restore_plan) if spec else {},
+            "function_name": spec.function_name if spec else None,
+            "marker": spec.marker if spec else None,
+            "wrapper_restored": False,
+            "runtime_mutated": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": side_effect_policy,
+        }
+        return ClosureWrapperRestoreExecutionResult(status=status, execution=execution, side_effect_policy=side_effect_policy, reason=reason)
+
+    @classmethod
+    def _blocker(cls, spec: ClosureWrapperRestoreExecutionSpec) -> str | None:
+        if not spec.restore_plan:
+            return "missing_closure_wrapper_restore_plan"
+        if not spec.execute:
+            return "execute_closure_wrapper_restore_flag_required"
+        if not spec.review_approved:
+            return "review_approval_required"
+        if not spec.pause_session_id:
+            return "pause_session_id_required"
+        if spec.restore_plan.get("available") is False:
+            return "closure_wrapper_restore_plan_not_available"
+        expression = str(spec.restore_plan.get("restore_expression") or "")
+        if not expression:
+            return "missing_restore_expression"
+        function_name = str(spec.function_name or spec.restore_plan.get("function_name") or "")
+        if not JS_IDENTIFIER_RE.fullmatch(function_name):
+            return "missing_or_unsafe_closure_function_name"
+        marker = str(spec.marker or spec.restore_plan.get("marker") or "")
+        if not marker:
+            return "missing_closure_wrapper_marker"
+        if not cls._restore_expression_is_scoped(expression, function_name=function_name, marker=marker):
+            return "unsafe_or_unscoped_restore_expression"
+        return None
+
+    @staticmethod
+    def _restore_expression_is_scoped(expression: str, *, function_name: str, marker: str) -> bool:
+        return (
+            "__reverseDeepAgentClosureWrappers" in expression
+            and json.dumps(marker) in expression
+            and f"{function_name} =" in expression
+            and "__rdgOriginal" in expression
+        )
+
+    @staticmethod
+    def _post_execution_reason(spec: ClosureWrapperRestoreExecutionSpec, evaluation: dict[str, Any]) -> str | None:
+        if not evaluation:
+            return "missing_callframe_evaluation_result"
+        if not evaluation.get("ok"):
+            return str(evaluation.get("error") or "callframe_evaluation_failed")
+        expected_callframe_id = str(spec.expected_callframe_id or "")
+        observed_callframe_id = str(evaluation.get("callFrameId") or "")
+        if expected_callframe_id and observed_callframe_id and expected_callframe_id != observed_callframe_id:
+            return "callframe_id_mismatch"
+        value = evaluation.get("value")
+        if isinstance(value, dict):
+            if value.get("ok") is False:
+                return str(value.get("reason") or "wrapper_restore_result_not_ok")
+            if value.get("restored") is False:
+                return "wrapper_restore_not_confirmed"
+        return None
+
+    def _execution_payload(
+        self,
+        *,
+        spec: ClosureWrapperRestoreExecutionSpec,
+        expression: str,
+        evaluation: dict[str, Any],
+        status: str,
+        reason: str | None,
+        side_effect_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-restore-execution.v1",
+            "status": status,
+            "reason": reason,
+            "plan_id": "closure-wrapper-restore-execution",
+            "requires_review": True,
+            "review_approved": spec.review_approved,
+            "execute_requested": spec.execute,
+            "restore_plan": dict(spec.restore_plan),
+            "pause_session_id": spec.pause_session_id,
+            "callframe_index": spec.callframe_index,
+            "expected_callframe_id": spec.expected_callframe_id,
+            "observed_callframe_id": evaluation.get("callFrameId"),
+            "function_name": spec.function_name or spec.restore_plan.get("function_name"),
+            "marker": spec.marker or spec.restore_plan.get("marker"),
+            "wrapper_restored": status == "restored",
+            "runtime_mutated": status == "restored",
+            "cdp_command_sent": True,
+            "callframe_evaluated": True,
+            "restore_expression": expression,
+            "evaluation_summary": {
+                "ok": evaluation.get("ok"),
+                "valueType": evaluation.get("valueType"),
+                "side_effect_risk": evaluation.get("side_effect_risk"),
+                "policy": evaluation.get("policy"),
+                "throw_on_side_effect": evaluation.get("throw_on_side_effect"),
+                "blocked": evaluation.get("blocked", False),
+                "error": evaluation.get("error"),
+            },
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": side_effect_policy,
+        }
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "restored":
+            return "review_closure_wrapper_restore_result_or_continue_target_flow"
+        if reason == "review_approval_required":
+            return "approve_closure_wrapper_restore_execution_before_retry"
+        if reason == "pause_session_id_required":
+            return "reproduce_pause_and_preserve_same_process_session"
+        if reason in {"missing_closure_wrapper_restore_plan", "missing_restore_expression"}:
+            return "review_closure_wrapper_restore_plan_before_execution"
+        return "resolve_closure_wrapper_restore_execution_blockers"
+
+    @staticmethod
+    def _side_effect_policy(
+        *,
+        spec: ClosureWrapperRestoreExecutionSpec | None,
+        cdp_command_sent: bool,
+        callframe_evaluated: bool,
+        runtime_mutated: bool,
+        wrapper_restored: bool,
+    ) -> dict[str, Any]:
+        return {
+            "read_only": False,
+            "plan_only": False,
+            "requires_review": True,
+            "review_approved": bool(spec.review_approved) if spec else False,
+            "execute_requested": bool(spec.execute) if spec else False,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": cdp_command_sent,
+            "callframe_evaluated": callframe_evaluated,
+            "wrapper_restored": wrapper_restored,
             "runtime_mutated": runtime_mutated,
             "calls_mcp": False,
             "mobile_runtime_used": False,

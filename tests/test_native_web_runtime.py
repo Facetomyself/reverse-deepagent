@@ -6,7 +6,7 @@ from typing import Any
 
 from reverse_deepagent.adapters.native_web import NativeWebRuntime
 from reverse_deepagent.browser import BrowserPageRef, BrowserProviderCapabilities, PlaywrightBrowserPageAdapter
-from reverse_deepagent.browser.hooks import BreakpointManager
+from reverse_deepagent.browser.hooks import BreakpointManager, ClosureWrapperReplacementExecutionManager
 from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import FixtureProfile, _build_js
 
@@ -81,6 +81,18 @@ class FakeCDPSession:
                 return {"result": {"type": "string", "value": "function", "description": "function"}}
             if expression == "this && typeof this":
                 return {"result": {"type": "string", "value": "object", "description": "object"}}
+            if "__rdgOriginal" in expression and "__reverseDeepAgentClosureWrappers" in expression:
+                return {
+                    "result": {
+                        "type": "object",
+                        "value": {
+                            "ok": True,
+                            "functionName": "buildSign",
+                            "restored": True,
+                        },
+                        "description": "Object",
+                    }
+                }
             if "__reverseDeepAgentClosureWrappers" in expression:
                 return {
                     "result": {
@@ -4326,6 +4338,41 @@ class NativeWebRuntimeTests(unittest.TestCase):
         page = provider.session.context.pages[0]
         eval_calls = [params for method, params in page._cdp_session.calls if method == "Debugger.evaluateOnCallFrame"]
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
+
+        restore = runtime.apply_minimal_protection(
+            "closure-wrapper-restore-execution",
+            {
+                "closure_wrapper_restore_plan": {
+                    "available": True,
+                    "requires_review": True,
+                    "function_name": "buildSign",
+                    "marker": "reverse-deepagent:closure-wrapper:closure:native-cf-1:buildSign",
+                    "restore_expression": ClosureWrapperReplacementExecutionManager._restore_expression(
+                        function_name="buildSign",
+                        marker="reverse-deepagent:closure-wrapper:closure:native-cf-1:buildSign",
+                    ),
+                },
+                "pause_session_id": "native-closure-exec",
+                "execute_closure_wrapper_restore": True,
+                "review_approved": True,
+            },
+        )
+
+        self.assertEqual(restore.status.value, "success")
+        self.assertEqual(restore.applied_actions, ["execute_reviewed_closure_wrapper_restore"])
+        self.assertIn("closure_wrapper_restore_execution_status=restored", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_review_approved=True", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_wrapper_restored=True", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_runtime_mutated=True", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_cdp_command_sent=True", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_callframe_evaluated=True", restore.verification)
+        self.assertEqual(restore.next_action, "review_closure_wrapper_restore_result_or_continue_target_flow")
+        self.assertEqual(restore.artifacts[0].path, "virtual://workspace/closure-wrapper-restore-execution.json")
+        self.assertTrue(restore.artifacts[0].metadata["wrapper_restored"])
+        self.assertTrue(restore.artifacts[0].metadata["runtime_mutated"])
+        eval_calls = [params for method, params in page._cdp_session.calls if method == "Debugger.evaluateOnCallFrame"]
+        self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
+        self.assertIn("__rdgOriginal", eval_calls[-1]["expression"])
         BreakpointManager.clear_paused_sessions()
 
 

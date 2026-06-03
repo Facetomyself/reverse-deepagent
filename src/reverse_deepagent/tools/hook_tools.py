@@ -53,6 +53,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "reviewed_closure_wrapper_replacement",
             "reviewedClosureWrapperReplacement",
         )
+        closure_wrapper_restore_execution = _object_alias(
+            payload,
+            "closure_wrapper_restore_execution",
+            "closure-wrapper-restore-execution",
+            "closureWrapperRestoreExecution",
+            "reviewed_closure_wrapper_restore",
+            "reviewedClosureWrapperRestore",
+        )
         async_chunk_plan = _object_alias(payload, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan")
         async_chunk_result = _object_alias(payload, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult")
         async_chunk_module_diff = _object_alias(payload, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff")
@@ -259,6 +267,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 source_logpoints,
                 closure_wrapper_replacement_plan,
                 closure_wrapper_replacement_execution,
+                closure_wrapper_restore_execution,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -306,6 +315,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("closure_wrapper_replacement_plan_blocked")
         if _status(closure_wrapper_replacement_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_replacement_execution_blocked")
+        if _status(closure_wrapper_restore_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("closure_wrapper_restore_execution_blocked")
         if _status(async_chunk_result) in {"failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_load_failed")
         if _status(async_chunk_module_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -615,6 +626,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         closure_wrapper_execution_status = _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution")
         if closure_wrapper_execution_status == "applied":
             warnings.append("closure_wrapper_replacement_execution_restore_review_required")
+        closure_wrapper_restore_execution_status = _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution")
+        if closure_wrapper_restore_execution_status == "restored":
+            warnings.append("closure_wrapper_restore_execution_result_review_required")
 
         status = "block" if blockers else "warn" if warnings else "pass"
         return {
@@ -637,6 +651,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "closure_wrapper_replacement_execution_next_action": _nested_get(closure_wrapper_replacement_execution, "execution", "next_action") or closure_wrapper_replacement_execution.get("next_action"),
                 "closure_wrapper_replacement_execution_runtime_mutated": bool(_nested_get(closure_wrapper_replacement_execution, "execution", "runtime_mutated") or closure_wrapper_replacement_execution.get("runtime_mutated")),
                 "closure_wrapper_replacement_execution_wrapper_installed": bool(_nested_get(closure_wrapper_replacement_execution, "execution", "wrapper_installed") or closure_wrapper_replacement_execution.get("wrapper_installed")),
+                "closure_wrapper_restore_execution_status": closure_wrapper_restore_execution_status,
+                "closure_wrapper_restore_execution_next_action": _nested_get(closure_wrapper_restore_execution, "execution", "next_action") or closure_wrapper_restore_execution.get("next_action"),
+                "closure_wrapper_restore_execution_runtime_mutated": bool(_nested_get(closure_wrapper_restore_execution, "execution", "runtime_mutated") or closure_wrapper_restore_execution.get("runtime_mutated")),
+                "closure_wrapper_restore_execution_wrapper_restored": bool(_nested_get(closure_wrapper_restore_execution, "execution", "wrapper_restored") or closure_wrapper_restore_execution.get("wrapper_restored")),
                 "function_hook_event_count": _event_count(function_timeline, function_events),
                 "module_hook_event_count": _event_count(module_timeline, module_events),
                 "generic_hook_event_count": _event_count(generic_timeline, generic_events),
@@ -775,6 +793,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 source_logpoints,
                 closure_wrapper_replacement_plan,
                 closure_wrapper_replacement_execution,
+                closure_wrapper_restore_execution,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -956,6 +975,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "resolve_closure_wrapper_replacement_plan_blockers"
     if "closure_wrapper_replacement_execution_blocked" in blockers:
         return "resolve_closure_wrapper_replacement_execution_blockers"
+    if "closure_wrapper_restore_execution_blocked" in blockers:
+        return "resolve_closure_wrapper_restore_execution_blockers"
     if "module_federation_get_init_plan_blocked" in blockers:
         return "provide_module_federation_candidates_from_module_discovery"
     if "module_federation_get_init_probe_failed" in blockers:
@@ -1038,6 +1059,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_closure_wrapper_replacement_plan_before_execution"
     if "closure_wrapper_replacement_execution_restore_review_required" in warnings:
         return "review_closure_wrapper_restore_plan_or_invoke_target_flow"
+    if "closure_wrapper_restore_execution_result_review_required" in warnings:
+        return "review_closure_wrapper_restore_execution_result_or_continue_target_flow"
     if "module_federation_get_init_probe_requires_factory_review" in warnings:
         return "review_module_federation_get_init_probe_before_factory_invocation"
     if "module_federation_factory_exports_require_review" in warnings:
@@ -1139,6 +1162,7 @@ def _review_required_items(
     source_logpoints: dict[str, Any],
     closure_wrapper_replacement_plan: dict[str, Any],
     closure_wrapper_replacement_execution: dict[str, Any],
+    closure_wrapper_restore_execution: dict[str, Any],
     async_chunk_plan: dict[str, Any],
     async_chunk_result: dict[str, Any],
     async_chunk_module_diff: dict[str, Any],
@@ -1187,6 +1211,7 @@ def _review_required_items(
                 "source_logpoint_status": _status(source_logpoints),
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or _nested_status(closure_wrapper_replacement_plan, "plan"),
                 "closure_wrapper_replacement_execution_status": _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution"),
+                "closure_wrapper_restore_execution_status": _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution"),
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),
@@ -1227,6 +1252,7 @@ def _review_required_items(
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
                 "closure_wrapper_replacement_plan_error": str(closure_wrapper_replacement_plan.get("error") or ""),
                 "closure_wrapper_replacement_execution_error": str(closure_wrapper_replacement_execution.get("error") or ""),
+                "closure_wrapper_restore_execution_error": str(closure_wrapper_restore_execution.get("error") or ""),
                 "async_chunk_load_error": str(async_chunk_result.get("error") or async_chunk_plan.get("error") or ""),
                 "async_chunk_module_diff_error": str(async_chunk_module_diff.get("error") or ""),
                 "async_chunk_traversal_graph_error": str(async_chunk_traversal_graph.get("error") or ""),

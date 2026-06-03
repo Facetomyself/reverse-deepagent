@@ -131,6 +131,32 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["side_effect_policy"]["read_only"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_restore_execution_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_restore_execution": {
+                "status": "restored",
+                "execution": {
+                    "status": "restored",
+                    "next_action": "review_closure_wrapper_restore_result_or_continue_target_flow",
+                    "wrapper_restored": True,
+                    "runtime_mutated": True,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_restore_execution_result_review_required", result["warnings"])
+        self.assertEqual(result["next_action"], "review_closure_wrapper_restore_execution_result_or_continue_target_flow")
+        self.assertEqual(result["summary"]["closure_wrapper_restore_execution_status"], "restored")
+        self.assertTrue(result["summary"]["closure_wrapper_restore_execution_wrapper_restored"])
+        self.assertTrue(result["summary"]["closure_wrapper_restore_execution_runtime_mutated"])
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_restore_execution_status"], "restored")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
     def test_review_hook_artifacts_warns_for_async_chunk_traversal_graph(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
