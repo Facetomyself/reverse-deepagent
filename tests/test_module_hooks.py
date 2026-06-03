@@ -72,6 +72,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationRecursiveTraversalExecutionSpec,
     ModuleFederationRecursiveContinuationJournalManager,
     ModuleFederationRecursiveContinuationJournalSpec,
+    ModuleFederationRecursiveContinuationCheckpointManager,
+    ModuleFederationRecursiveContinuationCheckpointSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
     ModuleFederationExportHookInstallManager,
@@ -2337,6 +2339,125 @@ class ModuleFederationRecursiveContinuationJournalManagerTests(unittest.TestCase
         self.assertEqual(unapproved.reason, "review_approval_required")
         self.assertEqual(duplicate.status, "blocked")
         self.assertEqual(duplicate.reason, "module_federation_recursive_continuation_duplicate_entry")
+
+
+class ModuleFederationRecursiveContinuationCheckpointManagerTests(unittest.TestCase):
+    def _journal(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.module-federation-recursive-continuation-journal.v1",
+            "journal_id": "module-federation-recursive-continuation-journal",
+            "status": "journal_appended",
+            "record_count": 1,
+            "records": [
+                {
+                    "schema_version": "reverse-deepagent.module-federation-recursive-continuation-journal-entry.v1",
+                    "entry_id": "module-federation-recursive-continuation-journal:1:test",
+                    "sequence": 1,
+                    "execution_fingerprint": "module-federation-traversal-workflow-plan|0|remote-module:window.remoteOther:./token|review_module_federation_factory_invoke_for_traversal|factory_invoke_success",
+                    "recursive_execution_status": "next_step_execution_progressed",
+                    "workflow_execution_status": "factory_invoke_success",
+                    "workflow_plan_id": "module-federation-traversal-workflow-plan",
+                    "selected_step_index": 0,
+                    "selected_node_id": "remote-module:window.remoteOther:./token",
+                    "selected_action": "review_module_federation_factory_invoke_for_traversal",
+                    "review_approved": True,
+                }
+            ],
+        }
+
+    def _recursive_execution(self) -> dict[str, Any]:
+        return {
+            "status": "next_step_execution_progressed",
+            "workflow_execution_status": "factory_invoke_success",
+            "selected_step_index": 0,
+            "selected_node_id": "remote-module:window.remoteOther:./token",
+            "selected_action": "review_module_federation_factory_invoke_for_traversal",
+        }
+
+    def _get_init_plan(self) -> dict[str, Any]:
+        return {
+            "plan": {
+                "candidates": [
+                    {
+                        "container_path": "window.remoteOther",
+                        "exposed_name": "./token",
+                        "remote_name": "remoteOther",
+                        "discovery_source": "unit-test",
+                    }
+                ]
+            }
+        }
+
+    def test_plan_only_checkpoint_requires_review_without_remote_execution(self) -> None:
+        result = ModuleFederationRecursiveContinuationCheckpointManager().execute(
+            ModuleFederationRecursiveContinuationCheckpointSpec.from_context(
+                {
+                    "module_federation_recursive_continuation_checkpoint": True,
+                    "module_federation_recursive_continuation_journal": self._journal(),
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.checkpoint["schema_version"], "reverse-deepagent.module-federation-recursive-continuation-checkpoint.v1")
+        self.assertEqual(result.checkpoint["source_journal_record_count"], 1)
+        self.assertEqual(result.checkpoint["latest_entry"]["selected_node_id"], "remote-module:window.remoteOther:./token")
+        self.assertEqual(result.checkpoint["next_action"], "review_module_federation_recursive_continuation_checkpoint")
+        self.assertTrue(result.side_effect_policy["plan_only_by_default"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_blocks_checkpoint_execution_without_review_approval(self) -> None:
+        result = ModuleFederationRecursiveContinuationCheckpointManager().execute(
+            ModuleFederationRecursiveContinuationCheckpointSpec.from_context(
+                {
+                    "module_federation_recursive_continuation_checkpoint": True,
+                    "module_federation_recursive_continuation_journal": self._journal(),
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                    "verify_execution": True,
+                    "rebuild_graph": True,
+                    "module_federation_get_init_plan": self._get_init_plan(),
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["workflow_replanned"])
+
+    def test_reviewed_checkpoint_rebuilds_replans_and_prepares_next_execution_review(self) -> None:
+        result = ModuleFederationRecursiveContinuationCheckpointManager().execute(
+            ModuleFederationRecursiveContinuationCheckpointSpec.from_context(
+                {
+                    "execute_module_federation_recursive_continuation_checkpoint": True,
+                    "module_federation_recursive_continuation_journal": self._journal(),
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                    "module_federation_get_init_plan": self._get_init_plan(),
+                    "verify_execution": True,
+                    "rebuild_graph": True,
+                    "replan_workflow": True,
+                    "plan_next_execution_review": True,
+                    "review_approved": True,
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "next_execution_review_ready")
+        self.assertTrue(result.side_effect_policy["verifies_latest_recursive_execution"])
+        self.assertTrue(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertTrue(result.side_effect_policy["workflow_replanned"])
+        self.assertTrue(result.side_effect_policy["next_execution_review_planned"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["workflow_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+        self.assertEqual(result.checkpoint["module_federation_next_execution_review"]["status"], "ready_for_review")
+        self.assertEqual(result.checkpoint["next_action"], "review_next_module_federation_recursive_traversal_execution")
 
 
 

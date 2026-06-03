@@ -3290,6 +3290,98 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["writes_journal_now"])
         self.assertFalse(result.artifacts[0].metadata["recursive_federation_traversal"])
 
+    def test_native_web_runtime_plans_module_federation_recursive_continuation_checkpoint(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        journal = {
+            "status": "journal_appended",
+            "record_count": 1,
+            "records": [
+                {
+                    "recursive_execution_status": "next_step_execution_progressed",
+                    "workflow_execution_status": "factory_invoke_success",
+                    "selected_node_id": "remote-module:window.remoteOther:./token",
+                    "selected_action": "review_module_federation_factory_invoke_for_traversal",
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "module-federation-recursive-continuation-checkpoint",
+            {
+                "module_federation_recursive_continuation_journal": journal,
+                "module_federation_recursive_traversal_execution": {"status": "next_step_execution_progressed"},
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_module_federation_recursive_continuation_checkpoint"])
+        self.assertEqual(page.module_federation_get_init_probes, [])
+        self.assertEqual(page.module_federation_factory_invocations, [])
+        self.assertIn("module_federation_recursive_continuation_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_remote_factory_invoked=False", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_remote_code_executed=False", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_automatic_queue_advance=False", result.verification)
+        self.assertEqual(result.next_action, "review_module_federation_recursive_continuation_checkpoint")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-recursive-continuation-checkpoint.json")
+        self.assertEqual(result.artifacts[0].metadata["source_journal_record_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["recursive_federation_traversal"])
+
+    def test_native_web_runtime_executes_reviewed_module_federation_recursive_continuation_checkpoint(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        journal = {
+            "status": "journal_appended",
+            "record_count": 1,
+            "records": [
+                {
+                    "recursive_execution_status": "next_step_execution_progressed",
+                    "workflow_execution_status": "factory_invoke_success",
+                    "selected_node_id": "remote-module:window.remoteOther:./token",
+                    "selected_action": "review_module_federation_factory_invoke_for_traversal",
+                }
+            ],
+        }
+        get_init_plan = {
+            "plan": {
+                "candidates": [
+                    {"container_path": "window.remoteOther", "exposed_name": "./token", "remote_name": "remoteOther"}
+                ]
+            }
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-module-federation-recursive-continuation-checkpoint",
+            {
+                "module_federation_recursive_continuation_journal": journal,
+                "module_federation_recursive_traversal_execution": {"status": "next_step_execution_progressed"},
+                "module_federation_get_init_plan": get_init_plan,
+                "verify_execution": True,
+                "rebuild_graph": True,
+                "replan_workflow": True,
+                "plan_next_execution_review": True,
+                "review_approved": True,
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_module_federation_recursive_continuation_checkpoint"])
+        self.assertEqual(page.module_federation_get_init_probes, [])
+        self.assertEqual(page.module_federation_factory_invocations, [])
+        self.assertIn("module_federation_recursive_continuation_checkpoint_status=next_execution_review_ready", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_traversal_graph_rebuilt=True", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_workflow_replanned=True", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_next_execution_review_planned=True", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_remote_code_executed=False", result.verification)
+        self.assertIn("module_federation_recursive_continuation_checkpoint_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_next_module_federation_recursive_traversal_execution")
+        self.assertTrue(result.artifacts[0].metadata["traversal_graph_rebuilt"])
+        self.assertTrue(result.artifacts[0].metadata["workflow_replanned"])
+        self.assertTrue(result.artifacts[0].metadata["next_execution_review_planned"])
+        self.assertFalse(result.artifacts[0].metadata["remote_code_executed"])
+
 
     def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
         provider = FakeProvider()

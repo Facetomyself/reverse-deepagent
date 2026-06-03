@@ -958,6 +958,27 @@ class HookSubagentTests(unittest.TestCase):
         self.assertFalse(result["summary"]["module_federation_recursive_continuation_journal_writes_journal"])
         self.assertEqual(result["review_required_items"][0]["module_federation_recursive_continuation_journal_status"], "ready_for_review")
 
+    def test_review_hook_artifacts_warns_for_module_federation_recursive_continuation_checkpoint(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        result = tool(json.dumps({
+            "module_federation_recursive_continuation_checkpoint": {
+                "status": "next_execution_review_ready",
+                "checkpoint": {
+                    "status": "next_execution_review_ready",
+                    "stages": [{"stage": "review_next_module_federation_recursive_traversal_execution", "status": "ready_for_review"}],
+                    "next_action": "review_next_module_federation_recursive_traversal_execution",
+                },
+            }
+        }))
+
+        self.assertIn("module_federation_recursive_continuation_checkpoint_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_recursive_continuation_checkpoint")
+        self.assertEqual(result["summary"]["module_federation_recursive_continuation_checkpoint_status"], "next_execution_review_ready")
+        self.assertEqual(result["summary"]["module_federation_recursive_continuation_checkpoint_stage_count"], 1)
+        self.assertEqual(result["summary"]["module_federation_recursive_continuation_checkpoint_next_action"], "review_next_module_federation_recursive_traversal_execution")
+        self.assertEqual(result["review_required_items"][0]["module_federation_recursive_continuation_checkpoint_status"], "next_execution_review_ready")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
 
     def test_review_hook_artifacts_warns_for_module_federation_recursive_traversal_execution(self) -> None:
         tool = make_review_hook_artifacts_tool()

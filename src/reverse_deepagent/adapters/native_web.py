@@ -82,6 +82,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationRecursiveTraversalExecutionSpec,
     ModuleFederationRecursiveContinuationJournalManager,
     ModuleFederationRecursiveContinuationJournalSpec,
+    ModuleFederationRecursiveContinuationCheckpointManager,
+    ModuleFederationRecursiveContinuationCheckpointSpec,
     ModuleFederationGetInitPlanManager,
     ModuleFederationGetInitPlanSpec,
     ModuleFederationGetInitProbeManager,
@@ -1340,6 +1342,79 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_recursive_continuation_checkpoint_request(protection_name, context):
+            spec = ModuleFederationRecursiveContinuationCheckpointSpec.from_context(context)
+            result = ModuleFederationRecursiveContinuationCheckpointManager().execute(spec)
+            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = checkpoint.get("stages") if isinstance(checkpoint.get("stages"), list) else []
+            latest_entry = checkpoint.get("latest_entry") if isinstance(checkpoint.get("latest_entry"), dict) else {}
+            verification = [
+                f"module_federation_recursive_continuation_checkpoint_status={result.status}",
+                f"module_federation_recursive_continuation_checkpoint_reason={result.reason or ''}",
+                f"module_federation_recursive_continuation_checkpoint_stage_count={len(stages)}",
+                f"module_federation_recursive_continuation_checkpoint_source_journal_status={checkpoint.get('source_journal_status')}",
+                f"module_federation_recursive_continuation_checkpoint_source_journal_record_count={checkpoint.get('source_journal_record_count', 0)}",
+                f"module_federation_recursive_continuation_checkpoint_selected_node_id={latest_entry.get('selected_node_id')}",
+                f"module_federation_recursive_continuation_checkpoint_review_approved={policy.get('review_approved', False)}",
+                f"module_federation_recursive_continuation_checkpoint_verifies_latest_recursive_execution={policy.get('verifies_latest_recursive_execution', False)}",
+                f"module_federation_recursive_continuation_checkpoint_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_recursive_continuation_checkpoint_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"module_federation_recursive_continuation_checkpoint_next_execution_review_planned={policy.get('next_execution_review_planned', False)}",
+                f"module_federation_recursive_continuation_checkpoint_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_recursive_continuation_checkpoint_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_recursive_continuation_checkpoint_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_recursive_continuation_checkpoint_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-recursive-continuation-checkpoint.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated Module Federation recursive continuation checkpoint execution.",
+                    metadata={
+                        "status": result.status,
+                        "checkpoint_status": checkpoint.get("status"),
+                        "stage_count": len(stages),
+                        "source_journal_status": checkpoint.get("source_journal_status"),
+                        "source_journal_record_count": checkpoint.get("source_journal_record_count", 0),
+                        "selected_node_id": latest_entry.get("selected_node_id"),
+                        "selected_action": latest_entry.get("selected_action"),
+                        "next_action": checkpoint.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "next_execution_review_planned": policy.get("next_execution_review_planned", False),
+                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
+                        "remote_code_executed": policy.get("remote_code_executed", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_execution_review_ready", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_module_federation_recursive_continuation_checkpoint"] if policy.get("review_approved", False) and not policy.get("plan_only_by_default", True) else ["plan_module_federation_recursive_continuation_checkpoint"]
+                next_action = checkpoint.get("next_action", "review_module_federation_recursive_continuation_checkpoint")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_recursive_continuation_checkpoint"]
+                next_action = checkpoint.get("next_action", "resolve_module_federation_recursive_continuation_checkpoint_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = checkpoint.get("next_action", "inspect_module_federation_recursive_continuation_checkpoint_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_execution_review_ready", "complete"} else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_recursive_continuation_journal_request(protection_name, context):
             spec = ModuleFederationRecursiveContinuationJournalSpec.from_context(context)
@@ -4574,6 +4649,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_module_federation_recursive_continuation_journal_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_module_federation_recursive_continuation_checkpoint_request(protection_name, context):
+            return False
         if normalized in {
             "module-federation-recursive-continuation-journal",
             "module-federation-recursive-traversal-continuation-journal",
@@ -4593,6 +4670,33 @@ class NativeWebRuntime(WebReverseRuntime):
                 "module-federation-recursive-traversal-continuation-journal",
                 "append_module_federation_recursive_continuation_journal",
                 "appendModuleFederationRecursiveContinuationJournal",
+            )
+        )
+
+    @staticmethod
+    def _is_module_federation_recursive_continuation_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "module-federation-recursive-continuation-checkpoint",
+            "module-federation-recursive-traversal-continuation-checkpoint",
+            "execute-module-federation-recursive-continuation-checkpoint",
+            "execute-module-federation-recursive-traversal-continuation-checkpoint",
+            "reviewed-module-federation-recursive-continuation-checkpoint",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "module_federation_recursive_continuation_checkpoint",
+                "moduleFederationRecursiveContinuationCheckpoint",
+                "module-federation-recursive-continuation-checkpoint",
+                "module_federation_recursive_traversal_continuation_checkpoint",
+                "moduleFederationRecursiveTraversalContinuationCheckpoint",
+                "module-federation-recursive-traversal-continuation-checkpoint",
+                "execute_module_federation_recursive_continuation_checkpoint",
+                "executeModuleFederationRecursiveContinuationCheckpoint",
+                "reviewed_module_federation_recursive_continuation_checkpoint",
+                "reviewedModuleFederationRecursiveContinuationCheckpoint",
             )
         )
 
