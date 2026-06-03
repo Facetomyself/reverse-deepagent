@@ -70,6 +70,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationRecursiveTraversalFollowupSpec,
     ModuleFederationRecursiveTraversalExecutionManager,
     ModuleFederationRecursiveTraversalExecutionSpec,
+    ModuleFederationRecursiveContinuationJournalManager,
+    ModuleFederationRecursiveContinuationJournalSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
     ModuleFederationExportHookInstallManager,
@@ -2232,6 +2234,110 @@ class ModuleFederationRecursiveTraversalExecutionManagerTests(unittest.TestCase)
         self.assertEqual(page.factory_invocations, [])
         self.assertFalse(result.side_effect_policy["workflow_execution_started"])
         self.assertFalse(result.side_effect_policy["remote_code_executed"])
+
+
+class ModuleFederationRecursiveContinuationJournalManagerTests(unittest.TestCase):
+    def _recursive_execution(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.module-federation-recursive-traversal-execution.v1",
+            "status": "next_step_execution_progressed",
+            "execution": {
+                "status": "next_step_execution_progressed",
+                "workflow_plan_id": "module-federation-traversal-workflow-plan",
+                "workflow_execution_status": "factory_invoke_success",
+                "selected_step_index": 0,
+                "selected_node_id": "remote-module:window.remoteOther:./token",
+                "selected_action": "review_module_federation_factory_invoke_for_traversal",
+                "module_federation_traversal_workflow_execution": {
+                    "status": "factory_invoke_success",
+                    "side_effect_policy": {"remote_factory_invoked": True, "remote_code_executed": True},
+                },
+            },
+            "side_effect_policy": {"remote_factory_invoked": True, "remote_code_executed": True},
+        }
+
+    def test_plan_only_continuation_journal_requires_review_without_remote_code(self) -> None:
+        result = ModuleFederationRecursiveContinuationJournalManager().plan_or_append(
+            ModuleFederationRecursiveContinuationJournalSpec.from_context(
+                {
+                    "module_federation_recursive_continuation_journal": True,
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                    "module_federation_recursive_traversal_followup": {"status": "next_step_review_ready"},
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.journal["schema_version"], "reverse-deepagent.module-federation-recursive-continuation-journal.v1")
+        self.assertEqual(result.journal["record_count"], 0)
+        self.assertFalse(result.journal["writes_journal_now"])
+        self.assertEqual(result.entry["recursive_execution_status"], "next_step_execution_progressed")
+        self.assertEqual(result.entry["workflow_execution_status"], "factory_invoke_success")
+        self.assertTrue(result.entry["artifact_status"]["remote_factory_invoked_in_source_execution"])
+        self.assertEqual(result.journal["next_action"], "review_module_federation_recursive_continuation_journal_append")
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked_by_journal"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed_by_journal"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_reviewed_append_records_entry_and_stops_before_recursion(self) -> None:
+        result = ModuleFederationRecursiveContinuationJournalManager().plan_or_append(
+            ModuleFederationRecursiveContinuationJournalSpec.from_context(
+                {
+                    "append_module_federation_recursive_continuation_journal": True,
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                    "write_journal": True,
+                    "review_approved": True,
+                    "reviewer": "tester",
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "journal_appended")
+        self.assertEqual(result.journal["record_count"], 1)
+        self.assertTrue(result.journal["writes_journal_now"])
+        self.assertEqual(result.journal["records"][0]["reviewer"], "tester")
+        self.assertEqual(result.journal["next_action"], "plan_next_module_federation_recursive_checkpoint_from_journal")
+        self.assertFalse(result.journal["next_checkpoint_plan"]["steps"][2]["side_effect"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["workflow_replanned"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_blocks_append_without_review_or_duplicate_execution_fingerprint(self) -> None:
+        planned = ModuleFederationRecursiveContinuationJournalManager().plan_or_append(
+            ModuleFederationRecursiveContinuationJournalSpec.from_context(
+                {
+                    "module_federation_recursive_continuation_journal": True,
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                }
+            )
+        )
+        unapproved = ModuleFederationRecursiveContinuationJournalManager().plan_or_append(
+            ModuleFederationRecursiveContinuationJournalSpec.from_context(
+                {
+                    "append_module_federation_recursive_continuation_journal": True,
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                    "write_journal": True,
+                }
+            )
+        )
+        duplicate = ModuleFederationRecursiveContinuationJournalManager().plan_or_append(
+            ModuleFederationRecursiveContinuationJournalSpec.from_context(
+                {
+                    "append_module_federation_recursive_continuation_journal": True,
+                    "module_federation_recursive_traversal_execution": self._recursive_execution(),
+                    "existing_module_federation_recursive_continuation_journal": {"records": [planned.entry]},
+                    "write_journal": True,
+                    "review_approved": True,
+                }
+            )
+        )
+
+        self.assertEqual(unapproved.status, "blocked")
+        self.assertEqual(unapproved.reason, "review_approval_required")
+        self.assertEqual(duplicate.status, "blocked")
+        self.assertEqual(duplicate.reason, "module_federation_recursive_continuation_duplicate_entry")
+
 
 
 class ModuleFederationGetInitProbeManagerTests(unittest.TestCase):

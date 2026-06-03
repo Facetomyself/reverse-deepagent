@@ -3211,6 +3211,86 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["workflow_execution_started"])
         self.assertFalse(result.artifacts[0].metadata["automatic_queue_advance"])
 
+    def test_native_web_runtime_plans_module_federation_recursive_continuation_journal(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        recursive_execution = {
+            "status": "next_step_execution_progressed",
+            "execution": {
+                "status": "next_step_execution_progressed",
+                "workflow_plan_id": "module-federation-traversal-workflow-plan",
+                "workflow_execution_status": "factory_invoke_success",
+                "selected_step_index": 0,
+                "selected_node_id": "remote-module:window.remoteOther:./token",
+                "selected_action": "review_module_federation_factory_invoke_for_traversal",
+            },
+            "side_effect_policy": {"remote_factory_invoked": True, "remote_code_executed": True},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "module-federation-recursive-continuation-journal",
+            {
+                "module_federation_recursive_traversal_execution": recursive_execution,
+                "module_federation_recursive_traversal_followup": {"status": "next_step_review_ready"},
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_module_federation_recursive_continuation_journal"])
+        self.assertEqual(page.module_federation_get_init_probes, [])
+        self.assertEqual(page.module_federation_factory_invocations, [])
+        self.assertIn("module_federation_recursive_continuation_journal_status=ready_for_review", result.verification)
+        self.assertIn("module_federation_recursive_continuation_journal_writes_journal=False", result.verification)
+        self.assertIn("module_federation_recursive_continuation_journal_remote_factory_invoked_by_journal=False", result.verification)
+        self.assertIn("module_federation_recursive_continuation_journal_automatic_queue_advance=False", result.verification)
+        self.assertIn("module_federation_recursive_continuation_journal_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_module_federation_recursive_continuation_journal_append")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-recursive-continuation-journal.json")
+        self.assertEqual(result.artifacts[0].metadata["record_count"], 0)
+        self.assertFalse(result.artifacts[0].metadata["writes_journal_now"])
+
+    def test_native_web_runtime_appends_reviewed_module_federation_recursive_continuation_journal(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        recursive_execution = {
+            "status": "next_step_execution_progressed",
+            "execution": {
+                "status": "next_step_execution_progressed",
+                "workflow_plan_id": "module-federation-traversal-workflow-plan",
+                "workflow_execution_status": "factory_invoke_success",
+                "selected_step_index": 0,
+                "selected_node_id": "remote-module:window.remoteOther:./token",
+                "selected_action": "review_module_federation_factory_invoke_for_traversal",
+            },
+            "side_effect_policy": {"remote_factory_invoked": True, "remote_code_executed": True},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "append-module-federation-recursive-continuation-journal",
+            {
+                "module_federation_recursive_traversal_execution": recursive_execution,
+                "write_journal": True,
+                "review_approved": True,
+                "reviewer": "tester",
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["append_module_federation_recursive_continuation_journal"])
+        self.assertEqual(page.module_federation_get_init_probes, [])
+        self.assertEqual(page.module_federation_factory_invocations, [])
+        self.assertIn("module_federation_recursive_continuation_journal_status=journal_appended", result.verification)
+        self.assertIn("module_federation_recursive_continuation_journal_writes_journal=True", result.verification)
+        self.assertIn("module_federation_recursive_continuation_journal_remote_code_executed_by_journal=False", result.verification)
+        self.assertIn("module_federation_recursive_continuation_journal_traversal_graph_rebuilt=False", result.verification)
+        self.assertEqual(result.next_action, "plan_next_module_federation_recursive_checkpoint_from_journal")
+        self.assertEqual(result.artifacts[0].metadata["record_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["writes_journal_now"])
+        self.assertFalse(result.artifacts[0].metadata["recursive_federation_traversal"])
+
+
     def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

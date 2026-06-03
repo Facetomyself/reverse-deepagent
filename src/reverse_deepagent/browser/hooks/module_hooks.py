@@ -5934,6 +5934,289 @@ class ModuleFederationRecursiveTraversalExecutionManager:
 
 
 @dataclass(slots=True)
+class ModuleFederationRecursiveContinuationJournalSpec:
+    """Review-gated continuation journal for recursive Module Federation traversal steps."""
+
+    recursive_execution: dict[str, Any] = field(default_factory=dict)
+    existing_journal: dict[str, Any] = field(default_factory=dict)
+    recursive_followup: dict[str, Any] = field(default_factory=dict)
+    recursive_plan: dict[str, Any] = field(default_factory=dict)
+    traversal_graph: dict[str, Any] = field(default_factory=dict)
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    review_approved: bool = False
+    write_journal: bool = False
+    reviewer: str = ""
+    journal_id: str = "module-federation-recursive-continuation-journal"
+    max_iterations: int = 20
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationRecursiveContinuationJournalSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("module_federation_recursive_continuation_journal")
+            or context.get("moduleFederationRecursiveContinuationJournal")
+            or context.get("module-federation-recursive-continuation-journal")
+            or context.get("module_federation_recursive_traversal_continuation_journal")
+            or context.get("moduleFederationRecursiveTraversalContinuationJournal")
+            or context.get("module-federation-recursive-traversal-continuation-journal")
+            or context.get("append_module_federation_recursive_continuation_journal")
+            or context.get("appendModuleFederationRecursiveContinuationJournal")
+        )
+        recursive_execution = _first_dict(
+            context,
+            "module_federation_recursive_traversal_execution",
+            "moduleFederationRecursiveTraversalExecution",
+            "module-federation-recursive-traversal-execution",
+            "latest_module_federation_recursive_traversal_execution",
+            "latestModuleFederationRecursiveTraversalExecution",
+            "recursive_traversal_execution",
+            "recursiveTraversalExecution",
+        )
+        if not recursive_execution and not requested:
+            return None
+        existing_journal = _first_dict(
+            context,
+            "module_federation_recursive_continuation_journal",
+            "moduleFederationRecursiveContinuationJournal",
+            "module-federation-recursive-continuation-journal",
+            "module_federation_recursive_traversal_continuation_journal",
+            "moduleFederationRecursiveTraversalContinuationJournal",
+            "module-federation-recursive-traversal-continuation-journal",
+            "existing_module_federation_recursive_continuation_journal",
+            "existingModuleFederationRecursiveContinuationJournal",
+        )
+        if isinstance(existing_journal.get("journal"), dict):
+            existing_journal = dict(existing_journal["journal"])
+        return cls(
+            recursive_execution=recursive_execution,
+            existing_journal=existing_journal,
+            recursive_followup=_first_dict(context, "module_federation_recursive_traversal_followup", "moduleFederationRecursiveTraversalFollowup", "module-federation-recursive-traversal-followup"),
+            recursive_plan=_first_dict(context, "module_federation_recursive_traversal_plan", "moduleFederationRecursiveTraversalPlan", "module-federation-recursive-traversal-plan"),
+            traversal_graph=_first_dict(context, "module_federation_traversal_graph", "moduleFederationTraversalGraph", "module-federation-traversal-graph"),
+            workflow_plan=_first_dict(context, "module_federation_traversal_workflow_plan", "moduleFederationTraversalWorkflowPlan", "module-federation-traversal-workflow-plan"),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            write_journal=bool(
+                context.get("write_journal")
+                or context.get("writeJournal")
+                or context.get("append_journal")
+                or context.get("appendJournal")
+                or context.get("append_module_federation_recursive_continuation_journal")
+                or context.get("appendModuleFederationRecursiveContinuationJournal")
+            ),
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip(),
+            journal_id=str(context.get("journal_id") or context.get("journalId") or "module-federation-recursive-continuation-journal").strip() or "module-federation-recursive-continuation-journal",
+            max_iterations=max(1, int(context.get("max_iterations", context.get("maxIterations", 20)) or 20)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationRecursiveContinuationJournalResult:
+    status: str
+    journal: dict[str, Any] = field(default_factory=dict)
+    entry: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "journal": self.journal,
+            "entry": self.entry,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ModuleFederationRecursiveContinuationJournalManager:
+    """Plan or append a reviewed federation recursion continuation journal without executing remotes."""
+
+    JOURNALABLE_STATUSES = {"next_step_execution_progressed", "next_step_export_hook_plan_ready", "next_step_export_hook_installed"}
+
+    def plan_or_append(self, spec: ModuleFederationRecursiveContinuationJournalSpec | None) -> ModuleFederationRecursiveContinuationJournalResult:
+        policy = self._side_effect_policy(write_journal=False, review_approved=bool(spec and spec.review_approved))
+        if spec is None or not spec.recursive_execution:
+            return ModuleFederationRecursiveContinuationJournalResult(status="unsupported", reason="missing_module_federation_recursive_traversal_execution", side_effect_policy=policy)
+        existing_records = self._existing_records(spec.existing_journal)
+        entry = self._entry(spec, existing_record_count=len(existing_records))
+        blockers = self._blocking_reasons(spec, entry, existing_records)
+        if blockers:
+            status = "blocked"
+        elif spec.write_journal:
+            status = "journal_appended"
+        else:
+            status = "ready_for_review"
+        journal_records = existing_records + ([entry] if status == "journal_appended" else [])
+        side_effect_policy = self._side_effect_policy(write_journal=status == "journal_appended", review_approved=spec.review_approved)
+        journal = {
+            "schema_version": "reverse-deepagent.module-federation-recursive-continuation-journal.v1",
+            "journal_id": spec.journal_id,
+            "status": status,
+            "append_only": True,
+            "review_required": True,
+            "review_approved": bool(spec.review_approved),
+            "write_requested": bool(spec.write_journal),
+            "writes_journal_now": status == "journal_appended",
+            "record_count": len(journal_records),
+            "existing_record_count": len(existing_records),
+            "max_iterations": spec.max_iterations,
+            "remaining_iteration_budget": max(0, spec.max_iterations - len(journal_records)),
+            "blocking_reasons": blockers,
+            "pending_entry": entry if status != "journal_appended" else {},
+            "records": journal_records,
+            "next_checkpoint_plan": self._next_checkpoint_plan(status=status, spec=spec, entry=entry, record_count=len(journal_records)),
+            "artifact_refs": {
+                "recursive_execution": "workspace/module-federation-recursive-traversal-execution.json",
+                "recursive_followup": "workspace/module-federation-recursive-traversal-followup.json" if spec.recursive_followup else "",
+                "recursive_plan": "workspace/module-federation-recursive-traversal-plan.json" if spec.recursive_plan else "",
+                "traversal_graph": "workspace/module-federation-traversal-graph.json" if spec.traversal_graph else "",
+                "workflow_plan": "workspace/module-federation-traversal-workflow-plan.json" if spec.workflow_plan else "",
+                "continuation_journal": "workspace/module-federation-recursive-continuation-journal.json",
+                "next_recursive_plan": "workspace/module-federation-recursive-traversal-plan.json",
+                "next_recursive_followup": "workspace/module-federation-recursive-traversal-followup.json",
+                "next_recursive_execution": "workspace/module-federation-recursive-traversal-execution.json",
+            },
+            "side_effect_policy": side_effect_policy,
+            "next_action": self._next_action(status=status, blockers=blockers),
+        }
+        reason = blockers[0] if blockers else None
+        return ModuleFederationRecursiveContinuationJournalResult(status=status, journal=journal, entry=entry, side_effect_policy=side_effect_policy, reason=reason)
+
+    @classmethod
+    def _entry(cls, spec: ModuleFederationRecursiveContinuationJournalSpec, *, existing_record_count: int) -> dict[str, Any]:
+        recursive_execution = spec.recursive_execution
+        execution = recursive_execution.get("execution") if isinstance(recursive_execution.get("execution"), dict) else recursive_execution
+        workflow_execution = execution.get("module_federation_traversal_workflow_execution") if isinstance(execution.get("module_federation_traversal_workflow_execution"), dict) else {}
+        workflow_nested = workflow_execution.get("execution") if isinstance(workflow_execution.get("execution"), dict) else {}
+        policy = recursive_execution.get("side_effect_policy") if isinstance(recursive_execution.get("side_effect_policy"), dict) else {}
+        workflow_policy = workflow_execution.get("side_effect_policy") if isinstance(workflow_execution.get("side_effect_policy"), dict) else {}
+        status = str(recursive_execution.get("status") or execution.get("status") or "")
+        workflow_status = str(execution.get("workflow_execution_status") or workflow_execution.get("status") or workflow_nested.get("status") or "")
+        selected_step_index = execution.get("selected_step_index", workflow_nested.get("selected_step_index"))
+        selected_node_id = _clip(execution.get("selected_node_id", workflow_nested.get("selected_node_id")), spec.max_preview_length)
+        selected_action = _clip(execution.get("selected_action", workflow_nested.get("selected_action")), spec.max_preview_length)
+        workflow_plan_id = _clip(execution.get("workflow_plan_id", workflow_nested.get("workflow_plan_id")), spec.max_preview_length)
+        fingerprint = "|".join(str(part) for part in (workflow_plan_id, selected_step_index, selected_node_id, selected_action, workflow_status) if part not in (None, ""))
+        entry_id = f"{spec.journal_id}:{existing_record_count + 1}:{fingerprint or 'missing'}"
+        return {
+            "schema_version": "reverse-deepagent.module-federation-recursive-continuation-journal-entry.v1",
+            "entry_id": entry_id,
+            "sequence": existing_record_count + 1,
+            "execution_fingerprint": fingerprint,
+            "recursive_execution_status": status,
+            "workflow_execution_status": workflow_status,
+            "workflow_plan_id": workflow_plan_id,
+            "selected_step_index": selected_step_index,
+            "selected_node_id": selected_node_id,
+            "selected_action": selected_action,
+            "reviewer": spec.reviewer,
+            "review_approved": bool(spec.review_approved),
+            "artifact_status": {
+                "recursive_execution_recorded": bool(spec.recursive_execution),
+                "recursive_followup_recorded": bool(spec.recursive_followup),
+                "recursive_plan_recorded": bool(spec.recursive_plan),
+                "traversal_graph_recorded": bool(spec.traversal_graph),
+                "workflow_plan_recorded": bool(spec.workflow_plan),
+                "remote_factory_invoked_in_source_execution": bool(policy.get("remote_factory_invoked") or workflow_policy.get("remote_factory_invoked")),
+                "remote_code_executed_in_source_execution": bool(policy.get("remote_code_executed") or workflow_policy.get("remote_code_executed")),
+                "export_hook_installed_in_source_execution": bool(policy.get("export_hook_installed") or workflow_policy.get("export_hook_installed")),
+            },
+            "side_effect_policy": {
+                "records_journal_entry": True,
+                "container_init_executed_by_journal": False,
+                "remote_get_called_by_journal": False,
+                "remote_factory_invoked_by_journal": False,
+                "remote_code_executed_by_journal": False,
+                "export_hook_installed_by_journal": False,
+                "traversal_graph_rebuilt_by_journal": False,
+                "workflow_replanned_by_journal": False,
+                "automatic_queue_advance": False,
+                "recursive_federation_traversal": False,
+            },
+        }
+
+    @staticmethod
+    def _existing_records(journal: dict[str, Any]) -> list[dict[str, Any]]:
+        records = journal.get("records") if isinstance(journal, dict) else []
+        if isinstance(records, list):
+            return [dict(item) for item in records if isinstance(item, dict)]
+        return []
+
+    @classmethod
+    def _blocking_reasons(cls, spec: ModuleFederationRecursiveContinuationJournalSpec, entry: dict[str, Any], existing_records: list[dict[str, Any]]) -> list[str]:
+        blockers: list[str] = []
+        status = str(entry.get("recursive_execution_status") or "")
+        if status not in cls.JOURNALABLE_STATUSES:
+            blockers.append("module_federation_recursive_execution_not_journalable")
+        if len(existing_records) >= spec.max_iterations:
+            blockers.append("module_federation_recursive_continuation_iteration_budget_exhausted")
+        if not spec.write_journal:
+            return blockers
+        if not spec.review_approved:
+            blockers.append("review_approval_required")
+        fingerprint = entry.get("execution_fingerprint")
+        if fingerprint and any(record.get("execution_fingerprint") == fingerprint for record in existing_records):
+            blockers.append("module_federation_recursive_continuation_duplicate_entry")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _next_checkpoint_plan(*, status: str, spec: ModuleFederationRecursiveContinuationJournalSpec, entry: dict[str, Any], record_count: int) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.module-federation-recursive-continuation-checkpoint-plan.v1",
+            "status": "ready_for_review" if status in {"ready_for_review", "journal_appended"} else status,
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "current_iteration": record_count + (0 if status == "journal_appended" else 1),
+            "max_iterations": spec.max_iterations,
+            "selected_node_id": entry.get("selected_node_id"),
+            "selected_action": entry.get("selected_action"),
+            "steps": [
+                {"step": "verify_latest_module_federation_recursive_execution", "input_artifact": "workspace/module-federation-recursive-traversal-execution.json", "side_effect": False},
+                {"step": "append_reviewed_recursive_continuation_journal_entry", "input_artifact": "workspace/module-federation-recursive-continuation-journal.json", "output_artifact": "workspace/module-federation-recursive-continuation-journal.json", "side_effect": status == "journal_appended"},
+                {"step": "rebuild_module_federation_traversal_graph_from_journal_and_execution_evidence", "input_artifact": "workspace/module-federation-recursive-continuation-journal.json", "output_artifact": "workspace/module-federation-traversal-graph.json", "side_effect": False},
+                {"step": "replan_module_federation_traversal_workflow_from_refreshed_graph", "input_artifact": "workspace/module-federation-traversal-graph.json", "output_artifact": "workspace/module-federation-traversal-workflow-plan.json", "side_effect": False},
+                {"step": "review_next_module_federation_recursive_traversal_execution", "input_artifact": "workspace/module-federation-traversal-workflow-plan.json", "output_artifact": "workspace/module-federation-recursive-traversal-execution.json", "side_effect": False},
+            ],
+            "stops_before": ["automatic_graph_rebuild", "automatic_workflow_replan", "automatic_queue_advance", "recursive_remote_execution", "mcp_call", "mobile_runtime_chain"],
+        }
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if status == "journal_appended":
+            return "plan_next_module_federation_recursive_checkpoint_from_journal"
+        if "review_approval_required" in blockers:
+            return "approve_module_federation_recursive_continuation_journal_append"
+        if blockers:
+            return "revise_module_federation_recursive_continuation_journal_inputs"
+        return "review_module_federation_recursive_continuation_journal_append"
+
+    @staticmethod
+    def _side_effect_policy(*, write_journal: bool, review_approved: bool) -> dict[str, Any]:
+        return {
+            "plan_only": not write_journal,
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": review_approved,
+            "writes_journal": write_journal,
+            "container_init_executed_by_journal": False,
+            "remote_get_called_by_journal": False,
+            "remote_factory_invoked_by_journal": False,
+            "remote_code_executed_by_journal": False,
+            "export_hook_installed_by_journal": False,
+            "traversal_graph_rebuilt": False,
+            "workflow_replanned": False,
+            "automatic_queue_advance": False,
+            "recursive_federation_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class ModuleFederationGetInitPlanSpec:
     """Plan-only Module Federation container init/get analysis request."""
 
