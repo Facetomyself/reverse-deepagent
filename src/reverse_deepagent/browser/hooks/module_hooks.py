@@ -5657,6 +5657,281 @@ class ModuleFederationRecursiveTraversalFollowupManager:
         }
 
 
+@dataclass(slots=True)
+class ModuleFederationRecursiveTraversalExecutionSpec:
+    """Review-gated execution of one next-step checkpoint from a federation recursion follow-up."""
+
+    recursive_followup: dict[str, Any] = field(default_factory=dict)
+    workflow_plan: dict[str, Any] = field(default_factory=dict)
+    traversal_graph: dict[str, Any] = field(default_factory=dict)
+    factory_invoke_result: dict[str, Any] = field(default_factory=dict)
+    export_hook_plan: dict[str, Any] = field(default_factory=dict)
+    export_hook_result: dict[str, Any] = field(default_factory=dict)
+    selected_step_index: int | None = None
+    candidate_index: int | None = None
+    invoke_remote_factory: bool = False
+    plan_export_hook: bool = False
+    install_export_hook: bool = False
+    plan_nested_get_init: bool = False
+    review_approved: bool = False
+    share_scope_path: str = "window.__webpack_share_scopes__.default"
+    capture_args: bool = True
+    capture_result: bool = True
+    max_preview_length: int = 240
+    trigger_expression: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ModuleFederationRecursiveTraversalExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("module_federation_recursive_traversal_execution")
+            or context.get("moduleFederationRecursiveTraversalExecution")
+            or context.get("module-federation-recursive-traversal-execution")
+            or context.get("execute_module_federation_recursive_traversal")
+            or context.get("executeModuleFederationRecursiveTraversal")
+            or context.get("execute_module_federation_recursive_traversal_next_step")
+            or context.get("executeModuleFederationRecursiveTraversalNextStep")
+        )
+        followup = (
+            context.get("module_federation_recursive_traversal_followup")
+            or context.get("moduleFederationRecursiveTraversalFollowup")
+            or context.get("module-federation-recursive-traversal-followup")
+            or context.get("recursive_traversal_followup")
+            or context.get("recursiveTraversalFollowup")
+        )
+        if isinstance(followup, dict) and isinstance(followup.get("followup"), dict):
+            followup = followup["followup"]
+        workflow_plan = _first_dict(
+            context,
+            "module_federation_traversal_workflow_plan",
+            "moduleFederationTraversalWorkflowPlan",
+            "module-federation-traversal-workflow-plan",
+            "latest_module_federation_traversal_workflow_plan",
+            "latestModuleFederationTraversalWorkflowPlan",
+            "traversal_workflow_plan",
+            "traversalWorkflowPlan",
+        )
+        if isinstance(workflow_plan.get("workflow_plan"), dict):
+            workflow_plan = dict(workflow_plan["workflow_plan"])
+        if not workflow_plan and isinstance(followup, dict):
+            workflow_result = followup.get("module_federation_traversal_workflow_plan")
+            if isinstance(workflow_result, dict) and isinstance(workflow_result.get("workflow_plan"), dict):
+                workflow_plan = dict(workflow_result["workflow_plan"])
+            elif isinstance(followup.get("latest_workflow_plan"), dict):
+                workflow_plan = dict(followup["latest_workflow_plan"])
+        if not workflow_plan and not requested:
+            return None
+        traversal_graph = _first_dict(
+            context,
+            "module_federation_traversal_graph",
+            "moduleFederationTraversalGraph",
+            "module-federation-traversal-graph",
+            "latest_module_federation_traversal_graph",
+            "latestModuleFederationTraversalGraph",
+            "traversal_graph",
+            "traversalGraph",
+        )
+        if isinstance(traversal_graph.get("graph"), dict):
+            traversal_graph = dict(traversal_graph["graph"])
+        if not traversal_graph and isinstance(followup, dict):
+            graph_result = followup.get("module_federation_traversal_graph")
+            if isinstance(graph_result, dict) and isinstance(graph_result.get("graph"), dict):
+                traversal_graph = dict(graph_result["graph"])
+        return cls(
+            recursive_followup=dict(followup) if isinstance(followup, dict) else {},
+            workflow_plan=workflow_plan,
+            traversal_graph=traversal_graph,
+            factory_invoke_result=_first_dict(context, "module_federation_factory_invoke_result", "moduleFederationFactoryInvokeResult", "module-federation-factory-invoke-result", "factory_invoke_result", "factoryInvokeResult"),
+            export_hook_plan=_first_dict(context, "module_federation_export_hook_plan", "moduleFederationExportHookPlan", "module-federation-export-hook-plan", "export_hook_plan", "exportHookPlan"),
+            export_hook_result=_first_dict(context, "module_federation_export_hook_result", "moduleFederationExportHookResult", "module-federation-export-hook-result", "remote_export_hook_result", "remoteExportHookResult"),
+            selected_step_index=ModuleFederationTraversalWorkflowExecutionSpec._optional_int(context.get("selected_step_index", context.get("selectedStepIndex", context.get("step_index", context.get("stepIndex"))))),
+            candidate_index=ModuleFederationTraversalWorkflowExecutionSpec._optional_int(context.get("candidate_index", context.get("candidateIndex"))),
+            invoke_remote_factory=bool(context.get("invoke_remote_factory") or context.get("invokeRemoteFactory") or context.get("execute_remote_factory") or context.get("executeRemoteFactory") or context.get("execute_module_federation_factory") or context.get("executeModuleFederationFactory") or context.get("invoke_module_federation_factory") or context.get("invokeModuleFederationFactory")),
+            plan_export_hook=bool(context.get("plan_export_hook") or context.get("planExportHook") or context.get("plan_module_federation_export_hook") or context.get("planModuleFederationExportHook")),
+            install_export_hook=bool(context.get("install_export_hook") or context.get("installExportHook") or context.get("install_module_federation_export_hook") or context.get("installModuleFederationExportHook") or context.get("hook_remote_export") or context.get("hookRemoteExport")),
+            plan_nested_get_init=bool(context.get("plan_nested_get_init") or context.get("planNestedGetInit") or context.get("plan_nested_federation_get_init") or context.get("planNestedFederationGetInit")),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            share_scope_path=str(context.get("share_scope_path", context.get("shareScopePath", "window.__webpack_share_scopes__.default")) or "window.__webpack_share_scopes__.default").strip(),
+            capture_args=bool(context.get("capture_args", context.get("captureArgs", True))),
+            capture_result=bool(context.get("capture_result", context.get("captureResult", True))),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            trigger_expression=str(context.get("trigger_expression", context.get("triggerExpression"))) if context.get("trigger_expression", context.get("triggerExpression")) else None,
+        )
+
+
+@dataclass(slots=True)
+class ModuleFederationRecursiveTraversalExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ModuleFederationRecursiveTraversalExecutionManager:
+    """Execute one reviewed federation next-step checkpoint and stop before deeper recursion."""
+
+    def execute(self, page: BrowserPage, spec: ModuleFederationRecursiveTraversalExecutionSpec | None) -> ModuleFederationRecursiveTraversalExecutionResult:
+        if spec is None or not spec.workflow_plan:
+            return ModuleFederationRecursiveTraversalExecutionResult(status="unsupported", reason="missing_module_federation_traversal_workflow_plan", side_effect_policy=self._side_effect_policy())
+        stages: list[dict[str, Any]] = [self._stage("select_module_federation_recursive_next_step_checkpoint", "selected", "", side_effect=False)]
+        workflow_execution_payload: dict[str, Any] = {}
+        if self._has_execution_flags(spec) and not spec.review_approved:
+            stages.append(self._stage("execute_next_module_federation_traversal_workflow_step", "blocked", "review_approval_required", side_effect=True))
+        else:
+            workflow_result = ModuleFederationTraversalWorkflowExecutionManager().execute(
+                page,
+                ModuleFederationTraversalWorkflowExecutionSpec(
+                    workflow_plan=spec.workflow_plan,
+                    traversal_graph=spec.traversal_graph,
+                    factory_invoke_result=spec.factory_invoke_result,
+                    export_hook_plan=spec.export_hook_plan,
+                    export_hook_result=spec.export_hook_result,
+                    selected_step_index=spec.selected_step_index,
+                    candidate_index=spec.candidate_index,
+                    invoke_remote_factory=spec.invoke_remote_factory,
+                    plan_export_hook=spec.plan_export_hook,
+                    install_export_hook=spec.install_export_hook,
+                    plan_nested_get_init=spec.plan_nested_get_init,
+                    review_approved=spec.review_approved,
+                    share_scope_path=spec.share_scope_path,
+                    capture_args=spec.capture_args,
+                    capture_result=spec.capture_result,
+                    max_preview_length=spec.max_preview_length,
+                    trigger_expression=spec.trigger_expression,
+                ),
+            )
+            workflow_execution_payload = workflow_result.to_dict()
+            stages.append(self._stage("execute_next_module_federation_traversal_workflow_step", workflow_result.status, workflow_result.reason, side_effect=self._has_execution_flags(spec)))
+        stages.append(self._stage("stop_before_next_module_federation_recursive_followup_checkpoint", "stopped", "manual_checkpoint_required", side_effect=False))
+        status = self._status(stages, workflow_execution_payload)
+        reason = self._reason(stages)
+        execution = self._execution_payload(spec, workflow_execution_payload, stages, status=status, reason=reason)
+        return ModuleFederationRecursiveTraversalExecutionResult(status=status, execution=execution, side_effect_policy=self._side_effect_policy(spec=spec, workflow_execution=workflow_execution_payload, stages=stages), reason=reason)
+
+    @staticmethod
+    def _has_execution_flags(spec: ModuleFederationRecursiveTraversalExecutionSpec) -> bool:
+        return any((spec.invoke_remote_factory, spec.plan_export_hook, spec.install_export_hook, spec.plan_nested_get_init))
+
+    @staticmethod
+    def _stage(name: str, status: str, reason: str | None, *, side_effect: bool) -> dict[str, Any]:
+        return {"stage": name, "status": status, "reason": reason or "", "side_effect": side_effect}
+
+    @classmethod
+    def _status(cls, stages: list[dict[str, Any]], workflow_execution: dict[str, Any]) -> str:
+        if any(stage["status"] in {"failed", "failure", "error"} for stage in stages):
+            return "failed"
+        if any(stage["status"] in {"blocked", "unsupported"} for stage in stages):
+            return "blocked"
+        nested_execution = workflow_execution.get("execution") if isinstance(workflow_execution.get("execution"), dict) else {}
+        nested_status = str(workflow_execution.get("status") or nested_execution.get("status") or "")
+        if nested_status == "export_hook_installed":
+            return "next_step_export_hook_installed"
+        if nested_status == "export_hook_plan_ready":
+            return "next_step_export_hook_plan_ready"
+        if nested_status in {"factory_invoke_success", "nested_get_init_plan_ready"}:
+            return "next_step_execution_progressed"
+        return "ready_for_review"
+
+    @staticmethod
+    def _reason(stages: list[dict[str, Any]]) -> str | None:
+        for stage in stages:
+            if stage["status"] in {"blocked", "failed", "failure", "error", "unsupported"} and stage.get("reason"):
+                return str(stage["reason"])
+        return None
+
+    @classmethod
+    def _execution_payload(
+        cls,
+        spec: ModuleFederationRecursiveTraversalExecutionSpec,
+        workflow_execution: dict[str, Any],
+        stages: list[dict[str, Any]],
+        *,
+        status: str,
+        reason: str | None,
+    ) -> dict[str, Any]:
+        nested_execution = workflow_execution.get("execution") if isinstance(workflow_execution.get("execution"), dict) else {}
+        return {
+            "schema_version": "reverse-deepagent.module-federation-recursive-traversal-execution.v1",
+            "status": status,
+            "reason": reason,
+            "source_recursive_followup_status": spec.recursive_followup.get("status"),
+            "source_recursive_followup_next_action": spec.recursive_followup.get("next_action"),
+            "workflow_plan_id": spec.workflow_plan.get("plan_id"),
+            "source_graph_id": spec.workflow_plan.get("source_graph_id"),
+            "review_approved": bool(spec.review_approved),
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "execute_at_most_one_remote_step_per_review": True,
+            "stages": stages,
+            "module_federation_traversal_workflow_execution": workflow_execution,
+            "workflow_execution_status": workflow_execution.get("status") or nested_execution.get("status"),
+            "selected_step_index": nested_execution.get("selected_step_index"),
+            "selected_node_id": nested_execution.get("selected_node_id"),
+            "selected_action": nested_execution.get("selected_action"),
+            "artifact_refs": {
+                "recursive_followup": "workspace/module-federation-recursive-traversal-followup.json",
+                "workflow_plan": "workspace/module-federation-traversal-workflow-plan.json",
+                "workflow_execution": "workspace/module-federation-traversal-workflow-execution.json" if workflow_execution else "",
+                "next_recursive_plan": "workspace/module-federation-recursive-traversal-plan.json",
+            },
+            "next_action": cls._next_action(status, reason),
+        }
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "next_step_export_hook_installed":
+            return "plan_next_module_federation_recursive_traversal_checkpoint"
+        if status in {"next_step_execution_progressed", "next_step_export_hook_plan_ready"}:
+            return "continue_reviewed_module_federation_traversal_step_or_plan_next_checkpoint"
+        if status == "blocked" and reason:
+            return "resolve_module_federation_recursive_traversal_execution_blockers"
+        if status == "failed":
+            return "inspect_module_federation_recursive_traversal_execution_failure"
+        return "review_module_federation_recursive_traversal_execution_plan"
+
+    @staticmethod
+    def _side_effect_policy(
+        spec: ModuleFederationRecursiveTraversalExecutionSpec | None = None,
+        workflow_execution: dict[str, Any] | None = None,
+        stages: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        stages = stages or []
+        nested_policy = workflow_execution.get("side_effect_policy") if isinstance(workflow_execution, dict) and isinstance(workflow_execution.get("side_effect_policy"), dict) else {}
+        return {
+            "plan_only_by_default": not bool(spec and ModuleFederationRecursiveTraversalExecutionManager._has_execution_flags(spec)),
+            "review_required": True,
+            "requires_review_approval": True,
+            "review_approved": bool(spec and spec.review_approved),
+            "manual_checkpoint_required": True,
+            "bounded_recursion": True,
+            "workflow_execution_planned": bool(workflow_execution),
+            "workflow_execution_started": any(stage["stage"] == "execute_next_module_federation_traversal_workflow_step" and stage["side_effect"] and stage["status"] not in {"pending", "blocked"} for stage in stages),
+            "container_init_executed": bool(nested_policy.get("container_init_executed", False)),
+            "remote_get_called": bool(nested_policy.get("remote_get_called", False)),
+            "remote_factory_invoked": bool(nested_policy.get("remote_factory_invoked", False)),
+            "remote_code_executed": bool(nested_policy.get("remote_code_executed", False)),
+            "export_hook_plan_created": bool(nested_policy.get("export_hook_plan_created", False)),
+            "export_hook_installed": bool(nested_policy.get("export_hook_installed", False)),
+            "traversal_graph_rebuilt": False,
+            "workflow_replanned": False,
+            "automatic_queue_advance": False,
+            "recursive_federation_traversal": False,
+            "execute_at_most_one_remote_step_per_review": True,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
 
 @dataclass(slots=True)
 class ModuleFederationGetInitPlanSpec:

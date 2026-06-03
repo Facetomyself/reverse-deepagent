@@ -3122,6 +3122,95 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["next_step_review_planned"])
         self.assertFalse(result.artifacts[0].metadata["recursive_federation_traversal"])
 
+    def test_native_web_runtime_plans_module_federation_recursive_traversal_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.module-federation-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "planned_steps": [
+                {
+                    "step_index": 0,
+                    "node_id": "remote-module:window.remoteOther:./token",
+                    "node_type": "remote-module-candidate",
+                    "node_status": "requires_factory_review",
+                    "action": "review_module_federation_factory_invoke_for_traversal",
+                    "container_path": "window.remoteOther",
+                    "exposed_name": "./token",
+                    "node": {"container_path": "window.remoteOther", "exposed_name": "./token"},
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "module-federation-recursive-traversal-execution",
+            {
+                "module_federation_recursive_traversal_followup": {"status": "next_step_review_ready"},
+                "module_federation_traversal_workflow_plan": workflow_plan,
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_module_federation_recursive_traversal_execution_step"])
+        self.assertEqual(page.module_federation_get_init_probes, [])
+        self.assertEqual(page.module_federation_factory_invocations, [])
+        self.assertIn("module_federation_recursive_traversal_execution_status=ready_for_review", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_workflow_execution_status=ready_for_review", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_workflow_execution_started=False", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_remote_factory_invoked=False", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_module_federation_recursive_traversal_execution_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-recursive-traversal-execution.json")
+        self.assertFalse(result.artifacts[0].metadata["workflow_execution_started"])
+
+    def test_native_web_runtime_executes_reviewed_module_federation_recursive_traversal_next_step(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        workflow_plan = {
+            "schema_version": "reverse-deepagent.module-federation-traversal-workflow-plan.v1",
+            "status": "ready_for_review",
+            "planned_steps": [
+                {
+                    "step_index": 0,
+                    "node_id": "remote-module:window.remoteOther:./token",
+                    "node_type": "remote-module-candidate",
+                    "node_status": "requires_factory_review",
+                    "action": "review_module_federation_factory_invoke_for_traversal",
+                    "container_path": "window.remoteOther",
+                    "exposed_name": "./token",
+                    "node": {"container_path": "window.remoteOther", "exposed_name": "./token"},
+                }
+            ],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-module-federation-recursive-traversal-next-step",
+            {
+                "module_federation_recursive_traversal_followup": {"status": "next_step_review_ready"},
+                "module_federation_traversal_workflow_plan": workflow_plan,
+                "invoke_remote_factory": True,
+                "review_approved": True,
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_module_federation_recursive_traversal_next_step"])
+        self.assertEqual(page.module_federation_get_init_probes, ["./token"])
+        self.assertEqual(page.module_federation_factory_invocations, ["./token"])
+        self.assertIn("module_federation_recursive_traversal_execution_status=next_step_execution_progressed", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_workflow_execution_status=factory_invoke_success", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_workflow_execution_started=True", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_remote_factory_invoked=True", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_remote_code_executed=True", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_automatic_queue_advance=False", result.verification)
+        self.assertIn("module_federation_recursive_traversal_execution_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "continue_reviewed_module_federation_traversal_step_or_plan_next_checkpoint")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-recursive-traversal-execution.json")
+        self.assertTrue(result.artifacts[0].metadata["workflow_execution_started"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_queue_advance"])
+
     def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

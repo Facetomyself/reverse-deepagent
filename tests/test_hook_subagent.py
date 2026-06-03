@@ -937,6 +937,30 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["module_federation_recursive_traversal_followup_status"], "next_step_review_ready")
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_module_federation_recursive_traversal_execution(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_recursive_traversal_execution": {
+                "status": "next_step_execution_progressed",
+                "execution": {
+                    "status": "next_step_execution_progressed",
+                    "stages": [{"stage": "execute_next_module_federation_traversal_workflow_step", "status": "factory_invoke_success"}],
+                    "next_action": "continue_reviewed_module_federation_traversal_step_or_plan_next_checkpoint",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_recursive_traversal_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_recursive_traversal_execution")
+        self.assertEqual(result["summary"]["module_federation_recursive_traversal_execution_status"], "next_step_execution_progressed")
+        self.assertEqual(result["summary"]["module_federation_recursive_traversal_execution_stage_count"], 1)
+        self.assertEqual(result["summary"]["module_federation_recursive_traversal_execution_next_action"], "continue_reviewed_module_federation_traversal_step_or_plan_next_checkpoint")
+        self.assertEqual(result["review_required_items"][0]["module_federation_recursive_traversal_execution_status"], "next_step_execution_progressed")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_review_hook_artifacts_warns_for_module_federation_export_hook_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
