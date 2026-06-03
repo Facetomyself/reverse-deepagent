@@ -93,6 +93,8 @@ from reverse_deepagent.browser.hooks import (
     BrowserHookManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperReplacementExecutionManager,
+    ClosureWrapperReplacementExecutionSpec,
     ClosureWrapperReplacementPlanManager,
     ClosureWrapperReplacementPlanSpec,
     FlowTimelineManager,
@@ -1198,6 +1200,72 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_replacement_execution_request(protection_name, context):
+            spec = ClosureWrapperReplacementExecutionSpec.from_context(context)
+            result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"closure_wrapper_replacement_execution_status={result.status}",
+                f"closure_wrapper_replacement_execution_reason={result.reason or ''}",
+                f"closure_wrapper_replacement_execution_review_approved={policy.get('review_approved', False)}",
+                f"closure_wrapper_replacement_execution_execute_requested={policy.get('execute_requested', False)}",
+                f"closure_wrapper_replacement_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_replacement_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_replacement_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_replacement_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_replacement_execution_observed_callframe_id={execution.get('observed_callframe_id') or 'unknown'}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"closure_wrapper_replacement_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-replacement-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-approved Native Web closure wrapper replacement execution result.",
+                    metadata={
+                        "status": result.status,
+                        "reason": result.reason,
+                        "wrapper_installed": policy.get("wrapper_installed", False),
+                        "runtime_mutated": policy.get("runtime_mutated", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "callframe_evaluated": policy.get("callframe_evaluated", False),
+                        "review_approved": policy.get("review_approved", False),
+                        "execute_requested": policy.get("execute_requested", False),
+                        "function_name": execution.get("function_name"),
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-restore-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-required restore plan for a closure wrapper replacement.",
+                    metadata={
+                        "status": "ready_for_review" if result.status == "applied" else "not_available",
+                        "available": bool((execution.get("restore_plan") or {}).get("available")) if isinstance(execution.get("restore_plan"), dict) else False,
+                        "requires_review": True,
+                        "function_name": execution.get("function_name"),
+                    },
+                ),
+            ]
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime closure wrapper replacement mutation audit.",
+                        metadata={"count": len(result.mutation_audit), "source": "closure_wrapper_replacement_execution"},
+                    )
+                )
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_reviewed_closure_wrapper_replacement"] if result.status == "applied" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "applied" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "resolve_closure_wrapper_replacement_execution_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "applied" else ConfidenceLevel.LOW,
             )
         if self._is_closure_scope_discovery_request(protection_name, context):
             spec = ClosureScopeDiscoverySpec.from_context(context)
@@ -4553,6 +4621,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_scope_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_replacement_plan_request(protection_name, context):
             return False
         if normalized in {
@@ -4579,6 +4649,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_replacement_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
+            return False
         if normalized in {
             "closure-wrapper-replacement-plan",
             "closure-wrapper-preflight",
@@ -4596,6 +4668,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "closureWrapperPreflight",
                 "closure_function_candidates",
                 "closureFunctionCandidates",
+            )
+        )
+
+    @staticmethod
+    def _is_closure_wrapper_replacement_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "closure-wrapper-replacement-execution",
+            "execute-closure-wrapper-replacement",
+            "reviewed-closure-wrapper-replacement",
+            "closure-function-wrapper-execution",
+            "install-closure-wrapper",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "closure_wrapper_replacement_execution",
+                "closureWrapperReplacementExecution",
+                "execute_closure_wrapper_replacement",
+                "executeClosureWrapperReplacement",
+                "reviewed_closure_wrapper_replacement",
+                "reviewedClosureWrapperReplacement",
             )
         )
 
@@ -5884,6 +5979,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_replacement_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_scope_discovery_request(protection_name, context):

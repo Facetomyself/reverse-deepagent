@@ -81,6 +81,19 @@ class FakeCDPSession:
                 return {"result": {"type": "string", "value": "function", "description": "function"}}
             if expression == "this && typeof this":
                 return {"result": {"type": "string", "value": "object", "description": "object"}}
+            if "__reverseDeepAgentClosureWrappers" in expression:
+                return {
+                    "result": {
+                        "type": "object",
+                        "value": {
+                            "ok": True,
+                            "functionName": "buildSign",
+                            "wrapperInstalled": True,
+                            "restoreExpressionAvailable": True,
+                        },
+                        "description": "Object",
+                    }
+                }
             return {"result": {"type": "undefined", "description": "undefined"}}
         if method in {"Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"}:
             return {}
@@ -4237,6 +4250,83 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
         self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
         self.assertFalse(result.artifacts[0].metadata["callframe_evaluated"])
+
+    def test_native_web_runtime_executes_reviewed_closure_wrapper_replacement(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        discovery = runtime.apply_minimal_protection(
+            "closure-function-discovery",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 4,
+                "closure_function_names": ["buildSign"],
+                "trigger_expression": "debugger; 'scheduled'",
+                "preserve_pause_state": True,
+                "pause_session_id": "native-closure-exec",
+            },
+        )
+        self.assertEqual(discovery.status.value, "success")
+        plan = runtime.apply_minimal_protection(
+            "closure-wrapper-replacement-plan",
+            {
+                "closure_function_candidates": [
+                    {
+                        "function_name": "buildSign",
+                        "candidate_id": "closure:native-cf-1:buildSign",
+                        "hook_kind": "closure-scope",
+                        "hook_supported": False,
+                        "callframe_index": 0,
+                        "callFrameId": "native-cf-1",
+                        "evidence_expression": "typeof buildSign",
+                    }
+                ],
+                "candidate_id": "closure:native-cf-1:buildSign",
+            },
+        )
+        self.assertEqual(plan.status.value, "partial")
+
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-replacement-execution",
+            {
+                "closure_wrapper_replacement_plan": {
+                    "status": "ready_for_review",
+                    "wrapper_strategy": "log-only-call-through",
+                    "selected_candidate": {
+                        "function_name": "buildSign",
+                        "candidate_id": "closure:native-cf-1:buildSign",
+                        "hook_kind": "closure-scope",
+                        "hook_supported": False,
+                        "callframe_index": 0,
+                        "callFrameId": "native-cf-1",
+                        "evidence_expression": "typeof buildSign",
+                    },
+                    "replacement_feasibility": {"lexical_binding_proven": True},
+                },
+                "pause_session_id": "native-closure-exec",
+                "execute_closure_wrapper_replacement": True,
+                "review_approved": True,
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_reviewed_closure_wrapper_replacement"])
+        self.assertIn("closure_wrapper_replacement_execution_status=applied", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_review_approved=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_wrapper_installed=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_runtime_mutated=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_cdp_command_sent=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_callframe_evaluated=True", result.verification)
+        self.assertEqual(result.next_action, "invoke_target_flow_and_review_closure_wrapper_events_or_restore")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-replacement-execution.json")
+        self.assertTrue(result.artifacts[0].metadata["wrapper_installed"])
+        self.assertTrue(result.artifacts[0].metadata["runtime_mutated"])
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/closure-wrapper-restore-plan.json")
+        self.assertTrue(result.artifacts[1].metadata["available"])
+        page = provider.session.context.pages[0]
+        eval_calls = [params for method, params in page._cdp_session.calls if method == "Debugger.evaluateOnCallFrame"]
+        self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
+        BreakpointManager.clear_paused_sessions()
 
 
     def test_native_web_runtime_apply_minimal_protection_audits_object_root_mutation(self) -> None:

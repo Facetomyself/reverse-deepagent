@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 from reverse_deepagent.browser.base import BrowserPage
-from reverse_deepagent.browser.hooks.breakpoints import BreakpointManager, BreakpointResult, BreakpointSpec
+from reverse_deepagent.browser.hooks.breakpoints import BreakpointManager, BreakpointResult, BreakpointSpec, PausedSessionActionSpec
 
 
 JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
@@ -450,8 +451,8 @@ class ClosureWrapperReplacementPlanManager:
         lexical_binding_proven = bool(function_name and evidence_expression == f"typeof {function_name}")
         execution_blockers = [
             "assignment_safety_not_proven",
-            "restore_plan_missing",
-            "reviewed_executor_not_implemented",
+            "review_approval_required",
+            "same_process_retained_pause_required",
             "automatic_replacement_not_supported",
         ]
         if status != "ready_for_review" and reason:
@@ -461,16 +462,19 @@ class ClosureWrapperReplacementPlanManager:
             "lexical_binding_proven": lexical_binding_proven,
             "assignment_safety_proven": False,
             "restore_plan_available": False,
-            "reviewed_executor_available": False,
+            "restore_plan_available_after_execution": True,
+            "reviewed_executor_available": True,
+            "reviewed_executor_scope": "same-process-retained-paused-session",
             "automatic_replacement_supported": False,
             "reason": reason or "review_required_before_any_future_wrapper_replacement",
         }
         review_steps = [
             "review_closure_candidate_origin_and_scope_chain",
             "prove_assignment_safety_with_explicit_side_effect_audit",
-            "prepare_restore_plan_for_original_lexical_binding",
-            "design_reviewed_call_through_wrapper_payload",
-            "run_future_reviewed_executor_only_after_explicit_approval",
+            "preserve_same_process_pause_session_for_reviewed_execution",
+            "approve_log_only_call_through_wrapper_payload",
+            "run_reviewed_executor_only_after_explicit_approval",
+            "review_generated_restore_plan_after_execution",
         ]
         return {
             "schema_version": "reverse-deepagent.closure-wrapper-replacement-plan.v1",
@@ -514,6 +518,433 @@ class ClosureWrapperReplacementPlanManager:
             "callframe_evaluated": False,
             "wrapper_installed": False,
             "runtime_mutated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
+class ClosureWrapperReplacementExecutionSpec:
+    """Explicit reviewed execution request for a closure wrapper replacement plan.
+
+    This is intentionally narrow and same-process only. It consumes a previously
+    reviewed `closure-wrapper-replacement-plan`, then delegates the actual CDP
+    `Debugger.evaluateOnCallFrame` call to `BreakpointManager` so the existing
+    paused-session policy, mutation audit, and continuation preflight stay in one
+    place.
+    """
+
+    plan: dict[str, Any] = field(default_factory=dict)
+    pause_session_id: str | None = None
+    callframe_index: int = 0
+    expected_callframe_id: str | None = None
+    candidate_id: str | None = None
+    function_name: str | None = None
+    wrapper_strategy: str = "log-only-call-through"
+    review_approved: bool = False
+    execute: bool = False
+    reviewer_note: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperReplacementExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_replacement_execution")
+            or context.get("closureWrapperReplacementExecution")
+            or context.get("execute_closure_wrapper_replacement")
+            or context.get("executeClosureWrapperReplacement")
+            or context.get("reviewed_closure_wrapper_replacement")
+            or context.get("reviewedClosureWrapperReplacement")
+        )
+        raw_plan = (
+            context.get("closure_wrapper_replacement_plan")
+            or context.get("closureWrapperReplacementPlan")
+            or context.get("closure-wrapper-replacement-plan")
+            or context.get("plan")
+        )
+        plan = cls._coerce_plan(raw_plan)
+        if not requested and not plan:
+            return None
+        selected_candidate = cls._selected_candidate(plan)
+        callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex"))
+        if callframe_index_raw is None:
+            callframe_index_raw = selected_candidate.get("callframe_index", selected_candidate.get("callFrameIndex", 0))
+        strategy = str(
+            context.get(
+                "wrapper_strategy",
+                context.get("wrapperStrategy", plan.get("wrapper_strategy", "log-only-call-through")),
+            )
+            or "log-only-call-through"
+        )
+        return cls(
+            plan=plan,
+            pause_session_id=_string_or_none(
+                context.get(
+                    "pause_session_id",
+                    context.get("pauseSessionId", context.get("debugger_session_id", context.get("debuggerSessionId"))),
+                )
+            ),
+            callframe_index=int(callframe_index_raw or 0),
+            expected_callframe_id=_string_or_none(
+                context.get(
+                    "expected_callframe_id",
+                    context.get(
+                        "expectedCallFrameId",
+                        context.get("callframe_id", context.get("callFrameId", selected_candidate.get("callFrameId"))),
+                    ),
+                )
+            ),
+            candidate_id=_string_or_none(context.get("candidate_id", context.get("candidateId", selected_candidate.get("candidate_id")))),
+            function_name=_string_or_none(
+                context.get("function_name", context.get("functionName", selected_candidate.get("function_name", selected_candidate.get("name"))))
+            ),
+            wrapper_strategy=strategy,
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            execute=bool(context.get("execute_closure_wrapper_replacement", context.get("executeClosureWrapperReplacement", requested))),
+            reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
+        )
+
+    @staticmethod
+    def _coerce_plan(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        if isinstance(value.get("plan"), dict):
+            return dict(value["plan"])
+        return dict(value)
+
+    @staticmethod
+    def _selected_candidate(plan: dict[str, Any]) -> dict[str, Any]:
+        candidate = plan.get("selected_candidate")
+        return dict(candidate) if isinstance(candidate, dict) else {}
+
+
+@dataclass(slots=True)
+class ClosureWrapperReplacementExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    callframe_evaluations: list[dict[str, Any]] = field(default_factory=list)
+    mutation_audit: list[dict[str, Any]] = field(default_factory=list)
+    continuation_preflight: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-replacement-execution.v1",
+            "status": self.status,
+            "execution": self.execution,
+            "selected_candidate": self.selected_candidate,
+            "callframe_evaluations": self.callframe_evaluations,
+            "mutation_audit": self.mutation_audit,
+            "continuation_preflight": self.continuation_preflight,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ClosureWrapperReplacementExecutionManager:
+    """Run one explicitly reviewed closure wrapper replacement from a retained pause."""
+
+    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+
+    def execute(self, page: BrowserPage, spec: ClosureWrapperReplacementExecutionSpec | None) -> ClosureWrapperReplacementExecutionResult:
+        if spec is None:
+            return self._blocked("unsupported", "missing_closure_wrapper_replacement_execution_spec", spec=None)
+        selected_candidate = ClosureWrapperReplacementExecutionSpec._selected_candidate(spec.plan)
+        reason = self._blocker(spec, selected_candidate)
+        if reason:
+            return self._blocked("blocked", reason, spec=spec, selected_candidate=selected_candidate)
+        function_name = str(spec.function_name or selected_candidate.get("function_name") or selected_candidate.get("name") or "")
+        marker = self._marker(spec, selected_candidate, function_name)
+        expression = self._install_expression(function_name=function_name, marker=marker)
+        action_spec = PausedSessionActionSpec(
+            pause_session_id=str(spec.pause_session_id),
+            action="evaluate",
+            callframe_evaluations=[expression],
+            callframe_index=spec.callframe_index,
+            callframe_evaluation_policy="allow_side_effects",
+            debugger_actions=[],
+        )
+        breakpoint_result = BreakpointManager().run_paused_session_action(page, action_spec)
+        evaluation = breakpoint_result.callframe_evaluations[0] if breakpoint_result.callframe_evaluations else {}
+        post_reason = self._post_execution_reason(spec, evaluation)
+        status = "applied" if breakpoint_result.status == "success" and post_reason is None else "failed"
+        side_effect_policy = self._side_effect_policy(
+            spec=spec,
+            cdp_command_sent=bool(breakpoint_result.callframe_evaluations),
+            callframe_evaluated=bool(breakpoint_result.callframe_evaluations),
+            runtime_mutated=status == "applied",
+            wrapper_installed=status == "applied",
+        )
+        execution = self._execution_payload(
+            spec=spec,
+            candidate=selected_candidate,
+            function_name=function_name,
+            marker=marker,
+            expression=expression,
+            evaluation=evaluation,
+            status=status,
+            reason=post_reason or breakpoint_result.reason,
+            side_effect_policy=side_effect_policy,
+        )
+        return ClosureWrapperReplacementExecutionResult(
+            status=status,
+            execution=execution,
+            selected_candidate=selected_candidate,
+            callframe_evaluations=list(breakpoint_result.callframe_evaluations),
+            mutation_audit=list(breakpoint_result.mutation_audit),
+            continuation_preflight=dict(breakpoint_result.continuation_preflight),
+            side_effect_policy=side_effect_policy,
+            reason=post_reason or breakpoint_result.reason,
+            error=breakpoint_result.error,
+        )
+
+    def _blocked(
+        self,
+        status: str,
+        reason: str,
+        *,
+        spec: ClosureWrapperReplacementExecutionSpec | None,
+        selected_candidate: dict[str, Any] | None = None,
+    ) -> ClosureWrapperReplacementExecutionResult:
+        candidate = selected_candidate if isinstance(selected_candidate, dict) else {}
+        side_effect_policy = self._side_effect_policy(spec=spec, cdp_command_sent=False, callframe_evaluated=False, runtime_mutated=False, wrapper_installed=False)
+        execution = {
+            "schema_version": "reverse-deepagent.closure-wrapper-replacement-execution.v1",
+            "status": status,
+            "reason": reason,
+            "plan_id": "closure-wrapper-replacement-execution",
+            "requires_review": True,
+            "review_approved": bool(spec.review_approved) if spec else False,
+            "execute_requested": bool(spec.execute) if spec else False,
+            "selected_candidate": candidate,
+            "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "wrapper_installed": False,
+            "runtime_mutated": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "restore_plan": {},
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": side_effect_policy,
+        }
+        return ClosureWrapperReplacementExecutionResult(
+            status=status,
+            execution=execution,
+            selected_candidate=candidate,
+            side_effect_policy=side_effect_policy,
+            reason=reason,
+        )
+
+    @classmethod
+    def _blocker(cls, spec: ClosureWrapperReplacementExecutionSpec, candidate: dict[str, Any]) -> str | None:
+        if not spec.plan:
+            return "missing_closure_wrapper_replacement_plan"
+        if str(spec.plan.get("status") or "") != "ready_for_review":
+            return "closure_wrapper_replacement_plan_not_ready"
+        if not spec.execute:
+            return "execute_closure_wrapper_replacement_flag_required"
+        if not spec.review_approved:
+            return "review_approval_required"
+        if not spec.pause_session_id:
+            return "pause_session_id_required"
+        if spec.wrapper_strategy not in cls.SUPPORTED_STRATEGIES:
+            return "unsupported_wrapper_strategy"
+        if not candidate:
+            return "missing_selected_candidate"
+        if str(candidate.get("hook_kind") or "") != "closure-scope":
+            return "candidate_not_closure_scope"
+        function_name = str(spec.function_name or candidate.get("function_name") or candidate.get("name") or "")
+        if not JS_IDENTIFIER_RE.fullmatch(function_name):
+            return "missing_or_unsafe_closure_function_name"
+        expected_callframe_id = str(spec.expected_callframe_id or candidate.get("callFrameId") or "")
+        if not expected_callframe_id:
+            return "callframe_id_not_stable"
+        feasibility = spec.plan.get("replacement_feasibility") if isinstance(spec.plan.get("replacement_feasibility"), dict) else {}
+        if feasibility.get("lexical_binding_proven") is False:
+            return "lexical_binding_not_proven"
+        return None
+
+    @staticmethod
+    def _post_execution_reason(spec: ClosureWrapperReplacementExecutionSpec, evaluation: dict[str, Any]) -> str | None:
+        if not evaluation:
+            return "missing_callframe_evaluation_result"
+        if not evaluation.get("ok"):
+            return str(evaluation.get("error") or "callframe_evaluation_failed")
+        expected_callframe_id = str(spec.expected_callframe_id or "")
+        observed_callframe_id = str(evaluation.get("callFrameId") or "")
+        if expected_callframe_id and observed_callframe_id and expected_callframe_id != observed_callframe_id:
+            return "callframe_id_mismatch"
+        value = evaluation.get("value")
+        if isinstance(value, dict):
+            if value.get("ok") is False:
+                return str(value.get("reason") or "wrapper_install_result_not_ok")
+            if value.get("wrapperInstalled") is False:
+                return "wrapper_install_not_confirmed"
+        return None
+
+    @staticmethod
+    def _marker(spec: ClosureWrapperReplacementExecutionSpec, candidate: dict[str, Any], function_name: str) -> str:
+        raw = spec.candidate_id or str(candidate.get("candidate_id") or function_name)
+        safe = re.sub(r"[^A-Za-z0-9_.:-]+", "_", raw).strip("._:") or function_name
+        return f"reverse-deepagent:closure-wrapper:{safe}"
+
+    @staticmethod
+    def _install_expression(*, function_name: str, marker: str) -> str:
+        function_literal = json.dumps(function_name)
+        marker_literal = json.dumps(marker)
+        return f"""(() => {{
+  const __rdgName = {function_literal};
+  const __rdgMarker = {marker_literal};
+  const __rdgPrevious = {function_name};
+  if (typeof __rdgPrevious !== "function") {{
+    return {{ ok: false, reason: "target_not_function", functionName: __rdgName, previousType: typeof __rdgPrevious }};
+  }}
+  const __rdgRoot = globalThis.__reverseDeepAgentClosureWrappers || (globalThis.__reverseDeepAgentClosureWrappers = {{ events: [], originals: {{}} }});
+  if (!__rdgRoot.originals[__rdgMarker]) __rdgRoot.originals[__rdgMarker] = __rdgPrevious;
+  const __rdgWrapper = function(...args) {{
+    const __rdgStartedAt = Date.now();
+    try {{
+      const __rdgResult = __rdgPrevious.apply(this, args);
+      __rdgRoot.events.push({{
+        marker: __rdgMarker,
+        functionName: __rdgName,
+        kind: "return",
+        argumentCount: args.length,
+        resultType: typeof __rdgResult,
+        startedAt: __rdgStartedAt,
+        endedAt: Date.now()
+      }});
+      return __rdgResult;
+    }} catch (__rdgError) {{
+      __rdgRoot.events.push({{
+        marker: __rdgMarker,
+        functionName: __rdgName,
+        kind: "throw",
+        argumentCount: args.length,
+        errorName: __rdgError && __rdgError.name,
+        startedAt: __rdgStartedAt,
+        endedAt: Date.now()
+      }});
+      throw __rdgError;
+    }}
+  }};
+  try {{
+    Object.defineProperty(__rdgWrapper, "__reverseDeepAgentOriginal", {{ value: __rdgPrevious }});
+    Object.defineProperty(__rdgWrapper, "__reverseDeepAgentMarker", {{ value: __rdgMarker }});
+  }} catch (__rdgDefineError) {{}}
+  {function_name} = __rdgWrapper;
+  return {{
+    ok: typeof {function_name} === "function",
+    marker: __rdgMarker,
+    functionName: __rdgName,
+    previousType: typeof __rdgPrevious,
+    wrapperInstalled: typeof {function_name} === "function" && {function_name}.__reverseDeepAgentMarker === __rdgMarker,
+    restoreExpressionAvailable: true,
+    eventRootAvailable: !!globalThis.__reverseDeepAgentClosureWrappers
+  }};
+}})()"""
+
+    @staticmethod
+    def _restore_expression(*, function_name: str, marker: str) -> str:
+        marker_literal = json.dumps(marker)
+        return f"""(() => {{
+  const __rdgMarker = {marker_literal};
+  const __rdgRoot = globalThis.__reverseDeepAgentClosureWrappers;
+  const __rdgOriginal = (__rdgRoot && __rdgRoot.originals && __rdgRoot.originals[__rdgMarker]) || ({function_name} && {function_name}.__reverseDeepAgentOriginal);
+  if (typeof __rdgOriginal !== "function") return {{ ok: false, reason: "original_not_found", marker: __rdgMarker }};
+  {function_name} = __rdgOriginal;
+  return {{ ok: {function_name} === __rdgOriginal, marker: __rdgMarker, functionName: {json.dumps(function_name)}, restored: {function_name} === __rdgOriginal }};
+}})()"""
+
+    def _execution_payload(
+        self,
+        *,
+        spec: ClosureWrapperReplacementExecutionSpec,
+        candidate: dict[str, Any],
+        function_name: str,
+        marker: str,
+        expression: str,
+        evaluation: dict[str, Any],
+        status: str,
+        reason: str | None,
+        side_effect_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-replacement-execution.v1",
+            "status": status,
+            "reason": reason,
+            "plan_id": "closure-wrapper-replacement-execution",
+            "requires_review": True,
+            "review_approved": spec.review_approved,
+            "execute_requested": spec.execute,
+            "wrapper_strategy": spec.wrapper_strategy,
+            "selected_candidate": candidate,
+            "pause_session_id": spec.pause_session_id,
+            "callframe_index": spec.callframe_index,
+            "expected_callframe_id": spec.expected_callframe_id,
+            "observed_callframe_id": evaluation.get("callFrameId"),
+            "function_name": function_name,
+            "marker": marker,
+            "wrapper_installed": status == "applied",
+            "runtime_mutated": status == "applied",
+            "cdp_command_sent": True,
+            "callframe_evaluated": True,
+            "assignment_expression": expression,
+            "restore_plan": {
+                "available": True,
+                "requires_review": True,
+                "restore_expression": self._restore_expression(function_name=function_name, marker=marker),
+                "next_action": "review_restore_expression_before_uninstalling_closure_wrapper",
+            },
+            "evaluation_summary": {
+                "ok": evaluation.get("ok"),
+                "valueType": evaluation.get("valueType"),
+                "side_effect_risk": evaluation.get("side_effect_risk"),
+                "policy": evaluation.get("policy"),
+                "throw_on_side_effect": evaluation.get("throw_on_side_effect"),
+                "blocked": evaluation.get("blocked", False),
+                "error": evaluation.get("error"),
+            },
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": side_effect_policy,
+        }
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "applied":
+            return "invoke_target_flow_and_review_closure_wrapper_events_or_restore"
+        if reason == "review_approval_required":
+            return "approve_closure_wrapper_replacement_execution_before_retry"
+        if reason == "pause_session_id_required":
+            return "reproduce_pause_and_preserve_same_process_session"
+        if reason in {"missing_closure_wrapper_replacement_plan", "closure_wrapper_replacement_plan_not_ready"}:
+            return "prepare_ready_closure_wrapper_replacement_plan_before_execution"
+        return "resolve_closure_wrapper_replacement_execution_blockers"
+
+    @staticmethod
+    def _side_effect_policy(
+        *,
+        spec: ClosureWrapperReplacementExecutionSpec | None,
+        cdp_command_sent: bool,
+        callframe_evaluated: bool,
+        runtime_mutated: bool,
+        wrapper_installed: bool,
+    ) -> dict[str, Any]:
+        return {
+            "read_only": False,
+            "plan_only": False,
+            "requires_review": True,
+            "review_approved": bool(spec.review_approved) if spec else False,
+            "execute_requested": bool(spec.execute) if spec else False,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": cdp_command_sent,
+            "callframe_evaluated": callframe_evaluated,
+            "wrapper_installed": wrapper_installed,
+            "runtime_mutated": runtime_mutated,
             "calls_mcp": False,
             "mobile_runtime_used": False,
         }

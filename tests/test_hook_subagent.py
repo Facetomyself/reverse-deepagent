@@ -105,6 +105,32 @@ class HookSubagentTests(unittest.TestCase):
         self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_replacement_execution_restore(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_replacement_execution": {
+                "status": "applied",
+                "execution": {
+                    "status": "applied",
+                    "next_action": "invoke_target_flow_and_review_closure_wrapper_events_or_restore",
+                    "wrapper_installed": True,
+                    "runtime_mutated": True,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_replacement_execution_restore_review_required", result["warnings"])
+        self.assertEqual(result["next_action"], "review_closure_wrapper_restore_plan_or_invoke_target_flow")
+        self.assertEqual(result["summary"]["closure_wrapper_replacement_execution_status"], "applied")
+        self.assertTrue(result["summary"]["closure_wrapper_replacement_execution_wrapper_installed"])
+        self.assertTrue(result["summary"]["closure_wrapper_replacement_execution_runtime_mutated"])
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_replacement_execution_status"], "applied")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
     def test_review_hook_artifacts_warns_for_async_chunk_traversal_graph(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

@@ -1,8 +1,11 @@
 import unittest
 
 from reverse_deepagent.browser.hooks import (
+    BreakpointManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperReplacementExecutionManager,
+    ClosureWrapperReplacementExecutionSpec,
     ClosureWrapperReplacementPlanManager,
     ClosureWrapperReplacementPlanSpec,
 )
@@ -48,6 +51,19 @@ class ClosureScopeCDPSession:
                 return {"result": {"type": "string", "value": "function", "description": "function"}}
             if expression == "typeof nonce":
                 return {"result": {"type": "string", "value": "string", "description": "string"}}
+            if isinstance(expression, str) and "__reverseDeepAgentClosureWrappers" in expression:
+                return {
+                    "result": {
+                        "type": "object",
+                        "value": {
+                            "ok": True,
+                            "functionName": "buildSign",
+                            "wrapperInstalled": True,
+                            "restoreExpressionAvailable": True,
+                        },
+                        "description": "Object",
+                    }
+                }
             return {"result": {"type": "string", "value": "undefined", "description": "undefined"}}
         if method == "Debugger.resume":
             return {}
@@ -150,7 +166,10 @@ class ClosureWrapperReplacementPlanManagerTests(unittest.TestCase):
         self.assertFalse(payload["plan"]["cdp_command_sent"])
         self.assertFalse(payload["plan"]["callframe_evaluated"])
         self.assertTrue(payload["plan"]["replacement_feasibility"]["lexical_binding_proven"])
+        self.assertTrue(payload["plan"]["replacement_feasibility"]["reviewed_executor_available"])
+        self.assertEqual(payload["plan"]["replacement_feasibility"]["reviewed_executor_scope"], "same-process-retained-paused-session")
         self.assertIn("assignment_safety_not_proven", payload["plan"]["execution_blockers"])
+        self.assertNotIn("reviewed_executor_not_implemented", payload["plan"]["execution_blockers"])
         self.assertEqual(payload["plan"]["next_action"], "review_closure_wrapper_replacement_plan_before_execution")
         self.assertTrue(payload["side_effect_policy"]["read_only"])
         self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
@@ -173,6 +192,103 @@ class ClosureWrapperReplacementPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.plan["next_action"], "select_one_closure_candidate_before_wrapper_planning")
         self.assertFalse(result.plan["wrapper_installed"])
         self.assertFalse(result.side_effect_policy["runtime_mutated"])
+
+
+class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    def tearDown(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    @staticmethod
+    def _ready_plan() -> dict:
+        plan_spec = ClosureWrapperReplacementPlanSpec.from_context(
+            {
+                "closure_function_candidates": [
+                    {
+                        "function_name": "buildSign",
+                        "candidate_id": "closure:cf-closure-1:buildSign",
+                        "hook_kind": "closure-scope",
+                        "hook_supported": False,
+                        "callframe_index": 0,
+                        "callFrameId": "cf-closure-1",
+                        "evidence_expression": "typeof buildSign",
+                    }
+                ],
+                "candidate_id": "closure:cf-closure-1:buildSign",
+            }
+        )
+        result = ClosureWrapperReplacementPlanManager().plan(plan_spec)
+        return result.plan
+
+    def _preserve_pause(self, session_id: str = "closure-exec-session") -> tuple[ClosureScopeCDPSession, ClosureScopePage]:
+        session = ClosureScopeCDPSession()
+        page = ClosureScopePage(session)
+        spec = ClosureScopeDiscoverySpec.from_context(
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 12,
+                "closure_function_names": ["buildSign"],
+                "trigger_expression": "debugger; 'scheduled'",
+                "preserve_pause_state": True,
+                "pause_session_id": session_id,
+            }
+        )
+        result = ClosureScopeDiscoveryManager().discover(page, spec)
+        self.assertEqual(result.status, "success")
+        self.assertIn(session_id, BreakpointManager._paused_sessions)
+        return session, page
+
+    def test_blocks_without_review_approval_or_cdp_side_effects(self) -> None:
+        session, page = self._preserve_pause()
+        spec = ClosureWrapperReplacementExecutionSpec.from_context(
+            {
+                "closure_wrapper_replacement_execution": True,
+                "closure_wrapper_replacement_plan": self._ready_plan(),
+                "pause_session_id": "closure-exec-session",
+                "execute_closure_wrapper_replacement": True,
+                "review_approved": False,
+            }
+        )
+
+        result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+        self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)
+
+    def test_executes_reviewed_wrapper_replacement_from_retained_pause(self) -> None:
+        session, page = self._preserve_pause()
+        spec = ClosureWrapperReplacementExecutionSpec.from_context(
+            {
+                "closure_wrapper_replacement_execution": True,
+                "closure_wrapper_replacement_plan": self._ready_plan(),
+                "pause_session_id": "closure-exec-session",
+                "execute_closure_wrapper_replacement": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "applied")
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["callframe_evaluated"])
+        self.assertTrue(result.side_effect_policy["wrapper_installed"])
+        self.assertTrue(result.side_effect_policy["runtime_mutated"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        self.assertEqual(result.execution["schema_version"], "reverse-deepagent.closure-wrapper-replacement-execution.v1")
+        self.assertEqual(result.execution["function_name"], "buildSign")
+        self.assertIn("restore_expression", result.execution["restore_plan"])
+        eval_calls = [params for method, params in session.calls if method == "Debugger.evaluateOnCallFrame"]
+        self.assertGreaterEqual(len(eval_calls), 2)
+        self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
+        self.assertIn("buildSign =", eval_calls[-1]["expression"])
+        self.assertIn("__reverseDeepAgentClosureWrappers", eval_calls[-1]["expression"])
 
 
 if __name__ == "__main__":

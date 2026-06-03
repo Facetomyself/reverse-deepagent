@@ -168,6 +168,20 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native closure wrapper replacement execution",
+                    kind=EvidenceKind.HOOK,
+                    source="closure_wrapper_replacement_execution",
+                    details={"status": "applied", "execution": {"wrapper_installed": True, "runtime_mutated": True}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native closure wrapper restore plan",
+                    kind=EvidenceKind.HOOK,
+                    source="closure_wrapper_restore_plan",
+                    details={"status": "ready_for_review", "restore_plan": {"available": True}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native function hook timeline",
                     kind=EvidenceKind.HOOK,
                     source="function_hook_timeline",
@@ -496,6 +510,10 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["paused-session-live-continuation-preflight.json"]["preflight"]["source"], "durable_snapshot")
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
+        self.assertEqual(payloads["closure-wrapper-replacement-execution.json"]["status"], "applied")
+        self.assertTrue(payloads["closure-wrapper-replacement-execution.json"]["execution"]["wrapper_installed"])
+        self.assertEqual(payloads["closure-wrapper-restore-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["closure-wrapper-restore-plan.json"]["restore_plan"]["available"])
         self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
@@ -594,6 +612,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_execution"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_plan"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_stitched_flow"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_external_delivery_duplicate_guard"), "export")
 
