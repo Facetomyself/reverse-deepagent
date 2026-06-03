@@ -66,6 +66,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationTraversalWorkflowExecutionSpec,
     ModuleFederationRecursiveTraversalPlanManager,
     ModuleFederationRecursiveTraversalPlanSpec,
+    ModuleFederationRecursiveTraversalFollowupManager,
+    ModuleFederationRecursiveTraversalFollowupSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
     ModuleFederationExportHookInstallManager,
@@ -2058,6 +2060,91 @@ class ModuleFederationRecursiveTraversalPlanManagerTests(unittest.TestCase):
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "module_federation_workflow_execution_not_ready_for_recursion")
+
+
+class ModuleFederationRecursiveTraversalFollowupManagerTests(unittest.TestCase):
+    def _recursive_plan(self, status: str = "ready_for_graph_rebuild") -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.module-federation-recursive-traversal-plan.v1",
+            "plan_id": "module-federation-recursive-traversal-plan",
+            "status": status,
+            "next_action": "rebuild_module_federation_traversal_graph_before_next_recursive_step",
+        }
+
+    def _workflow_execution(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.module-federation-traversal-workflow-execution.v1",
+            "status": "factory_invoke_success",
+            "next_action": "plan_module_federation_export_hook_after_reviewed_factory_invoke",
+        }
+
+    def test_plan_only_followup_requires_manual_review_without_side_effects(self) -> None:
+        result = ModuleFederationRecursiveTraversalFollowupManager().follow_up(
+            ModuleFederationRecursiveTraversalFollowupSpec.from_context(
+                {
+                    "module_federation_recursive_traversal_followup": True,
+                    "module_federation_recursive_traversal_plan": self._recursive_plan(),
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.followup["schema_version"], "reverse-deepagent.module-federation-recursive-traversal-followup.v1")
+        self.assertEqual(result.followup["next_action"], "review_module_federation_recursive_traversal_followup_plan")
+        self.assertTrue(result.side_effect_policy["plan_only_by_default"])
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["workflow_replanned"])
+        self.assertFalse(result.side_effect_policy["next_step_review_planned"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_reviewed_followup_rebuilds_graph_replans_workflow_and_plans_next_step(self) -> None:
+        result = ModuleFederationRecursiveTraversalFollowupManager().follow_up(
+            ModuleFederationRecursiveTraversalFollowupSpec.from_context(
+                {
+                    "module_federation_recursive_traversal_followup": True,
+                    "module_federation_recursive_traversal_plan": self._recursive_plan(),
+                    "module_federation_get_init_plan": ModuleFederationTraversalGraphManagerTests()._get_init_plan(),
+                    "module_federation_traversal_workflow_execution": self._workflow_execution(),
+                    "rebuild_graph": True,
+                    "replan_workflow": True,
+                    "plan_next_step": True,
+                    "review_approved": True,
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "next_step_review_ready")
+        self.assertEqual(result.followup["next_action"], "review_next_module_federation_traversal_workflow_execution")
+        self.assertEqual(result.followup["module_federation_traversal_graph"]["status"], "ready_for_review")
+        self.assertEqual(result.followup["module_federation_traversal_workflow_plan"]["status"], "ready_for_review")
+        self.assertEqual(result.followup["module_federation_next_step_review"]["status"], "ready_for_review")
+        self.assertTrue(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertTrue(result.side_effect_policy["workflow_replanned"])
+        self.assertTrue(result.side_effect_policy["next_step_review_planned"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["export_hook_installed"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_blocks_checkpoint_actions_without_review_approval(self) -> None:
+        result = ModuleFederationRecursiveTraversalFollowupManager().follow_up(
+            ModuleFederationRecursiveTraversalFollowupSpec.from_context(
+                {
+                    "module_federation_recursive_traversal_followup": True,
+                    "module_federation_recursive_traversal_plan": self._recursive_plan(),
+                    "module_federation_get_init_plan": ModuleFederationTraversalGraphManagerTests()._get_init_plan(),
+                    "rebuild_graph": True,
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
 
 
 class ModuleFederationGetInitProbeManagerTests(unittest.TestCase):

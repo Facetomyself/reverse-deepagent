@@ -913,6 +913,30 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["module_federation_recursive_traversal_plan_status"], "ready_for_next_step_review")
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_module_federation_recursive_traversal_followup(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "module_federation_recursive_traversal_followup": {
+                "status": "next_step_review_ready",
+                "followup": {
+                    "status": "next_step_review_ready",
+                    "stages": [{"stage": "plan_next_traversal_step_review", "status": "ready_for_review"}],
+                    "next_action": "review_next_module_federation_traversal_workflow_execution",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("module_federation_recursive_traversal_followup_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_module_federation_recursive_traversal_followup")
+        self.assertEqual(result["summary"]["module_federation_recursive_traversal_followup_status"], "next_step_review_ready")
+        self.assertEqual(result["summary"]["module_federation_recursive_traversal_followup_stage_count"], 1)
+        self.assertEqual(result["summary"]["module_federation_recursive_traversal_followup_next_action"], "review_next_module_federation_traversal_workflow_execution")
+        self.assertEqual(result["review_required_items"][0]["module_federation_recursive_traversal_followup_status"], "next_step_review_ready")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_review_hook_artifacts_warns_for_module_federation_export_hook_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

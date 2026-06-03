@@ -76,6 +76,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationTraversalWorkflowExecutionSpec,
     ModuleFederationRecursiveTraversalPlanManager,
     ModuleFederationRecursiveTraversalPlanSpec,
+    ModuleFederationRecursiveTraversalFollowupManager,
+    ModuleFederationRecursiveTraversalFollowupSpec,
     ModuleFederationGetInitPlanManager,
     ModuleFederationGetInitPlanSpec,
     ModuleFederationGetInitProbeManager,
@@ -1478,6 +1480,74 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_step_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_recursive_traversal_followup_request(protection_name, context):
+            spec = ModuleFederationRecursiveTraversalFollowupSpec.from_context(context)
+            result = ModuleFederationRecursiveTraversalFollowupManager().follow_up(spec)
+            followup = result.followup if isinstance(result.followup, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = followup.get("stages") if isinstance(followup.get("stages"), list) else []
+            verification = [
+                f"module_federation_recursive_traversal_followup_status={result.status}",
+                f"module_federation_recursive_traversal_followup_reason={result.reason or ''}",
+                f"module_federation_recursive_traversal_followup_stage_count={len(stages)}",
+                f"module_federation_recursive_traversal_followup_review_approved={policy.get('review_approved', False)}",
+                f"module_federation_recursive_traversal_followup_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_recursive_traversal_followup_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"module_federation_recursive_traversal_followup_next_step_review_planned={policy.get('next_step_review_planned', False)}",
+                f"module_federation_recursive_traversal_followup_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_recursive_traversal_followup_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_recursive_traversal_followup_export_hook_installed={policy.get('export_hook_installed', False)}",
+                f"module_federation_recursive_traversal_followup_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_recursive_traversal_followup_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-recursive-traversal-followup.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated Module Federation recursive traversal checkpoint follow-up.",
+                    metadata={
+                        "status": result.status,
+                        "followup_status": followup.get("status"),
+                        "stage_count": len(stages),
+                        "next_action": followup.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "next_step_review_planned": policy.get("next_step_review_planned", False),
+                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
+                        "remote_code_executed": policy.get("remote_code_executed", False),
+                        "export_hook_installed": policy.get("export_hook_installed", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_step_review_ready", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_module_federation_recursive_traversal_followup_checkpoint"] if any(
+                    policy.get(flag, False) for flag in ("traversal_graph_rebuilt", "workflow_replanned", "next_step_review_planned")
+                ) else ["plan_module_federation_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "review_module_federation_recursive_traversal_followup_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "resolve_module_federation_recursive_traversal_followup_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = followup.get("next_action", "inspect_module_federation_recursive_traversal_followup_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_step_review_ready", "complete"} else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_traversal_graph_request(protection_name, context):
             spec = ModuleFederationTraversalGraphSpec.from_context(context)
@@ -4202,6 +4272,10 @@ class NativeWebRuntime(WebReverseRuntime):
             "plan-module-federation-recursive-traversal",
             "federation-recursive-traversal-plan",
             "remote-module-recursive-traversal-plan",
+            "module-federation-recursive-traversal-followup",
+            "execute-module-federation-recursive-traversal-followup",
+            "module-federation-recursive-traversal-checkpoint",
+            "reviewed-module-federation-recursive-traversal-followup",
         } or any(
             key in context
             for key in (
@@ -4214,6 +4288,11 @@ class NativeWebRuntime(WebReverseRuntime):
                 "planModuleFederationRecursiveTraversal",
                 "federation_recursive_traversal_plan",
                 "federationRecursiveTraversalPlan",
+                "module_federation_recursive_traversal_followup",
+                "moduleFederationRecursiveTraversalFollowup",
+                "module-federation-recursive-traversal-followup",
+                "execute_module_federation_recursive_traversal_followup",
+                "executeModuleFederationRecursiveTraversalFollowup",
             )
         ):
             return False
@@ -4242,6 +4321,22 @@ class NativeWebRuntime(WebReverseRuntime):
     def _is_module_federation_recursive_traversal_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {
+            "module-federation-recursive-traversal-followup",
+            "execute-module-federation-recursive-traversal-followup",
+            "module-federation-recursive-traversal-checkpoint",
+            "reviewed-module-federation-recursive-traversal-followup",
+        } or any(
+            key in context
+            for key in (
+                "module_federation_recursive_traversal_followup",
+                "moduleFederationRecursiveTraversalFollowup",
+                "module-federation-recursive-traversal-followup",
+                "execute_module_federation_recursive_traversal_followup",
+                "executeModuleFederationRecursiveTraversalFollowup",
+            )
+        ):
+            return False
+        if normalized in {
             "module-federation-recursive-traversal-plan",
             "module-federation-traversal-recursion-plan",
             "plan-module-federation-recursive-traversal",
@@ -4265,6 +4360,27 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_module_federation_recursive_traversal_followup_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "module-federation-recursive-traversal-followup",
+            "execute-module-federation-recursive-traversal-followup",
+            "module-federation-recursive-traversal-checkpoint",
+            "reviewed-module-federation-recursive-traversal-followup",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "module_federation_recursive_traversal_followup",
+                "moduleFederationRecursiveTraversalFollowup",
+                "module-federation-recursive-traversal-followup",
+                "execute_module_federation_recursive_traversal_followup",
+                "executeModuleFederationRecursiveTraversalFollowup",
+            )
+        )
+
+    @staticmethod
     def _is_module_federation_traversal_graph_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {
@@ -4278,6 +4394,9 @@ class NativeWebRuntime(WebReverseRuntime):
             "module-federation-recursive-traversal-plan",
             "module-federation-traversal-recursion-plan",
             "plan-module-federation-recursive-traversal",
+            "module-federation-recursive-traversal-followup",
+            "execute-module-federation-recursive-traversal-followup",
+            "module-federation-recursive-traversal-checkpoint",
         } or any(key in context for key in (
             "module_federation_traversal_workflow_execution",
             "moduleFederationTraversalWorkflowExecution",
@@ -4291,6 +4410,11 @@ class NativeWebRuntime(WebReverseRuntime):
             "moduleFederationTraversalRecursionPlan",
             "plan_module_federation_recursive_traversal",
             "planModuleFederationRecursiveTraversal",
+            "module_federation_recursive_traversal_followup",
+            "moduleFederationRecursiveTraversalFollowup",
+            "module-federation-recursive-traversal-followup",
+            "execute_module_federation_recursive_traversal_followup",
+            "executeModuleFederationRecursiveTraversalFollowup",
             "module_federation_traversal_workflow_plan",
             "moduleFederationTraversalWorkflowPlan",
             "module-federation-traversal-workflow-plan",
