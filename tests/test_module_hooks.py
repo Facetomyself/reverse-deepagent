@@ -64,6 +64,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationTraversalWorkflowPlanSpec,
     ModuleFederationTraversalWorkflowExecutionManager,
     ModuleFederationTraversalWorkflowExecutionSpec,
+    ModuleFederationRecursiveTraversalPlanManager,
+    ModuleFederationRecursiveTraversalPlanSpec,
     ModuleFederationExportHookPlanManager,
     ModuleFederationExportHookPlanSpec,
     ModuleFederationExportHookInstallManager,
@@ -2003,6 +2005,60 @@ class ModuleFederationTraversalWorkflowExecutionManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "export_hook_plan_ready")
         self.assertEqual(result.execution["module_federation_export_hook_plan"]["plan"]["hookable_candidate_count"], 1)
         self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+
+
+class ModuleFederationRecursiveTraversalPlanManagerTests(unittest.TestCase):
+    def test_plans_graph_rebuild_after_reviewed_workflow_execution_without_side_effects(self) -> None:
+        spec = ModuleFederationRecursiveTraversalPlanSpec.from_context(
+            {
+                "module_federation_recursive_traversal_plan": True,
+                "module_federation_traversal_workflow_execution": {
+                    "status": "factory_invoke_success",
+                    "next_action": "plan_module_federation_export_hook_after_reviewed_factory_invoke",
+                },
+            }
+        )
+
+        result = ModuleFederationRecursiveTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_graph_rebuild")
+        self.assertEqual(result.recursive_plan["schema_version"], "reverse-deepagent.module-federation-recursive-traversal-plan.v1")
+        self.assertEqual(result.recursive_plan["latest_workflow_execution_status"], "factory_invoke_success")
+        self.assertEqual(result.recursive_plan["next_action"], "rebuild_module_federation_traversal_graph_before_next_recursive_step")
+        self.assertFalse(result.side_effect_policy["traversal_graph_rebuilt"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["recursive_federation_traversal"])
+
+    def test_plans_next_step_review_when_refreshed_graph_and_workflow_exist(self) -> None:
+        spec = ModuleFederationRecursiveTraversalPlanSpec.from_context(
+            {
+                "module_federation_recursive_traversal_plan": True,
+                "module_federation_traversal_workflow_execution": {"status": "export_hook_installed"},
+                "latest_module_federation_traversal_graph": {"status": "ready_for_review", "queue_count": 1, "review_queue": [{"node_id": "remote-module:window.r:./next"}]},
+                "latest_module_federation_traversal_workflow_plan": {"status": "ready_for_review", "planned_step_count": 1, "planned_steps": [{"step_index": 0}]},
+            }
+        )
+
+        result = ModuleFederationRecursiveTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_next_step_review")
+        self.assertEqual(result.recursive_plan["latest_graph_queue_count"], 1)
+        self.assertEqual(result.recursive_plan["latest_workflow_planned_step_count"], 1)
+        self.assertEqual(result.recursive_plan["follow_up_steps"][0]["action"], "stop_before_next_module_federation_traversal_step_review")
+
+    def test_blocks_when_workflow_execution_is_not_review_progress(self) -> None:
+        spec = ModuleFederationRecursiveTraversalPlanSpec.from_context(
+            {
+                "module_federation_recursive_traversal_plan": True,
+                "module_federation_traversal_workflow_execution": {"status": "ready_for_review"},
+            }
+        )
+
+        result = ModuleFederationRecursiveTraversalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "module_federation_workflow_execution_not_ready_for_recursion")
+
 
 class ModuleFederationGetInitProbeManagerTests(unittest.TestCase):
     def test_module_federation_get_init_probe_plans_without_execute_flag(self) -> None:

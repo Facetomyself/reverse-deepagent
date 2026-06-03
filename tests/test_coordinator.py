@@ -266,6 +266,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native module federation recursive traversal plan",
+                    kind=EvidenceKind.NOTE,
+                    source="module_federation_recursive_traversal_plan",
+                    details={"status": "ready_for_next_step_review", "latest_graph_queue_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map fetch plan",
                     kind=EvidenceKind.NOTE,
                     source="source_map_fetch_plan",
@@ -482,6 +489,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["module-federation-traversal-graph.json"]["queue_count"], 1)
         self.assertEqual(payloads["module-federation-traversal-workflow-plan.json"]["planned_step_count"], 1)
         self.assertEqual(payloads["module-federation-traversal-workflow-execution.json"]["stage_count"], 4)
+        self.assertEqual(payloads["module-federation-recursive-traversal-plan.json"]["status"], "ready_for_next_step_review")
         self.assertEqual(payloads["async-chunk-load-result.json"]["addedRegistryKeys"], ["731"])
         self.assertEqual(payloads["async-chunk-recursive-traversal-plan.json"]["status"], "ready_for_graph_rebuild")
         self.assertEqual(payloads["async-chunk-recursive-traversal-followup.json"]["status"], "next_loop_plan_ready")
@@ -526,6 +534,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_traversal_graph"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_traversal_workflow_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_module_federation_traversal_workflow_execution"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_module_federation_recursive_traversal_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_fetch_plan"), "triage")

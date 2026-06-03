@@ -959,6 +959,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_module_federation_traversal_graph": "triage",
     "workspace_module_federation_traversal_workflow_plan": "triage",
     "workspace_module_federation_traversal_workflow_execution": "audit",
+    "workspace_module_federation_recursive_traversal_plan": "triage",
     "workspace_async_chunk_load_result": "trace",
     "workspace_source_map_fetch_plan": "triage",
     "workspace_source_map_fetch_result": "trace",
@@ -1739,6 +1740,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["module-federation-traversal-workflow-plan.json"] = evidence.details
         elif evidence.source == "module_federation_traversal_workflow_execution":
             payloads["module-federation-traversal-workflow-execution.json"] = evidence.details
+        elif evidence.source == "module_federation_recursive_traversal_plan":
+            payloads["module-federation-recursive-traversal-plan.json"] = evidence.details
         elif evidence.source == "async_chunk_load_result":
             payloads["async-chunk-load-result.json"] = evidence.details
         elif evidence.source == "source_map_fetch_plan":

@@ -3006,6 +3006,44 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["remote_factory_invoked"])
         self.assertFalse(result.artifacts[0].metadata["automatic_queue_advance"])
 
+    def test_native_web_runtime_plans_module_federation_recursive_traversal_followup(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+
+        result = runtime.apply_minimal_protection(
+            "module-federation-recursive-traversal-plan",
+            {
+                "module_federation_traversal_workflow_execution": {
+                    "status": "factory_invoke_success",
+                    "next_action": "plan_module_federation_export_hook_after_reviewed_factory_invoke",
+                },
+                "latest_module_federation_traversal_graph": {
+                    "status": "ready_for_review",
+                    "queue_count": 1,
+                    "review_queue": [{"node_id": "remote-module:window.remoteOther:./token"}],
+                },
+                "latest_module_federation_traversal_workflow_plan": {
+                    "status": "ready_for_review",
+                    "planned_step_count": 1,
+                    "planned_steps": [{"step_index": 0}],
+                },
+            },
+        )
+
+        page = provider.session.context.pages[0]
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["plan_module_federation_recursive_traversal_followup"])
+        self.assertEqual(page.module_federation_get_init_probes, [])
+        self.assertEqual(page.module_federation_factory_invocations, [])
+        self.assertIn("module_federation_recursive_traversal_plan_status=ready_for_next_step_review", result.verification)
+        self.assertIn("module_federation_recursive_traversal_plan_latest_workflow_execution_status=factory_invoke_success", result.verification)
+        self.assertIn("module_federation_recursive_traversal_plan_remote_factory_invoked=False", result.verification)
+        self.assertIn("module_federation_recursive_traversal_plan_recursive_federation_traversal=False", result.verification)
+        self.assertEqual(result.next_action, "review_next_module_federation_traversal_workflow_step")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/module-federation-recursive-traversal-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["recursive_plan_status"], "ready_for_next_step_review")
+        self.assertFalse(result.artifacts[0].metadata["recursive_federation_traversal"])
+
     def test_native_web_runtime_executes_reviewed_module_federation_get_init_probe(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

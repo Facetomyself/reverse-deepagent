@@ -1071,7 +1071,7 @@ print(capabilities.model_dump(mode="json"))
 - Hook：全局函数 wrapper、webpack-like module export wrapper、remote federation export wrapper follow-through、source-level logpoint，以及对应 hook timeline artifact。
 - Module discovery：webpack-like `require.c` / `require.m` 只读 introspection、custom object runtime、module federation exposed-module function-path candidate、只读 async chunk graph / loader metadata。
 - Custom-loader / async-chunk：review-only traversal plan、graph / queue、workflow plan、review-gated one-step workflow execution、bounded loop plan、review-gated bounded loop execution、custom-loader recursive traversal follow-up plan、review-gated recursive follow-up checkpoint、review-gated recursive next-loop execution、async-chunk recursive traversal follow-up plan、review-gated async recursive follow-up checkpoint、review-gated async recursive next-loop execution、module diff refresh 和 reviewed module hook follow-through。
-- Federation：review-only `get/init` plan、review-gated `init/get` probe、review-gated remote factory invoke、review-only export hook plan、review-approved export hook install，以及 review-only federation traversal graph / workflow plan 和 review-gated traversal workflow execution baselines。
+- Federation：review-only `get/init` plan、review-gated `init/get` probe、review-gated remote factory invoke、review-only export hook plan、review-approved export hook install，以及 review-only federation traversal graph / workflow plan、review-gated traversal workflow execution 和 review-only federation recursive traversal follow-up plan baselines。
 - Source map：generated bundle offset、Source Map exact / bias / `sourceRoot` / indexed section / `names` / URL equivalence / nested indexed-section remap，以及 review-gated credentialless source-map fetch metadata。
 - Mutation audit：page-level mutation audit、descriptor-safe object-root mutation audit、MutationObserver timeline；这些都围绕显式 trigger 工作，不做默认全局监听。
 - Paused session：同进程 retained paused-session registry 支持 live inspect / evaluate / step / resume；durable paused-session snapshot 只支持跨进程 inspect / audit，不支持跨进程 resume / step / evaluate。
@@ -1082,7 +1082,7 @@ print(capabilities.model_dump(mode="json"))
 - `custom-loader-execution` 只执行一个 reviewed arbitrary custom-loader candidate，不执行 dynamic import、webpack `require.e`、federation `get/init` 或递归遍历。
 - `custom-loader-traversal-workflow-execution` / `custom-loader-traversal-loop-execution` 一次只处理一个 reviewed step / loop iteration，不自动 rebuild graph、replan workflow、advance queue 或递归。
 - `async-chunk-traversal-workflow-execution` / `async-chunk-traversal-loop-execution` / `async-chunk-recursive-traversal-followup` / `async-chunk-recursive-traversal-execution` 一次只处理一个 reviewed chunk-load step、loop iteration 或 recursive checkpoint；followup 最多重建 graph / replan workflow / plan next bounded loop，next-loop execution 最多执行一个 reviewed loop iteration，不自动请求下一批 chunk、advance queue 或递归到耗尽。
-- `module-federation-traversal-graph` / `module-federation-traversal-workflow-plan` 只生成远端模块遍历队列和审阅工作流；`module-federation-traversal-workflow-execution` 一次只执行一个 reviewed traversal step，可委托既有 factory invoke / export hook plan / export hook install manager，但不 rebuild graph、不 advance queue、不递归执行；`module-federation-export-hook-install` 只包装被审阅的 remote function export，不自动 hook 所有 exports。
+- `module-federation-traversal-graph` / `module-federation-traversal-workflow-plan` 只生成远端模块遍历队列和审阅工作流；`module-federation-traversal-workflow-execution` 一次只执行一个 reviewed traversal step，可委托既有 factory invoke / export hook plan / export hook install manager，但不 rebuild graph、不 advance queue、不递归执行；`module-federation-recursive-traversal-plan` 只在一次 reviewed workflow execution 后规划 graph rebuild / workflow replan / next-step review checkpoint，不执行 remote code；`module-federation-export-hook-install` 只包装被审阅的 remote function export，不自动 hook 所有 exports。
 - `stitched-flow.json` 只在 reviewer approval 后 materialize；所有 auto-stitch dry-run / policy / conflict resolver 输出默认不写最终链路，也不触发 delivery。
 
 仍未闭环、后续 capability-gated 的 Web-first 工作包括：
@@ -1091,7 +1091,7 @@ print(capabilities.model_dump(mode="json"))
 - 任意闭包内部函数 automatic wrapper hook。
 - deeper recursive custom-loader traversal execution，超过当前 bounded continuation / workflow / loop / one-step execution / recursive follow-up planning / reviewed follow-up checkpoint / reviewed recursive next-loop execution baseline。
 - deeper recursive async chunk traversal，超过当前 reviewed workflow / bounded loop / recursive follow-up checkpoint / recursive next-loop execution / chunk load / module diff baseline。
-- deeper federation traversal execution，超过当前 review-only traversal graph / workflow plan、reviewed factory invoke、export hook plan 和 reviewed export hook install baseline。
+- deeper federation traversal execution，超过当前 review-only traversal graph / workflow plan、review-gated traversal workflow execution、review-only recursive follow-up plan、reviewed factory invoke、export hook plan 和 reviewed export hook install baseline。
 - full source-map consumer semantics / bundler-specific symbol scoping，超过当前 remap 与 credentialless URL fetch metadata baseline。
 - full JS heap / object graph diff，超过当前 scoped object-root audit baseline。
 - 更完整的自动全链路跨请求 conflict resolver、physical rollback state machine、advanced adaptive provider retry、第三方 external delivery provider 和 broader durable scheduler；这些仍必须保持显式 review / apply intent。

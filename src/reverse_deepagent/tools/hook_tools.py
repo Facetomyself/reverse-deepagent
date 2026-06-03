@@ -180,6 +180,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "module-federation-traversal-workflow-execution",
             "moduleFederationTraversalWorkflowExecution",
         )
+        module_federation_recursive_traversal_plan = _object_alias(
+            payload,
+            "module_federation_recursive_traversal_plan",
+            "module-federation-recursive-traversal-plan",
+            "moduleFederationRecursiveTraversalPlan",
+        )
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -235,6 +241,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_traversal_graph,
                 module_federation_traversal_workflow_plan,
                 module_federation_traversal_workflow_execution,
+                module_federation_recursive_traversal_plan,
             )
         ) + sum(bool(items) for items in (module_candidates, function_candidates))
         if not artifact_count:
@@ -409,6 +416,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("module_federation_traversal_workflow_plan_blocked")
         if _status(module_federation_traversal_workflow_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("module_federation_traversal_workflow_execution_blocked")
+        if _status(module_federation_recursive_traversal_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("module_federation_recursive_traversal_plan_blocked")
         federation_plan_status = _nested_status(module_federation_get_init_plan, "plan")
         if module_federation_get_init_plan and (
             _status(module_federation_get_init_plan) in {"ready_for_review", "planned"}
@@ -447,6 +456,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("module_federation_traversal_workflow_execution_requires_review")
         if module_federation_traversal_workflow_execution and federation_traversal_execution_status in {"factory_invoke_success", "export_hook_plan_ready"}:
             warnings.append("module_federation_traversal_workflow_execution_next_stage_requires_review")
+        federation_recursive_plan_status = _nested_status(module_federation_recursive_traversal_plan, "recursive_plan")
+        if module_federation_recursive_traversal_plan and (
+            _status(module_federation_recursive_traversal_plan) in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_step_review"}
+            or federation_recursive_plan_status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_step_review"}
+        ):
+            warnings.append("module_federation_recursive_traversal_plan_requires_review")
         if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
             warnings.append("async_chunk_load_requires_review")
         async_chunk_diff_status = _nested_status(async_chunk_module_diff, "diff")
@@ -622,6 +637,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "module_federation_traversal_workflow_execution_stage_count": len(_listish(_nested_get(module_federation_traversal_workflow_execution, "execution", "stages") or module_federation_traversal_workflow_execution.get("stages"))),
                 "module_federation_traversal_workflow_execution_remote_factory_invoked": bool(_nested_get(module_federation_traversal_workflow_execution, "side_effect_policy", "remote_factory_invoked") or (((_nested_get(module_federation_traversal_workflow_execution, "execution", "module_federation_factory_invoke_result") or {}).get("factory_execution") or {}).get("remoteFactoryInvoked"))),
                 "module_federation_traversal_workflow_execution_export_hook_installed": bool(_nested_get(module_federation_traversal_workflow_execution, "side_effect_policy", "export_hook_installed") or ((_nested_get(module_federation_traversal_workflow_execution, "execution", "module_federation_export_hook_result") or {}).get("installed_count"))),
+                "module_federation_recursive_traversal_plan_status": _status(module_federation_recursive_traversal_plan) or federation_recursive_plan_status,
+                "module_federation_recursive_traversal_plan_next_action": _nested_get(module_federation_recursive_traversal_plan, "recursive_plan", "next_action") or module_federation_recursive_traversal_plan.get("next_action"),
                 "async_chunk_load_execution_attempted": bool(async_chunk_result.get("execution", {}).get("attempted") if isinstance(async_chunk_result.get("execution"), dict) else async_chunk_result.get("execution_attempted", False)),
                 "async_chunk_load_added_registry_key_count": len(_listish(async_chunk_result.get("addedRegistryKeys") or async_chunk_result.get("added_registry_keys"))),
                 "async_chunk_module_diff_matched_module_count": _intish(async_chunk_module_diff.get("matched_module_count") or _nested_get(async_chunk_module_diff, "diff", "matched_module_count")),
@@ -670,6 +687,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_traversal_graph,
                 module_federation_traversal_workflow_plan,
                 module_federation_traversal_workflow_execution,
+                module_federation_recursive_traversal_plan,
             ),
             "side_effect_policy": {
                 "read_only": True,
@@ -826,6 +844,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "revise_module_federation_traversal_workflow_plan_inputs"
     if "module_federation_traversal_workflow_execution_blocked" in blockers:
         return "resolve_module_federation_traversal_workflow_execution_blockers"
+    if "module_federation_recursive_traversal_plan_blocked" in blockers:
+        return "resolve_module_federation_recursive_traversal_blockers"
     if "custom_loader_execution_failed" in blockers:
         return "inspect_custom_loader_execution_failure"
     if "custom_loader_traversal_loop_execution_blocked" in blockers:
@@ -894,6 +914,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_module_federation_traversal_workflow_execution_next_stage"
     if "module_federation_traversal_workflow_execution_requires_review" in warnings:
         return "review_module_federation_traversal_workflow_execution_plan"
+    if "module_federation_recursive_traversal_plan_requires_review" in warnings:
+        return "review_module_federation_recursive_traversal_plan"
     if "custom_loader_traversal_requires_review" in warnings:
         return "review_custom_loader_traversal_plan"
     if "custom_loader_traversal_loop_plan_requires_review" in warnings:
@@ -999,6 +1021,7 @@ def _review_required_items(
     module_federation_traversal_graph: dict[str, Any],
     module_federation_traversal_workflow_plan: dict[str, Any],
     module_federation_traversal_workflow_execution: dict[str, Any],
+    module_federation_recursive_traversal_plan: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for code in blockers + warnings:
@@ -1040,6 +1063,7 @@ def _review_required_items(
                 "module_federation_traversal_graph_status": _status(module_federation_traversal_graph) or _nested_status(module_federation_traversal_graph, "graph"),
                 "module_federation_traversal_workflow_plan_status": _status(module_federation_traversal_workflow_plan) or _nested_status(module_federation_traversal_workflow_plan, "workflow_plan"),
                 "module_federation_traversal_workflow_execution_status": _status(module_federation_traversal_workflow_execution) or _nested_status(module_federation_traversal_workflow_execution, "execution"),
+                "module_federation_recursive_traversal_plan_status": _status(module_federation_recursive_traversal_plan) or _nested_status(module_federation_recursive_traversal_plan, "recursive_plan"),
                 "function_hook_error": str(function_hooks.get("error") or ""),
                 "module_hook_error": str(module_hooks.get("error") or ""),
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
@@ -1070,6 +1094,7 @@ def _review_required_items(
                 "module_federation_traversal_graph_error": str(module_federation_traversal_graph.get("error") or ""),
                 "module_federation_traversal_workflow_plan_error": str(module_federation_traversal_workflow_plan.get("error") or ""),
                 "module_federation_traversal_workflow_execution_error": str(module_federation_traversal_workflow_execution.get("error") or ""),
+                "module_federation_recursive_traversal_plan_error": str(module_federation_recursive_traversal_plan.get("error") or ""),
             }
         )
     return items
