@@ -98,6 +98,12 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/review-approval-record.json"].future_path, "/workspace/review/review-approval-record.json")
         self.assertEqual(routes["workspace/review-approval-ledger.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-approval-ledger.json"].future_path, "/workspace/review/review-approval-ledger.json")
+        self.assertEqual(routes["workspace/paused-session-live-continuation-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-live-continuation-preflight.json"].future_path,
+            "/workspace/debugger/paused-session-live-continuation-preflight.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-live-continuation-preflight.json"].category, "audit")
         self.assertEqual(routes["workspace/workspace-dual-write-plan.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/workspace-dual-write-pilot-result.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/workspace-dual-write-pilot-result.json"].future_path, "/workspace/delivery/workspace-dual-write-pilot-result.json")

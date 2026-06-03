@@ -1067,14 +1067,14 @@ print(capabilities.model_dump(mode="json"))
 已实现的 baseline 包括：
 
 - 候选函数验证：`workspace/function-candidates.json`、`workspace/function-validations.json`、`workspace/function-validation-summary.json`。
-- 调试与 callframe：`workspace/debugger-paused.json`、`workspace/callframes.json`、`workspace/debugger-session.json`、`workspace/debugger-timeline.json`，显式 callframe evaluation 时补充 `workspace/callframe-evaluations.json` 和 `workspace/mutation-audit.json`。
+- 调试与 callframe：`workspace/debugger-paused.json`、`workspace/callframes.json`、`workspace/debugger-session.json`、`workspace/debugger-timeline.json`，显式 callframe evaluation 时补充 `workspace/callframe-evaluations.json` 和 `workspace/mutation-audit.json`；显式 live continuation preflight 时输出 `workspace/paused-session-live-continuation-preflight.json`。
 - Hook：全局函数 wrapper、webpack-like module export wrapper、remote federation export wrapper follow-through、source-level logpoint，以及对应 hook timeline artifact。
 - Module discovery：webpack-like `require.c` / `require.m` 只读 introspection、custom object runtime、module federation exposed-module function-path candidate、只读 async chunk graph / loader metadata。
 - Custom-loader / async-chunk：review-only traversal plan、graph / queue、workflow plan、review-gated one-step workflow execution、bounded loop plan、review-gated bounded loop execution、custom-loader recursive traversal follow-up plan、review-gated recursive follow-up checkpoint、review-gated recursive next-loop execution、async-chunk recursive traversal follow-up plan、review-gated async recursive follow-up checkpoint、review-gated async recursive next-loop execution、module diff refresh 和 reviewed module hook follow-through。
 - Federation：review-only `get/init` plan、review-gated `init/get` probe、review-gated remote factory invoke、review-only export hook plan、review-approved export hook install，以及 review-only federation traversal graph / workflow plan、review-gated traversal workflow execution、review-only federation recursive traversal follow-up plan、review-gated federation recursive traversal follow-up checkpoint、review-gated federation recursive traversal next-step execution、review-only federation recursive continuation journal / multi-step checkpoint planning，以及 review-gated federation recursive continuation checkpoint execution baselines。
 - Source map：generated bundle offset、Source Map exact / bias / `sourceRoot` / indexed section / `names` / URL equivalence / nested indexed-section remap，以及 review-gated credentialless source-map fetch metadata。
 - Mutation audit：page-level mutation audit、descriptor-safe object-root mutation audit、MutationObserver timeline；这些都围绕显式 trigger 工作，不做默认全局监听。
-- Paused session：同进程 retained paused-session registry 支持 live inspect / evaluate / step / resume；durable paused-session snapshot 只支持跨进程 inspect / audit，不支持跨进程 resume / step / evaluate。
+- Paused session：同进程 retained paused-session registry 支持 live inspect / evaluate / step / resume；durable paused-session snapshot 只支持跨进程 inspect / audit，不支持跨进程 resume / step / evaluate；`paused-session-live-continuation-preflight` 提供只读 live continuation preflight，可审计 same-process registry、durable snapshot 或 caller-provided debugger artifact 的 live action blockers。
 - Flow timeline：native-web recon 会生成 `virtual://workspace/flow-timeline.json`，包含 correlation hints、conservative groups、manual stitch candidates、review-gated stitch proposals、auto-stitch dry-run scoring、policy gate、materialization plan、review-approved materialization result、audit / rollback plan、transaction-log-only records 和 delivery guard rerun artifact model。
 
 显式执行面保持 review-gated：
@@ -1087,7 +1087,7 @@ print(capabilities.model_dump(mode="json"))
 
 仍未闭环、后续 capability-gated 的 Web-first 工作包括：
 
-- cross-process live CDP paused execution continuation。
+- cross-process live CDP paused execution continuation，超过当前只读 live-continuation preflight baseline。
 - 任意闭包内部函数 automatic wrapper hook。
 - deeper recursive custom-loader traversal execution，超过当前 bounded continuation / workflow / loop / one-step execution / recursive follow-up planning / reviewed follow-up checkpoint / reviewed recursive next-loop execution baseline。
 - deeper recursive async chunk traversal，超过当前 reviewed workflow / bounded loop / recursive follow-up checkpoint / recursive next-loop execution / chunk load / module diff baseline。

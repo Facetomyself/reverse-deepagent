@@ -3,7 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reverse_deepagent.browser.hooks import BreakpointManager, BreakpointSpec, PausedSessionActionSpec
+from reverse_deepagent.browser.hooks import (
+    BreakpointManager,
+    BreakpointSpec,
+    PausedSessionActionSpec,
+    PausedSessionLiveContinuationPreflightManager,
+    PausedSessionLiveContinuationPreflightSpec,
+)
 
 
 class RecordingCDPSession:
@@ -482,6 +488,124 @@ class BreakpointManagerTests(unittest.TestCase):
             self.assertFalse(follow_up.continuation_preflight["live_continuation_available"])
             self.assertEqual(follow_up.debugger_session["continuation_preflight"]["status"], "action_blocked")
             self.assertNotIn(("Debugger.resume", {}), session.calls)
+
+    def test_live_continuation_preflight_blocks_durable_snapshot_resume_without_side_effects(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = RecordingCDPSession(emit_pause_on_evaluate=True)
+            manager = BreakpointManager()
+            initial = manager.set_breakpoint(
+                FakeBreakpointPage(session),
+                BreakpointSpec.from_context(
+                    {
+                        "url_pattern": ".*app\\.js$",
+                        "line_number": 3,
+                        "trigger_expression": "debugger; 'scheduled'",
+                        "keep_paused": True,
+                        "pause_session_id": "durable-live-preflight",
+                        "persist_paused_session": True,
+                        "paused_session_store_dir": tmpdir,
+                    }
+                ),
+            )
+            self.assertEqual(initial.status, "success")
+            initial_call_count = len(session.calls)
+
+            BreakpointManager.clear_paused_sessions()
+            result = PausedSessionLiveContinuationPreflightManager().preflight(
+                PausedSessionLiveContinuationPreflightSpec.from_context(
+                    {
+                        "pause_session_id": "durable-live-preflight",
+                        "requested_action": "resume",
+                        "paused_session_store_dir": tmpdir,
+                    }
+                )
+            )
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.reason, "live_paused_session_required")
+            self.assertEqual(result.preflight["source"], "durable_snapshot")
+            self.assertTrue(result.preflight["durable_snapshot_found"])
+            self.assertFalse(result.preflight["same_process_registry"])
+            self.assertFalse(result.preflight["live_continuation_available"])
+            self.assertFalse(result.preflight["cross_process_live_continuation_supported"])
+            self.assertFalse(result.preflight["resume_supported"])
+            self.assertIn("live_paused_session_required", result.preflight["blockers"])
+            self.assertIn("target_not_attached", result.preflight["blockers"])
+            self.assertIn("debugger_session_not_live", result.preflight["blockers"])
+            self.assertIn("cdp_target_unavailable", result.preflight["blockers"])
+            self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+            self.assertFalse(result.side_effect_policy["browser_resumed"])
+            self.assertFalse(result.side_effect_policy["debugger_stepped"])
+            self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+            self.assertEqual(len(session.calls), initial_call_count)
+
+    def test_live_continuation_preflight_reports_same_process_registry_available(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        session = RecordingCDPSession(emit_pause_on_evaluate=True)
+        manager = BreakpointManager()
+        initial = manager.set_breakpoint(
+            FakeBreakpointPage(session),
+            BreakpointSpec.from_context(
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 3,
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "keep_paused": True,
+                    "pause_session_id": "same-process-live-preflight",
+                }
+            ),
+        )
+        self.assertEqual(initial.status, "success")
+        initial_call_count = len(session.calls)
+
+        result = PausedSessionLiveContinuationPreflightManager().preflight(
+            PausedSessionLiveContinuationPreflightSpec.from_context(
+                {
+                    "pause_session_id": "same-process-live-preflight",
+                    "requested_action": "resume",
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "live_available")
+        self.assertEqual(result.preflight["source"], "registry")
+        self.assertTrue(result.preflight["same_process_registry"])
+        self.assertTrue(result.preflight["target_attached"])
+        self.assertTrue(result.preflight["cdp_target_available"])
+        self.assertTrue(result.preflight["live_continuation_available"])
+        self.assertFalse(result.preflight["cross_process_live_continuation_supported"])
+        self.assertEqual(result.preflight["blockers"], [])
+        self.assertIn("same-process-live-preflight", BreakpointManager._paused_sessions)
+        self.assertEqual(len(session.calls), initial_call_count)
+
+    def test_live_continuation_preflight_blocks_artifact_only_evaluate_without_stable_callframe(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+        result = PausedSessionLiveContinuationPreflightManager().preflight(
+            PausedSessionLiveContinuationPreflightSpec.from_context(
+                {
+                    "pause_session_id": "artifact-only",
+                    "requested_action": "evaluate",
+                    "debugger_session": {"session_id": "artifact-only", "lifecycle": "retained_paused"},
+                    "callframes": [{"functionName": "sign", "location": {"lineNumber": 1}}],
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.preflight["source"], "provided_artifact")
+        self.assertTrue(result.preflight["provided_artifact_found"])
+        self.assertFalse(result.preflight["same_process_registry"])
+        self.assertFalse(result.preflight["selected_callframe_has_id"])
+        self.assertFalse(result.preflight["live_continuation_available"])
+        self.assertFalse(result.preflight["evaluate_supported"])
+        self.assertIn("live_paused_session_required", result.preflight["blockers"])
+        self.assertIn("target_not_attached", result.preflight["blockers"])
+        self.assertIn("debugger_session_not_live", result.preflight["blockers"])
+        self.assertIn("cdp_target_unavailable", result.preflight["blockers"])
+        self.assertIn("callframe_id_not_stable", result.preflight["blockers"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
 
     def test_missing_paused_session_reports_unavailable_preflight(self) -> None:
         BreakpointManager.clear_paused_sessions()

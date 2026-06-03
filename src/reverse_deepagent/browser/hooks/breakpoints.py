@@ -12,6 +12,28 @@ from typing import Any
 from reverse_deepagent.browser.base import BrowserPage
 
 
+def _first_dict(context: dict[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        value = context.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "attached", "available"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "detached", "unavailable"}:
+            return False
+    return bool(value)
+
+
 @dataclass(slots=True)
 class BreakpointSpec:
     """Provider-neutral breakpoint request."""
@@ -288,6 +310,325 @@ class PausedSessionActionSpec:
             persist_paused_session=bool(self.paused_session_store_dir),
             paused_session_store_dir=self.paused_session_store_dir,
         )
+
+
+@dataclass(slots=True)
+class PausedSessionLiveContinuationPreflightSpec:
+    """Read-only live continuation preflight for retained / durable paused sessions."""
+
+    pause_session_id: str
+    requested_action: str = "inspect"
+    paused_session_store_dir: str | None = None
+    debugger_session: dict[str, Any] = field(default_factory=dict)
+    debugger_timeline: dict[str, Any] = field(default_factory=dict)
+    paused: dict[str, Any] = field(default_factory=dict)
+    callframes: list[dict[str, Any]] = field(default_factory=list)
+    callframe_index: int = 0
+    require_live_action: bool = False
+    target_attached: bool | None = None
+    cdp_target_available: bool | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionLiveContinuationPreflightSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_live_continuation_preflight")
+            or context.get("pausedSessionLiveContinuationPreflight")
+            or context.get("paused-session-live-continuation-preflight")
+            or context.get("cross_process_paused_session_live_preflight")
+            or context.get("crossProcessPausedSessionLivePreflight")
+            or context.get("preflight_paused_session_live_continuation")
+            or context.get("preflightPausedSessionLiveContinuation")
+        )
+        session_id = context.get("pause_session_id") or context.get("pauseSessionId") or context.get("debugger_session_id") or context.get("debuggerSessionId")
+        if not session_id and not requested:
+            return None
+        action = str(
+            context.get(
+                "requested_action",
+                context.get("requestedAction", context.get("paused_session_action", context.get("pausedSessionAction", "inspect"))),
+            )
+            or "inspect"
+        ).strip().replace("-", "_").lower()
+        store_dir = context.get(
+            "paused_session_store_dir",
+            context.get("pausedSessionStoreDir", context.get("pause_session_store_dir", context.get("pauseSessionStoreDir"))),
+        )
+        debugger_session = _first_dict(
+            context,
+            "debugger_session",
+            "debuggerSession",
+            "debugger-session",
+            "paused_session",
+            "pausedSession",
+        )
+        if isinstance(debugger_session.get("debugger_session"), dict):
+            debugger_session = dict(debugger_session["debugger_session"])
+        debugger_timeline = _first_dict(context, "debugger_timeline", "debuggerTimeline", "debugger-timeline")
+        paused = _first_dict(context, "debugger_paused", "debuggerPaused", "debugger-paused", "paused")
+        callframes_raw = context.get("callframes") or context.get("callFrames")
+        if isinstance(callframes_raw, dict):
+            callframes_raw = callframes_raw.get("callframes") or callframes_raw.get("callFrames") or callframes_raw.get("items")
+        return cls(
+            pause_session_id=str(session_id or ""),
+            requested_action=action,
+            paused_session_store_dir=str(store_dir) if store_dir else None,
+            debugger_session=debugger_session,
+            debugger_timeline=debugger_timeline,
+            paused=paused,
+            callframes=[item for item in callframes_raw if isinstance(item, dict)] if isinstance(callframes_raw, list) else [],
+            callframe_index=int(context.get("callframe_index", context.get("callFrameIndex", 0)) or 0),
+            require_live_action=bool(
+                context.get("require_live_action")
+                or context.get("requireLiveAction")
+                or context.get("callframe_evaluations")
+                or context.get("callframeEvaluations")
+                or context.get("evaluate_on_callframe")
+                or context.get("evaluateOnCallFrame")
+            ),
+            target_attached=_optional_bool(context.get("target_attached", context.get("targetAttached"))),
+            cdp_target_available=_optional_bool(context.get("cdp_target_available", context.get("cdpTargetAvailable"))),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionLiveContinuationPreflightResult:
+    status: str
+    preflight: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "preflight": self.preflight,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionLiveContinuationPreflightManager:
+    """Inspect whether a paused session can be live-continued without sending CDP commands."""
+
+    LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe", "eval"}
+
+    def preflight(self, spec: PausedSessionLiveContinuationPreflightSpec | None) -> PausedSessionLiveContinuationPreflightResult:
+        policy = self._side_effect_policy()
+        if spec is None or not spec.pause_session_id:
+            preflight = self._preflight_payload(
+                spec=None,
+                source="missing",
+                durable_snapshot={},
+                registry_entry={},
+                blockers=["live_paused_session_required", "target_not_attached", "debugger_session_not_live", "cdp_target_unavailable"],
+            )
+            return PausedSessionLiveContinuationPreflightResult(status="unavailable", preflight=preflight, side_effect_policy=policy, reason="missing_pause_session_id")
+
+        registry_entry = BreakpointManager._paused_sessions.get(spec.pause_session_id)
+        durable_snapshot = self._load_durable_snapshot(spec)
+        source = "registry" if registry_entry else "durable_snapshot" if durable_snapshot else "provided_artifact" if any((spec.debugger_session, spec.paused, spec.callframes)) else "missing"
+        blockers = self._blockers(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot, source=source)
+        if blockers:
+            live_action = spec.requested_action in self.LIVE_ACTIONS or spec.require_live_action
+            inspect_supported = bool(durable_snapshot or registry_entry or spec.debugger_session or spec.paused or spec.callframes)
+            status = "blocked" if live_action else "inspect_only" if inspect_supported else "unavailable"
+        else:
+            status = "live_available"
+        preflight = self._preflight_payload(spec=spec, source=source, durable_snapshot=durable_snapshot, registry_entry=registry_entry or {}, blockers=blockers)
+        reason = blockers[0] if blockers else None
+        return PausedSessionLiveContinuationPreflightResult(status=status, preflight=preflight, side_effect_policy=policy, reason=reason)
+
+    @classmethod
+    def _blockers(
+        cls,
+        spec: PausedSessionLiveContinuationPreflightSpec,
+        *,
+        registry_entry: dict[str, Any] | None,
+        durable_snapshot: dict[str, Any],
+        source: str,
+    ) -> list[str]:
+        blockers: list[str] = []
+        live_action = spec.requested_action in cls.LIVE_ACTIONS or spec.require_live_action
+        debugger_session = cls._debugger_session(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot)
+        lifecycle = str(debugger_session.get("lifecycle") or "")
+        target_attached = cls._target_attached(spec, source=source, registry_entry=registry_entry)
+        cdp_target_available = cls._cdp_target_available(spec, source=source, registry_entry=registry_entry)
+        live_session_available = bool(registry_entry) and lifecycle != "resumed"
+        if live_action and not live_session_available:
+            blockers.append("live_paused_session_required")
+        if not target_attached:
+            blockers.append("target_not_attached")
+        if not live_session_available:
+            blockers.append("debugger_session_not_live")
+        if not cdp_target_available:
+            blockers.append("cdp_target_unavailable")
+        if live_action and cls._requires_stable_callframe(spec) and not cls._stable_callframe_available(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot, source=source):
+            blockers.append("callframe_id_not_stable")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _load_durable_snapshot(spec: PausedSessionLiveContinuationPreflightSpec) -> dict[str, Any]:
+        path = BreakpointManager._paused_session_store_path(spec.pause_session_id, spec.paused_session_store_dir)
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    @classmethod
+    def _preflight_payload(
+        cls,
+        *,
+        spec: PausedSessionLiveContinuationPreflightSpec | None,
+        source: str,
+        durable_snapshot: dict[str, Any],
+        registry_entry: dict[str, Any],
+        blockers: list[str],
+    ) -> dict[str, Any]:
+        debugger_session = cls._debugger_session(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot) if spec else {}
+        callframes = cls._callframes(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot) if spec else []
+        lifecycle = str(debugger_session.get("lifecycle") or "")
+        same_process_registry = source == "registry" and bool(registry_entry)
+        target_attached = cls._target_attached(spec, source=source, registry_entry=registry_entry) if spec else False
+        cdp_target_available = cls._cdp_target_available(spec, source=source, registry_entry=registry_entry) if spec else False
+        live_available = same_process_registry and lifecycle != "resumed" and target_attached and cdp_target_available and not blockers
+        live_action = bool(spec and (spec.requested_action in cls.LIVE_ACTIONS or spec.require_live_action))
+        inspect_supported = bool(durable_snapshot or same_process_registry or callframes)
+        payload_status = "live_available" if live_available else "blocked" if blockers and live_action else "inspect_only" if inspect_supported else "unavailable"
+        return {
+            "schema_version": "reverse-deepagent.paused-session-live-continuation-preflight.v1",
+            "status": payload_status,
+            "source": source,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "requested_action": spec.requested_action if spec else None,
+            "same_process_registry": same_process_registry,
+            "durable_snapshot_found": bool(durable_snapshot),
+            "provided_artifact_found": bool(spec and any((spec.debugger_session, spec.paused, spec.callframes))),
+            "target_attached": target_attached,
+            "cdp_target_available": cdp_target_available,
+            "pre_action_lifecycle": lifecycle or "unknown",
+            "live_continuation_available": live_available,
+            "cross_process_live_continuation_supported": False,
+            "inspect_supported": inspect_supported,
+            "evaluate_supported": live_available,
+            "step_supported": live_available,
+            "resume_supported": live_available,
+            "callframe_count": len(callframes),
+            "selected_callframe_has_id": cls._selected_callframe_has_id(spec, callframes) if spec else False,
+            "blockers": blockers,
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(live_available=live_available, blockers=blockers),
+            "required_for_live": [
+                "same_process_registry",
+                "active_cdp_session",
+                "attached_cdp_target",
+                "retained_paused_lifecycle",
+                "stable_callframe_id_for_evaluate",
+            ],
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _next_action(*, live_available: bool, blockers: list[str]) -> str:
+        if live_available:
+            return "continue_with_same_process_paused_session_action"
+        if "callframe_id_not_stable" in blockers:
+            return "reproduce_pause_and_capture_stable_live_callframe"
+        if "live_paused_session_required" in blockers:
+            return "reproduce_pause_in_current_process_before_live_action"
+        return "inspect_snapshot_or_collect_fresh_pause_artifacts"
+
+    @staticmethod
+    def _debugger_session(
+        spec: PausedSessionLiveContinuationPreflightSpec,
+        *,
+        registry_entry: dict[str, Any] | None,
+        durable_snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        if registry_entry and isinstance(registry_entry.get("debugger_session"), dict):
+            return dict(registry_entry["debugger_session"])
+        if isinstance(durable_snapshot.get("debugger_session"), dict):
+            return dict(durable_snapshot["debugger_session"])
+        return dict(spec.debugger_session)
+
+    @staticmethod
+    def _callframes(
+        spec: PausedSessionLiveContinuationPreflightSpec,
+        *,
+        registry_entry: dict[str, Any] | None,
+        durable_snapshot: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        if registry_entry and isinstance(registry_entry.get("paused_events"), list):
+            return BreakpointManager._callframes_from_paused(registry_entry["paused_events"])
+        durable_frames = durable_snapshot.get("callframes")
+        if isinstance(durable_frames, list):
+            return [item for item in durable_frames if isinstance(item, dict)]
+        return list(spec.callframes)
+
+    @staticmethod
+    def _target_attached(
+        spec: PausedSessionLiveContinuationPreflightSpec | None,
+        *,
+        source: str,
+        registry_entry: dict[str, Any] | None,
+    ) -> bool:
+        if spec and spec.target_attached is not None:
+            return spec.target_attached
+        return source == "registry" and bool(registry_entry)
+
+    @staticmethod
+    def _cdp_target_available(
+        spec: PausedSessionLiveContinuationPreflightSpec | None,
+        *,
+        source: str,
+        registry_entry: dict[str, Any] | None,
+    ) -> bool:
+        if spec and spec.cdp_target_available is not None:
+            return spec.cdp_target_available
+        return source == "registry" and bool(registry_entry)
+
+    @classmethod
+    def _requires_stable_callframe(cls, spec: PausedSessionLiveContinuationPreflightSpec) -> bool:
+        return spec.requested_action in {"evaluate", "evaluate_on_callframe", "eval"} or bool(spec.callframes)
+
+    @classmethod
+    def _stable_callframe_available(
+        cls,
+        spec: PausedSessionLiveContinuationPreflightSpec,
+        *,
+        registry_entry: dict[str, Any] | None,
+        durable_snapshot: dict[str, Any],
+        source: str,
+    ) -> bool:
+        if source != "registry" or not registry_entry:
+            return False
+        return cls._selected_callframe_has_id(spec, cls._callframes(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot))
+
+    @staticmethod
+    def _selected_callframe_has_id(spec: PausedSessionLiveContinuationPreflightSpec, callframes: list[dict[str, Any]]) -> bool:
+        if spec.callframe_index < 0 or spec.callframe_index >= len(callframes):
+            return False
+        return bool(callframes[spec.callframe_index].get("callFrameId"))
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
 
 
 class BreakpointManager:

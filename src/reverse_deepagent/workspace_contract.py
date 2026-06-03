@@ -317,6 +317,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_debugger_actions", "workspace/debugger-actions.json", "/workspace/debugger/", "debugger-actions.json", "trace", ("debugger", "protector")),
         ("workspace_debugger_session", "workspace/debugger-session.json", "/workspace/debugger/", "debugger-session.json", "trace", ("debugger", "protector")),
         ("workspace_debugger_timeline", "workspace/debugger-timeline.json", "/workspace/debugger/", "debugger-timeline.json", "trace", ("debugger", "timeline")),
+        ("workspace_paused_session_live_continuation_preflight", "workspace/paused-session-live-continuation-preflight.json", "/workspace/debugger/", "paused-session-live-continuation-preflight.json", "audit", ("debugger", "browser_runtime", "review")),
         ("workspace_protection_triage_hooks", "workspace/protection-triage-hooks.json", "/workspace/hooks/", "protection-triage-hooks.json", "hook-timeline", ("hook", "debugger", "review")),
         ("workspace_wasm_runtime_candidates", "workspace/wasm-runtime-candidates.json", "/workspace/runtime/", "wasm-runtime-candidates.json", "runtime-context", ("hook", "web_recon", "review")),
         ("workspace_vm_dispatcher_candidates", "workspace/vm-dispatcher-candidates.json", "/workspace/runtime/", "vm-dispatcher-candidates.json", "runtime-context", ("debugger", "hook", "review")),

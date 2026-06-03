@@ -4552,6 +4552,96 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertEqual(follow_up.artifacts[0].metadata["preflight_status"], "action_blocked")
             self.assertEqual(follow_up.artifacts[0].metadata["preflight_reason"], "live_paused_session_required")
 
+    def test_native_web_runtime_preflights_durable_paused_session_live_continuation_without_action(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            initial = runtime.apply_minimal_protection(
+                "set-breakpoint",
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 4,
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "keep_paused": True,
+                    "pause_session_id": "native-durable-live-preflight",
+                    "persist_paused_session": True,
+                    "paused_session_store_dir": tmpdir,
+                },
+            )
+            self.assertEqual(initial.status.value, "success")
+            page = provider.session.context.pages[0]
+            call_count = len(page._cdp_session.calls)
+
+            BreakpointManager.clear_paused_sessions()
+            follow_up = runtime.apply_minimal_protection(
+                "paused-session-live-continuation-preflight",
+                {
+                    "pause_session_id": "native-durable-live-preflight",
+                    "requested_action": "resume",
+                    "paused_session_store_dir": tmpdir,
+                },
+            )
+
+            self.assertEqual(follow_up.status.value, "partial")
+            self.assertEqual(follow_up.applied_actions, ["preflight_paused_session_live_continuation"])
+            self.assertEqual(follow_up.next_action, "reproduce_pause_in_current_process_before_live_action")
+            self.assertIn("paused_session_live_preflight_status=blocked", follow_up.verification)
+            self.assertIn("paused_session_live_preflight_source=durable_snapshot", follow_up.verification)
+            self.assertIn("paused_session_live_preflight_live_continuation_available=False", follow_up.verification)
+            self.assertIn("paused_session_live_preflight_cross_process_live_continuation_supported=False", follow_up.verification)
+            self.assertIn("paused_session_live_preflight_browser_resumed=False", follow_up.verification)
+            self.assertIn("paused_session_live_preflight_debugger_stepped=False", follow_up.verification)
+            self.assertIn("paused_session_live_preflight_callframe_evaluated=False", follow_up.verification)
+            self.assertIn("paused_session_live_preflight_cdp_command_sent=False", follow_up.verification)
+            self.assertTrue(any(item.startswith("paused_session_live_preflight_blockers=live_paused_session_required") for item in follow_up.verification))
+            self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/paused-session-live-continuation-preflight.json")
+            self.assertEqual(follow_up.artifacts[0].metadata["source"], "durable_snapshot")
+            self.assertFalse(follow_up.artifacts[0].metadata["live_continuation_available"])
+            self.assertFalse(follow_up.artifacts[0].metadata["cross_process_live_continuation_supported"])
+            self.assertEqual(len(page._cdp_session.calls), call_count)
+
+    def test_native_web_runtime_preflights_same_process_paused_session_without_resuming(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        initial = runtime.apply_minimal_protection(
+            "set-breakpoint",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 4,
+                "trigger_expression": "debugger; 'scheduled'",
+                "keep_paused": True,
+                "pause_session_id": "native-same-process-live-preflight",
+            },
+        )
+        self.assertEqual(initial.status.value, "success")
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        follow_up = runtime.apply_minimal_protection(
+            "paused-session-live-continuation-preflight",
+            {
+                "pause_session_id": "native-same-process-live-preflight",
+                "requested_action": "resume",
+            },
+        )
+
+        self.assertEqual(follow_up.status.value, "success")
+        self.assertEqual(follow_up.applied_actions, ["preflight_paused_session_live_continuation"])
+        self.assertEqual(follow_up.next_action, "continue_with_same_process_paused_session_action")
+        self.assertIn("paused_session_live_preflight_status=live_available", follow_up.verification)
+        self.assertIn("paused_session_live_preflight_source=registry", follow_up.verification)
+        self.assertIn("paused_session_live_preflight_same_process_registry=True", follow_up.verification)
+        self.assertIn("paused_session_live_preflight_live_continuation_available=True", follow_up.verification)
+        self.assertIn("paused_session_live_preflight_cross_process_live_continuation_supported=False", follow_up.verification)
+        self.assertIn("paused_session_live_preflight_browser_resumed=False", follow_up.verification)
+        self.assertIn("paused_session_live_preflight_cdp_command_sent=False", follow_up.verification)
+        self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/paused-session-live-continuation-preflight.json")
+        self.assertTrue(follow_up.artifacts[0].metadata["live_continuation_available"])
+        self.assertIn("native-same-process-live-preflight", BreakpointManager._paused_sessions)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_native_web_runtime_reports_missing_paused_session_preflight(self) -> None:
         BreakpointManager.clear_paused_sessions()
         provider = FakeProvider()

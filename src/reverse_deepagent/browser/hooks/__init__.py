@@ -1,4 +1,12 @@
-from .breakpoints import BreakpointManager, BreakpointResult, BreakpointSpec, PausedSessionActionSpec
+from .breakpoints import (
+    BreakpointManager,
+    BreakpointResult,
+    BreakpointSpec,
+    PausedSessionActionSpec,
+    PausedSessionLiveContinuationPreflightManager,
+    PausedSessionLiveContinuationPreflightResult,
+    PausedSessionLiveContinuationPreflightSpec,
+)
 from .closure_scope import ClosureScopeDiscoveryManager, ClosureScopeDiscoveryResult, ClosureScopeDiscoverySpec
 from .flow_timeline import FlowTimelineManager, FlowTimelineResult, FlowTimelineSpec
 from .function_hooks import FunctionHookManager, FunctionHookResult, FunctionHookSpec
@@ -149,6 +157,9 @@ __all__ = [
     "BreakpointResult",
     "BreakpointSpec",
     "PausedSessionActionSpec",
+    "PausedSessionLiveContinuationPreflightManager",
+    "PausedSessionLiveContinuationPreflightResult",
+    "PausedSessionLiveContinuationPreflightSpec",
     "BrowserHookManager",
     "ClosureScopeDiscoveryManager",
     "ClosureScopeDiscoveryResult",

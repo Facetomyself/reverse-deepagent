@@ -40,8 +40,18 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         mutation_audit = _records_alias(payload, "mutation_audit", "mutation-audit", "mutationAudit")
         actions = _records_alias(payload, "debugger_actions", "debugger-actions", "debuggerActions")
         timeline_entries = _records_from(timeline.get("entries") or timeline.get("events") or timeline.get("timeline"))
+        live_preflight = _object_alias(
+            payload,
+            "paused_session_live_continuation_preflight",
+            "paused-session-live-continuation-preflight",
+            "pausedSessionLiveContinuationPreflight",
+            "live_continuation_preflight",
+            "liveContinuationPreflight",
+        )
 
         preflight = _first_object(
+            live_preflight.get("preflight"),
+            live_preflight,
             session.get("continuation_preflight"),
             timeline.get("continuation_preflight"),
             paused.get("continuation_preflight"),
@@ -54,13 +64,15 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         requested_action = _string(preflight.get("requested_action") or session.get("requested_action") or payload.get("requested_action"))
         live_continuation_available = _boolish(preflight.get("live_continuation_available"))
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
             warnings.append("no_debugger_artifacts_provided")
         if preflight_status == "action_blocked":
             blockers.append("paused_session_action_blocked")
+        if preflight_status == "blocked":
+            blockers.append("paused_session_live_preflight_blocked")
         if session_status in {"failed", "failure", "error", "unsupported"}:
             blockers.append("debugger_artifact_reports_failure")
         if paused_status in {"failed", "failure", "error", "unsupported"}:
@@ -99,6 +111,8 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                 "debugger_action_count": len(actions),
                 "timeline_entry_count": _timeline_entry_count(timeline, timeline_entries),
                 "timeline_event_counts": _timeline_event_counts(timeline_entries),
+                "cross_process_live_continuation_supported": _boolish(preflight.get("cross_process_live_continuation_supported")),
+                "preflight_blockers": preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else [],
             },
             "blockers": blockers,
             "warnings": warnings,
@@ -182,7 +196,7 @@ def _records_from(value: Any) -> list[dict[str, Any]]:
 
 def _first_object(*values: Any) -> dict[str, Any]:
     for value in values:
-        if isinstance(value, dict):
+        if isinstance(value, dict) and value:
             return value
     return {}
 
@@ -246,6 +260,8 @@ def _timeline_event_counts(entries: list[dict[str, Any]]) -> dict[str, int]:
 def _next_action(status: str, blockers: list[str], warnings: list[str], requested_action: str, live_available: bool) -> str:
     if "paused_session_action_blocked" in blockers:
         return "use_live_same_process_paused_session_before_resume_step_or_evaluate"
+    if "paused_session_live_preflight_blocked" in blockers:
+        return "reproduce_pause_in_current_process_before_live_action"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:

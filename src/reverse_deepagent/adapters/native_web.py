@@ -108,6 +108,8 @@ from reverse_deepagent.browser.hooks import (
     PageMutationAuditManager,
     PageMutationAuditSpec,
     PausedSessionActionSpec,
+    PausedSessionLiveContinuationPreflightManager,
+    PausedSessionLiveContinuationPreflightSpec,
     SourceLogpointManager,
     SourceLogpointSpec,
 )
@@ -958,6 +960,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_live_continuation_preflight_request(protection_name, context):
+            spec = PausedSessionLiveContinuationPreflightSpec.from_context(context)
+            result = PausedSessionLiveContinuationPreflightManager().preflight(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            verification = [
+                f"paused_session_live_preflight_status={result.status}",
+                f"paused_session_live_preflight_reason={result.reason or ''}",
+                f"paused_session_live_preflight_source={preflight.get('source', 'unknown')}",
+                f"paused_session_live_preflight_requested_action={preflight.get('requested_action')}",
+                f"paused_session_live_preflight_same_process_registry={preflight.get('same_process_registry', False)}",
+                f"paused_session_live_preflight_durable_snapshot_found={preflight.get('durable_snapshot_found', False)}",
+                f"paused_session_live_preflight_target_attached={preflight.get('target_attached', False)}",
+                f"paused_session_live_preflight_cdp_target_available={preflight.get('cdp_target_available', False)}",
+                f"paused_session_live_preflight_live_continuation_available={preflight.get('live_continuation_available', False)}",
+                f"paused_session_live_preflight_cross_process_live_continuation_supported={preflight.get('cross_process_live_continuation_supported', False)}",
+                f"paused_session_live_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"paused_session_live_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_live_preflight_browser_resumed={policy.get('browser_resumed', False)}",
+                f"paused_session_live_preflight_debugger_stepped={policy.get('debugger_stepped', False)}",
+                f"paused_session_live_preflight_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-live-continuation-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only paused-session live continuation preflight.",
+                    metadata={
+                        "status": result.status,
+                        "preflight_status": preflight.get("status"),
+                        "source": preflight.get("source"),
+                        "pause_session_id": preflight.get("pause_session_id"),
+                        "requested_action": preflight.get("requested_action"),
+                        "same_process_registry": preflight.get("same_process_registry", False),
+                        "durable_snapshot_found": preflight.get("durable_snapshot_found", False),
+                        "target_attached": preflight.get("target_attached", False),
+                        "cdp_target_available": preflight.get("cdp_target_available", False),
+                        "live_continuation_available": preflight.get("live_continuation_available", False),
+                        "cross_process_live_continuation_supported": preflight.get("cross_process_live_continuation_supported", False),
+                        "blockers": blockers,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["preflight_paused_session_live_continuation"],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "live_available" else ExecutionStatus.PARTIAL if result.status in {"inspect_only", "blocked", "unavailable"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or ("use_same_process_paused_session_for_live_actions" if result.status == "live_available" else "reproduce_pause_in_current_process_before_live_action"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "live_available" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_request(protection_name, context):
             spec = PausedSessionActionSpec.from_context(context)
@@ -4297,6 +4353,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_live_continuation_preflight_request(protection_name, context):
+            return False
         if normalized in {
             "paused-session",
             "pause-session",
@@ -4315,6 +4373,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_live_continuation_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-live-continuation-preflight",
+            "pause-session-live-continuation-preflight",
+            "debugger-paused-session-live-preflight",
+            "cross-process-paused-session-live-preflight",
+            "preflight-paused-session-live-continuation",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_live_continuation_preflight",
+                "pausedSessionLiveContinuationPreflight",
+                "paused-session-live-continuation-preflight",
+                "cross_process_paused_session_live_preflight",
+                "crossProcessPausedSessionLivePreflight",
+                "preflight_paused_session_live_continuation",
+                "preflightPausedSessionLiveContinuation",
             )
         )
 

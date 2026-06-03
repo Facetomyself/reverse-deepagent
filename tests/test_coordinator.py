@@ -154,6 +154,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session live continuation preflight",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="paused_session_live_continuation_preflight",
+                    details={"status": "blocked", "preflight": {"source": "durable_snapshot", "live_continuation_available": False}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native function hook timeline",
                     kind=EvidenceKind.HOOK,
                     source="function_hook_timeline",
@@ -479,6 +486,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["debugger-actions.json"]["actions"][0]["method"], "Debugger.stepOver")
         self.assertEqual(payloads["debugger-session.json"]["session_id"], "unit-paused-session")
         self.assertEqual(payloads["debugger-timeline.json"]["entry_count"], 4)
+        self.assertEqual(payloads["paused-session-live-continuation-preflight.json"]["preflight"]["source"], "durable_snapshot")
         self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
@@ -573,6 +581,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_timeline"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_live_continuation_preflight"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_stitched_flow"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_external_delivery_duplicate_guard"), "export")
 

@@ -84,6 +84,45 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertTrue(result["summary"]["live_continuation_available"])
         self.assertEqual(result["summary"]["timeline_event_counts"]["paused"], 1)
 
+    def test_review_debugger_artifacts_blocks_live_continuation_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_live_continuation_preflight": {
+                "status": "blocked",
+                "preflight": {
+                    "status": "blocked",
+                    "source": "durable_snapshot",
+                    "requested_action": "resume",
+                    "live_continuation_available": False,
+                    "cross_process_live_continuation_supported": False,
+                    "blockers": ["live_paused_session_required", "target_not_attached"],
+                    "reason": "live_paused_session_required",
+                },
+                "side_effect_policy": {
+                    "read_only": True,
+                    "cdp_command_sent": False,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": False,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertTrue(result["blocked"])
+        self.assertIn("paused_session_live_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "reproduce_pause_in_current_process_before_live_action")
+        self.assertFalse(result["summary"]["live_continuation_available"])
+        self.assertFalse(result["summary"]["cross_process_live_continuation_supported"])
+        self.assertEqual(result["summary"]["preflight_blockers"], ["live_paused_session_required", "target_not_attached"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result["side_effect_policy"]["browser_resumed"])
+        self.assertFalse(result["side_effect_policy"]["debugger_stepped"])
+        self.assertFalse(result["side_effect_policy"]["callframe_evaluated"])
+
     def test_review_debugger_artifacts_warns_when_no_artifacts_are_present(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         result = tool("{}")
