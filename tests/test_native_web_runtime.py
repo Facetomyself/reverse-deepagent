@@ -4201,6 +4201,43 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].metadata["candidate_count"], 1)
         self.assertFalse(result.artifacts[1].metadata["hook_supported"])
 
+    def test_native_web_runtime_plans_closure_wrapper_replacement_without_browser_session(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-replacement-plan",
+            {
+                "closure_function_candidates": [
+                    {
+                        "function_name": "buildSign",
+                        "candidate_id": "closure:native-cf-1:buildSign",
+                        "hook_kind": "closure-scope",
+                        "hook_supported": False,
+                        "callFrameId": "native-cf-1",
+                        "evidence_expression": "typeof buildSign",
+                    }
+                ],
+                "candidate_id": "closure:native-cf-1:buildSign",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, ["plan_closure_wrapper_replacement"])
+        self.assertIn("closure_wrapper_replacement_plan_status=ready_for_review", result.verification)
+        self.assertIn("closure_wrapper_replacement_plan_only=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_wrapper_installed=False", result.verification)
+        self.assertIn("closure_wrapper_replacement_runtime_mutated=False", result.verification)
+        self.assertIn("closure_wrapper_replacement_cdp_command_sent=False", result.verification)
+        self.assertIn("closure_wrapper_replacement_callframe_evaluated=False", result.verification)
+        self.assertEqual(result.next_action, "review_closure_wrapper_replacement_plan_before_execution")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-replacement-plan.json")
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertFalse(result.artifacts[0].metadata["wrapper_installed"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["callframe_evaluated"])
+
 
     def test_native_web_runtime_apply_minimal_protection_audits_object_root_mutation(self) -> None:
         provider = FakeProvider()

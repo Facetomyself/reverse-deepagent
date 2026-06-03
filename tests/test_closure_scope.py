@@ -1,6 +1,11 @@
 import unittest
 
-from reverse_deepagent.browser.hooks import ClosureScopeDiscoveryManager, ClosureScopeDiscoverySpec
+from reverse_deepagent.browser.hooks import (
+    ClosureScopeDiscoveryManager,
+    ClosureScopeDiscoverySpec,
+    ClosureWrapperReplacementPlanManager,
+    ClosureWrapperReplacementPlanSpec,
+)
 
 
 class ClosureScopeCDPSession:
@@ -109,6 +114,65 @@ class ClosureScopeDiscoveryManagerTests(unittest.TestCase):
 
     def test_missing_candidate_names_is_not_a_discovery_request(self) -> None:
         self.assertIsNone(ClosureScopeDiscoverySpec.from_context({"url_pattern": ".*app\\.js$"}))
+
+
+class ClosureWrapperReplacementPlanManagerTests(unittest.TestCase):
+    def test_plans_review_only_wrapper_replacement_from_closure_candidate(self) -> None:
+        spec = ClosureWrapperReplacementPlanSpec.from_context(
+            {
+                "closure_function_candidates": [
+                    {
+                        "function_name": "buildSign",
+                        "candidate_id": "closure:cf-closure-1:buildSign",
+                        "hook_kind": "closure-scope",
+                        "hook_supported": False,
+                        "callFrameId": "cf-closure-1",
+                        "evidence_expression": "typeof buildSign",
+                    }
+                ],
+                "candidate_id": "closure:cf-closure-1:buildSign",
+                "wrapper_strategy": "log-only-call-through",
+            }
+        )
+
+        result = ClosureWrapperReplacementPlanManager().plan(spec)
+        payload = result.to_dict()
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.candidate_count, 1)
+        self.assertEqual(result.selected_candidate["function_name"], "buildSign")
+        self.assertEqual(payload["schema_version"], "reverse-deepagent.closure-wrapper-replacement-plan.v1")
+        self.assertTrue(payload["plan"]["plan_only"])
+        self.assertTrue(payload["plan"]["requires_review"])
+        self.assertFalse(payload["plan"]["automatic_wrapper_replacement"])
+        self.assertFalse(payload["plan"]["wrapper_installed"])
+        self.assertFalse(payload["plan"]["runtime_mutated"])
+        self.assertFalse(payload["plan"]["cdp_command_sent"])
+        self.assertFalse(payload["plan"]["callframe_evaluated"])
+        self.assertTrue(payload["plan"]["replacement_feasibility"]["lexical_binding_proven"])
+        self.assertIn("assignment_safety_not_proven", payload["plan"]["execution_blockers"])
+        self.assertEqual(payload["plan"]["next_action"], "review_closure_wrapper_replacement_plan_before_execution")
+        self.assertTrue(payload["side_effect_policy"]["read_only"])
+        self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(payload["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_blocks_ambiguous_closure_candidate_selection(self) -> None:
+        spec = ClosureWrapperReplacementPlanSpec.from_context(
+            {
+                "closure_function_candidates": [
+                    {"function_name": "buildSign", "candidate_id": "closure:cf-1:buildSign", "hook_kind": "closure-scope", "callFrameId": "cf-1"},
+                    {"function_name": "buildSign", "candidate_id": "closure:cf-2:buildSign", "hook_kind": "closure-scope", "callFrameId": "cf-2"},
+                ]
+            }
+        )
+
+        result = ClosureWrapperReplacementPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "ambiguous_closure_candidate_selection")
+        self.assertEqual(result.plan["next_action"], "select_one_closure_candidate_before_wrapper_planning")
+        self.assertFalse(result.plan["wrapper_installed"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
 
 
 if __name__ == "__main__":

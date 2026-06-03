@@ -93,6 +93,8 @@ from reverse_deepagent.browser.hooks import (
     BrowserHookManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperReplacementPlanManager,
+    ClosureWrapperReplacementPlanSpec,
     FlowTimelineManager,
     FlowTimelineSpec,
     FunctionHookManager,
@@ -320,6 +322,51 @@ class NativeWebRuntime(WebReverseRuntime):
 
     def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
         context = context or {}
+        if self._is_closure_wrapper_replacement_plan_request(protection_name, context):
+            spec = ClosureWrapperReplacementPlanSpec.from_context(context)
+            result = ClosureWrapperReplacementPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            feasibility = plan.get("replacement_feasibility") if isinstance(plan.get("replacement_feasibility"), dict) else {}
+            verification = [
+                f"closure_wrapper_replacement_plan_status={result.status}",
+                f"closure_wrapper_replacement_candidate_count={result.candidate_count}",
+                f"closure_wrapper_replacement_plan_only={plan.get('plan_only', True)}",
+                f"closure_wrapper_replacement_wrapper_installed={plan.get('wrapper_installed', False)}",
+                f"closure_wrapper_replacement_runtime_mutated={plan.get('runtime_mutated', False)}",
+                f"closure_wrapper_replacement_cdp_command_sent={plan.get('cdp_command_sent', False)}",
+                f"closure_wrapper_replacement_callframe_evaluated={plan.get('callframe_evaluated', False)}",
+                f"closure_wrapper_replacement_lexical_binding_proven={feasibility.get('lexical_binding_proven', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_replacement_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-replacement-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only closure wrapper replacement plan.",
+                    metadata={
+                        "status": result.status,
+                        "candidate_count": result.candidate_count,
+                        "plan_only": True,
+                        "requires_review": True,
+                        "automatic_wrapper_replacement": False,
+                        "wrapper_installed": False,
+                        "runtime_mutated": False,
+                        "cdp_command_sent": False,
+                        "callframe_evaluated": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["plan_closure_wrapper_replacement"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "review_closure_wrapper_replacement_plan_before_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
         try:
             session = self._ensure_session()
             page = session.get_active_page() or session.new_page()
@@ -4506,6 +4553,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_scope_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_replacement_plan_request(protection_name, context):
+            return False
         if normalized in {
             "closure-scope",
             "closure-scope-discovery",
@@ -4524,6 +4573,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "closureQuery",
                 "closure_scope_discovery",
                 "closureScopeDiscovery",
+            )
+        )
+
+    @staticmethod
+    def _is_closure_wrapper_replacement_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "closure-wrapper-replacement-plan",
+            "closure-wrapper-preflight",
+            "closure-function-wrapper-plan",
+            "plan-closure-wrapper-replacement",
+            "review-closure-wrapper-replacement",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "closure_wrapper_replacement_plan",
+                "closureWrapperReplacementPlan",
+                "closure_wrapper_preflight",
+                "closureWrapperPreflight",
+                "closure_function_candidates",
+                "closureFunctionCandidates",
             )
         )
 
@@ -5812,6 +5884,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_replacement_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_scope_discovery_request(protection_name, context):
             return False
         if normalized in {"discover-module", "discover-modules", "module-discovery", "webpack-discovery"} or any(

@@ -7,7 +7,14 @@ from .breakpoints import (
     PausedSessionLiveContinuationPreflightResult,
     PausedSessionLiveContinuationPreflightSpec,
 )
-from .closure_scope import ClosureScopeDiscoveryManager, ClosureScopeDiscoveryResult, ClosureScopeDiscoverySpec
+from .closure_scope import (
+    ClosureScopeDiscoveryManager,
+    ClosureScopeDiscoveryResult,
+    ClosureScopeDiscoverySpec,
+    ClosureWrapperReplacementPlanManager,
+    ClosureWrapperReplacementPlanResult,
+    ClosureWrapperReplacementPlanSpec,
+)
 from .flow_timeline import FlowTimelineManager, FlowTimelineResult, FlowTimelineSpec
 from .function_hooks import FunctionHookManager, FunctionHookResult, FunctionHookSpec
 from .module_hooks import (
@@ -164,6 +171,9 @@ __all__ = [
     "ClosureScopeDiscoveryManager",
     "ClosureScopeDiscoveryResult",
     "ClosureScopeDiscoverySpec",
+    "ClosureWrapperReplacementPlanManager",
+    "ClosureWrapperReplacementPlanResult",
+    "ClosureWrapperReplacementPlanSpec",
     "FlowTimelineManager",
     "FlowTimelineResult",
     "FlowTimelineSpec",

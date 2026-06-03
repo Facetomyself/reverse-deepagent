@@ -37,6 +37,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         module_timeline = _object_alias(payload, "module_hook_timeline", "module-hook-timeline", "moduleHookTimeline")
         generic_timeline = _object_alias(payload, "hook_timeline", "hook-timeline", "hookTimeline")
         source_logpoints = _object_alias(payload, "source_logpoints", "source-logpoints", "sourceLogpoints")
+        closure_wrapper_replacement_plan = _object_alias(
+            payload,
+            "closure_wrapper_replacement_plan",
+            "closure-wrapper-replacement-plan",
+            "closureWrapperReplacementPlan",
+            "closure_wrapper_preflight",
+            "closureWrapperPreflight",
+        )
         async_chunk_plan = _object_alias(payload, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan")
         async_chunk_result = _object_alias(payload, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult")
         async_chunk_module_diff = _object_alias(payload, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff")
@@ -241,6 +249,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_timeline,
                 generic_timeline,
                 source_logpoints,
+                closure_wrapper_replacement_plan,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -284,6 +293,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("hook_artifact_reports_failure")
         if _status(async_chunk_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_load_plan_blocked")
+        if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("closure_wrapper_replacement_plan_blocked")
         if _status(async_chunk_result) in {"failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_load_failed")
         if _status(async_chunk_module_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -584,6 +595,12 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("installed_hooks_without_timeline_events")
         if candidate_count and installed_function_count + installed_module_count == 0:
             warnings.append("candidates_without_installed_hooks")
+        closure_wrapper_plan_status = _nested_status(closure_wrapper_replacement_plan, "plan")
+        if closure_wrapper_replacement_plan and (
+            _status(closure_wrapper_replacement_plan) == "ready_for_review"
+            or closure_wrapper_plan_status == "ready_for_review"
+        ):
+            warnings.append("closure_wrapper_replacement_plan_requires_review")
 
         status = "block" if blockers else "warn" if warnings else "pass"
         return {
@@ -600,6 +617,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "source_logpoint_count": source_logpoint_count,
                 "missing_hook_target_count": missing_count,
                 "candidate_count": candidate_count,
+                "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or closure_wrapper_plan_status,
+                "closure_wrapper_replacement_plan_next_action": _nested_get(closure_wrapper_replacement_plan, "plan", "next_action") or closure_wrapper_replacement_plan.get("next_action"),
                 "function_hook_event_count": _event_count(function_timeline, function_events),
                 "module_hook_event_count": _event_count(module_timeline, module_events),
                 "generic_hook_event_count": _event_count(generic_timeline, generic_events),
@@ -736,6 +755,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 function_hooks,
                 module_hooks,
                 source_logpoints,
+                closure_wrapper_replacement_plan,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -913,6 +933,8 @@ def _installed_targets(payload: dict[str, Any]) -> list[str]:
 def _next_action(blockers: list[str], warnings: list[str]) -> str:
     if "hook_artifact_reports_failure" in blockers:
         return "inspect_hook_failure_and_adjust_target_paths"
+    if "closure_wrapper_replacement_plan_blocked" in blockers:
+        return "resolve_closure_wrapper_replacement_plan_blockers"
     if "module_federation_get_init_plan_blocked" in blockers:
         return "provide_module_federation_candidates_from_module_discovery"
     if "module_federation_get_init_probe_failed" in blockers:
@@ -991,6 +1013,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "rerun_module_discovery_after_custom_loader_execution"
     if "module_federation_get_init_requires_review" in warnings:
         return "review_module_federation_get_init_plan"
+    if "closure_wrapper_replacement_plan_requires_review" in warnings:
+        return "review_closure_wrapper_replacement_plan_before_execution"
     if "module_federation_get_init_probe_requires_factory_review" in warnings:
         return "review_module_federation_get_init_probe_before_factory_invocation"
     if "module_federation_factory_exports_require_review" in warnings:
@@ -1090,6 +1114,7 @@ def _review_required_items(
     function_hooks: dict[str, Any],
     module_hooks: dict[str, Any],
     source_logpoints: dict[str, Any],
+    closure_wrapper_replacement_plan: dict[str, Any],
     async_chunk_plan: dict[str, Any],
     async_chunk_result: dict[str, Any],
     async_chunk_module_diff: dict[str, Any],
@@ -1136,6 +1161,7 @@ def _review_required_items(
                 "function_hook_status": _status(function_hooks),
                 "module_hook_status": _status(module_hooks),
                 "source_logpoint_status": _status(source_logpoints),
+                "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or _nested_status(closure_wrapper_replacement_plan, "plan"),
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),
@@ -1174,6 +1200,7 @@ def _review_required_items(
                 "function_hook_error": str(function_hooks.get("error") or ""),
                 "module_hook_error": str(module_hooks.get("error") or ""),
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),
+                "closure_wrapper_replacement_plan_error": str(closure_wrapper_replacement_plan.get("error") or ""),
                 "async_chunk_load_error": str(async_chunk_result.get("error") or async_chunk_plan.get("error") or ""),
                 "async_chunk_module_diff_error": str(async_chunk_module_diff.get("error") or ""),
                 "async_chunk_traversal_graph_error": str(async_chunk_traversal_graph.get("error") or ""),
