@@ -182,6 +182,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/debugger/paused-session-multi-step-loop-plan.json",
         )
         self.assertEqual(routes["workspace/paused-session-multi-step-loop-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-multi-step-loop-execution.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-multi-step-loop-execution.json"].future_path,
+            "/workspace/debugger/paused-session-multi-step-loop-execution.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-multi-step-loop-execution.json"].category, "audit")
         self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(
             routes["workspace/recursive-continuation-readiness.json"].future_path,

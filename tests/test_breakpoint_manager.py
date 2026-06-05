@@ -23,6 +23,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionMultiStepContinuationExecutionSpec,
     PausedSessionMultiStepLoopPlanManager,
     PausedSessionMultiStepLoopPlanSpec,
+    PausedSessionMultiStepLoopExecutionManager,
+    PausedSessionMultiStepLoopExecutionSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1500,6 +1502,128 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertIn("max_loop_iterations_reached", result.loop_plan["blockers"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+
+    def test_multi_step_loop_execution_runs_one_reviewed_next_iteration(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_step=True)
+        page = FakeBreakpointPage(session)
+        spec = PausedSessionMultiStepLoopExecutionSpec.from_context(
+            {
+                "paused_session_multi_step_loop_execution": True,
+                "execute_paused_session_loop_iteration": True,
+                "review_approved": True,
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "loop-exec-1",
+                        "workflow_id": "workflow-loop-exec-1",
+                        "pause_session_id": "pause-loop-exec-1",
+                        "target_id": "target-loop-exec-1",
+                        "next_iteration": {
+                            "available": True,
+                            "ready_for_review": True,
+                            "workflow_step_index": 2,
+                            "method": "Debugger.stepOver",
+                        },
+                        "readiness": {
+                            "next_loop_iteration_reviewable": True,
+                            "automatic_multi_step_loop_supported": False,
+                            "automatic_queue_advance_supported": False,
+                            "automatic_live_callframe_recovery_supported": False,
+                            "automatic_wrapper_continuation_supported": False,
+                        },
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "workflow-loop-exec-1",
+                        "pause_session_id": "pause-loop-exec-1",
+                        "target_id": "target-loop-exec-1",
+                        "planned_steps": [
+                            {"step_index": 1, "method": "Debugger.resume", "fingerprint": "1:Debugger.resume:"},
+                            {"step_index": 2, "method": "Debugger.stepOver", "fingerprint": "2:Debugger.stepOver:"},
+                        ],
+                        "duplicate_fingerprints": [],
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "pause-loop-exec-1",
+                        "target_id": "target-loop-exec-1",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "cf-live-loop-exec",
+                        "live_callframe_recovered": True,
+                        "target_detached": False,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "cf-live-loop-exec",
+                "timeout_ms": 10,
+                "observed_paused_event": {
+                    "sessionId": "attached-session-1",
+                    "params": {"reason": "step", "callFrames": [{"callFrameId": "cf-after-step"}]},
+                },
+            }
+        )
+
+        result = PausedSessionMultiStepLoopExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "executed")
+        self.assertEqual(session.calls, [("Debugger.stepOver", {"sessionId": "attached-session-1"})])
+        execution = result.execution
+        self.assertEqual(execution["schema_version"], "reverse-deepagent.paused-session-multi-step-loop-execution.v1")
+        self.assertEqual(execution["selected_step_index"], 2)
+        self.assertEqual(execution["selected_method"], "Debugger.stepOver")
+        self.assertTrue(execution["multi_step_loop_iteration_executed"])
+        self.assertTrue(execution["paused_event_captured"])
+        self.assertFalse(execution["loop_advanced"])
+        self.assertFalse(execution["queue_advanced"])
+        self.assertFalse(execution["automatic_multi_step_loop"])
+        self.assertEqual(execution["next_action"], "checkpoint_loop_iteration_captured_pause")
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertTrue(result.side_effect_policy["paused_event_captured"])
+        self.assertTrue(result.side_effect_policy["multi_step_loop_iteration_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+        self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_multi_step_loop_execution_requires_review_before_cdp(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_step=True)
+        page = FakeBreakpointPage(session)
+        spec = PausedSessionMultiStepLoopExecutionSpec.from_context(
+            {
+                "paused_session_multi_step_loop_execution": True,
+                "execute_paused_session_loop_iteration": True,
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "next_iteration": {"available": True, "ready_for_review": True, "workflow_step_index": 1, "method": "Debugger.stepOver"},
+                        "readiness": {"next_loop_iteration_reviewable": True, "automatic_multi_step_loop_supported": False},
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {"status": "ready_for_review", "planned_steps": [{"step_index": 1, "method": "Debugger.stepOver"}]}
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {"status": "recovered", "attached_session_id": "attached-session-1", "live_callframe_id": "cf-live-1", "live_callframe_recovered": True}
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "cf-live-1",
+            }
+        )
+
+        result = PausedSessionMultiStepLoopExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "review_required")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["multi_step_loop_iteration_executed"])
 
     def test_multi_step_continuation_execution_requires_review_before_cdp(self) -> None:
         session = RecordingCDPSession(emit_pause_on_step=True)
