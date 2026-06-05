@@ -4273,6 +4273,11 @@ class NativeWebRuntimeTests(unittest.TestCase):
                     }
                 ],
                 "candidate_id": "closure:native-cf-1:buildSign",
+                "closure_wrapper_runtime_mutability_result": {
+                    "status": "proven",
+                    "runtime_mutability_proven": True,
+                    "function_name": "buildSign",
+                },
             },
         )
 
@@ -4503,6 +4508,20 @@ class NativeWebRuntimeTests(unittest.TestCase):
                     "callFrameId": "native-cf-1",
                     "wrapper_strategy": "log-only-call-through",
                 },
+                "closure_wrapper_runtime_mutability_result": {
+                    "status": "proven",
+                    "runtime_mutability_proven": True,
+                    "runtime_mutability_probe_executed": True,
+                    "temporary_assignment_confirmed": True,
+                    "original_restored": True,
+                    "wrapper_installed": False,
+                    "function_name": "buildSign",
+                    "expected_callframe_id": "native-cf-1",
+                    "observed_callframe_id": "native-cf-1",
+                    "pause_session_id": "native-closure-exec",
+                    "wrapper_strategy": "log-only-call-through",
+                },
+                "require_closure_wrapper_runtime_mutability_result": True,
                 "pause_session_id": "native-closure-exec",
                 "execute_closure_wrapper_replacement": True,
                 "review_approved": True,
@@ -4513,6 +4532,8 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.applied_actions, ["execute_reviewed_closure_wrapper_replacement"])
         self.assertIn("closure_wrapper_replacement_execution_status=applied", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_assignment_safety_proven=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_require_runtime_mutability_result=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_runtime_mutability_result_proven=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_review_approved=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_wrapper_installed=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_runtime_mutated=True", result.verification)
@@ -4522,6 +4543,8 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-replacement-execution.json")
         self.assertTrue(result.artifacts[0].metadata["wrapper_installed"])
         self.assertTrue(result.artifacts[0].metadata["runtime_mutated"])
+        self.assertTrue(result.artifacts[0].metadata["require_runtime_mutability_result"])
+        self.assertTrue(result.artifacts[0].metadata["runtime_mutability_result_proven"])
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/closure-wrapper-restore-plan.json")
         self.assertTrue(result.artifacts[1].metadata["available"])
         page = provider.session.context.pages[0]

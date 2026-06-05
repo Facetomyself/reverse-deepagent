@@ -1354,6 +1354,8 @@ class ClosureWrapperReplacementExecutionSpec:
     function_name: str | None = None
     wrapper_strategy: str = "log-only-call-through"
     assignment_safety_proof: dict[str, Any] = field(default_factory=dict)
+    runtime_mutability_result: dict[str, Any] = field(default_factory=dict)
+    require_runtime_mutability_result: bool = False
     review_approved: bool = False
     execute: bool = False
     reviewer_note: str | None = None
@@ -1396,6 +1398,13 @@ class ClosureWrapperReplacementExecutionSpec:
             or context.get("assignment_safety_proof")
             or context.get("assignmentSafetyProof")
         )
+        runtime_mutability_result = cls._coerce_runtime_mutability_result(
+            context.get("closure_wrapper_runtime_mutability_result")
+            or context.get("closureWrapperRuntimeMutabilityResult")
+            or context.get("closure-wrapper-runtime-mutability-result")
+            or context.get("runtime_mutability_result")
+            or context.get("runtimeMutabilityResult")
+        )
         return cls(
             plan=plan,
             pause_session_id=_string_or_none(
@@ -1420,6 +1429,16 @@ class ClosureWrapperReplacementExecutionSpec:
             ),
             wrapper_strategy=strategy,
             assignment_safety_proof=assignment_safety_proof,
+            runtime_mutability_result=runtime_mutability_result,
+            require_runtime_mutability_result=bool(
+                context.get(
+                    "require_closure_wrapper_runtime_mutability_result",
+                    context.get(
+                        "requireClosureWrapperRuntimeMutabilityResult",
+                        context.get("require_runtime_mutability_result", context.get("requireRuntimeMutabilityResult", False)),
+                    ),
+                )
+            ),
             review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
             execute=bool(context.get("execute_closure_wrapper_replacement", context.get("executeClosureWrapperReplacement", requested))),
             reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
@@ -1444,6 +1463,14 @@ class ClosureWrapperReplacementExecutionSpec:
             return {}
         if isinstance(value.get("assignment_safety"), dict):
             return dict(value["assignment_safety"])
+        return dict(value)
+
+    @staticmethod
+    def _coerce_runtime_mutability_result(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        if isinstance(value.get("result"), dict):
+            return dict(value["result"])
         return dict(value)
 
 
@@ -1549,6 +1576,8 @@ class ClosureWrapperReplacementExecutionManager:
             "requires_review": True,
             "review_approved": bool(spec.review_approved) if spec else False,
             "execute_requested": bool(spec.execute) if spec else False,
+            "require_runtime_mutability_result": bool(spec.require_runtime_mutability_result) if spec else False,
+            "runtime_mutability_result_proven": self._runtime_mutability_result_proven(spec, candidate) if spec else False,
             "selected_candidate": candidate,
             "wrapper_strategy": spec.wrapper_strategy if spec else None,
             "wrapper_installed": False,
@@ -1596,6 +1625,10 @@ class ClosureWrapperReplacementExecutionManager:
             return "lexical_binding_not_proven"
         if not cls._assignment_safety_proven(spec, candidate):
             return "closure_wrapper_assignment_safety_proof_required"
+        if spec.require_runtime_mutability_result:
+            runtime_mutability_blocker = cls._runtime_mutability_result_blocker(spec, candidate)
+            if runtime_mutability_blocker:
+                return runtime_mutability_blocker
         return None
 
     @staticmethod
@@ -1616,6 +1649,40 @@ class ClosureWrapperReplacementExecutionManager:
         if str(proof.get("wrapper_strategy") or spec.wrapper_strategy) != spec.wrapper_strategy:
             return False
         return True
+
+    @classmethod
+    def _runtime_mutability_result_proven(cls, spec: ClosureWrapperReplacementExecutionSpec | None, candidate: dict[str, Any]) -> bool:
+        if spec is None:
+            return False
+        return cls._runtime_mutability_result_blocker(spec, candidate) is None
+
+    @staticmethod
+    def _runtime_mutability_result_blocker(spec: ClosureWrapperReplacementExecutionSpec, candidate: dict[str, Any]) -> str | None:
+        result = spec.runtime_mutability_result if isinstance(spec.runtime_mutability_result, dict) else {}
+        if not result:
+            return "closure_wrapper_runtime_mutability_result_required"
+        if str(result.get("status") or "") != "proven":
+            return "closure_wrapper_runtime_mutability_result_not_proven"
+        if result.get("runtime_mutability_proven") is not True:
+            return "runtime_mutability_not_proven"
+        if result.get("runtime_mutability_probe_executed") is not True:
+            return "runtime_mutability_probe_not_executed"
+        if result.get("original_restored") is not True:
+            return "runtime_mutability_probe_original_not_restored"
+        if result.get("wrapper_installed") is not False:
+            return "runtime_mutability_probe_left_wrapper_installed"
+        function_name = str(spec.function_name or candidate.get("function_name") or candidate.get("name") or "")
+        if function_name and str(result.get("function_name") or result.get("functionName") or "") != function_name:
+            return "runtime_mutability_result_function_mismatch"
+        expected_callframe_id = str(spec.expected_callframe_id or candidate.get("callFrameId") or candidate.get("callframe_id") or "")
+        result_callframe_id = str(result.get("expected_callframe_id") or result.get("callFrameId") or result.get("callframe_id") or result.get("observed_callframe_id") or "")
+        if expected_callframe_id and result_callframe_id and result_callframe_id != expected_callframe_id:
+            return "runtime_mutability_result_callframe_mismatch"
+        if spec.pause_session_id and result.get("pause_session_id") and str(result.get("pause_session_id")) != str(spec.pause_session_id):
+            return "runtime_mutability_result_pause_session_mismatch"
+        if str(result.get("wrapper_strategy") or spec.wrapper_strategy) != spec.wrapper_strategy:
+            return "runtime_mutability_result_strategy_mismatch"
+        return None
 
     @staticmethod
     def _post_execution_reason(spec: ClosureWrapperReplacementExecutionSpec, evaluation: dict[str, Any]) -> str | None:
@@ -1730,6 +1797,18 @@ class ClosureWrapperReplacementExecutionManager:
             "requires_review": True,
             "review_approved": spec.review_approved,
             "execute_requested": spec.execute,
+            "require_runtime_mutability_result": spec.require_runtime_mutability_result,
+            "runtime_mutability_result_proven": self._runtime_mutability_result_proven(spec, candidate),
+            "runtime_mutability_result": {
+                "status": spec.runtime_mutability_result.get("status"),
+                "runtime_mutability_proven": spec.runtime_mutability_result.get("runtime_mutability_proven"),
+                "runtime_mutability_probe_executed": spec.runtime_mutability_result.get("runtime_mutability_probe_executed"),
+                "original_restored": spec.runtime_mutability_result.get("original_restored"),
+                "wrapper_installed": spec.runtime_mutability_result.get("wrapper_installed"),
+                "function_name": spec.runtime_mutability_result.get("function_name"),
+                "expected_callframe_id": spec.runtime_mutability_result.get("expected_callframe_id"),
+                "observed_callframe_id": spec.runtime_mutability_result.get("observed_callframe_id"),
+            },
             "wrapper_strategy": spec.wrapper_strategy,
             "selected_candidate": candidate,
             "pause_session_id": spec.pause_session_id,
@@ -1776,6 +1855,19 @@ class ClosureWrapperReplacementExecutionManager:
             return "prepare_ready_closure_wrapper_replacement_plan_before_execution"
         if reason == "closure_wrapper_assignment_safety_proof_required":
             return "prove_closure_wrapper_assignment_safety_before_execution"
+        if reason in {
+            "closure_wrapper_runtime_mutability_result_required",
+            "closure_wrapper_runtime_mutability_result_not_proven",
+            "runtime_mutability_not_proven",
+            "runtime_mutability_probe_not_executed",
+            "runtime_mutability_probe_original_not_restored",
+            "runtime_mutability_probe_left_wrapper_installed",
+            "runtime_mutability_result_function_mismatch",
+            "runtime_mutability_result_callframe_mismatch",
+            "runtime_mutability_result_pause_session_mismatch",
+            "runtime_mutability_result_strategy_mismatch",
+        }:
+            return "execute_and_review_closure_wrapper_runtime_mutability_probe_before_replacement"
         return "resolve_closure_wrapper_replacement_execution_blockers"
 
     @staticmethod
@@ -1793,6 +1885,8 @@ class ClosureWrapperReplacementExecutionManager:
             "requires_review": True,
             "review_approved": bool(spec.review_approved) if spec else False,
             "execute_requested": bool(spec.execute) if spec else False,
+            "require_runtime_mutability_result": bool(spec.require_runtime_mutability_result) if spec else False,
+            "runtime_mutability_result_proven": ClosureWrapperReplacementExecutionManager._runtime_mutability_result_proven(spec, ClosureWrapperReplacementExecutionSpec._selected_candidate(spec.plan)) if spec else False,
             "files_mutated": False,
             "artifacts_written_by_manager": False,
             "cdp_command_sent": cdp_command_sent,

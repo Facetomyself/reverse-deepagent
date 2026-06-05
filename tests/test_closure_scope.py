@@ -495,6 +495,27 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
             )
         ).assignment_safety
 
+    @staticmethod
+    def _runtime_mutability_result(plan: dict, *, session_id: str = "closure-exec-session") -> dict:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-result.v1",
+            "status": "proven",
+            "runtime_mutability_proven": True,
+            "runtime_mutability_probe_executed": True,
+            "temporary_assignment_confirmed": True,
+            "original_restored": True,
+            "wrapper_installed": False,
+            "function_name": "buildSign",
+            "expected_callframe_id": "cf-closure-1",
+            "observed_callframe_id": "cf-closure-1",
+            "pause_session_id": session_id,
+            "wrapper_strategy": "log-only-call-through",
+            "preflight": {
+                "status": "ready_for_review",
+                "selected_candidate": plan.get("selected_candidate"),
+            },
+        }
+
     def _preserve_pause(self, session_id: str = "closure-exec-session") -> tuple[ClosureScopeCDPSession, ClosureScopePage]:
         session = ClosureScopeCDPSession()
         page = ClosureScopePage(session)
@@ -565,6 +586,59 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
         self.assertIn("buildSign =", eval_calls[-1]["expression"])
         self.assertIn("__reverseDeepAgentClosureWrappers", eval_calls[-1]["expression"])
+
+    def test_blocks_replacement_when_required_runtime_mutability_result_is_missing(self) -> None:
+        session, page = self._preserve_pause()
+        plan = self._ready_plan()
+        spec = ClosureWrapperReplacementExecutionSpec.from_context(
+            {
+                "closure_wrapper_replacement_execution": True,
+                "closure_wrapper_replacement_plan": plan,
+                "closure_wrapper_assignment_safety": self._assignment_safety(plan),
+                "require_closure_wrapper_runtime_mutability_result": True,
+                "pause_session_id": "closure-exec-session",
+                "execute_closure_wrapper_replacement": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "closure_wrapper_runtime_mutability_result_required")
+        self.assertTrue(result.side_effect_policy["require_runtime_mutability_result"])
+        self.assertFalse(result.side_effect_policy["runtime_mutability_result_proven"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+        self.assertEqual(result.execution["next_action"], "execute_and_review_closure_wrapper_runtime_mutability_probe_before_replacement")
+        self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)
+
+    def test_executes_replacement_when_required_runtime_mutability_result_matches(self) -> None:
+        session, page = self._preserve_pause()
+        plan = self._ready_plan()
+        spec = ClosureWrapperReplacementExecutionSpec.from_context(
+            {
+                "closure_wrapper_replacement_execution": True,
+                "closure_wrapper_replacement_plan": plan,
+                "closure_wrapper_assignment_safety": self._assignment_safety(plan),
+                "closure_wrapper_runtime_mutability_result": self._runtime_mutability_result(plan),
+                "require_closure_wrapper_runtime_mutability_result": True,
+                "pause_session_id": "closure-exec-session",
+                "execute_closure_wrapper_replacement": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "applied")
+        self.assertTrue(result.side_effect_policy["require_runtime_mutability_result"])
+        self.assertTrue(result.side_effect_policy["runtime_mutability_result_proven"])
+        self.assertTrue(result.execution["runtime_mutability_result_proven"])
+        self.assertTrue(result.execution["runtime_mutability_result"]["original_restored"])
+        self.assertTrue(result.side_effect_policy["wrapper_installed"])
+        eval_calls = [params for method, params in session.calls if method == "Debugger.evaluateOnCallFrame"]
+        self.assertGreaterEqual(len(eval_calls), 2)
 
     def test_blocks_execution_without_assignment_safety_proof(self) -> None:
         session, page = self._preserve_pause()
