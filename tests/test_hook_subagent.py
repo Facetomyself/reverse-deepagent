@@ -157,6 +157,26 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["side_effect_policy"]["read_only"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_empty_closure_wrapper_events(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_events": {
+                "status": "success",
+                "event_count": 0,
+                "events": [],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_events_empty", result["warnings"])
+        self.assertEqual(result["next_action"], "invoke_target_flow_then_harvest_closure_wrapper_events")
+        self.assertEqual(result["summary"]["closure_wrapper_event_count"], 0)
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_event_count"], 0)
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
     def test_review_hook_artifacts_warns_for_async_chunk_traversal_graph(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

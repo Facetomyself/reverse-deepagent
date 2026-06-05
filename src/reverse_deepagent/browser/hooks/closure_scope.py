@@ -1266,6 +1266,159 @@ class ClosureWrapperRestoreExecutionManager:
         }
 
 
+@dataclass(slots=True)
+class ClosureWrapperEventHarvestSpec:
+    """Explicit read-only snapshot request for closure wrapper events."""
+
+    markers: list[str] = field(default_factory=list)
+    function_names: list[str] = field(default_factory=list)
+    limit: int = 300
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperEventHarvestSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_events")
+            or context.get("closureWrapperEvents")
+            or context.get("closure_wrapper_event_harvest")
+            or context.get("closureWrapperEventHarvest")
+            or context.get("harvest_closure_wrapper_events")
+            or context.get("harvestClosureWrapperEvents")
+        )
+        markers = cls._coerce_list(context.get("markers", context.get("wrapper_markers", context.get("wrapperMarkers", context.get("marker")))))
+        function_names = cls._coerce_list(
+            context.get("function_names", context.get("functionNames", context.get("function_name", context.get("functionName"))))
+        )
+        if not requested and not markers and not function_names:
+            return None
+        return cls(
+            markers=markers,
+            function_names=[name for name in function_names if JS_IDENTIFIER_RE.fullmatch(name)],
+            limit=max(1, min(1000, int(context.get("limit", context.get("event_limit", context.get("eventLimit", 300))) or 300))),
+        )
+
+    @staticmethod
+    def _coerce_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            items = [item.strip() for item in value.split(",")]
+        elif isinstance(value, Iterable) and not isinstance(value, (dict, bytes, bytearray)):
+            items = [str(item).strip() for item in value if item is not None]
+        else:
+            items = []
+        result: list[str] = []
+        for item in items:
+            if item and item not in result:
+                result.append(item)
+        return result
+
+
+@dataclass(slots=True)
+class ClosureWrapperEventHarvestResult:
+    status: str
+    events: list[dict[str, Any]] = field(default_factory=list)
+    event_count: int = 0
+    snapshot: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-events.v1",
+            "status": self.status,
+            "event_count": self.event_count,
+            "events": self.events,
+            "snapshot": self.snapshot,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ClosureWrapperEventHarvestManager:
+    """Read closure wrapper events from the runtime store without mutating target state."""
+
+    def harvest(self, page: BrowserPage, spec: ClosureWrapperEventHarvestSpec | None) -> ClosureWrapperEventHarvestResult:
+        spec = spec or ClosureWrapperEventHarvestSpec()
+        try:
+            payload = page.evaluate(self._snapshot_expression(spec))
+        except Exception as exc:
+            return ClosureWrapperEventHarvestResult(
+                status="failed",
+                snapshot={},
+                side_effect_policy=self._side_effect_policy(),
+                reason="runtime_eval_failed",
+                error=str(exc),
+            )
+        snapshot = payload if isinstance(payload, dict) else {"ok": False, "reason": "non_object_snapshot", "valueType": type(payload).__name__}
+        events = [dict(event) for event in snapshot.get("events", []) if isinstance(event, dict)]
+        ok = bool(snapshot.get("ok", False))
+        status = "success" if ok else "partial"
+        reason = None if ok else str(snapshot.get("reason") or "closure_wrapper_event_store_unavailable")
+        return ClosureWrapperEventHarvestResult(
+            status=status,
+            events=events,
+            event_count=len(events),
+            snapshot=snapshot,
+            side_effect_policy=self._side_effect_policy(),
+            reason=reason,
+        )
+
+    @staticmethod
+    def _snapshot_expression(spec: ClosureWrapperEventHarvestSpec) -> str:
+        markers_json = json.dumps(spec.markers, ensure_ascii=False)
+        names_json = json.dumps(spec.function_names, ensure_ascii=False)
+        limit = int(spec.limit)
+        template = """(() => {{
+  const __rdgRoot = globalThis.__reverseDeepAgentClosureWrappers;
+  if (!__rdgRoot) return {{ ok: false, reason: "not_installed", events: [], eventCount: 0 }};
+  const __rdgMarkers = new Set(__REVERSE_AGENT_CLOSURE_WRAPPER_MARKERS__);
+  const __rdgNames = new Set(__REVERSE_AGENT_CLOSURE_WRAPPER_FUNCTIONS__);
+  const __rdgLimit = __REVERSE_AGENT_CLOSURE_WRAPPER_LIMIT__;
+  const __rdgEvents = Array.isArray(__rdgRoot.events) ? __rdgRoot.events : [];
+  const __rdgFiltered = __rdgEvents.filter((event) => {{
+    if (!event || typeof event !== "object") return false;
+    if (__rdgMarkers.size && !__rdgMarkers.has(event.marker)) return false;
+    if (__rdgNames.size && !__rdgNames.has(event.functionName)) return false;
+    return true;
+  }}).slice(-__rdgLimit);
+  return {{
+    ok: true,
+    events: __rdgFiltered,
+    eventCount: __rdgFiltered.length,
+    totalEventCount: __rdgEvents.length,
+    markerCount: Object.keys((__rdgRoot && __rdgRoot.originals) || {{}}).length,
+    filters: {{ markers: Array.from(__rdgMarkers), functionNames: Array.from(__rdgNames), limit: __rdgLimit }}
+  }};
+}})()"""
+        return (
+            template.replace("__REVERSE_AGENT_CLOSURE_WRAPPER_MARKERS__", markers_json)
+            .replace("__REVERSE_AGENT_CLOSURE_WRAPPER_FUNCTIONS__", names_json)
+            .replace("__REVERSE_AGENT_CLOSURE_WRAPPER_LIMIT__", str(limit))
+            .replace("{{", "{")
+            .replace("}}", "}")
+        )
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "plan_only": False,
+            "requires_review": False,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "wrapper_installed": False,
+            "wrapper_restored": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
 def _string_or_none(value: Any) -> str | None:
     if value is None:
         return None

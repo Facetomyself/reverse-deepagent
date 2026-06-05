@@ -93,6 +93,8 @@ from reverse_deepagent.browser.hooks import (
     BrowserHookManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperEventHarvestManager,
+    ClosureWrapperEventHarvestSpec,
     ClosureWrapperRestoreExecutionManager,
     ClosureWrapperRestoreExecutionSpec,
     ClosureWrapperReplacementExecutionManager,
@@ -1323,6 +1325,43 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=execution.get("next_action") or "resolve_closure_wrapper_restore_execution_blockers",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "restored" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_event_harvest_request(protection_name, context):
+            spec = ClosureWrapperEventHarvestSpec.from_context(context)
+            result = ClosureWrapperEventHarvestManager().harvest(page, spec)
+            verification = [
+                f"closure_wrapper_events_status={result.status}",
+                f"closure_wrapper_events_count={result.event_count}",
+                f"closure_wrapper_events_runtime_mutated={result.side_effect_policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_events_cdp_command_sent={result.side_effect_policy.get('cdp_command_sent', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_events_reason={result.reason}")
+            if result.error:
+                verification.append(f"closure_wrapper_events_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-events.json",
+                    kind=ArtifactKind.JSON,
+                    description="Read-only Native Web closure wrapper event snapshot.",
+                    metadata={
+                        "status": result.status,
+                        "event_count": result.event_count,
+                        "runtime_mutated": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["harvest_closure_wrapper_events"],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action="inspect_closure_wrapper_events" if result.event_count else "invoke_target_flow_then_harvest_closure_wrapper_events",
+                confidence=ConfidenceLevel.MEDIUM if result.event_count else ConfidenceLevel.LOW,
             )
         if self._is_closure_scope_discovery_request(protection_name, context):
             spec = ClosureScopeDiscoverySpec.from_context(context)
@@ -4678,6 +4717,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_scope_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
@@ -4708,6 +4749,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_replacement_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
@@ -4735,6 +4778,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_replacement_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
             return False
         if normalized in {
@@ -4760,6 +4805,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_restore_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
+            return False
         if normalized in {
             "closure-wrapper-restore-execution",
             "execute-closure-wrapper-restore",
@@ -4777,6 +4824,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "executeClosureWrapperRestore",
                 "reviewed_closure_wrapper_restore",
                 "reviewedClosureWrapperRestore",
+            )
+        )
+
+    @staticmethod
+    def _is_closure_wrapper_event_harvest_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "closure-wrapper-events",
+            "closure-wrapper-event-harvest",
+            "harvest-closure-wrapper-events",
+            "closure-function-wrapper-events",
+            "inspect-closure-wrapper-events",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "closure_wrapper_events",
+                "closureWrapperEvents",
+                "closure_wrapper_event_harvest",
+                "closureWrapperEventHarvest",
+                "harvest_closure_wrapper_events",
+                "harvestClosureWrapperEvents",
             )
         )
 
@@ -6065,6 +6135,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):

@@ -4,6 +4,8 @@ from reverse_deepagent.browser.hooks import (
     BreakpointManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperEventHarvestManager,
+    ClosureWrapperEventHarvestSpec,
     ClosureWrapperRestoreExecutionManager,
     ClosureWrapperRestoreExecutionSpec,
     ClosureWrapperReplacementExecutionManager,
@@ -92,6 +94,18 @@ class ClosureScopePage:
 
     def cdp_session(self):
         return self._session
+
+    def evaluate(self, expression):
+        if "__reverseDeepAgentClosureWrappers" in expression:
+            events = [
+                {"marker": "marker-a", "functionName": "buildSign", "kind": "return", "argumentCount": 2},
+                {"marker": "marker-b", "functionName": "otherSign", "kind": "throw", "argumentCount": 1},
+            ]
+            if "not_installed_marker" in expression:
+                return {"ok": False, "reason": "not_installed", "events": [], "eventCount": 0}
+            filtered = [event for event in events if event["functionName"] == "buildSign"]
+            return {"ok": True, "events": filtered, "eventCount": len(filtered), "totalEventCount": len(events), "markerCount": 2}
+        return {}
 
 
 class ClosureScopeDiscoveryManagerTests(unittest.TestCase):
@@ -395,6 +409,34 @@ class ClosureWrapperRestoreExecutionManagerTests(unittest.TestCase):
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
         self.assertIn("__rdgOriginal", eval_calls[-1]["expression"])
         self.assertIn("__reverseDeepAgentClosureWrappers", eval_calls[-1]["expression"])
+
+
+class ClosureWrapperEventHarvestManagerTests(unittest.TestCase):
+    def test_harvests_filtered_closure_wrapper_events_read_only(self) -> None:
+        page = ClosureScopePage()
+        spec = ClosureWrapperEventHarvestSpec.from_context({"closure_wrapper_events": True, "function_name": "buildSign"})
+
+        result = ClosureWrapperEventHarvestManager().harvest(page, spec)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.event_count, 1)
+        self.assertEqual(result.events[0]["functionName"], "buildSign")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_missing_event_store_is_partial_without_runtime_mutation(self) -> None:
+        page = ClosureScopePage()
+        spec = ClosureWrapperEventHarvestSpec.from_context({"closure_wrapper_events": True, "marker": "not_installed_marker"})
+
+        result = ClosureWrapperEventHarvestManager().harvest(page, spec)
+
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(result.reason, "not_installed")
+        self.assertEqual(result.event_count, 0)
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
 
 
 if __name__ == "__main__":

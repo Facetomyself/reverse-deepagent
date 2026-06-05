@@ -189,6 +189,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native closure wrapper events",
+                    kind=EvidenceKind.HOOK,
+                    source="closure_wrapper_events",
+                    details={"status": "success", "event_count": 1, "events": [{"functionName": "buildSign"}]},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native function hook timeline",
                     kind=EvidenceKind.HOOK,
                     source="function_hook_timeline",
@@ -523,6 +530,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payloads["closure-wrapper-restore-plan.json"]["restore_plan"]["available"])
         self.assertEqual(payloads["closure-wrapper-restore-execution.json"]["status"], "restored")
         self.assertTrue(payloads["closure-wrapper-restore-execution.json"]["execution"]["wrapper_restored"])
+        self.assertEqual(payloads["closure-wrapper-events.json"]["event_count"], 1)
         self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
@@ -624,6 +632,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_plan"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_execution"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_events"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_stitched_flow"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_external_delivery_duplicate_guard"), "export")
 

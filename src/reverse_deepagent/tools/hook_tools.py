@@ -61,6 +61,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "reviewed_closure_wrapper_restore",
             "reviewedClosureWrapperRestore",
         )
+        closure_wrapper_events = _object_alias(
+            payload,
+            "closure_wrapper_events",
+            "closure-wrapper-events",
+            "closureWrapperEvents",
+            "closure_wrapper_event_harvest",
+            "closureWrapperEventHarvest",
+        )
         async_chunk_plan = _object_alias(payload, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan")
         async_chunk_result = _object_alias(payload, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult")
         async_chunk_module_diff = _object_alias(payload, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff")
@@ -268,6 +276,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 closure_wrapper_replacement_plan,
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
+                closure_wrapper_events,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -629,6 +638,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         closure_wrapper_restore_execution_status = _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution")
         if closure_wrapper_restore_execution_status == "restored":
             warnings.append("closure_wrapper_restore_execution_result_review_required")
+        closure_wrapper_event_count = _intish(closure_wrapper_events.get("event_count") or closure_wrapper_events.get("eventCount") or _nested_get(closure_wrapper_events, "snapshot", "eventCount"))
+        if closure_wrapper_events and closure_wrapper_event_count == 0:
+            warnings.append("closure_wrapper_events_empty")
 
         status = "block" if blockers else "warn" if warnings else "pass"
         return {
@@ -655,6 +667,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "closure_wrapper_restore_execution_next_action": _nested_get(closure_wrapper_restore_execution, "execution", "next_action") or closure_wrapper_restore_execution.get("next_action"),
                 "closure_wrapper_restore_execution_runtime_mutated": bool(_nested_get(closure_wrapper_restore_execution, "execution", "runtime_mutated") or closure_wrapper_restore_execution.get("runtime_mutated")),
                 "closure_wrapper_restore_execution_wrapper_restored": bool(_nested_get(closure_wrapper_restore_execution, "execution", "wrapper_restored") or closure_wrapper_restore_execution.get("wrapper_restored")),
+                "closure_wrapper_event_count": closure_wrapper_event_count,
                 "function_hook_event_count": _event_count(function_timeline, function_events),
                 "module_hook_event_count": _event_count(module_timeline, module_events),
                 "generic_hook_event_count": _event_count(generic_timeline, generic_events),
@@ -794,6 +807,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 closure_wrapper_replacement_plan,
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
+                closure_wrapper_events,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -1061,6 +1075,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_closure_wrapper_restore_plan_or_invoke_target_flow"
     if "closure_wrapper_restore_execution_result_review_required" in warnings:
         return "review_closure_wrapper_restore_execution_result_or_continue_target_flow"
+    if "closure_wrapper_events_empty" in warnings:
+        return "invoke_target_flow_then_harvest_closure_wrapper_events"
     if "module_federation_get_init_probe_requires_factory_review" in warnings:
         return "review_module_federation_get_init_probe_before_factory_invocation"
     if "module_federation_factory_exports_require_review" in warnings:
@@ -1163,6 +1179,7 @@ def _review_required_items(
     closure_wrapper_replacement_plan: dict[str, Any],
     closure_wrapper_replacement_execution: dict[str, Any],
     closure_wrapper_restore_execution: dict[str, Any],
+    closure_wrapper_events: dict[str, Any],
     async_chunk_plan: dict[str, Any],
     async_chunk_result: dict[str, Any],
     async_chunk_module_diff: dict[str, Any],
@@ -1212,6 +1229,7 @@ def _review_required_items(
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or _nested_status(closure_wrapper_replacement_plan, "plan"),
                 "closure_wrapper_replacement_execution_status": _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution"),
                 "closure_wrapper_restore_execution_status": _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution"),
+                "closure_wrapper_event_count": _intish(closure_wrapper_events.get("event_count") or closure_wrapper_events.get("eventCount") or _nested_get(closure_wrapper_events, "snapshot", "eventCount")),
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),

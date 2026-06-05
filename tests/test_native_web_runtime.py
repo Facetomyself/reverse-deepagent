@@ -223,6 +223,21 @@ class FakeRawPage:
                     "by_type": {"attributes": 1, "childList": 1},
                 },
             }
+        if "__reverseDeepAgentClosureWrappers" in expression and "totalEventCount" in expression:
+            return {
+                "ok": True,
+                "events": [
+                    {
+                        "marker": "reverse-deepagent:closure-wrapper:closure:native-cf-1:buildSign",
+                        "functionName": "buildSign",
+                        "kind": "return",
+                        "argumentCount": 2,
+                    }
+                ],
+                "eventCount": 1,
+                "totalEventCount": 1,
+                "markerCount": 1,
+            }
         if "__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__" in expression:
             children = {
                 "token": {
@@ -4373,6 +4388,26 @@ class NativeWebRuntimeTests(unittest.TestCase):
         eval_calls = [params for method, params in page._cdp_session.calls if method == "Debugger.evaluateOnCallFrame"]
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
         self.assertIn("__rdgOriginal", eval_calls[-1]["expression"])
+
+        events = runtime.apply_minimal_protection(
+            "closure-wrapper-events",
+            {
+                "closure_wrapper_events": True,
+                "function_name": "buildSign",
+                "limit": 10,
+            },
+        )
+
+        self.assertEqual(events.status.value, "success")
+        self.assertEqual(events.applied_actions, ["harvest_closure_wrapper_events"])
+        self.assertIn("closure_wrapper_events_status=success", events.verification)
+        self.assertIn("closure_wrapper_events_count=1", events.verification)
+        self.assertIn("closure_wrapper_events_runtime_mutated=False", events.verification)
+        self.assertIn("closure_wrapper_events_cdp_command_sent=False", events.verification)
+        self.assertEqual(events.next_action, "inspect_closure_wrapper_events")
+        self.assertEqual(events.artifacts[0].path, "virtual://workspace/closure-wrapper-events.json")
+        self.assertEqual(events.artifacts[0].metadata["event_count"], 1)
+        self.assertFalse(events.artifacts[0].metadata["runtime_mutated"])
         BreakpointManager.clear_paused_sessions()
 
 
