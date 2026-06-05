@@ -723,6 +723,20 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session multi-step loop plan",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_multi_step_loop_plan",
+                    details={
+                        "status": "ready_for_review",
+                        "loop_plan": {
+                            "ready_for_review": True,
+                            "completed_iteration_count": 1,
+                            "readiness": {"automatic_multi_step_loop_supported": False},
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -771,6 +785,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payloads["paused-session-cross-process-continuation-checkpoint.json"]["checkpoint"]["manual_checkpoint_required"])
         self.assertTrue(payloads["paused-session-multi-step-continuation-workflow.json"]["workflow"]["execute_at_most_one_action_per_review"])
         self.assertTrue(payloads["paused-session-multi-step-continuation-execution.json"]["execution"]["multi_step_iteration_executed"])
+        self.assertTrue(payloads["paused-session-multi-step-loop-plan.json"]["loop_plan"]["ready_for_review"])
+        self.assertFalse(payloads["paused-session-multi-step-loop-plan.json"]["loop_plan"]["readiness"]["automatic_multi_step_loop_supported"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])

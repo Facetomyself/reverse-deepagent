@@ -666,6 +666,60 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertIn("paused_session_multi_step_continuation_workflow_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "inspect_multi_step_continuation_workflow_blockers")
 
+    def test_review_debugger_artifacts_warns_for_multi_step_loop_plan_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_loop_plan": {
+                "loop_plan": {
+                    "status": "ready_for_review",
+                    "loop_id": "loop-review-1",
+                    "workflow_id": "workflow-review-1",
+                    "completed_iteration_count": 1,
+                    "remaining_iteration_count": 1,
+                    "planned_iteration_count": 1,
+                    "ready_for_review": True,
+                    "readiness": {
+                        "next_loop_iteration_reviewable": True,
+                        "automatic_multi_step_loop_supported": False,
+                        "automatic_queue_advance_supported": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_loop_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_next_paused_session_loop_iteration")
+        loop_plan = result["summary"]["multi_step_loop_plan"]
+        self.assertTrue(loop_plan["ready_for_review"])
+        self.assertTrue(loop_plan["next_iteration_reviewable"])
+        self.assertFalse(loop_plan["automatic_multi_step_loop_supported"])
+        self.assertTrue(result["review_required_items"][0]["multi_step_loop_plan_diagnostics"]["next_iteration_reviewable"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_multi_step_loop_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_loop_plan": {
+                "loop_plan": {
+                    "status": "blocked",
+                    "blockers": ["followup_checkpoint_required"],
+                    "ready_for_review": False,
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_multi_step_loop_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_multi_step_loop_plan_blockers")
+        self.assertFalse(result["summary"]["multi_step_loop_plan"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_blocks_pre_action_orchestration_timeout(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

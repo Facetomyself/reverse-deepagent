@@ -5651,6 +5651,72 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_multi_step_continuation_workflow_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_multi_step_loop_plan_from_native_runtime_is_review_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-multi-step-loop-plan",
+            {
+                "paused_session_multi_step_loop_plan": True,
+                "max_loop_iterations": 3,
+                "paused_session_cross_process_session_lifecycle": {
+                    "lifecycle": {
+                        "status": "ready_for_review",
+                        "pause_session_id": "native-loop-pause-1",
+                        "target_id": "native-loop-target-1",
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "native-loop-workflow-1",
+                        "pause_session_id": "native-loop-pause-1",
+                        "target_id": "native-loop-target-1",
+                        "planned_steps": [
+                            {"step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver:", "expected_executor_artifact": "workspace/paused-session-pre-action-subscribe-and-action.json"},
+                            {"step_index": 2, "method": "Debugger.stepOut", "fingerprint": "2:Debugger.stepOut:", "expected_executor_artifact": "workspace/paused-session-pre-action-subscribe-and-action.json"},
+                        ],
+                    }
+                },
+                "paused_session_multi_step_continuation_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "selected_step_index": 1,
+                        "multi_step_iteration_executed": True,
+                        "paused_event_captured": True,
+                    }
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "continuation_ready_for_next_action": True,
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_next_paused_session_loop_iteration")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-multi-step-loop-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["completed_iteration_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["remaining_iteration_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["next_iteration_reviewable"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_multi_step_loop"])
+        self.assertIn("paused_session_multi_step_loop_plan_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_next_iteration_reviewable=True", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_next_step_index=2", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_debugger_event_subscribed=False", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_multi_step_executed=False", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_automatic_loop=False", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_multi_step_loop_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_cross_process_continuation_checkpoint_from_native_runtime_is_read_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

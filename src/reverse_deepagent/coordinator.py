@@ -994,6 +994,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_paused_session_cross_process_continuation_checkpoint": "audit",
     "workspace_paused_session_multi_step_continuation_workflow": "triage",
     "workspace_paused_session_multi_step_continuation_execution": "audit",
+    "workspace_paused_session_multi_step_loop_plan": "triage",
     "workspace_closure_functions": "trace",
     "workspace_closure_function_candidates": "triage",
     "workspace_closure_wrapper_replacement_plan": "triage",
@@ -1833,6 +1834,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["paused-session-multi-step-continuation-workflow.json"] = evidence.details
         elif evidence.source == "paused_session_multi_step_continuation_execution":
             payloads["paused-session-multi-step-continuation-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_multi_step_loop_plan":
+            payloads["paused-session-multi-step-loop-plan.json"] = evidence.details
         elif evidence.source == "closure_functions":
             payloads["closure-functions.json"] = evidence.details
         elif evidence.source == "closure_function_candidates":

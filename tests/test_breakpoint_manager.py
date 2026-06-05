@@ -21,6 +21,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionMultiStepContinuationWorkflowSpec,
     PausedSessionMultiStepContinuationExecutionManager,
     PausedSessionMultiStepContinuationExecutionSpec,
+    PausedSessionMultiStepLoopPlanManager,
+    PausedSessionMultiStepLoopPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1403,6 +1405,101 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["automatic_loop"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_multi_step_loop_plan_reviews_next_iteration_without_side_effects(self) -> None:
+        spec = PausedSessionMultiStepLoopPlanSpec.from_context(
+            {
+                "paused_session_multi_step_loop_plan": True,
+                "max_loop_iterations": 3,
+                "paused_session_cross_process_session_lifecycle": {
+                    "lifecycle": {
+                        "status": "ready_for_review",
+                        "pause_session_id": "pause-loop-1",
+                        "target_id": "target-loop-1",
+                        "readiness": {"automatic_multi_step_loop_supported": False},
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "workflow-loop-1",
+                        "pause_session_id": "pause-loop-1",
+                        "target_id": "target-loop-1",
+                        "planned_steps": [
+                            {"step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver:", "expected_executor_artifact": "workspace/paused-session-pre-action-subscribe-and-action.json"},
+                            {"step_index": 2, "method": "Debugger.evaluateOnCallFrame", "fingerprint": "2:Debugger.evaluateOnCallFrame:abc", "expected_executor_artifact": "workspace/paused-session-cross-process-one-action-execution.json"},
+                        ],
+                    }
+                },
+                "paused_session_multi_step_continuation_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "selected_step_index": 1,
+                        "multi_step_iteration_executed": True,
+                        "paused_event_captured": True,
+                    }
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "continuation_ready_for_next_action": True,
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionMultiStepLoopPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        loop_plan = result.loop_plan
+        self.assertEqual(loop_plan["schema_version"], "reverse-deepagent.paused-session-multi-step-loop-plan.v1")
+        self.assertEqual(loop_plan["completed_iteration_count"], 1)
+        self.assertEqual(loop_plan["next_iteration"]["workflow_step_index"], 2)
+        self.assertTrue(loop_plan["readiness"]["next_loop_iteration_reviewable"])
+        self.assertFalse(loop_plan["readiness"]["automatic_multi_step_loop_supported"])
+        self.assertEqual(loop_plan["next_action"], "review_next_paused_session_loop_iteration")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertTrue(result.side_effect_policy["plan_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["paused_event_captured"])
+        self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+        self.assertFalse(result.side_effect_policy["multi_step_continuation_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_multi_step_loop_plan_blocks_after_execution_without_checkpoint(self) -> None:
+        spec = PausedSessionMultiStepLoopPlanSpec.from_context(
+            {
+                "paused_session_multi_step_loop_plan": True,
+                "max_loop_iterations": 1,
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "workflow-loop-blocked",
+                        "pause_session_id": "pause-loop-blocked",
+                        "planned_steps": [{"step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver:"}],
+                    }
+                },
+                "paused_session_multi_step_continuation_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "selected_step_index": 1,
+                        "multi_step_iteration_executed": True,
+                        "paused_event_captured": True,
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionMultiStepLoopPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("followup_checkpoint_required", result.loop_plan["blockers"])
+        self.assertIn("max_loop_iterations_reached", result.loop_plan["blockers"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
 
     def test_multi_step_continuation_execution_requires_review_before_cdp(self) -> None:
         session = RecordingCDPSession(emit_pause_on_step=True)

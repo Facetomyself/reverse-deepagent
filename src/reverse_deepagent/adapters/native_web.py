@@ -140,6 +140,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionMultiStepContinuationWorkflowSpec,
     PausedSessionMultiStepContinuationExecutionManager,
     PausedSessionMultiStepContinuationExecutionSpec,
+    PausedSessionMultiStepLoopPlanManager,
+    PausedSessionMultiStepLoopPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1154,6 +1156,63 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            spec = PausedSessionMultiStepLoopPlanSpec.from_context(context)
+            result = PausedSessionMultiStepLoopPlanManager().plan(spec)
+            loop_plan = result.loop_plan if isinstance(result.loop_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = loop_plan.get("blockers") if isinstance(loop_plan.get("blockers"), list) else []
+            readiness = loop_plan.get("readiness") if isinstance(loop_plan.get("readiness"), dict) else {}
+            next_iteration = loop_plan.get("next_iteration") if isinstance(loop_plan.get("next_iteration"), dict) else {}
+            verification = [
+                f"paused_session_multi_step_loop_plan_status={result.status}",
+                f"paused_session_multi_step_loop_plan_reason={result.reason or ''}",
+                f"paused_session_multi_step_loop_plan_ready_for_review={loop_plan.get('ready_for_review', False)}",
+                f"paused_session_multi_step_loop_plan_next_iteration_reviewable={readiness.get('next_loop_iteration_reviewable', False)}",
+                f"paused_session_multi_step_loop_plan_completed_iterations={loop_plan.get('completed_iteration_count', 0)}",
+                f"paused_session_multi_step_loop_plan_remaining_iterations={loop_plan.get('remaining_iteration_count', 0)}",
+                f"paused_session_multi_step_loop_plan_next_step_index={next_iteration.get('workflow_step_index')}",
+                f"paused_session_multi_step_loop_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_multi_step_loop_plan_debugger_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_multi_step_loop_plan_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_multi_step_loop_plan_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_multi_step_loop_plan_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_multi_step_loop_plan_automatic_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"paused_session_multi_step_loop_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_multi_step_loop_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_multi_step_loop_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-multi-step-loop-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only paused-session multi-step loop plan.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": loop_plan.get("ready_for_review", False),
+                        "loop_id": loop_plan.get("loop_id"),
+                        "workflow_id": loop_plan.get("workflow_id"),
+                        "pause_session_id": loop_plan.get("pause_session_id"),
+                        "target_id": loop_plan.get("target_id"),
+                        "completed_iteration_count": loop_plan.get("completed_iteration_count", 0),
+                        "remaining_iteration_count": loop_plan.get("remaining_iteration_count", 0),
+                        "next_iteration_reviewable": readiness.get("next_loop_iteration_reviewable", False),
+                        "automatic_multi_step_loop": readiness.get("automatic_multi_step_loop_supported", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=loop_plan.get("next_action") or "inspect_paused_session_loop_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             spec = PausedSessionCrossProcessSessionLifecycleSpec.from_context(context)
@@ -5657,6 +5716,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_multi_step_continuation_execution_request(protection_name, context):
@@ -5705,7 +5766,37 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_paused_session_multi_step_loop_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-multi-step-loop-plan",
+            "pause-session-multi-step-loop-plan",
+            "debugger-paused-session-multi-step-loop-plan",
+            "paused-session-continuation-loop-plan",
+            "multi-step-continuation-loop-plan",
+            "plan-paused-session-continuation-loop",
+            "review-paused-session-continuation-loop",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_multi_step_loop_plan",
+                "pausedSessionMultiStepLoopPlan",
+                "paused-session-multi-step-loop-plan",
+                "paused_session_continuation_loop_plan",
+                "pausedSessionContinuationLoopPlan",
+                "multi_step_continuation_loop_plan",
+                "multiStepContinuationLoopPlan",
+                "plan_paused_session_continuation_loop",
+                "planPausedSessionContinuationLoop",
+            )
+        )
+
+    @staticmethod
     def _is_paused_session_cross_process_session_lifecycle_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         normalized = protection_name.strip().lower()
         if normalized in {
             "paused-session-cross-process-session-lifecycle",
@@ -5734,6 +5825,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_multi_step_continuation_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
@@ -5763,6 +5856,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_multi_step_continuation_workflow_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_multi_step_continuation_execution_request(protection_name, context):
@@ -5795,6 +5890,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_pre_action_subscribe_and_action_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
@@ -5825,6 +5922,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_continuation_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
@@ -5854,6 +5953,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_next_paused_event_capture_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
@@ -5882,6 +5983,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_next_paused_event_capture_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
@@ -5914,6 +6017,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_one_action_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
@@ -5945,6 +6050,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_live_callframe_recovery_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
@@ -5974,6 +6081,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_attach_probe_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
@@ -6001,6 +6110,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
@@ -6027,6 +6138,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_live_continuation_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
@@ -6053,6 +6166,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_target_attach_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
