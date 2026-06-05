@@ -70,7 +70,7 @@ class CDPEventCacheCollector:
             "domains": self._domains,
             "request_initiators": self._bucket(self._request_initiators, empty_reason="no_request_initiator_events"),
             "script_sources": self._bucket(self._script_sources, empty_reason="no_script_parsed_events"),
-            "websocket_frames": self._bucket(self._websocket_frames, empty_reason="no_websocket_frame_events"),
+            "websocket_frames": self._websocket_bucket(),
         }
 
     @staticmethod
@@ -78,6 +78,35 @@ class CDPEventCacheCollector:
         if items:
             return {"status": "success", "count": len(items), "items": list(items)}
         return {"status": "unsupported", "reason": empty_reason, "count": 0, "items": []}
+
+    def _websocket_bucket(self) -> dict[str, Any]:
+        metadata = self._websocket_capture_metadata()
+        if self._websocket_frames:
+            return {
+                "status": "success",
+                "count": len(self._websocket_frames),
+                "items": list(self._websocket_frames),
+                **metadata,
+            }
+        reason = "no_websocket_frame_events" if self._attached else self._reason
+        return {
+            "status": "unsupported",
+            "reason": reason,
+            "count": 0,
+            "items": [],
+            **metadata,
+        }
+
+    def _websocket_capture_metadata(self) -> dict[str, Any]:
+        return {
+            "source": "cdp_event_cache",
+            "event_subscription_required": True,
+            "subscribed_events": ["Network.webSocketFrameSent", "Network.webSocketFrameReceived"],
+            "capture_window": "post_attach_only",
+            "historical_replay_supported": False,
+            "missed_frames_possible": True,
+            "next_action": "attach_cdp_event_cache_before_navigation_or_enable_websocket_hook",
+        }
 
     def _handle_request_will_be_sent(self, params: Any) -> None:
         if len(self._request_initiators) >= self.request_limit or not isinstance(params, dict):
@@ -153,11 +182,7 @@ class CDPEnhancedCollector:
         request_initiators = self._prefer_event_bucket(event_snapshot, "request_initiators") or self._collect_request_initiators(page)
         response_bodies = self._collect_response_bodies(session, network_snapshot or {}, event_snapshot)
         script_sources = self._prefer_event_bucket(event_snapshot, "script_sources") or self._collect_script_sources(page, session)
-        websocket_frames = (
-            self._prefer_event_bucket(event_snapshot, "websocket_frames")
-            or self._collect_websocket_frames_from_hooks(hook_timeline or {})
-            or self._collect_websocket_frames_placeholder(domains)
-        )
+        websocket_frames = self._collect_websocket_frames(domains, event_snapshot, hook_timeline or {})
         ok = any(
             item.get("status") == "success"
             for item in (request_initiators, response_bodies, script_sources, websocket_frames)
@@ -334,7 +359,77 @@ class CDPEnhancedCollector:
         return {"status": "success", "count": len(items), "items": items, "source": "runtime_hook_timeline"}
 
     @staticmethod
-    def _collect_websocket_frames_placeholder(domains: dict[str, Any]) -> dict[str, Any]:
+    def _collect_websocket_frames(domains: dict[str, Any], event_snapshot: dict[str, Any], hook_timeline: dict[str, Any]) -> dict[str, Any]:
+        return (
+            CDPEnhancedCollector._prefer_event_bucket(event_snapshot, "websocket_frames")
+            or CDPEnhancedCollector._collect_websocket_frames_from_hooks(hook_timeline)
+            or CDPEnhancedCollector._collect_websocket_frames_diagnostics(domains, event_snapshot)
+        )
+
+    @staticmethod
+    def _collect_websocket_frames_diagnostics(domains: dict[str, Any], event_snapshot: dict[str, Any]) -> dict[str, Any]:
+        metadata = {
+            "source": "cdp_event_cache_diagnostics",
+            "event_subscription_required": True,
+            "subscribed_events": ["Network.webSocketFrameSent", "Network.webSocketFrameReceived"],
+            "capture_window": "post_attach_only",
+            "historical_replay_supported": False,
+            "missed_frames_possible": True,
+            "hook_fallback_available": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "next_action": "attach_cdp_event_cache_before_navigation_or_enable_websocket_hook",
+        }
         if not domains.get("Network", {}).get("ok"):
-            return {"status": "unsupported", "reason": "network_domain_unavailable", "count": 0, "items": []}
-        return {"status": "unsupported", "reason": "websocket_event_cache_not_implemented", "count": 0, "items": []}
+            return {"status": "unsupported", "reason": "network_domain_unavailable", "count": 0, "items": [], **metadata}
+
+        bucket = event_snapshot.get("websocket_frames") if isinstance(event_snapshot, dict) else None
+        if isinstance(bucket, dict):
+            reason = str(bucket.get("reason") or "")
+            if reason == "no_websocket_frame_events":
+                return {
+                    "status": "unsupported",
+                    "reason": "websocket_event_cache_attached_no_frames_observed",
+                    "event_cache_status": {
+                        "attached": bool(event_snapshot.get("attached")),
+                        "supported": bool(event_snapshot.get("supported")),
+                        "reason": event_snapshot.get("reason"),
+                    },
+                    "count": 0,
+                    "items": [],
+                    **metadata,
+                }
+            if reason == "cdp_event_subscription_unavailable":
+                return {
+                    "status": "unsupported",
+                    "reason": "cdp_event_subscription_unavailable",
+                    "event_cache_status": {
+                        "attached": bool(event_snapshot.get("attached")),
+                        "supported": bool(event_snapshot.get("supported")),
+                        "reason": event_snapshot.get("reason"),
+                    },
+                    "count": 0,
+                    "items": [],
+                    **metadata,
+                }
+
+        if event_snapshot:
+            return {
+                "status": "unsupported",
+                "reason": "websocket_event_cache_present_without_frames",
+                "event_cache_status": {
+                    "attached": bool(event_snapshot.get("attached")),
+                    "supported": bool(event_snapshot.get("supported")),
+                    "reason": event_snapshot.get("reason"),
+                },
+                "count": 0,
+                "items": [],
+                **metadata,
+            }
+        return {
+            "status": "unsupported",
+            "reason": "websocket_event_cache_required_before_navigation",
+            "count": 0,
+            "items": [],
+            **metadata,
+        }

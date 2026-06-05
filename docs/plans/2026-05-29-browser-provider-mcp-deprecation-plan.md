@@ -275,7 +275,7 @@ Acceptance:
 
 ### Phase 8: CDP-enhanced collectors
 
-Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable, and `remote-cdp` provides a real smoke path against an existing Chrome DevTools endpoint. Playwright and CloakBrowser real browser smoke are both verified locally.
+Status: CDP event cache and metadata collector implemented and tested locally; script source fallback now uses the provider-neutral script inventory, WebSocket frame fallback can consume runtime hook timeline events when CDP frame events are unavailable, and missing CDP WebSocket pre-subscription now emits structured diagnostics with `historical_replay_supported=false` instead of a not-implemented placeholder. `remote-cdp` provides a real smoke path against an existing Chrome DevTools endpoint. Playwright and CloakBrowser real browser smoke are both verified locally.
 
 Deliverables:
 
@@ -283,7 +283,7 @@ Deliverables:
 - request initiator capture.
 - response body metadata capture.
 - `Debugger.scriptParsed` script cache support.
-- WebSocket frame capture.
+- WebSocket frame capture from pre-attached CDP event cache, with explicit post-attach capture-window diagnostics when no frames were observed.
 - HTML script-inventory fallback for source metadata when `Debugger.scriptParsed` events are unavailable.
 - runtime hook timeline fallback for WebSocket frame metadata when CDP frame events are unavailable.
 
@@ -292,7 +292,7 @@ Acceptance:
 - Native runtime can produce `request-initiators.json` without MCP when provider supports CDP.
 - Native runtime can produce `source-contexts.json` from cached script sources.
 - WebSocket metadata is captured when available.
-- Missing CDP event cache no longer means immediate placeholder output for script sources or hook-observed WebSocket frames.
+- Missing CDP event cache no longer means immediate placeholder output for script sources or hook-observed WebSocket frames; when neither pre-attached CDP frames nor hook timeline frames exist, the collector reports pre-subscription guidance and does not claim historical CDP frame replay.
 - Providers without CDP degrade with explicit `unsupported` evidence rather than failing the run.
 
 ### Phase 9: Hook and breakpoint migration

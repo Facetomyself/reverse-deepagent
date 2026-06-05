@@ -316,10 +316,10 @@ Initial collectors:
 | `ConsoleCollector` | Console logs, warnings, errors. |
 | `NetworkCollector` | Request/response samples, headers, status, timings, optional body metadata. |
 | `ScriptCollector` | Script URLs, script IDs, source cache, keyword search hits, source snippets. |
-| `WebSocketCollector` | WebSocket URLs, frame metadata, payload samples when safe. |
+| `WebSocketCollector` | WebSocket URLs, frame metadata, payload samples when safe; CDP frame data is post-attach only, hook timeline remains the fallback, and missing pre-subscription emits structured diagnostics rather than pretending historical replay exists. |
 | `ScreenshotCollector` | Page screenshots for visual verification. |
 
-Advanced collectors can use CDP when available and gracefully degrade to Playwright events when not.
+Advanced collectors can use CDP when available and gracefully degrade to Playwright events when not. CDP WebSocket frame capture must be attached before navigation or before the target socket traffic; without that pre-subscription, the collector reports `websocket_event_cache_required_before_navigation` / `websocket_event_cache_attached_no_frames_observed` style diagnostics, keeps `historical_replay_supported=false`, and recommends either pre-attaching the CDP event cache or enabling the runtime WebSocket hook.
 
 ## 9. Hook and debug managers
 
