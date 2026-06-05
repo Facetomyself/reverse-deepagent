@@ -6,6 +6,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureScopeDiscoverySpec,
     ClosureWrapperAssignmentSafetyManager,
     ClosureWrapperAssignmentSafetySpec,
+    ClosureWrapperContinuationReadinessManager,
+    ClosureWrapperContinuationReadinessSpec,
     ClosureWrapperEventHarvestManager,
     ClosureWrapperEventHarvestSpec,
     ClosureWrapperRuntimeMutabilityPreflightManager,
@@ -881,6 +883,121 @@ class ClosureWrapperRestoreExecutionManagerTests(unittest.TestCase):
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
         self.assertIn("__rdgOriginal", eval_calls[-1]["expression"])
         self.assertIn("__reverseDeepAgentClosureWrappers", eval_calls[-1]["expression"])
+
+
+class ClosureWrapperContinuationReadinessManagerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    def tearDown(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    def _installed_wrapper(self) -> tuple[ClosureScopeCDPSession, ClosureScopePage, dict]:
+        session = ClosureScopeCDPSession()
+        page = ClosureScopePage(session)
+        discovery = ClosureScopeDiscoveryManager().discover(
+            page,
+            ClosureScopeDiscoverySpec.from_context(
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 12,
+                    "closure_function_names": ["buildSign"],
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "preserve_pause_state": True,
+                    "pause_session_id": "closure-continuation-session",
+                }
+            ),
+        )
+        self.assertEqual(discovery.status, "success")
+        plan = ClosureWrapperReplacementPlanManager().plan(
+            ClosureWrapperReplacementPlanSpec.from_context(
+                {
+                    "closure_function_candidates": discovery.candidates,
+                    "candidate_id": "closure:cf-closure-1:buildSign",
+                }
+            )
+        )
+        assignment = ClosureWrapperAssignmentSafetyManager().prove(
+            ClosureWrapperAssignmentSafetySpec.from_context(
+                {
+                    "prove_closure_wrapper_assignment_safety": True,
+                    "closure_wrapper_replacement_plan": plan.plan,
+                }
+            )
+        )
+        install = ClosureWrapperReplacementExecutionManager().execute(
+            page,
+            ClosureWrapperReplacementExecutionSpec.from_context(
+                {
+                    "closure_wrapper_replacement_execution": True,
+                    "closure_wrapper_replacement_plan": plan.plan,
+                    "closure_wrapper_assignment_safety": assignment.assignment_safety,
+                    "pause_session_id": "closure-continuation-session",
+                    "execute_closure_wrapper_replacement": True,
+                    "review_approved": True,
+                }
+            ),
+        )
+        self.assertEqual(install.status, "applied")
+        return session, page, install.execution
+
+    def test_readiness_links_installed_wrapper_to_continuation_checkpoint_without_side_effects(self) -> None:
+        session, _page, execution = self._installed_wrapper()
+        before_calls = len(session.calls)
+        spec = ClosureWrapperContinuationReadinessSpec.from_context(
+            {
+                "closure_wrapper_continuation_readiness": True,
+                "closure_wrapper_replacement_execution": {"execution": execution},
+                "closure_wrapper_events": {
+                    "status": "success",
+                    "event_count": 1,
+                    "events": [{"marker": execution["marker"], "functionName": "buildSign"}],
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "continuation_ready_for_next_action": True,
+                        "pause_session_id": "pause-wrapper-continuation",
+                        "selected_callframe_id": "live-cf-wrapper",
+                    }
+                },
+            }
+        )
+
+        result = ClosureWrapperContinuationReadinessManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(len(session.calls), before_calls)
+        readiness = result.readiness
+        self.assertEqual(readiness["schema_version"], "reverse-deepagent.closure-wrapper-continuation-readiness.v1")
+        self.assertTrue(readiness["ready_for_review"])
+        self.assertTrue(readiness["same_process_wrapper_installed"])
+        self.assertTrue(readiness["continuation_ready"])
+        self.assertEqual(readiness["wrapper_event_count"], 1)
+        self.assertFalse(readiness["cross_process_wrapper_execution_supported"])
+        self.assertFalse(readiness["automatic_wrapper_continuation"])
+        self.assertFalse(readiness["automatic_multi_step_loop"])
+        self.assertEqual(readiness["next_action"], "review_wrapper_continuation_readiness")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+        self.assertFalse(result.side_effect_policy["wrapper_installed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_readiness_blocks_without_wrapper_execution_or_continuation_evidence(self) -> None:
+        spec = ClosureWrapperContinuationReadinessSpec.from_context({"closure_wrapper_continuation_readiness": True})
+
+        result = ClosureWrapperContinuationReadinessManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("closure_wrapper_replacement_execution_required", result.readiness["blockers"])
+        self.assertIn("paused_session_continuation_evidence_required", result.readiness["blockers"])
+        self.assertEqual(result.readiness["next_action"], "install_reviewed_same_process_closure_wrapper")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
 
 
 class ClosureWrapperEventHarvestManagerTests(unittest.TestCase):

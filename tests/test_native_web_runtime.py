@@ -4690,6 +4690,61 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(events.artifacts[0].metadata["runtime_mutated"])
         BreakpointManager.clear_paused_sessions()
 
+    def test_native_web_runtime_reviews_closure_wrapper_continuation_readiness_without_side_effects(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-continuation-readiness",
+            {
+                "closure_wrapper_replacement_execution": {
+                    "execution": {
+                        "status": "applied",
+                        "function_name": "buildSign",
+                        "marker": "reverse-deepagent:closure-wrapper:buildSign",
+                        "wrapper_strategy": "log-only-call-through",
+                        "wrapper_strategy_descriptor": {
+                            "strategy": "log-only-call-through",
+                            "supported_for_install": True,
+                            "strategy_plan_only": False,
+                        },
+                        "wrapper_installed": True,
+                        "restore_plan": {"available": True, "requires_review": True},
+                    }
+                },
+                "closure_wrapper_events": {"status": "success", "event_count": 1},
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "continuation_ready_for_next_action": True,
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_closure_wrapper_continuation_readiness"])
+        self.assertIn("closure_wrapper_continuation_readiness_status=ready_for_review", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_ready_for_review=True", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_wrapper_installed=True", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_continuation_ready=True", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_cross_process_wrapper_execution_supported=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_automatic_wrapper_continuation=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_automatic_multi_step_loop=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_cdp_command_sent=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_callframe_evaluated=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_runtime_mutated=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_calls_mcp=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_readiness_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_wrapper_continuation_readiness")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-continuation-readiness.json")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_review"])
+        self.assertTrue(result.artifacts[0].metadata["same_process_wrapper_installed"])
+        self.assertTrue(result.artifacts[0].metadata["continuation_ready"])
+        self.assertFalse(result.artifacts[0].metadata["cross_process_wrapper_execution_supported"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_wrapper_continuation"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_multi_step_loop"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["cdp_command_sent"])
 
     def test_native_web_runtime_apply_minimal_protection_audits_object_root_mutation(self) -> None:
         provider = FakeProvider()

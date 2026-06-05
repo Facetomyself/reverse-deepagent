@@ -1003,6 +1003,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_closure_wrapper_restore_plan": "audit",
     "workspace_closure_wrapper_restore_execution": "audit",
     "workspace_closure_wrapper_events": "hook-timeline",
+    "workspace_closure_wrapper_continuation_readiness": "triage",
     "workspace_request_initiators": "trace",
     "workspace_navigation_events": "trace",
     "workspace_browser_provider_smoke": "runtime-context",
@@ -1849,6 +1850,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["closure-wrapper-restore-execution.json"] = evidence.details
         elif evidence.source == "closure_wrapper_events":
             payloads["closure-wrapper-events.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_continuation_readiness":
+            payloads["closure-wrapper-continuation-readiness.json"] = evidence.details
         elif evidence.source == "runtime_context":
             payloads["runtime-context.json"] = evidence.details
         elif evidence.source == "dom_snapshot":

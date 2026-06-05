@@ -96,6 +96,16 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "closure_wrapper_event_harvest",
             "closureWrapperEventHarvest",
         )
+        closure_wrapper_continuation_readiness = _object_alias(
+            payload,
+            "closure_wrapper_continuation_readiness",
+            "closure-wrapper-continuation-readiness",
+            "closureWrapperContinuationReadiness",
+            "wrapper_continuation_readiness",
+            "wrapperContinuationReadiness",
+            "review_closure_wrapper_continuation",
+            "reviewClosureWrapperContinuation",
+        )
         async_chunk_plan = _object_alias(payload, "async_chunk_load_plan", "async-chunk-load-plan", "asyncChunkLoadPlan")
         async_chunk_result = _object_alias(payload, "async_chunk_load_result", "async-chunk-load-result", "asyncChunkLoadResult")
         async_chunk_module_diff = _object_alias(payload, "async_chunk_module_diff", "async-chunk-module-diff", "asyncChunkModuleDiff")
@@ -323,6 +333,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
                 closure_wrapper_events,
+                closure_wrapper_continuation_readiness,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -359,6 +370,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_recursive_continuation_journal,
                 module_federation_recursive_continuation_checkpoint,
                 recursive_continuation_readiness,
+                closure_wrapper_continuation_readiness,
             )
         ) + sum(bool(items) for items in (module_candidates, function_candidates))
         if not artifact_count:
@@ -379,6 +391,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("closure_wrapper_replacement_execution_blocked")
         if _status(closure_wrapper_restore_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_restore_execution_blocked")
+        if _status(closure_wrapper_continuation_readiness) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("closure_wrapper_continuation_readiness_blocked")
         if _status(async_chunk_result) in {"failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_load_failed")
         if _status(async_chunk_module_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -627,6 +641,11 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("module_federation_recursive_continuation_checkpoint_requires_review")
         if recursive_continuation_readiness and _status(recursive_continuation_readiness) == "ready_for_review":
             warnings.append("recursive_continuation_readiness_requires_review")
+        if closure_wrapper_continuation_readiness and (
+            _status(closure_wrapper_continuation_readiness) == "ready_for_review"
+            or _nested_status(closure_wrapper_continuation_readiness, "readiness") == "ready_for_review"
+        ):
+            warnings.append("closure_wrapper_continuation_readiness_requires_review")
         if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
             warnings.append("async_chunk_load_requires_review")
         async_chunk_diff_status = _nested_status(async_chunk_module_diff, "diff")
@@ -761,6 +780,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "closure_wrapper_restore_execution_runtime_mutated": bool(_nested_get(closure_wrapper_restore_execution, "execution", "runtime_mutated") or closure_wrapper_restore_execution.get("runtime_mutated")),
                 "closure_wrapper_restore_execution_wrapper_restored": bool(_nested_get(closure_wrapper_restore_execution, "execution", "wrapper_restored") or closure_wrapper_restore_execution.get("wrapper_restored")),
                 "closure_wrapper_event_count": closure_wrapper_event_count,
+                "closure_wrapper_continuation_readiness_status": _status(closure_wrapper_continuation_readiness) or _nested_status(closure_wrapper_continuation_readiness, "readiness"),
+                "closure_wrapper_continuation_ready": bool(_nested_get(closure_wrapper_continuation_readiness, "readiness", "continuation_ready") or closure_wrapper_continuation_readiness.get("continuation_ready")),
+                "closure_wrapper_continuation_automatic_wrapper_continuation": bool(_nested_get(closure_wrapper_continuation_readiness, "readiness", "automatic_wrapper_continuation") or closure_wrapper_continuation_readiness.get("automatic_wrapper_continuation")),
+                "closure_wrapper_continuation_next_action": _nested_get(closure_wrapper_continuation_readiness, "readiness", "next_action") or closure_wrapper_continuation_readiness.get("next_action"),
                 "function_hook_event_count": _event_count(function_timeline, function_events),
                 "module_hook_event_count": _event_count(module_timeline, module_events),
                 "generic_hook_event_count": _event_count(generic_timeline, generic_events),
@@ -909,6 +932,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
                 closure_wrapper_events,
+                closure_wrapper_continuation_readiness,
                 async_chunk_plan,
                 async_chunk_result,
                 async_chunk_module_diff,
@@ -1113,6 +1137,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "resolve_closure_wrapper_replacement_execution_blockers"
     if "closure_wrapper_restore_execution_blocked" in blockers:
         return "resolve_closure_wrapper_restore_execution_blockers"
+    if "closure_wrapper_continuation_readiness_blocked" in blockers:
+        return "resolve_closure_wrapper_continuation_readiness_blockers"
     if "module_federation_get_init_plan_blocked" in blockers:
         return "provide_module_federation_candidates_from_module_discovery"
     if "module_federation_get_init_probe_failed" in blockers:
@@ -1209,6 +1235,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_closure_wrapper_restore_execution_result_or_continue_target_flow"
     if "closure_wrapper_events_empty" in warnings:
         return "invoke_target_flow_then_harvest_closure_wrapper_events"
+    if "closure_wrapper_continuation_readiness_requires_review" in warnings:
+        return "review_wrapper_continuation_readiness"
     if "module_federation_get_init_probe_requires_factory_review" in warnings:
         return "review_module_federation_get_init_probe_before_factory_invocation"
     if "module_federation_factory_exports_require_review" in warnings:
@@ -1317,6 +1345,7 @@ def _review_required_items(
     closure_wrapper_replacement_execution: dict[str, Any],
     closure_wrapper_restore_execution: dict[str, Any],
     closure_wrapper_events: dict[str, Any],
+    closure_wrapper_continuation_readiness: dict[str, Any],
     async_chunk_plan: dict[str, Any],
     async_chunk_result: dict[str, Any],
     async_chunk_module_diff: dict[str, Any],
@@ -1386,6 +1415,9 @@ def _review_required_items(
                 "closure_wrapper_replacement_execution_status": _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution"),
                 "closure_wrapper_restore_execution_status": _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution"),
                 "closure_wrapper_event_count": _intish(closure_wrapper_events.get("event_count") or closure_wrapper_events.get("eventCount") or _nested_get(closure_wrapper_events, "snapshot", "eventCount")),
+                "closure_wrapper_continuation_readiness_status": _status(closure_wrapper_continuation_readiness) or _nested_status(closure_wrapper_continuation_readiness, "readiness"),
+                "closure_wrapper_continuation_ready": bool(_nested_get(closure_wrapper_continuation_readiness, "readiness", "continuation_ready") or closure_wrapper_continuation_readiness.get("continuation_ready")),
+                "closure_wrapper_continuation_automatic_wrapper_continuation": bool(_nested_get(closure_wrapper_continuation_readiness, "readiness", "automatic_wrapper_continuation") or closure_wrapper_continuation_readiness.get("automatic_wrapper_continuation")),
                 "async_chunk_load_plan_status": _status(async_chunk_plan),
                 "async_chunk_load_result_status": _status(async_chunk_result),
                 "async_chunk_module_diff_status": _status(async_chunk_module_diff) or _nested_status(async_chunk_module_diff, "diff"),
