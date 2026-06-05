@@ -409,6 +409,21 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native closure wrapper continuation execution plan",
+                    kind=EvidenceKind.HOOK,
+                    source="closure_wrapper_continuation_execution_plan",
+                    details={
+                        "status": "ready_for_review",
+                        "plan": {
+                            "ready_for_review": True,
+                            "execution_strategy": {
+                                "automatic_wrapper_continuation_supported": False,
+                            },
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native function hook timeline",
                     kind=EvidenceKind.HOOK,
                     source="function_hook_timeline",
@@ -800,6 +815,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["closure-wrapper-events.json"]["event_count"], 1)
         self.assertTrue(payloads["closure-wrapper-continuation-readiness.json"]["readiness"]["ready_for_review"])
         self.assertFalse(payloads["closure-wrapper-continuation-readiness.json"]["readiness"]["automatic_wrapper_continuation"])
+        self.assertTrue(payloads["closure-wrapper-continuation-execution-plan.json"]["plan"]["ready_for_review"])
+        self.assertFalse(payloads["closure-wrapper-continuation-execution-plan.json"]["plan"]["execution_strategy"]["automatic_wrapper_continuation_supported"])
         self.assertEqual(payloads["function-hooks.json"]["installed_count"], 1)
         self.assertEqual(payloads["function-hook-timeline.json"]["event_count"], 2)
         self.assertEqual(payloads["async-chunk-load-plan.json"]["chunk_id"], "731")
@@ -920,6 +937,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_events"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_continuation_readiness"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_continuation_execution_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_stitched_flow"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_external_delivery_duplicate_guard"), "export")
 

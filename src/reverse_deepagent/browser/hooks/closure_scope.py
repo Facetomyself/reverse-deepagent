@@ -2921,6 +2921,346 @@ class ClosureWrapperContinuationReadinessManager:
         }
 
 
+@dataclass(slots=True)
+class ClosureWrapperContinuationExecutionPlanSpec:
+    """Review-only execution plan descriptor for closure wrapper continuation.
+
+    This descriptor only composes existing wrapper readiness and paused-session continuation
+    evidence. It does not install / restore wrappers, evaluate JavaScript, send CDP commands,
+    recover callFrames, execute paused-session actions, or run continuation loops.
+    """
+
+    continuation_readiness: dict[str, Any] = field(default_factory=dict)
+    session_lifecycle: dict[str, Any] = field(default_factory=dict)
+    multi_step_loop_plan: dict[str, Any] = field(default_factory=dict)
+    continuation_checkpoint: dict[str, Any] = field(default_factory=dict)
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    plan_id: str | None = None
+    requested_strategy: str = DEFAULT_CLOSURE_WRAPPER_STRATEGY
+    reviewer: str | None = None
+    requested: bool = False
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperContinuationExecutionPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_continuation_execution_plan")
+            or context.get("closureWrapperContinuationExecutionPlan")
+            or context.get("closure-wrapper-continuation-execution-plan")
+            or context.get("plan_closure_wrapper_continuation_execution")
+            or context.get("planClosureWrapperContinuationExecution")
+            or context.get("wrapper_continuation_execution_plan")
+            or context.get("wrapperContinuationExecutionPlan")
+        )
+        readiness = cls._coerce_object(
+            context.get("closure_wrapper_continuation_readiness")
+            or context.get("closureWrapperContinuationReadiness")
+            or context.get("closure-wrapper-continuation-readiness")
+            or context.get("wrapper_continuation_readiness")
+            or context.get("wrapperContinuationReadiness"),
+            "readiness",
+        )
+        lifecycle = cls._coerce_object(
+            context.get("paused_session_cross_process_session_lifecycle")
+            or context.get("pausedSessionCrossProcessSessionLifecycle")
+            or context.get("paused-session-cross-process-session-lifecycle")
+            or context.get("paused_session_lifecycle")
+            or context.get("pausedSessionLifecycle"),
+            "lifecycle",
+        )
+        loop_plan = cls._coerce_object(
+            context.get("paused_session_multi_step_loop_plan")
+            or context.get("pausedSessionMultiStepLoopPlan")
+            or context.get("paused-session-multi-step-loop-plan")
+            or context.get("paused_session_continuation_loop_plan")
+            or context.get("multi_step_continuation_loop_plan")
+            or context.get("loop_plan")
+            or context.get("loopPlan"),
+            "loop_plan",
+        )
+        checkpoint = cls._coerce_object(
+            context.get("paused_session_cross_process_continuation_checkpoint")
+            or context.get("pausedSessionCrossProcessContinuationCheckpoint")
+            or context.get("paused-session-cross-process-continuation-checkpoint")
+            or context.get("continuation_checkpoint")
+            or context.get("continuationCheckpoint"),
+            "checkpoint",
+        )
+        recovery = cls._coerce_object(
+            context.get("paused_session_live_callframe_recovery")
+            or context.get("pausedSessionLiveCallframeRecovery")
+            or context.get("paused-session-live-callframe-recovery")
+            or context.get("live_callframe_recovery")
+            or context.get("liveCallframeRecovery"),
+            "recovery",
+        )
+        if not requested and not any((readiness, lifecycle, loop_plan, checkpoint, recovery)):
+            return None
+        strategy = str(context.get("requested_strategy") or context.get("requestedStrategy") or readiness.get("wrapper_strategy") or DEFAULT_CLOSURE_WRAPPER_STRATEGY).strip() or DEFAULT_CLOSURE_WRAPPER_STRATEGY
+        plan_id = context.get("plan_id") or context.get("planId") or f"closure-wrapper-continuation-execution-plan-{strategy}"
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        return cls(
+            continuation_readiness=readiness,
+            session_lifecycle=lifecycle,
+            multi_step_loop_plan=loop_plan,
+            continuation_checkpoint=checkpoint,
+            live_callframe_recovery=recovery,
+            plan_id=str(plan_id).strip() if plan_id else None,
+            requested_strategy=strategy,
+            reviewer=str(reviewer).strip() if reviewer else None,
+            requested=requested,
+        )
+
+    @staticmethod
+    def _coerce_object(value: Any, nested_key: str) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        nested = value.get(nested_key)
+        if isinstance(nested, dict):
+            return dict(nested)
+        return dict(value)
+
+
+@dataclass(slots=True)
+class ClosureWrapperContinuationExecutionPlanResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-continuation-execution-plan.v1",
+            "status": self.status,
+            "plan": self.plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class ClosureWrapperContinuationExecutionPlanManager:
+    """Review-only plan descriptor for future wrapper-aware continuation execution."""
+
+    def plan(self, spec: ClosureWrapperContinuationExecutionPlanSpec | None) -> ClosureWrapperContinuationExecutionPlanResult:
+        if spec is None:
+            policy = self._side_effect_policy()
+            return ClosureWrapperContinuationExecutionPlanResult(
+                status="unsupported",
+                plan=self._payload(None, "unsupported", ["closure_wrapper_continuation_execution_plan_request_missing"]),
+                side_effect_policy=policy,
+                reason="closure_wrapper_continuation_execution_plan_request_missing",
+            )
+        blockers = self._blockers(spec)
+        status = "blocked" if blockers else "ready_for_review"
+        return ClosureWrapperContinuationExecutionPlanResult(
+            status=status,
+            plan=self._payload(spec, status, blockers),
+            side_effect_policy=self._side_effect_policy(),
+            reason=blockers[0] if blockers else None,
+        )
+
+    @classmethod
+    def _blockers(cls, spec: ClosureWrapperContinuationExecutionPlanSpec) -> list[str]:
+        blockers: list[str] = []
+        readiness = spec.continuation_readiness
+        lifecycle = spec.session_lifecycle
+        loop_plan = spec.multi_step_loop_plan
+        checkpoint = spec.continuation_checkpoint
+        recovery = spec.live_callframe_recovery
+        if not readiness:
+            blockers.append("closure_wrapper_continuation_readiness_required")
+        else:
+            if str(readiness.get("status") or "") in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("closure_wrapper_continuation_readiness_blocked")
+            if readiness.get("ready_for_review") is not True:
+                blockers.append("closure_wrapper_continuation_not_ready")
+            if readiness.get("same_process_wrapper_installed") is not True:
+                blockers.append("same_process_wrapper_required")
+            if readiness.get("restore_plan_available") is not True:
+                blockers.append("closure_wrapper_restore_plan_required")
+            if readiness.get("wrapper_strategy") != DEFAULT_CLOSURE_WRAPPER_STRATEGY:
+                blockers.append("closure_wrapper_strategy_not_supported_for_execution_plan")
+            if readiness.get("continuation_ready") is not True:
+                blockers.append("paused_session_continuation_not_ready")
+        if spec.requested_strategy != DEFAULT_CLOSURE_WRAPPER_STRATEGY:
+            blockers.append("requested_wrapper_strategy_not_supported")
+        if lifecycle:
+            lifecycle_status = str(lifecycle.get("status") or "")
+            if lifecycle_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("paused_session_lifecycle_blocked")
+        if loop_plan:
+            loop_status = str(loop_plan.get("status") or "")
+            if loop_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("paused_session_loop_plan_blocked")
+        if not any((loop_plan, checkpoint, recovery)):
+            blockers.append("paused_session_execution_path_required")
+        elif loop_plan and not cls._loop_plan_ready(loop_plan):
+            blockers.append("paused_session_loop_plan_not_reviewable")
+        elif not loop_plan and not cls._checkpoint_or_recovery_ready(checkpoint, recovery):
+            blockers.append("paused_session_execution_path_not_ready")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _loop_plan_ready(loop_plan: dict[str, Any]) -> bool:
+        readiness = loop_plan.get("readiness") if isinstance(loop_plan.get("readiness"), dict) else {}
+        return bool(loop_plan.get("ready_for_review") or readiness.get("next_loop_iteration_reviewable") or str(loop_plan.get("status") or "") == "ready_for_review")
+
+    @staticmethod
+    def _checkpoint_or_recovery_ready(checkpoint: dict[str, Any], recovery: dict[str, Any]) -> bool:
+        if checkpoint and (
+            checkpoint.get("continuation_ready_for_next_action") is True
+            or checkpoint.get("live_callframe_recovery_ready") is True
+            or str(checkpoint.get("status") or "") in {"ready_for_next_action_review", "ready_for_live_callframe_recovery", "ready_for_review"}
+        ):
+            return True
+        if recovery and str(recovery.get("status") or "") == "recovered" and recovery.get("live_callframe_recovered") is True:
+            return True
+        return False
+
+    @classmethod
+    def _payload(cls, spec: ClosureWrapperContinuationExecutionPlanSpec | None, status: str, blockers: list[str]) -> dict[str, Any]:
+        readiness = spec.continuation_readiness if spec else {}
+        lifecycle = spec.session_lifecycle if spec else {}
+        loop_plan = spec.multi_step_loop_plan if spec else {}
+        checkpoint = spec.continuation_checkpoint if spec else {}
+        recovery = spec.live_callframe_recovery if spec else {}
+        strategy = spec.requested_strategy if spec else DEFAULT_CLOSURE_WRAPPER_STRATEGY
+        ready = status == "ready_for_review"
+        next_loop_iteration = loop_plan.get("next_iteration") if isinstance(loop_plan.get("next_iteration"), dict) else {}
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-continuation-execution-plan.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "plan_id": spec.plan_id if spec else None,
+            "reviewer": spec.reviewer if spec else None,
+            "requested_strategy": strategy,
+            "wrapper_strategy": readiness.get("wrapper_strategy") or strategy,
+            "function_name": readiness.get("function_name"),
+            "marker": readiness.get("marker"),
+            "same_process_wrapper_installed": bool(readiness.get("same_process_wrapper_installed")),
+            "restore_plan_available": bool(readiness.get("restore_plan_available")),
+            "wrapper_event_count": readiness.get("wrapper_event_count", 0),
+            "source_statuses": {
+                "continuation_readiness": readiness.get("status"),
+                "session_lifecycle": lifecycle.get("status"),
+                "multi_step_loop_plan": loop_plan.get("status"),
+                "continuation_checkpoint": checkpoint.get("status"),
+                "live_callframe_recovery": recovery.get("status"),
+            },
+            "execution_strategy": {
+                "mode": "reviewed_plan_only",
+                "same_process_wrapper_required": True,
+                "cross_process_wrapper_execution_supported": False,
+                "requested_strategy_supported": strategy == DEFAULT_CLOSURE_WRAPPER_STRATEGY,
+                "supported_strategy": DEFAULT_CLOSURE_WRAPPER_STRATEGY,
+                "automatic_wrapper_continuation_supported": False,
+                "automatic_multi_step_loop_supported": False,
+            },
+            "planned_steps": cls._planned_steps(ready=ready, loop_plan=loop_plan, checkpoint=checkpoint, recovery=recovery),
+            "review_gates": {
+                "requires_wrapper_readiness_review": True,
+                "requires_session_lifecycle_review": bool(lifecycle),
+                "requires_loop_plan_review": bool(loop_plan),
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_retained_attached_session_before_execution": True,
+                "requires_restore_plan_before_execution": True,
+                "requires_explicit_execution_approval": True,
+                "requires_post_execution_event_harvest": True,
+                "requires_followup_checkpoint_after_debugger_action": True,
+            },
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_iteration": {
+                "available": bool(next_loop_iteration),
+                "workflow_step_index": next_loop_iteration.get("workflow_step_index"),
+                "method": next_loop_iteration.get("method"),
+                "fingerprint": next_loop_iteration.get("fingerprint"),
+                "would_execute": False,
+            },
+            "next_action": cls._next_action(status, blockers, loop_plan=loop_plan),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _planned_steps(*, ready: bool, loop_plan: dict[str, Any], checkpoint: dict[str, Any], recovery: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            {"order": 1, "action": "review_closure_wrapper_continuation_readiness", "artifact": "workspace/closure-wrapper-continuation-readiness.json", "automatic": False, "ready": ready},
+            {"order": 2, "action": "review_paused_session_lifecycle", "artifact": "workspace/paused-session-cross-process-session-lifecycle.json", "automatic": False, "observed": bool(loop_plan or checkpoint or recovery)},
+            {"order": 3, "action": "review_next_paused_session_loop_iteration", "artifact": "workspace/paused-session-multi-step-loop-plan.json", "automatic": False, "observed": bool(loop_plan)},
+            {"order": 4, "action": "approve_future_wrapper_continuation_execution", "artifact": "workspace/closure-wrapper-continuation-execution-plan.json", "automatic": False, "would_execute": False},
+            {"order": 5, "action": "harvest_wrapper_events_after_reviewed_execution", "artifact": "workspace/closure-wrapper-events.json", "automatic": False, "would_trigger_target": False},
+        ]
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "closure_wrapper_continuation_execution_plan_request_missing": ("request", "No closure wrapper continuation execution plan request was supplied.", "provide_wrapper_continuation_readiness"),
+            "closure_wrapper_continuation_readiness_required": ("wrapper", "A wrapper continuation readiness descriptor is required.", "review_closure_wrapper_continuation_readiness"),
+            "closure_wrapper_continuation_readiness_blocked": ("wrapper", "The supplied wrapper continuation readiness descriptor is blocked.", "resolve_closure_wrapper_continuation_readiness_blockers"),
+            "closure_wrapper_continuation_not_ready": ("wrapper", "The wrapper continuation readiness descriptor is not ready for review.", "review_closure_wrapper_continuation_readiness"),
+            "same_process_wrapper_required": ("wrapper", "A same-process reviewed wrapper must already be installed.", "install_reviewed_same_process_closure_wrapper"),
+            "closure_wrapper_restore_plan_required": ("wrapper", "A restore plan is required before planning wrapper-aware continuation.", "capture_closure_wrapper_restore_plan"),
+            "closure_wrapper_strategy_not_supported_for_execution_plan": ("wrapper", "Only log-only-call-through wrapper readiness can be planned for continuation.", "choose_log_only_call_through_strategy"),
+            "requested_wrapper_strategy_not_supported": ("wrapper", "The requested wrapper continuation strategy is not supported by this plan baseline.", "choose_log_only_call_through_strategy"),
+            "paused_session_continuation_not_ready": ("debugger", "Paused-session continuation evidence is not ready.", "checkpoint_or_recover_paused_session_continuation"),
+            "paused_session_lifecycle_blocked": ("debugger", "The supplied paused-session lifecycle descriptor is blocked.", "resolve_paused_session_lifecycle_blockers"),
+            "paused_session_loop_plan_blocked": ("debugger", "The supplied paused-session loop plan is blocked.", "resolve_paused_session_loop_plan_blockers"),
+            "paused_session_execution_path_required": ("debugger", "A loop plan, continuation checkpoint, or live callFrame recovery artifact is required.", "plan_paused_session_continuation_loop"),
+            "paused_session_loop_plan_not_reviewable": ("debugger", "The supplied paused-session loop plan is not ready for the next reviewed iteration.", "review_or_replan_paused_session_loop"),
+            "paused_session_execution_path_not_ready": ("debugger", "The supplied checkpoint / recovery evidence is not ready for execution planning.", "recover_live_callframe_or_checkpoint_continuation"),
+        }
+        return [
+            {
+                "code": blocker,
+                "category": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_execution_plan"))[0],
+                "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_execution_plan"))[1],
+                "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_execution_plan"))[2],
+            }
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(status: str, blockers: list[str], *, loop_plan: dict[str, Any]) -> str:
+        if status == "ready_for_review":
+            return "review_closure_wrapper_continuation_execution_plan"
+        if "closure_wrapper_continuation_readiness_required" in blockers or "closure_wrapper_continuation_not_ready" in blockers:
+            return "review_closure_wrapper_continuation_readiness"
+        if "paused_session_execution_path_required" in blockers:
+            return "plan_paused_session_continuation_loop"
+        if "paused_session_loop_plan_not_reviewable" in blockers or "paused_session_loop_plan_blocked" in blockers:
+            return "review_or_replan_paused_session_loop"
+        if loop_plan:
+            return "resolve_closure_wrapper_continuation_execution_plan_blockers"
+        return "recover_live_callframe_or_checkpoint_continuation"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "plan_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "wrapper_installed": False,
+            "wrapper_restored": False,
+            "wrapper_events_harvested": False,
+            "cross_process_wrapper_execution_supported": False,
+            "automatic_wrapper_continuation": False,
+            "automatic_multi_step_loop": False,
+            "automatic_live_callframe_recovery": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
 def _string_or_none(value: Any) -> str | None:
     if value is None:
         return None

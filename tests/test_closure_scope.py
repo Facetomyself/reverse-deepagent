@@ -6,6 +6,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureScopeDiscoverySpec,
     ClosureWrapperAssignmentSafetyManager,
     ClosureWrapperAssignmentSafetySpec,
+    ClosureWrapperContinuationExecutionPlanManager,
+    ClosureWrapperContinuationExecutionPlanSpec,
     ClosureWrapperContinuationReadinessManager,
     ClosureWrapperContinuationReadinessSpec,
     ClosureWrapperEventHarvestManager,
@@ -998,6 +1000,108 @@ class ClosureWrapperContinuationReadinessManagerTests(unittest.TestCase):
         self.assertTrue(result.side_effect_policy["read_only"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["runtime_mutated"])
+
+
+class ClosureWrapperContinuationExecutionPlanManagerTests(unittest.TestCase):
+    def test_plans_wrapper_continuation_execution_review_without_side_effects(self) -> None:
+        spec = ClosureWrapperContinuationExecutionPlanSpec.from_context(
+            {
+                "closure_wrapper_continuation_execution_plan": True,
+                "reviewer": "unit-reviewer",
+                "closure_wrapper_continuation_readiness": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "same_process_wrapper_installed": True,
+                    "restore_plan_available": True,
+                    "wrapper_strategy": "log-only-call-through",
+                    "function_name": "buildSign",
+                    "marker": "reverse-deepagent:closure-wrapper:buildSign",
+                    "continuation_ready": True,
+                    "wrapper_event_count": 2,
+                },
+                "paused_session_cross_process_session_lifecycle": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "readiness": {
+                        "next_loop_iteration_reviewable": True,
+                        "automatic_multi_step_loop_supported": False,
+                    },
+                    "next_iteration": {
+                        "workflow_step_index": 1,
+                        "method": "Debugger.stepOver",
+                        "fingerprint": "loop-step-1",
+                    },
+                },
+            }
+        )
+
+        result = ClosureWrapperContinuationExecutionPlanManager().plan(spec)
+        payload = result.to_dict()
+        plan = payload["plan"]
+        policy = payload["side_effect_policy"]
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(payload["schema_version"], "reverse-deepagent.closure-wrapper-continuation-execution-plan.v1")
+        self.assertTrue(plan["ready_for_review"])
+        self.assertEqual(plan["reviewer"], "unit-reviewer")
+        self.assertEqual(plan["wrapper_strategy"], "log-only-call-through")
+        self.assertEqual(plan["function_name"], "buildSign")
+        self.assertTrue(plan["same_process_wrapper_installed"])
+        self.assertTrue(plan["restore_plan_available"])
+        self.assertEqual(plan["wrapper_event_count"], 2)
+        self.assertEqual(plan["source_statuses"]["multi_step_loop_plan"], "ready_for_review")
+        self.assertEqual(plan["execution_strategy"]["mode"], "reviewed_plan_only")
+        self.assertFalse(plan["execution_strategy"]["cross_process_wrapper_execution_supported"])
+        self.assertFalse(plan["execution_strategy"]["automatic_wrapper_continuation_supported"])
+        self.assertFalse(plan["execution_strategy"]["automatic_multi_step_loop_supported"])
+        self.assertTrue(plan["review_gates"]["requires_explicit_execution_approval"])
+        self.assertTrue(plan["review_gates"]["requires_restore_plan_before_execution"])
+        self.assertEqual(plan["next_iteration"]["method"], "Debugger.stepOver")
+        self.assertFalse(plan["next_iteration"]["would_execute"])
+        self.assertEqual(plan["next_action"], "review_closure_wrapper_continuation_execution_plan")
+        self.assertTrue(policy["read_only"])
+        self.assertTrue(policy["review_only"])
+        self.assertTrue(policy["plan_only"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["debugger_event_subscribed"])
+        self.assertFalse(policy["paused_event_captured"])
+        self.assertFalse(policy["callframe_evaluated"])
+        self.assertFalse(policy["runtime_mutated"])
+        self.assertFalse(policy["wrapper_installed"])
+        self.assertFalse(policy["wrapper_restored"])
+        self.assertFalse(policy["automatic_wrapper_continuation"])
+        self.assertFalse(policy["automatic_multi_step_loop"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
+
+    def test_blocks_without_readiness_or_paused_session_execution_path(self) -> None:
+        spec = ClosureWrapperContinuationExecutionPlanSpec.from_context(
+            {
+                "closure_wrapper_continuation_execution_plan": True,
+            }
+        )
+
+        result = ClosureWrapperContinuationExecutionPlanManager().plan(spec)
+        plan = result.plan
+        policy = result.side_effect_policy
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("closure_wrapper_continuation_readiness_required", plan["blockers"])
+        self.assertIn("paused_session_execution_path_required", plan["blockers"])
+        self.assertEqual(plan["next_action"], "review_closure_wrapper_continuation_readiness")
+        self.assertTrue(policy["read_only"])
+        self.assertTrue(policy["plan_only"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["debugger_event_subscribed"])
+        self.assertFalse(policy["callframe_evaluated"])
+        self.assertFalse(policy["runtime_mutated"])
+        self.assertFalse(policy["wrapper_installed"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
 
 
 class ClosureWrapperEventHarvestManagerTests(unittest.TestCase):
