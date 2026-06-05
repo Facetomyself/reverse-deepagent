@@ -99,6 +99,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperAssignmentSafetySpec,
     ClosureWrapperContinuationReadinessManager,
     ClosureWrapperContinuationReadinessSpec,
+    ClosureWrapperContinuationExecutionManager,
+    ClosureWrapperContinuationExecutionSpec,
     ClosureWrapperContinuationExecutionPlanManager,
     ClosureWrapperContinuationExecutionPlanSpec,
     ClosureWrapperEventHarvestManager,
@@ -2144,6 +2146,69 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            spec = ClosureWrapperContinuationExecutionSpec.from_context(context)
+            result = ClosureWrapperContinuationExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"closure_wrapper_continuation_execution_status={result.status}",
+                f"closure_wrapper_continuation_execution_reason={result.reason or ''}",
+                f"closure_wrapper_continuation_execution_wrapper_strategy={execution.get('wrapper_strategy') or 'unknown'}",
+                f"closure_wrapper_continuation_execution_function_name={execution.get('function_name') or 'unknown'}",
+                f"closure_wrapper_continuation_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"closure_wrapper_continuation_execution_selected_method={execution.get('selected_method')}",
+                f"closure_wrapper_continuation_execution_execute_requested={execution.get('execute_iteration_requested', False)}",
+                f"closure_wrapper_continuation_execution_review_approved={execution.get('review_approved', False)}",
+                f"closure_wrapper_continuation_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_continuation_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"closure_wrapper_continuation_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"closure_wrapper_continuation_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_continuation_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_continuation_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_continuation_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
+                f"closure_wrapper_continuation_execution_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
+                f"closure_wrapper_continuation_execution_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
+                f"closure_wrapper_continuation_execution_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
+                f"closure_wrapper_continuation_execution_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"closure_wrapper_continuation_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"closure_wrapper_continuation_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"closure_wrapper_continuation_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-continuation-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-gated Native Web closure wrapper continuation one-iteration execution result.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "plan_id": execution.get("plan_id"),
+                        "workflow_id": execution.get("workflow_id"),
+                        "wrapper_strategy": execution.get("wrapper_strategy"),
+                        "function_name": execution.get("function_name"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_method": execution.get("selected_method"),
+                        "executor_artifact": execution.get("executor_artifact"),
+                        "paused_event_captured": execution.get("paused_event_captured", False),
+                        "manual_checkpoint_required_after_step": execution.get("manual_checkpoint_required_after_step", False),
+                        "post_execution_event_harvest_required": execution.get("post_execution_event_harvest_required", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_reviewed_closure_wrapper_continuation_iteration"] if execution.get("wrapper_continuation_iteration_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out", "blocked"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_closure_wrapper_continuation_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
             )
         if self._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
             spec = ClosureWrapperContinuationExecutionPlanSpec.from_context(context)
@@ -5890,6 +5955,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_multi_step_continuation_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -5923,6 +5990,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_multi_step_continuation_workflow_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
@@ -5959,6 +6028,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_pre_action_subscribe_and_action_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -5991,6 +6062,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_continuation_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6024,6 +6097,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_next_paused_event_capture_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6054,6 +6129,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_next_paused_event_capture_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6088,6 +6165,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_one_action_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6121,6 +6200,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_live_callframe_recovery_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6154,6 +6235,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_attach_probe_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6183,6 +6266,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_cross_process_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6211,6 +6296,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_live_continuation_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6239,6 +6326,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_target_attach_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
@@ -6412,6 +6501,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_closure_wrapper_continuation_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         normalized = protection_name.strip().lower()
         if normalized in {
             "closure-wrapper-continuation-execution-plan",
@@ -6435,7 +6526,33 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_closure_wrapper_continuation_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "closure-wrapper-continuation-execution",
+            "execute-closure-wrapper-continuation",
+            "reviewed-closure-wrapper-continuation-execution",
+            "wrapper-continuation-execution",
+            "closure-function-wrapper-continuation-execution",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "closure_wrapper_continuation_execution",
+                "closureWrapperContinuationExecution",
+                "closure-wrapper-continuation-execution",
+                "execute_closure_wrapper_continuation",
+                "executeClosureWrapperContinuation",
+                "wrapper_continuation_execution",
+                "wrapperContinuationExecution",
+            )
+        )
+
+    @staticmethod
     def _is_closure_wrapper_continuation_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()

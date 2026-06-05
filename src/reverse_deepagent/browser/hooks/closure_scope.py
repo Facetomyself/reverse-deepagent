@@ -7,7 +7,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from reverse_deepagent.browser.base import BrowserPage
-from reverse_deepagent.browser.hooks.breakpoints import BreakpointManager, BreakpointResult, BreakpointSpec, PausedSessionActionSpec
+from reverse_deepagent.browser.hooks.breakpoints import (
+    BreakpointManager,
+    BreakpointResult,
+    BreakpointSpec,
+    PausedSessionActionSpec,
+    PausedSessionMultiStepContinuationExecutionManager,
+    PausedSessionMultiStepContinuationExecutionSpec,
+)
 
 
 JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
@@ -15,6 +22,14 @@ JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
 
 CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION = "reverse-deepagent.closure-wrapper-strategy.v1"
 DEFAULT_CLOSURE_WRAPPER_STRATEGY = "log-only-call-through"
+
+
+def _first_dict(context: dict[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        value = context.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+    return {}
 
 
 CLOSURE_WRAPPER_STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
@@ -3259,6 +3274,342 @@ class ClosureWrapperContinuationExecutionPlanManager:
             "calls_mcp": False,
             "mobile_runtime_used": False,
         }
+
+
+@dataclass(slots=True)
+class ClosureWrapperContinuationExecutionSpec:
+    """Review-gated one-iteration wrapper-aware paused-session continuation executor."""
+
+    execution_plan: dict[str, Any] = field(default_factory=dict)
+    multi_step_workflow: dict[str, Any] = field(default_factory=dict)
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    cross_process_attach_probe: dict[str, Any] = field(default_factory=dict)
+    execute_iteration: bool = False
+    review_approved: bool = False
+    selected_step_index: int = 1
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    live_callframe_id: str | None = None
+    timeout_ms: int = 5000
+    observed_paused_event: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+    require_matching_session_id: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperContinuationExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_continuation_execution")
+            or context.get("closureWrapperContinuationExecution")
+            or context.get("closure-wrapper-continuation-execution")
+            or context.get("execute_closure_wrapper_continuation")
+            or context.get("executeClosureWrapperContinuation")
+            or context.get("wrapper_continuation_execution")
+            or context.get("wrapperContinuationExecution")
+        )
+        plan_container = _first_dict(
+            context,
+            "closure_wrapper_continuation_execution_plan",
+            "closureWrapperContinuationExecutionPlan",
+            "closure-wrapper-continuation-execution-plan",
+            "wrapper_continuation_execution_plan",
+            "wrapperContinuationExecutionPlan",
+        )
+        plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        workflow_container = _first_dict(
+            context,
+            "paused_session_multi_step_continuation_workflow",
+            "pausedSessionMultiStepContinuationWorkflow",
+            "paused-session-multi-step-continuation-workflow",
+            "multi_step_continuation_workflow",
+            "multiStepContinuationWorkflow",
+            "continuation_workflow",
+            "continuationWorkflow",
+        )
+        workflow = dict(workflow_container.get("workflow")) if isinstance(workflow_container.get("workflow"), dict) else workflow_container
+        recovery_container = _first_dict(
+            context,
+            "paused_session_live_callframe_recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "paused-session-live-callframe-recovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+        )
+        recovery = dict(recovery_container.get("recovery")) if isinstance(recovery_container.get("recovery"), dict) else recovery_container
+        attach_container = _first_dict(
+            context,
+            "paused_session_cross_process_attach_probe",
+            "pausedSessionCrossProcessAttachProbe",
+            "paused-session-cross-process-attach-probe",
+            "cross_process_attach_probe",
+            "crossProcessAttachProbe",
+        )
+        attach_probe = dict(attach_container.get("probe")) if isinstance(attach_container.get("probe"), dict) else attach_container
+        if not requested and not plan:
+            return None
+        index_raw = context.get("selected_step_index", context.get("selectedStepIndex", context.get("step_index", context.get("stepIndex", 1))))
+        timeout_raw = context.get("timeout_ms", context.get("timeoutMs", 5000))
+        try:
+            selected_step_index = int(index_raw)
+        except (TypeError, ValueError):
+            selected_step_index = 1
+        try:
+            timeout_ms = int(timeout_raw)
+        except (TypeError, ValueError):
+            timeout_ms = 5000
+        execute_raw = context.get(
+            "execute_closure_wrapper_continuation",
+            context.get("executeClosureWrapperContinuation", context.get("execute_iteration", context.get("executeIteration", False))),
+        )
+        approved_raw = context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))
+        event = _first_dict(context, "observed_paused_event", "observedPausedEvent", "debugger_paused_event", "debuggerPausedEvent", "paused_event", "pausedEvent")
+        attached_session_id = context.get("attached_session_id") or context.get("attachedSessionId") or recovery.get("attached_session_id") or attach_probe.get("attached_session_id")
+        live_callframe_id = context.get("live_callframe_id") or context.get("liveCallframeId") or context.get("callFrameId") or recovery.get("live_callframe_id")
+        pause_session_id = context.get("pause_session_id") or context.get("pauseSessionId") or workflow.get("pause_session_id") or recovery.get("pause_session_id")
+        target_id = context.get("target_id") or context.get("targetId") or workflow.get("target_id") or recovery.get("target_id")
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        match_raw = context.get("require_matching_session_id", context.get("requireMatchingSessionId", True))
+        return cls(
+            execution_plan=plan,
+            multi_step_workflow=workflow,
+            live_callframe_recovery=recovery,
+            cross_process_attach_probe=attach_probe,
+            execute_iteration=bool(execute_raw),
+            review_approved=bool(approved_raw),
+            selected_step_index=max(1, selected_step_index),
+            pause_session_id=str(pause_session_id).strip() if pause_session_id else None,
+            target_id=str(target_id).strip() if target_id else None,
+            attached_session_id=str(attached_session_id).strip() if attached_session_id else None,
+            live_callframe_id=str(live_callframe_id).strip() if live_callframe_id else None,
+            timeout_ms=max(10, timeout_ms),
+            observed_paused_event=event,
+            reviewer=str(reviewer).strip() if reviewer else None,
+            require_matching_session_id=bool(match_raw),
+        )
+
+
+@dataclass(slots=True)
+class ClosureWrapperContinuationExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-continuation-execution.v1",
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ClosureWrapperContinuationExecutionManager:
+    """Execute one reviewed paused-session iteration while an existing wrapper is installed."""
+
+    def execute(self, page: BrowserPage | None, spec: ClosureWrapperContinuationExecutionSpec | None) -> ClosureWrapperContinuationExecutionResult:
+        blockers = self._blockers(spec)
+        if blockers:
+            payload = self._payload(spec, status="blocked", blockers=blockers)
+            return ClosureWrapperContinuationExecutionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy({}), reason=blockers[0])
+        if spec and not spec.execute_iteration:
+            payload = self._payload(spec, status="ready_for_review", blockers=[])
+            return ClosureWrapperContinuationExecutionResult(status="ready_for_review", execution=payload, side_effect_policy=self._side_effect_policy({}))
+        if spec and not spec.review_approved:
+            payload = self._payload(spec, status="review_required", blockers=["review_approval_required"])
+            return ClosureWrapperContinuationExecutionResult(status="review_required", execution=payload, side_effect_policy=self._side_effect_policy({}), reason="review_approval_required")
+        assert spec is not None
+        inner = PausedSessionMultiStepContinuationExecutionManager().execute(
+            page,
+            PausedSessionMultiStepContinuationExecutionSpec(
+                workflow=spec.multi_step_workflow,
+                live_callframe_recovery=spec.live_callframe_recovery,
+                cross_process_attach_probe=spec.cross_process_attach_probe,
+                execute_iteration=True,
+                review_approved=True,
+                selected_step_index=spec.selected_step_index,
+                pause_session_id=spec.pause_session_id,
+                target_id=spec.target_id,
+                attached_session_id=spec.attached_session_id,
+                live_callframe_id=spec.live_callframe_id,
+                timeout_ms=spec.timeout_ms,
+                observed_paused_event=spec.observed_paused_event,
+                reviewer=spec.reviewer,
+                require_matching_session_id=spec.require_matching_session_id,
+            ),
+        )
+        status = "executed" if inner.status == "executed" else inner.status
+        blockers_after = [] if status == "executed" else [inner.reason or "wrapper_continuation_iteration_failed"]
+        payload = self._payload(
+            spec,
+            status=status,
+            blockers=blockers_after,
+            inner_result=inner.execution,
+            inner_policy=inner.side_effect_policy,
+            error=inner.error,
+        )
+        return ClosureWrapperContinuationExecutionResult(
+            status=status,
+            execution=payload,
+            side_effect_policy=self._side_effect_policy(inner.side_effect_policy),
+            reason=blockers_after[0] if blockers_after else None,
+            error=inner.error,
+        )
+
+    @classmethod
+    def _blockers(cls, spec: ClosureWrapperContinuationExecutionSpec | None) -> list[str]:
+        if spec is None:
+            return ["closure_wrapper_continuation_execution_request_missing"]
+        blockers: list[str] = []
+        plan = spec.execution_plan
+        strategy = plan.get("execution_strategy") if isinstance(plan.get("execution_strategy"), dict) else {}
+        if not plan:
+            blockers.append("closure_wrapper_continuation_execution_plan_required")
+        else:
+            if str(plan.get("status") or "") not in {"ready_for_review"} or plan.get("ready_for_review") is not True:
+                blockers.append("closure_wrapper_continuation_execution_plan_not_ready")
+            if plan.get("same_process_wrapper_installed") is not True:
+                blockers.append("same_process_wrapper_required")
+            if plan.get("restore_plan_available") is not True:
+                blockers.append("closure_wrapper_restore_plan_required")
+            if strategy.get("automatic_wrapper_continuation_supported") is not False:
+                blockers.append("automatic_wrapper_continuation_must_remain_disabled")
+            if strategy.get("automatic_multi_step_loop_supported") is not False:
+                blockers.append("automatic_multi_step_loop_must_remain_disabled")
+            if strategy.get("supported_strategy") != DEFAULT_CLOSURE_WRAPPER_STRATEGY:
+                blockers.append("unsupported_wrapper_strategy")
+        if not spec.multi_step_workflow:
+            blockers.append("multi_step_workflow_required")
+        elif spec.multi_step_workflow.get("status") != "ready_for_review":
+            blockers.append("multi_step_workflow_not_ready")
+        if not spec.live_callframe_recovery:
+            blockers.append("live_callframe_recovery_required")
+        elif spec.live_callframe_recovery.get("status") == "blocked" or not spec.live_callframe_recovery.get("live_callframe_recovered"):
+            blockers.append("live_callframe_recovery_blocked")
+        if not spec.attached_session_id:
+            blockers.append("attached_session_id_required")
+        if not spec.live_callframe_id:
+            blockers.append("live_callframe_id_required")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: ClosureWrapperContinuationExecutionSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        inner_result: dict[str, Any] | None = None,
+        inner_policy: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        plan = spec.execution_plan if spec else {}
+        workflow = spec.multi_step_workflow if spec else {}
+        selected = inner_result.get("selected_step") if isinstance((inner_result or {}).get("selected_step"), dict) else {}
+        policy = cls._side_effect_policy(inner_policy or {})
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-continuation-execution.v1",
+            "status": status,
+            "plan_id": plan.get("plan_id"),
+            "workflow_id": workflow.get("workflow_id"),
+            "pause_session_id": spec.pause_session_id if spec else workflow.get("pause_session_id"),
+            "target_id": spec.target_id if spec else workflow.get("target_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "wrapper_strategy": plan.get("wrapper_strategy"),
+            "function_name": plan.get("function_name"),
+            "same_process_wrapper_installed": bool(plan.get("same_process_wrapper_installed")),
+            "restore_plan_available": bool(plan.get("restore_plan_available")),
+            "selected_step_index": spec.selected_step_index if spec else None,
+            "selected_step": selected,
+            "selected_method": (inner_result or {}).get("selected_method") or selected.get("method"),
+            "execute_iteration_requested": bool(spec and spec.execute_iteration),
+            "review_approved": bool(spec and spec.review_approved),
+            "executor_artifact": "workspace/paused-session-multi-step-continuation-execution.json",
+            "executor_result": inner_result or {},
+            "executor_status": (inner_result or {}).get("status"),
+            "paused_event_captured": bool((inner_result or {}).get("paused_event_captured")),
+            "manual_checkpoint_required_after_step": True,
+            "post_execution_event_harvest_required": True,
+            "expected_followup_checkpoint": "workspace/paused-session-cross-process-continuation-checkpoint.json",
+            "expected_followup_wrapper_events": "workspace/closure-wrapper-events.json",
+            "wrapper_continuation_iteration_executed": status == "executed",
+            "automatic_wrapper_continuation": False,
+            "automatic_multi_step_loop": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers, paused_captured=bool((inner_result or {}).get("paused_event_captured"))),
+            "side_effect_policy": policy,
+            "error": error,
+        }
+
+    @staticmethod
+    def _side_effect_policy(inner_policy: dict[str, Any]) -> dict[str, Any]:
+        cdp_sent = bool(inner_policy.get("cdp_command_sent"))
+        return {
+            "read_only": not cdp_sent,
+            "review_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": cdp_sent,
+            "debugger_event_subscribed": bool(inner_policy.get("debugger_event_subscribed")),
+            "paused_event_captured": bool(inner_policy.get("paused_event_captured")),
+            "browser_resumed": bool(inner_policy.get("browser_resumed")),
+            "debugger_stepped": bool(inner_policy.get("debugger_stepped")),
+            "callframe_evaluated": bool(inner_policy.get("callframe_evaluated")),
+            "runtime_mutated": False,
+            "wrapper_installed": False,
+            "wrapper_restored": False,
+            "wrapper_events_harvested": False,
+            "cross_process_action_executed": bool(inner_policy.get("cross_process_action_executed") or cdp_sent),
+            "wrapper_continuation_iteration_executed": cdp_sent,
+            "bounded_one_iteration_only": True,
+            "automatic_wrapper_continuation": False,
+            "automatic_multi_step_loop": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "closure_wrapper_continuation_execution_request_missing": ("request", "No wrapper continuation execution request was provided.", "request_closure_wrapper_continuation_execution"),
+            "closure_wrapper_continuation_execution_plan_required": ("plan", "A ready wrapper continuation execution plan is required.", "plan_closure_wrapper_continuation_execution"),
+            "closure_wrapper_continuation_execution_plan_not_ready": ("plan", "The wrapper continuation execution plan is not ready for review.", "review_closure_wrapper_continuation_execution_plan"),
+            "same_process_wrapper_required": ("wrapper", "A same-process reviewed wrapper must already be installed.", "install_reviewed_same_process_closure_wrapper"),
+            "closure_wrapper_restore_plan_required": ("wrapper", "A restore plan must exist before wrapper-aware continuation execution.", "capture_closure_wrapper_restore_plan"),
+            "automatic_wrapper_continuation_must_remain_disabled": ("safety", "This executor only performs one reviewed iteration, not automatic wrapper continuation.", "disable_automatic_wrapper_continuation"),
+            "automatic_multi_step_loop_must_remain_disabled": ("safety", "This executor does not run automatic multi-step loops.", "disable_automatic_multi_step_loop"),
+            "unsupported_wrapper_strategy": ("wrapper", "Only log-only-call-through wrapper continuation is supported.", "choose_log_only_call_through_strategy"),
+            "multi_step_workflow_required": ("workflow", "A ready multi-step paused-session workflow is required.", "plan_multi_step_continuation_workflow"),
+            "multi_step_workflow_not_ready": ("workflow", "The supplied multi-step workflow is not ready.", "review_or_replan_multi_step_continuation_workflow"),
+            "live_callframe_recovery_required": ("debugger", "Fresh live callFrame recovery evidence is required.", "recover_live_callframe_from_checkpoint"),
+            "live_callframe_recovery_blocked": ("debugger", "The supplied live callFrame recovery evidence is blocked.", "resolve_live_callframe_recovery_blockers"),
+            "attached_session_id_required": ("debugger", "The retained attached session id is required.", "provide_attached_session_id"),
+            "live_callframe_id_required": ("debugger", "The recovered live callFrame id is required.", "recover_live_callframe_from_checkpoint"),
+            "review_approval_required": ("review", "Executing wrapper-aware continuation requires explicit review approval.", "approve_closure_wrapper_continuation_iteration"),
+            "wrapper_continuation_iteration_failed": ("runtime", "The underlying paused-session iteration failed.", "inspect_closure_wrapper_continuation_execution"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_execution"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_execution"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_execution"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], paused_captured: bool) -> str:
+        if blockers:
+            return "inspect_closure_wrapper_continuation_execution_blockers"
+        if status in {"ready_for_review", "review_required"}:
+            return "approve_closure_wrapper_continuation_iteration"
+        if status == "executed" and paused_captured:
+            return "harvest_wrapper_events_and_checkpoint_continuation"
+        if status == "executed":
+            return "harvest_closure_wrapper_events_after_reviewed_execution"
+        return "inspect_closure_wrapper_continuation_execution"
 
 
 def _string_or_none(value: Any) -> str | None:

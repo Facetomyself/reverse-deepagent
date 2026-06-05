@@ -343,6 +343,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_closure_wrapper_events", "workspace/closure-wrapper-events.json", "/workspace/hooks/", "closure-wrapper-events.json", "hook-timeline", ("debugger", "hook", "timeline", "review")),
         ("workspace_closure_wrapper_continuation_readiness", "workspace/closure-wrapper-continuation-readiness.json", "/workspace/hooks/", "closure-wrapper-continuation-readiness.json", "triage", ("debugger", "hook", "review")),
         ("workspace_closure_wrapper_continuation_execution_plan", "workspace/closure-wrapper-continuation-execution-plan.json", "/workspace/hooks/", "closure-wrapper-continuation-execution-plan.json", "triage", ("debugger", "hook", "review")),
+        ("workspace_closure_wrapper_continuation_execution", "workspace/closure-wrapper-continuation-execution.json", "/workspace/hooks/", "closure-wrapper-continuation-execution.json", "audit", ("debugger", "hook", "review")),
         ("workspace_protection_triage_hooks", "workspace/protection-triage-hooks.json", "/workspace/hooks/", "protection-triage-hooks.json", "hook-timeline", ("hook", "debugger", "review")),
         ("workspace_wasm_runtime_candidates", "workspace/wasm-runtime-candidates.json", "/workspace/runtime/", "wasm-runtime-candidates.json", "runtime-context", ("hook", "web_recon", "review")),
         ("workspace_vm_dispatcher_candidates", "workspace/vm-dispatcher-candidates.json", "/workspace/runtime/", "vm-dispatcher-candidates.json", "runtime-context", ("debugger", "hook", "review")),

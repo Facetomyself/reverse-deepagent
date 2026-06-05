@@ -4821,6 +4821,100 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["wrapper_installed"])
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_native_web_runtime_executes_reviewed_closure_wrapper_continuation_iteration(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-continuation-execution",
+            {
+                "closure_wrapper_continuation_execution": True,
+                "execute_closure_wrapper_continuation": True,
+                "review_approved": True,
+                "selected_step_index": 1,
+                "closure_wrapper_continuation_execution_plan": {
+                    "plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "plan_id": "native-wrapper-plan-1",
+                        "wrapper_strategy": "log-only-call-through",
+                        "function_name": "buildSign",
+                        "same_process_wrapper_installed": True,
+                        "restore_plan_available": True,
+                        "execution_strategy": {
+                            "supported_strategy": "log-only-call-through",
+                            "automatic_wrapper_continuation_supported": False,
+                            "automatic_multi_step_loop_supported": False,
+                        },
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "native-wrapper-workflow-1",
+                        "planned_steps": [
+                            {"step_index": 1, "requested_action": "step_over", "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver:"}
+                        ],
+                        "duplicate_fingerprints": [],
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "native-wrapper-pause-1",
+                        "target_id": "native-wrapper-target-1",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "native-wrapper-cf-1",
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "native-wrapper-cf-1",
+                "timeout_ms": 10,
+                "observed_paused_event": {
+                    "sessionId": "attached-session-1",
+                    "params": {
+                        "reason": "step",
+                        "callFrames": [
+                            {
+                                "callFrameId": "native-wrapper-cf-2",
+                                "functionName": "buildSign",
+                                "location": {"scriptId": "script-1", "lineNumber": 9, "columnNumber": 0},
+                                "url": "https://example.test/assets/app.js",
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_reviewed_closure_wrapper_continuation_iteration"])
+        self.assertEqual(result.next_action, "harvest_wrapper_events_and_checkpoint_continuation")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-continuation-execution.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "executed")
+        self.assertEqual(result.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertEqual(result.artifacts[0].metadata["function_name"], "buildSign")
+        self.assertEqual(result.artifacts[0].metadata["selected_method"], "Debugger.stepOver")
+        self.assertTrue(result.artifacts[0].metadata["paused_event_captured"])
+        self.assertTrue(result.artifacts[0].metadata["post_execution_event_harvest_required"])
+        self.assertIn("closure_wrapper_continuation_execution_status=executed", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_cdp_command_sent=True", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_event_subscribed=True", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_paused_event_captured=True", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_runtime_mutated=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_wrapper_installed=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_wrapper_restored=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_wrapper_events_harvested=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_automatic_wrapper_continuation=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_automatic_multi_step_loop=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_calls_mcp=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_execution_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count + 1)
+        self.assertEqual(page._cdp_session.calls[-1][0], "Debugger.stepOver")
+
     def test_native_web_runtime_reviews_cross_process_session_lifecycle_without_side_effects(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

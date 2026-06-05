@@ -8,6 +8,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperAssignmentSafetySpec,
     ClosureWrapperContinuationExecutionPlanManager,
     ClosureWrapperContinuationExecutionPlanSpec,
+    ClosureWrapperContinuationExecutionManager,
+    ClosureWrapperContinuationExecutionSpec,
     ClosureWrapperContinuationReadinessManager,
     ClosureWrapperContinuationReadinessSpec,
     ClosureWrapperEventHarvestManager,
@@ -1102,6 +1104,90 @@ class ClosureWrapperContinuationExecutionPlanManagerTests(unittest.TestCase):
         self.assertFalse(policy["wrapper_installed"])
         self.assertFalse(policy["calls_mcp"])
         self.assertFalse(policy["mobile_runtime_used"])
+
+
+class ClosureWrapperContinuationExecutionManagerTests(unittest.TestCase):
+    def test_ready_for_review_without_executing_iteration(self) -> None:
+        spec = ClosureWrapperContinuationExecutionSpec.from_context(
+            {
+                "closure_wrapper_continuation_execution": True,
+                "closure_wrapper_continuation_execution_plan": {
+                    "plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "plan_id": "wrapper-continuation-plan-1",
+                        "wrapper_strategy": "log-only-call-through",
+                        "function_name": "buildSign",
+                        "same_process_wrapper_installed": True,
+                        "restore_plan_available": True,
+                        "execution_strategy": {
+                            "supported_strategy": "log-only-call-through",
+                            "automatic_wrapper_continuation_supported": False,
+                            "automatic_multi_step_loop_supported": False,
+                        },
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "wrapper-workflow-1",
+                        "planned_steps": [
+                            {"step_index": 1, "requested_action": "step_over", "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver:"}
+                        ],
+                        "duplicate_fingerprints": [],
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "cf-live-1",
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "cf-live-1",
+            }
+        )
+
+        result = ClosureWrapperContinuationExecutionManager().execute(None, spec)
+        execution = result.execution
+        policy = result.side_effect_policy
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(execution["schema_version"], "reverse-deepagent.closure-wrapper-continuation-execution.v1")
+        self.assertEqual(execution["next_action"], "approve_closure_wrapper_continuation_iteration")
+        self.assertEqual(execution["wrapper_strategy"], "log-only-call-through")
+        self.assertFalse(execution["wrapper_continuation_iteration_executed"])
+        self.assertFalse(execution["automatic_wrapper_continuation"])
+        self.assertFalse(execution["automatic_multi_step_loop"])
+        self.assertTrue(policy["read_only"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["runtime_mutated"])
+        self.assertFalse(policy["wrapper_installed"])
+        self.assertFalse(policy["wrapper_restored"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
+
+    def test_blocks_without_plan_or_workflow(self) -> None:
+        spec = ClosureWrapperContinuationExecutionSpec.from_context(
+            {
+                "closure_wrapper_continuation_execution": True,
+            }
+        )
+
+        result = ClosureWrapperContinuationExecutionManager().execute(None, spec)
+        execution = result.execution
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("closure_wrapper_continuation_execution_plan_required", execution["blockers"])
+        self.assertIn("multi_step_workflow_required", execution["blockers"])
+        self.assertIn("live_callframe_recovery_required", execution["blockers"])
+        self.assertEqual(execution["next_action"], "inspect_closure_wrapper_continuation_execution_blockers")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
 
 
 class ClosureWrapperEventHarvestManagerTests(unittest.TestCase):
