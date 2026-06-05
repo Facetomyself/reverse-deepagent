@@ -8,6 +8,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperAssignmentSafetySpec,
     ClosureWrapperContinuationCheckpointManager,
     ClosureWrapperContinuationCheckpointSpec,
+    ClosureWrapperContinuationNextIterationPlanManager,
+    ClosureWrapperContinuationNextIterationPlanSpec,
     ClosureWrapperContinuationExecutionPlanManager,
     ClosureWrapperContinuationExecutionPlanSpec,
     ClosureWrapperContinuationExecutionManager,
@@ -1283,6 +1285,131 @@ class ClosureWrapperContinuationCheckpointManagerTests(unittest.TestCase):
         self.assertIn("closure_wrapper_events_required", checkpoint["blockers"])
         self.assertIn("paused_session_continuation_checkpoint_required", checkpoint["blockers"])
         self.assertEqual(checkpoint["next_action"], "harvest_wrapper_events_after_reviewed_execution")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+
+class ClosureWrapperContinuationNextIterationPlanManagerTests(unittest.TestCase):
+    def test_plans_next_iteration_from_checkpoint_and_loop_without_side_effects(self) -> None:
+        spec = ClosureWrapperContinuationNextIterationPlanSpec.from_context(
+            {
+                "closure_wrapper_continuation_next_iteration_plan": True,
+                "closure_wrapper_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "plan_id": "wrapper-continuation-plan-1",
+                        "workflow_id": "wrapper-workflow-1",
+                        "pause_session_id": "pause-1",
+                        "target_id": "target-1",
+                        "wrapper_strategy": "log-only-call-through",
+                        "function_name": "buildSign",
+                        "post_execution_event_count": 1,
+                        "paused_session_checkpoint_status": "ready_for_next_action_review",
+                        "next_iteration_available": True,
+                        "next_iteration_step_index": 2,
+                        "next_iteration_method": "Debugger.stepOver",
+                        "followup_requirements": {
+                            "manual_review_required_before_next_iteration": True,
+                            "automatic_wrapper_continuation": False,
+                            "automatic_multi_step_loop": False,
+                        },
+                    }
+                },
+                "closure_wrapper_continuation_execution_plan": {
+                    "plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "plan_id": "wrapper-continuation-plan-1",
+                        "wrapper_strategy": "log-only-call-through",
+                        "function_name": "buildSign",
+                        "same_process_wrapper_installed": True,
+                        "restore_plan_available": True,
+                        "execution_strategy": {
+                            "supported_strategy": "log-only-call-through",
+                            "automatic_wrapper_continuation_supported": False,
+                            "automatic_multi_step_loop_supported": False,
+                        },
+                    }
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "workflow_id": "wrapper-workflow-1",
+                        "pause_session_id": "pause-1",
+                        "target_id": "target-1",
+                        "next_iteration": {
+                            "available": True,
+                            "workflow_step_index": 2,
+                            "method": "Debugger.stepOver",
+                            "fingerprint": "2:Debugger.stepOver:",
+                        },
+                        "readiness": {"automatic_multi_step_loop_supported": False},
+                    }
+                },
+            }
+        )
+
+        result = ClosureWrapperContinuationNextIterationPlanManager().plan(spec)
+        plan = result.plan
+        policy = result.side_effect_policy
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(plan["schema_version"], "reverse-deepagent.closure-wrapper-continuation-next-iteration-plan.v1")
+        self.assertTrue(plan["ready_for_review"])
+        self.assertEqual(plan["next_iteration_step_index"], 2)
+        self.assertEqual(plan["next_iteration_method"], "Debugger.stepOver")
+        self.assertTrue(plan["fresh_live_callframe_required_before_execution"])
+        self.assertEqual(plan["next_action"], "recover_live_callframe_for_next_wrapper_iteration")
+        self.assertEqual(plan["next_execution_review_input"]["selected_step_index"], 2)
+        self.assertTrue(plan["next_execution_review_input"]["requires_fresh_live_callframe"])
+        self.assertTrue(plan["review_gates"]["manual_review_required_before_execution"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["debugger_event_subscribed"])
+        self.assertFalse(policy["paused_event_captured"])
+        self.assertFalse(policy["callframe_evaluated"])
+        self.assertFalse(policy["runtime_mutated"])
+        self.assertFalse(policy["wrapper_installed"])
+        self.assertFalse(policy["wrapper_restored"])
+        self.assertFalse(policy["wrapper_events_harvested"])
+        self.assertFalse(policy["live_callframe_recovered"])
+        self.assertFalse(policy["wrapper_continuation_iteration_executed"])
+        self.assertFalse(policy["queue_advanced"])
+        self.assertFalse(policy["loop_advanced"])
+        self.assertFalse(policy["automatic_wrapper_continuation"])
+        self.assertFalse(policy["automatic_multi_step_loop"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
+
+    def test_blocks_without_checkpoint_or_loop_plan(self) -> None:
+        spec = ClosureWrapperContinuationNextIterationPlanSpec.from_context(
+            {
+                "closure_wrapper_continuation_next_iteration_plan": True,
+                "closure_wrapper_continuation_execution_plan": {
+                    "plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "same_process_wrapper_installed": True,
+                        "restore_plan_available": True,
+                        "execution_strategy": {
+                            "supported_strategy": "log-only-call-through",
+                            "automatic_wrapper_continuation_supported": False,
+                            "automatic_multi_step_loop_supported": False,
+                        },
+                    }
+                },
+            }
+        )
+
+        result = ClosureWrapperContinuationNextIterationPlanManager().plan(spec)
+        plan = result.plan
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("closure_wrapper_continuation_checkpoint_required", plan["blockers"])
+        self.assertIn("paused_session_multi_step_loop_plan_required", plan["blockers"])
+        self.assertEqual(plan["next_action"], "review_closure_wrapper_continuation_checkpoint")
         self.assertTrue(result.side_effect_policy["read_only"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])

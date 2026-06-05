@@ -551,6 +551,56 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["side_effect_policy"]["read_only"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_continuation_next_iteration_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_continuation_next_iteration_plan": {
+                "status": "ready_for_review",
+                "plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "next_iteration_step_index": 2,
+                    "next_iteration_method": "Debugger.stepOver",
+                    "next_action": "recover_live_callframe_for_next_wrapper_iteration",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_continuation_next_iteration_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_closure_wrapper_continuation_next_iteration_plan")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_plan_status"], "ready_for_review")
+        self.assertTrue(result["summary"]["closure_wrapper_continuation_next_iteration_plan_ready"])
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_plan_step_index"], 2)
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_plan_method"], "Debugger.stepOver")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_plan_next_action"], "recover_live_callframe_for_next_wrapper_iteration")
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_continuation_next_iteration_plan_status"], "ready_for_review")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
+    def test_review_hook_artifacts_blocks_closure_wrapper_continuation_next_iteration_plan(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_continuation_next_iteration_plan": {
+                "status": "blocked",
+                "plan": {
+                    "status": "blocked",
+                    "blockers": ["closure_wrapper_continuation_checkpoint_required"],
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("closure_wrapper_continuation_next_iteration_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_closure_wrapper_continuation_next_iteration_plan_blockers")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_plan_status"], "blocked")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
     def test_review_hook_artifacts_warns_for_async_chunk_traversal_graph(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
