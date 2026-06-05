@@ -32,6 +32,21 @@ class DebuggerSubagentTests(unittest.TestCase):
                     "reason": "live_paused_session_required",
                     "requested_action": "resume",
                     "live_continuation_available": False,
+                    "live_session_diagnostics": {
+                        "live_session_available": False,
+                        "debugger_session_lifecycle": "retained_paused",
+                        "same_process_required_for_live_action": True,
+                    },
+                    "target_diagnostics": {
+                        "target_attached": False,
+                        "cdp_target_available": False,
+                        "target_attached_source": "durable_snapshot_inspect_only",
+                    },
+                    "callframe_diagnostics": {
+                        "stable_callframe_required": False,
+                        "stable_callframe_available": False,
+                        "callframe_count": 1,
+                    },
                 },
             },
             "callframes": [
@@ -50,6 +65,10 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertIn("paused_session_action_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "use_live_same_process_paused_session_before_resume_step_or_evaluate")
         self.assertEqual(result["summary"]["session_id"], "durable-1")
+        self.assertFalse(result["summary"]["live_session_diagnostics"]["live_session_available"])
+        self.assertTrue(result["summary"]["live_session_diagnostics"]["same_process_required_for_live_action"])
+        self.assertEqual(result["summary"]["target_diagnostics"]["target_attached_source"], "durable_snapshot_inspect_only")
+        self.assertFalse(result["review_required_items"][0]["diagnostics"]["target_attached"])
         self.assertEqual(result["summary"]["callframe_count"], 1)
         self.assertEqual(result["summary"]["top_callframes"][0]["function_name"], "buildSign")
         self.assertEqual(result["review_required_items"][0]["code"], "paused_session_action_blocked")
@@ -97,6 +116,26 @@ class DebuggerSubagentTests(unittest.TestCase):
                     "cross_process_live_continuation_supported": False,
                     "blockers": ["live_paused_session_required", "target_not_attached"],
                     "reason": "live_paused_session_required",
+                    "live_session_diagnostics": {
+                        "live_session_available": False,
+                        "debugger_session_lifecycle": "retained_paused",
+                        "same_process_required_for_live_action": True,
+                    },
+                    "target_diagnostics": {
+                        "target_attached": False,
+                        "cdp_target_available": False,
+                        "target_attached_source": "not_attached",
+                    },
+                    "callframe_diagnostics": {
+                        "stable_callframe_required": True,
+                        "stable_callframe_available": False,
+                        "selected_callframe_has_id": False,
+                    },
+                    "action_capability": {
+                        "requested_action": "resume",
+                        "is_live_action": True,
+                        "resume_supported": False,
+                    },
                 },
                 "side_effect_policy": {
                     "read_only": True,
@@ -117,6 +156,11 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(result["summary"]["live_continuation_available"])
         self.assertFalse(result["summary"]["cross_process_live_continuation_supported"])
         self.assertEqual(result["summary"]["preflight_blockers"], ["live_paused_session_required", "target_not_attached"])
+        self.assertFalse(result["summary"]["live_session_diagnostics"]["live_session_available"])
+        self.assertEqual(result["summary"]["target_diagnostics"]["target_attached_source"], "not_attached")
+        self.assertTrue(result["summary"]["callframe_diagnostics"]["stable_callframe_required"])
+        self.assertTrue(result["summary"]["action_capability"]["is_live_action"])
+        self.assertTrue(result["review_required_items"][0]["diagnostics"]["same_process_required_for_live_action"])
         self.assertTrue(result["side_effect_policy"]["read_only"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
         self.assertFalse(result["side_effect_policy"]["browser_resumed"])

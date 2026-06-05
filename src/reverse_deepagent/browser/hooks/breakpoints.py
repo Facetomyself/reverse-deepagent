@@ -498,6 +498,10 @@ class PausedSessionLiveContinuationPreflightManager:
         live_available = same_process_registry and lifecycle != "resumed" and target_attached and cdp_target_available and not blockers
         live_action = bool(spec and (spec.requested_action in cls.LIVE_ACTIONS or spec.require_live_action))
         inspect_supported = bool(durable_snapshot or same_process_registry or callframes)
+        stable_callframe_required = bool(spec and cls._requires_stable_callframe(spec))
+        selected_callframe_has_id = cls._selected_callframe_has_id(spec, callframes) if spec else False
+        stable_callframe_available = same_process_registry and selected_callframe_has_id
+        selected_callframe = cls._selected_callframe_summary(spec, callframes) if spec else {}
         payload_status = "live_available" if live_available else "blocked" if blockers and live_action else "inspect_only" if inspect_supported else "unavailable"
         return {
             "schema_version": "reverse-deepagent.paused-session-live-continuation-preflight.v1",
@@ -518,10 +522,50 @@ class PausedSessionLiveContinuationPreflightManager:
             "step_supported": live_available,
             "resume_supported": live_available,
             "callframe_count": len(callframes),
-            "selected_callframe_has_id": cls._selected_callframe_has_id(spec, callframes) if spec else False,
+            "selected_callframe_has_id": selected_callframe_has_id,
             "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
             "reason": blockers[0] if blockers else None,
             "next_action": cls._next_action(live_available=live_available, blockers=blockers),
+            "live_session_diagnostics": {
+                "same_process_registry": same_process_registry,
+                "registry_entry_found": bool(registry_entry),
+                "durable_snapshot_found": bool(durable_snapshot),
+                "provided_artifact_found": bool(spec and any((spec.debugger_session, spec.paused, spec.callframes))),
+                "debugger_session_lifecycle": lifecycle or "unknown",
+                "live_session_available": same_process_registry and lifecycle != "resumed",
+                "cross_process_live_continuation_supported": False,
+                "cross_process_resume_supported": False,
+                "cross_process_step_supported": False,
+                "cross_process_evaluate_supported": False,
+                "same_process_required_for_live_action": True,
+            },
+            "target_diagnostics": {
+                "target_attached": target_attached,
+                "cdp_target_available": cdp_target_available,
+                "target_attached_source": "explicit_context" if spec and spec.target_attached is not None else "same_process_registry" if same_process_registry else "not_attached",
+                "cdp_target_available_source": "explicit_context" if spec and spec.cdp_target_available is not None else "same_process_registry" if same_process_registry else "not_available",
+                "would_attach_cdp_target": False,
+                "would_probe_cdp_target": False,
+            },
+            "callframe_diagnostics": {
+                "stable_callframe_required": stable_callframe_required,
+                "stable_callframe_available": stable_callframe_available,
+                "selected_callframe_has_id": selected_callframe_has_id,
+                "selected_callframe_index": spec.callframe_index if spec else None,
+                "selected_callframe": selected_callframe,
+                "callframe_count": len(callframes),
+                "evaluate_requires_live_callframe": bool(spec and spec.requested_action in {"evaluate", "evaluate_on_callframe", "eval"}),
+            },
+            "action_capability": {
+                "requested_action": spec.requested_action if spec else None,
+                "is_live_action": live_action,
+                "inspect_supported": inspect_supported,
+                "evaluate_supported": live_available,
+                "step_supported": live_available,
+                "resume_supported": live_available,
+                "reason": blockers[0] if blockers else None,
+            },
             "required_for_live": [
                 "same_process_registry",
                 "active_cdp_session",
@@ -530,6 +574,51 @@ class PausedSessionLiveContinuationPreflightManager:
                 "stable_callframe_id_for_evaluate",
             ],
             "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "live_paused_session_required": {
+                "category": "session_lifecycle",
+                "explanation": "Live resume, step, or callframe evaluation requires a retained same-process paused session.",
+                "next_action": "reproduce_pause_in_current_process_before_live_action",
+            },
+            "target_not_attached": {
+                "category": "cdp_target",
+                "explanation": "No currently attached CDP target is proven for this paused session.",
+                "next_action": "reproduce_pause_with_attached_browser_target",
+            },
+            "debugger_session_not_live": {
+                "category": "session_lifecycle",
+                "explanation": "The available evidence is a durable snapshot, provided artifact, missing session, or already-resumed session rather than a live registry entry.",
+                "next_action": "use_same_process_registry_entry_or_limit_to_inspect_only",
+            },
+            "cdp_target_unavailable": {
+                "category": "cdp_target",
+                "explanation": "No live CDP session/target is available for sending debugger continuation commands.",
+                "next_action": "reproduce_pause_against_a_live_cdp_capable_provider",
+            },
+            "callframe_id_not_stable": {
+                "category": "callframe",
+                "explanation": "Callframe evaluation requires a stable live callFrameId from the retained paused event.",
+                "next_action": "reproduce_pause_and_capture_stable_live_callframe",
+            },
+        }
+        return [{"code": blocker, **catalog.get(blocker, {"category": "unknown", "explanation": blocker, "next_action": "inspect_preflight_blocker"})} for blocker in blockers]
+
+    @staticmethod
+    def _selected_callframe_summary(spec: PausedSessionLiveContinuationPreflightSpec, callframes: list[dict[str, Any]]) -> dict[str, Any]:
+        if spec.callframe_index < 0 or spec.callframe_index >= len(callframes):
+            return {}
+        frame = callframes[spec.callframe_index]
+        location = frame.get("location") if isinstance(frame.get("location"), dict) else {}
+        return {
+            "function_name": frame.get("functionName") or frame.get("function_name") or frame.get("name"),
+            "url": frame.get("url") or location.get("url"),
+            "line_number": location.get("lineNumber", location.get("line_number")),
+            "column_number": location.get("columnNumber", location.get("column_number")),
+            "has_callframe_id": bool(frame.get("callFrameId")),
         }
 
     @staticmethod
@@ -841,7 +930,11 @@ class BreakpointManager:
             "live_continuation_available": False,
             "resume_supported": False,
             "reason": "durable snapshot is inspect-only; live CDP continuation requires same-process registry",
-            "continuation_preflight": self._durable_paused_session_preflight(session_id=session_id),
+            "continuation_preflight": self._durable_paused_session_preflight(
+                session_id=session_id,
+                callframes=self._callframes_from_paused(paused_events),
+                lifecycle=str(debugger_session.get("lifecycle") or "retained_paused"),
+            ),
             "breakpoints": breakpoints,
             "paused": self._paused_summary(paused_events, pause_subscription),
             "callframes": self._callframes_from_paused(paused_events),
@@ -922,6 +1015,7 @@ class BreakpointManager:
 
     @staticmethod
     def _missing_paused_session_preflight(reason: str, spec: PausedSessionActionSpec | None = None) -> dict[str, Any]:
+        blockers = ["live_paused_session_required", "target_not_attached", "debugger_session_not_live", "cdp_target_unavailable"]
         return {
             "status": "unavailable",
             "source": "missing",
@@ -936,6 +1030,47 @@ class BreakpointManager:
             "step_supported": False,
             "resume_supported": False,
             "reason": reason,
+            "blockers": blockers,
+            "blocker_details": PausedSessionLiveContinuationPreflightManager._blocker_details(blockers),
+            "live_session_diagnostics": {
+                "same_process_registry": False,
+                "registry_entry_found": False,
+                "durable_snapshot_found": False,
+                "provided_artifact_found": False,
+                "debugger_session_lifecycle": "missing",
+                "live_session_available": False,
+                "cross_process_live_continuation_supported": False,
+                "cross_process_resume_supported": False,
+                "cross_process_step_supported": False,
+                "cross_process_evaluate_supported": False,
+                "same_process_required_for_live_action": True,
+            },
+            "target_diagnostics": {
+                "target_attached": False,
+                "cdp_target_available": False,
+                "target_attached_source": "missing",
+                "cdp_target_available_source": "missing",
+                "would_attach_cdp_target": False,
+                "would_probe_cdp_target": False,
+            },
+            "callframe_diagnostics": {
+                "stable_callframe_required": bool(spec and spec.action in {"evaluate", "eval", "evaluate_on_callframe"}),
+                "stable_callframe_available": False,
+                "selected_callframe_has_id": False,
+                "selected_callframe_index": spec.callframe_index if spec else None,
+                "selected_callframe": {},
+                "callframe_count": 0,
+                "evaluate_requires_live_callframe": bool(spec and spec.action in {"evaluate", "eval", "evaluate_on_callframe"}),
+            },
+            "action_capability": {
+                "requested_action": spec.action if spec else None,
+                "is_live_action": bool(spec and spec.action in PausedSessionLiveContinuationPreflightManager.LIVE_ACTIONS),
+                "inspect_supported": False,
+                "evaluate_supported": False,
+                "step_supported": False,
+                "resume_supported": False,
+                "reason": reason,
+            },
         }
 
     @staticmethod
@@ -943,6 +1078,19 @@ class BreakpointManager:
         debugger_session = entry.get("debugger_session") if isinstance(entry.get("debugger_session"), dict) else {}
         lifecycle = str(debugger_session.get("lifecycle") or "retained_paused")
         live_available = lifecycle != "resumed"
+        callframes = BreakpointManager._callframes_from_paused(entry.get("paused_events", [])) if isinstance(entry.get("paused_events"), list) else []
+        selected_has_id = 0 <= spec.callframe_index < len(callframes) and bool(callframes[spec.callframe_index].get("callFrameId"))
+        selected_summary = {}
+        if 0 <= spec.callframe_index < len(callframes):
+            frame = callframes[spec.callframe_index]
+            location = frame.get("location") if isinstance(frame.get("location"), dict) else {}
+            selected_summary = {
+                "function_name": frame.get("functionName") or frame.get("function_name") or frame.get("name"),
+                "url": frame.get("url") or location.get("url"),
+                "line_number": location.get("lineNumber", location.get("line_number")),
+                "column_number": location.get("columnNumber", location.get("column_number")),
+                "has_callframe_id": selected_has_id,
+            }
         return {
             "status": "live_available" if live_available else "unavailable",
             "source": "registry",
@@ -959,10 +1107,54 @@ class BreakpointManager:
             "step_supported": live_available,
             "resume_supported": live_available,
             "reason": None if live_available else "paused_session_already_resumed",
+            "blockers": [] if live_available else ["debugger_session_not_live"],
+            "blocker_details": [] if live_available else PausedSessionLiveContinuationPreflightManager._blocker_details(["debugger_session_not_live"]),
+            "live_session_diagnostics": {
+                "same_process_registry": True,
+                "registry_entry_found": True,
+                "durable_snapshot_found": False,
+                "provided_artifact_found": False,
+                "debugger_session_lifecycle": lifecycle,
+                "live_session_available": live_available,
+                "cross_process_live_continuation_supported": False,
+                "cross_process_resume_supported": False,
+                "cross_process_step_supported": False,
+                "cross_process_evaluate_supported": False,
+                "same_process_required_for_live_action": True,
+            },
+            "target_diagnostics": {
+                "target_attached": live_available,
+                "cdp_target_available": live_available,
+                "target_attached_source": "same_process_registry",
+                "cdp_target_available_source": "same_process_registry",
+                "would_attach_cdp_target": False,
+                "would_probe_cdp_target": False,
+            },
+            "callframe_diagnostics": {
+                "stable_callframe_required": spec.action in {"evaluate", "eval", "evaluate_on_callframe"} or bool(spec.callframe_evaluations),
+                "stable_callframe_available": live_available and selected_has_id,
+                "selected_callframe_has_id": selected_has_id,
+                "selected_callframe_index": spec.callframe_index,
+                "selected_callframe": selected_summary,
+                "callframe_count": len(callframes),
+                "evaluate_requires_live_callframe": spec.action in {"evaluate", "eval", "evaluate_on_callframe"} or bool(spec.callframe_evaluations),
+            },
+            "action_capability": {
+                "requested_action": spec.action,
+                "is_live_action": spec.action in PausedSessionLiveContinuationPreflightManager.LIVE_ACTIONS or bool(spec.debugger_actions or spec.callframe_evaluations),
+                "inspect_supported": live_available,
+                "evaluate_supported": live_available,
+                "step_supported": live_available,
+                "resume_supported": live_available,
+                "reason": None if live_available else "paused_session_already_resumed",
+            },
         }
 
     @staticmethod
-    def _durable_paused_session_preflight(*, session_id: str) -> dict[str, Any]:
+    def _durable_paused_session_preflight(*, session_id: str, callframes: list[dict[str, Any]] | None = None, lifecycle: str = "retained_paused") -> dict[str, Any]:
+        callframes = callframes or []
+        selected = callframes[0] if callframes else {}
+        location = selected.get("location") if isinstance(selected.get("location"), dict) else {}
         return {
             "status": "inspect_only",
             "source": "durable_snapshot",
@@ -976,10 +1168,61 @@ class BreakpointManager:
             "step_supported": False,
             "resume_supported": False,
             "reason": "durable_snapshot_is_inspect_only",
+            "blockers": ["live_paused_session_required", "target_not_attached", "debugger_session_not_live", "cdp_target_unavailable"],
+            "blocker_details": PausedSessionLiveContinuationPreflightManager._blocker_details(
+                ["live_paused_session_required", "target_not_attached", "debugger_session_not_live", "cdp_target_unavailable"]
+            ),
+            "live_session_diagnostics": {
+                "same_process_registry": False,
+                "registry_entry_found": False,
+                "durable_snapshot_found": True,
+                "provided_artifact_found": False,
+                "debugger_session_lifecycle": lifecycle,
+                "live_session_available": False,
+                "cross_process_live_continuation_supported": False,
+                "cross_process_resume_supported": False,
+                "cross_process_step_supported": False,
+                "cross_process_evaluate_supported": False,
+                "same_process_required_for_live_action": True,
+            },
+            "target_diagnostics": {
+                "target_attached": False,
+                "cdp_target_available": False,
+                "target_attached_source": "durable_snapshot_inspect_only",
+                "cdp_target_available_source": "durable_snapshot_inspect_only",
+                "would_attach_cdp_target": False,
+                "would_probe_cdp_target": False,
+            },
+            "callframe_diagnostics": {
+                "stable_callframe_required": False,
+                "stable_callframe_available": False,
+                "selected_callframe_has_id": bool(selected.get("callFrameId")),
+                "selected_callframe_index": 0 if callframes else None,
+                "selected_callframe": {
+                    "function_name": selected.get("functionName") or selected.get("function_name") or selected.get("name"),
+                    "url": selected.get("url") or location.get("url"),
+                    "line_number": location.get("lineNumber", location.get("line_number")),
+                    "column_number": location.get("columnNumber", location.get("column_number")),
+                    "has_callframe_id": bool(selected.get("callFrameId")),
+                } if selected else {},
+                "callframe_count": len(callframes),
+                "evaluate_requires_live_callframe": False,
+            },
+            "action_capability": {
+                "requested_action": None,
+                "is_live_action": False,
+                "inspect_supported": True,
+                "evaluate_supported": False,
+                "step_supported": False,
+                "resume_supported": False,
+                "reason": "durable_snapshot_is_inspect_only",
+            },
             "required_for_live": [
                 "same_process_registry",
                 "active_cdp_session",
+                "attached_cdp_target",
                 "retained_paused_lifecycle",
+                "stable_callframe_id_for_evaluate",
             ],
         }
 

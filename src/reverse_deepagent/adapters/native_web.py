@@ -1112,6 +1112,10 @@ class NativeWebRuntime(WebReverseRuntime):
             preflight = result.preflight if isinstance(result.preflight, dict) else {}
             policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
             blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            live_session_diagnostics = preflight.get("live_session_diagnostics") if isinstance(preflight.get("live_session_diagnostics"), dict) else {}
+            target_diagnostics = preflight.get("target_diagnostics") if isinstance(preflight.get("target_diagnostics"), dict) else {}
+            callframe_diagnostics = preflight.get("callframe_diagnostics") if isinstance(preflight.get("callframe_diagnostics"), dict) else {}
+            action_capability = preflight.get("action_capability") if isinstance(preflight.get("action_capability"), dict) else {}
             verification = [
                 f"paused_session_live_preflight_status={result.status}",
                 f"paused_session_live_preflight_reason={result.reason or ''}",
@@ -1124,6 +1128,14 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"paused_session_live_preflight_live_continuation_available={preflight.get('live_continuation_available', False)}",
                 f"paused_session_live_preflight_cross_process_live_continuation_supported={preflight.get('cross_process_live_continuation_supported', False)}",
                 f"paused_session_live_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"paused_session_live_preflight_live_session_available={live_session_diagnostics.get('live_session_available', False)}",
+                f"paused_session_live_preflight_debugger_session_lifecycle={live_session_diagnostics.get('debugger_session_lifecycle', 'unknown')}",
+                f"paused_session_live_preflight_same_process_required={live_session_diagnostics.get('same_process_required_for_live_action', True)}",
+                f"paused_session_live_preflight_target_diagnostic_source={target_diagnostics.get('target_attached_source', 'unknown')}",
+                f"paused_session_live_preflight_cdp_target_diagnostic_source={target_diagnostics.get('cdp_target_available_source', 'unknown')}",
+                f"paused_session_live_preflight_stable_callframe_required={callframe_diagnostics.get('stable_callframe_required', False)}",
+                f"paused_session_live_preflight_stable_callframe_available={callframe_diagnostics.get('stable_callframe_available', False)}",
+                f"paused_session_live_preflight_action_is_live={action_capability.get('is_live_action', False)}",
                 f"paused_session_live_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
                 f"paused_session_live_preflight_browser_resumed={policy.get('browser_resumed', False)}",
                 f"paused_session_live_preflight_debugger_stepped={policy.get('debugger_stepped', False)}",
@@ -1148,6 +1160,10 @@ class NativeWebRuntime(WebReverseRuntime):
                         "live_continuation_available": preflight.get("live_continuation_available", False),
                         "cross_process_live_continuation_supported": preflight.get("cross_process_live_continuation_supported", False),
                         "blockers": blockers,
+                        "live_session_diagnostics": live_session_diagnostics,
+                        "target_diagnostics": target_diagnostics,
+                        "callframe_diagnostics": callframe_diagnostics,
+                        "action_capability": action_capability,
                     },
                 )
             ]

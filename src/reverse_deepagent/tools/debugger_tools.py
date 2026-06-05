@@ -63,6 +63,10 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         preflight_source = _string(preflight.get("source"))
         requested_action = _string(preflight.get("requested_action") or session.get("requested_action") or payload.get("requested_action"))
         live_continuation_available = _boolish(preflight.get("live_continuation_available"))
+        live_session_diagnostics = preflight.get("live_session_diagnostics") if isinstance(preflight.get("live_session_diagnostics"), dict) else {}
+        target_diagnostics = preflight.get("target_diagnostics") if isinstance(preflight.get("target_diagnostics"), dict) else {}
+        callframe_diagnostics = preflight.get("callframe_diagnostics") if isinstance(preflight.get("callframe_diagnostics"), dict) else {}
+        action_capability = preflight.get("action_capability") if isinstance(preflight.get("action_capability"), dict) else {}
 
         artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
@@ -113,6 +117,34 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                 "timeline_event_counts": _timeline_event_counts(timeline_entries),
                 "cross_process_live_continuation_supported": _boolish(preflight.get("cross_process_live_continuation_supported")),
                 "preflight_blockers": preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else [],
+                "live_session_diagnostics": {
+                    "live_session_available": _boolish(live_session_diagnostics.get("live_session_available")),
+                    "debugger_session_lifecycle": _string(live_session_diagnostics.get("debugger_session_lifecycle") or "unknown"),
+                    "same_process_required_for_live_action": _boolish(live_session_diagnostics.get("same_process_required_for_live_action")),
+                    "cross_process_resume_supported": _boolish(live_session_diagnostics.get("cross_process_resume_supported")),
+                    "cross_process_step_supported": _boolish(live_session_diagnostics.get("cross_process_step_supported")),
+                    "cross_process_evaluate_supported": _boolish(live_session_diagnostics.get("cross_process_evaluate_supported")),
+                },
+                "target_diagnostics": {
+                    "target_attached": _boolish(target_diagnostics.get("target_attached")),
+                    "cdp_target_available": _boolish(target_diagnostics.get("cdp_target_available")),
+                    "target_attached_source": _string(target_diagnostics.get("target_attached_source") or "unknown"),
+                    "cdp_target_available_source": _string(target_diagnostics.get("cdp_target_available_source") or "unknown"),
+                },
+                "callframe_diagnostics": {
+                    "stable_callframe_required": _boolish(callframe_diagnostics.get("stable_callframe_required")),
+                    "stable_callframe_available": _boolish(callframe_diagnostics.get("stable_callframe_available")),
+                    "selected_callframe_has_id": _boolish(callframe_diagnostics.get("selected_callframe_has_id")),
+                    "callframe_count": callframe_diagnostics.get("callframe_count", len(callframes)),
+                },
+                "action_capability": {
+                    "requested_action": _string(action_capability.get("requested_action") or requested_action or "unknown"),
+                    "is_live_action": _boolish(action_capability.get("is_live_action")),
+                    "inspect_supported": _boolish(action_capability.get("inspect_supported")),
+                    "evaluate_supported": _boolish(action_capability.get("evaluate_supported")),
+                    "step_supported": _boolish(action_capability.get("step_supported")),
+                    "resume_supported": _boolish(action_capability.get("resume_supported")),
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
@@ -285,6 +317,7 @@ def _review_required_items(
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    diagnostics = _preflight_diagnostics_for_review(preflight)
     for code in blockers:
         items.append(
             {
@@ -293,6 +326,7 @@ def _review_required_items(
                 "preflight_status": _string(preflight.get("status")),
                 "preflight_source": _string(preflight.get("source")),
                 "reason": _string(preflight.get("reason") or preflight.get("blocked_reason") or session.get("reason") or paused.get("reason")),
+                "diagnostics": diagnostics,
             }
         )
     for code in warnings:
@@ -304,6 +338,22 @@ def _review_required_items(
                     "preflight_status": _string(preflight.get("status")),
                     "preflight_source": _string(preflight.get("source")),
                     "reason": _string(preflight.get("reason") or preflight.get("blocked_reason") or paused.get("reason")),
+                    "diagnostics": diagnostics,
                 }
             )
     return items
+
+
+def _preflight_diagnostics_for_review(preflight: dict[str, Any]) -> dict[str, Any]:
+    live_session = preflight.get("live_session_diagnostics") if isinstance(preflight.get("live_session_diagnostics"), dict) else {}
+    target = preflight.get("target_diagnostics") if isinstance(preflight.get("target_diagnostics"), dict) else {}
+    callframe = preflight.get("callframe_diagnostics") if isinstance(preflight.get("callframe_diagnostics"), dict) else {}
+    return {
+        "live_session_available": _boolish(live_session.get("live_session_available")),
+        "debugger_session_lifecycle": _string(live_session.get("debugger_session_lifecycle") or "unknown"),
+        "same_process_required_for_live_action": _boolish(live_session.get("same_process_required_for_live_action")),
+        "target_attached": _boolish(target.get("target_attached")),
+        "cdp_target_available": _boolish(target.get("cdp_target_available")),
+        "stable_callframe_required": _boolish(callframe.get("stable_callframe_required")),
+        "stable_callframe_available": _boolish(callframe.get("stable_callframe_available")),
+    }
