@@ -105,6 +105,40 @@ class HookSubagentTests(unittest.TestCase):
         self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_plan_only_closure_wrapper_strategy_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_replacement_plan": {
+                "status": "ready_for_review",
+                "plan": {
+                    "status": "ready_for_review",
+                    "next_action": "review_closure_wrapper_replacement_plan_before_execution",
+                    "wrapper_strategy": "arg-preview",
+                    "wrapper_strategy_descriptor": {
+                        "schema_version": "reverse-deepagent.closure-wrapper-strategy.v1",
+                        "strategy": "arg-preview",
+                        "supported_for_planning": True,
+                        "supported_for_install": False,
+                        "strategy_plan_only": True,
+                        "install_blockers": ["wrapper_strategy_plan_only"],
+                    },
+                    "wrapper_installed": False,
+                    "runtime_mutated": False,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_strategy_descriptor_plan_only_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_closure_wrapper_strategy_descriptor_before_execution")
+        self.assertEqual(result["summary"]["closure_wrapper_strategy"], "arg-preview")
+        self.assertFalse(result["summary"]["closure_wrapper_strategy_supported_for_install"])
+        self.assertTrue(result["summary"]["closure_wrapper_strategy_plan_only"])
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_strategy"], "arg-preview")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
     def test_review_hook_artifacts_warns_for_closure_wrapper_assignment_safety(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

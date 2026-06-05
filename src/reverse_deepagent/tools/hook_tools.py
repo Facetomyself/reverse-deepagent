@@ -684,6 +684,19 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         closure_wrapper_restore_execution_status = _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution")
         if closure_wrapper_restore_execution_status == "restored":
             warnings.append("closure_wrapper_restore_execution_result_review_required")
+        closure_wrapper_strategy_descriptor = _closure_wrapper_strategy_descriptor(
+            closure_wrapper_replacement_plan,
+            closure_wrapper_assignment_safety,
+            closure_wrapper_runtime_mutability_preflight,
+            closure_wrapper_runtime_mutability_result,
+            closure_wrapper_replacement_execution,
+            closure_wrapper_restore_execution,
+        )
+        if closure_wrapper_strategy_descriptor and (
+            closure_wrapper_strategy_descriptor.get("strategy_plan_only") is True
+            or closure_wrapper_strategy_descriptor.get("supported_for_install") is False
+        ):
+            warnings.append("closure_wrapper_strategy_descriptor_plan_only_requires_review")
         closure_wrapper_event_count = _intish(closure_wrapper_events.get("event_count") or closure_wrapper_events.get("eventCount") or _nested_get(closure_wrapper_events, "snapshot", "eventCount"))
         if closure_wrapper_events and closure_wrapper_event_count == 0:
             warnings.append("closure_wrapper_events_empty")
@@ -705,6 +718,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "candidate_count": candidate_count,
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or closure_wrapper_plan_status,
                 "closure_wrapper_replacement_plan_next_action": _nested_get(closure_wrapper_replacement_plan, "plan", "next_action") or closure_wrapper_replacement_plan.get("next_action"),
+                "closure_wrapper_strategy": closure_wrapper_strategy_descriptor.get("strategy"),
+                "closure_wrapper_strategy_supported_for_install": closure_wrapper_strategy_descriptor.get("supported_for_install"),
+                "closure_wrapper_strategy_plan_only": closure_wrapper_strategy_descriptor.get("strategy_plan_only"),
                 "closure_wrapper_assignment_safety_status": closure_wrapper_assignment_safety_status,
                 "closure_wrapper_assignment_safety_proven": closure_wrapper_assignment_safety_proven,
                 "closure_wrapper_assignment_safety_next_action": _nested_get(closure_wrapper_assignment_safety, "assignment_safety", "next_action") or closure_wrapper_assignment_safety.get("next_action"),
@@ -994,6 +1010,20 @@ def _nested_get(item: dict[str, Any], key: str, nested_key: str) -> Any:
     return value.get(nested_key) if isinstance(value, dict) else None
 
 
+def _closure_wrapper_strategy_descriptor(*items: dict[str, Any]) -> dict[str, Any]:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        direct = item.get("wrapper_strategy_descriptor")
+        if isinstance(direct, dict):
+            return direct
+        for key in ("plan", "assignment_safety", "preflight", "result", "execution"):
+            nested = _nested_get(item, key, "wrapper_strategy_descriptor")
+            if isinstance(nested, dict):
+                return nested
+    return {}
+
+
 def _listish(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
@@ -1134,6 +1164,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "rerun_module_discovery_after_custom_loader_execution"
     if "module_federation_get_init_requires_review" in warnings:
         return "review_module_federation_get_init_plan"
+    if "closure_wrapper_strategy_descriptor_plan_only_requires_review" in warnings:
+        return "review_closure_wrapper_strategy_descriptor_before_execution"
     if "closure_wrapper_replacement_plan_requires_review" in warnings:
         return "review_closure_wrapper_replacement_plan_before_execution"
     if "closure_wrapper_assignment_safety_requires_execution_review" in warnings:
@@ -1291,6 +1323,14 @@ def _review_required_items(
     module_federation_recursive_continuation_checkpoint: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    closure_wrapper_strategy_descriptor = _closure_wrapper_strategy_descriptor(
+        closure_wrapper_replacement_plan,
+        closure_wrapper_assignment_safety,
+        closure_wrapper_runtime_mutability_preflight,
+        closure_wrapper_runtime_mutability_result,
+        closure_wrapper_replacement_execution,
+        closure_wrapper_restore_execution,
+    )
     for code in blockers + warnings:
         if code == "no_hook_artifacts_provided":
             continue
@@ -1301,6 +1341,9 @@ def _review_required_items(
                 "module_hook_status": _status(module_hooks),
                 "source_logpoint_status": _status(source_logpoints),
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or _nested_status(closure_wrapper_replacement_plan, "plan"),
+                "closure_wrapper_strategy": closure_wrapper_strategy_descriptor.get("strategy"),
+                "closure_wrapper_strategy_supported_for_install": closure_wrapper_strategy_descriptor.get("supported_for_install"),
+                "closure_wrapper_strategy_plan_only": closure_wrapper_strategy_descriptor.get("strategy_plan_only"),
                 "closure_wrapper_assignment_safety_status": _status(closure_wrapper_assignment_safety) or _nested_status(closure_wrapper_assignment_safety, "assignment_safety"),
                 "closure_wrapper_assignment_safety_proven": bool(_nested_get(closure_wrapper_assignment_safety, "assignment_safety", "assignment_safety_proven") or closure_wrapper_assignment_safety.get("assignment_safety_proven")),
                 "closure_wrapper_runtime_mutability_preflight_status": _status(closure_wrapper_runtime_mutability_preflight) or _nested_status(closure_wrapper_runtime_mutability_preflight, "preflight"),

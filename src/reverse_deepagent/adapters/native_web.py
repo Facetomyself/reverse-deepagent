@@ -339,9 +339,13 @@ class NativeWebRuntime(WebReverseRuntime):
             result = ClosureWrapperRuntimeMutabilityPreflightManager().preflight(spec)
             preflight = result.preflight if isinstance(result.preflight, dict) else {}
             policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = preflight.get("wrapper_strategy_descriptor") if isinstance(preflight.get("wrapper_strategy_descriptor"), dict) else {}
             verification = [
                 f"closure_wrapper_runtime_mutability_preflight_status={result.status}",
                 f"closure_wrapper_runtime_mutability_probe_ready_for_review={preflight.get('runtime_mutability_probe_ready_for_review', False)}",
+                f"closure_wrapper_runtime_mutability_strategy={strategy.get('strategy', preflight.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_runtime_mutability_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_runtime_mutability_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
                 f"closure_wrapper_runtime_mutability_proven={preflight.get('runtime_mutability_proven', False)}",
                 f"closure_wrapper_runtime_mutability_runtime_mutated={policy.get('runtime_mutated', False)}",
                 f"closure_wrapper_runtime_mutability_cdp_command_sent={policy.get('cdp_command_sent', False)}",
@@ -359,6 +363,9 @@ class NativeWebRuntime(WebReverseRuntime):
                         "status": result.status,
                         "runtime_mutability_probe_ready_for_review": preflight.get("runtime_mutability_probe_ready_for_review", False),
                         "runtime_mutability_proven": False,
+                        "wrapper_strategy": strategy.get("strategy", preflight.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
                         "plan_only": True,
                         "requires_review": True,
                         "wrapper_installed": False,
@@ -382,9 +389,13 @@ class NativeWebRuntime(WebReverseRuntime):
             result = ClosureWrapperAssignmentSafetyManager().prove(spec)
             safety = result.assignment_safety if isinstance(result.assignment_safety, dict) else {}
             policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = safety.get("wrapper_strategy_descriptor") if isinstance(safety.get("wrapper_strategy_descriptor"), dict) else {}
             verification = [
                 f"closure_wrapper_assignment_safety_status={result.status}",
                 f"closure_wrapper_assignment_safety_proven={safety.get('assignment_safety_proven', False)}",
+                f"closure_wrapper_assignment_safety_strategy={strategy.get('strategy', safety.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_assignment_safety_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_assignment_safety_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
                 f"closure_wrapper_assignment_safety_safe_to_execute={safety.get('safe_to_request_reviewed_execution', False)}",
                 f"closure_wrapper_assignment_safety_runtime_mutated={policy.get('runtime_mutated', False)}",
                 f"closure_wrapper_assignment_safety_cdp_command_sent={policy.get('cdp_command_sent', False)}",
@@ -402,6 +413,9 @@ class NativeWebRuntime(WebReverseRuntime):
                         "status": result.status,
                         "assignment_safety_proven": safety.get("assignment_safety_proven", False),
                         "safe_to_request_reviewed_execution": safety.get("safe_to_request_reviewed_execution", False),
+                        "wrapper_strategy": strategy.get("strategy", safety.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
                         "plan_only": True,
                         "requires_review": True,
                         "wrapper_installed": False,
@@ -425,10 +439,14 @@ class NativeWebRuntime(WebReverseRuntime):
             result = ClosureWrapperReplacementPlanManager().plan(spec)
             plan = result.plan if isinstance(result.plan, dict) else {}
             feasibility = plan.get("replacement_feasibility") if isinstance(plan.get("replacement_feasibility"), dict) else {}
+            strategy = plan.get("wrapper_strategy_descriptor") if isinstance(plan.get("wrapper_strategy_descriptor"), dict) else {}
             verification = [
                 f"closure_wrapper_replacement_plan_status={result.status}",
                 f"closure_wrapper_replacement_candidate_count={result.candidate_count}",
                 f"closure_wrapper_replacement_plan_only={plan.get('plan_only', True)}",
+                f"closure_wrapper_replacement_strategy={strategy.get('strategy', plan.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_replacement_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_replacement_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
                 f"closure_wrapper_replacement_wrapper_installed={plan.get('wrapper_installed', False)}",
                 f"closure_wrapper_replacement_runtime_mutated={plan.get('runtime_mutated', False)}",
                 f"closure_wrapper_replacement_cdp_command_sent={plan.get('cdp_command_sent', False)}",
@@ -446,6 +464,9 @@ class NativeWebRuntime(WebReverseRuntime):
                     metadata={
                         "status": result.status,
                         "candidate_count": result.candidate_count,
+                        "wrapper_strategy": strategy.get("strategy", plan.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
                         "plan_only": True,
                         "requires_review": True,
                         "automatic_wrapper_replacement": False,
@@ -1318,9 +1339,13 @@ class NativeWebRuntime(WebReverseRuntime):
             result = ClosureWrapperRuntimeMutabilityResultManager().execute(page, spec)
             payload = result.result if isinstance(result.result, dict) else {}
             policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = payload.get("wrapper_strategy_descriptor") if isinstance(payload.get("wrapper_strategy_descriptor"), dict) else {}
             verification = [
                 f"closure_wrapper_runtime_mutability_result_status={result.status}",
                 f"closure_wrapper_runtime_mutability_result_reason={result.reason or ''}",
+                f"closure_wrapper_runtime_mutability_result_strategy={strategy.get('strategy', payload.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_runtime_mutability_result_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_runtime_mutability_result_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
                 f"closure_wrapper_runtime_mutability_review_approved={policy.get('review_approved', False)}",
                 f"closure_wrapper_runtime_mutability_execute_requested={policy.get('execute_requested', False)}",
                 f"closure_wrapper_runtime_mutability_proven={payload.get('runtime_mutability_proven', False)}",
@@ -1346,6 +1371,9 @@ class NativeWebRuntime(WebReverseRuntime):
                         "reason": result.reason,
                         "runtime_mutability_proven": payload.get("runtime_mutability_proven", False),
                         "runtime_mutability_probe_executed": payload.get("runtime_mutability_probe_executed", False),
+                        "wrapper_strategy": strategy.get("strategy", payload.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
                         "temporary_assignment_attempted": policy.get("temporary_assignment_attempted", False),
                         "original_restored": policy.get("original_restored", False),
                         "wrapper_installed": policy.get("wrapper_installed", False),
@@ -1381,9 +1409,13 @@ class NativeWebRuntime(WebReverseRuntime):
             result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
             execution = result.execution if isinstance(result.execution, dict) else {}
             policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = execution.get("wrapper_strategy_descriptor") if isinstance(execution.get("wrapper_strategy_descriptor"), dict) else {}
             verification = [
                 f"closure_wrapper_replacement_execution_status={result.status}",
                 f"closure_wrapper_replacement_execution_reason={result.reason or ''}",
+                f"closure_wrapper_replacement_execution_strategy={strategy.get('strategy', execution.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_replacement_execution_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_replacement_execution_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
                 f"closure_wrapper_replacement_execution_assignment_safety_proven={bool((spec.assignment_safety_proof if spec else {}).get('assignment_safety_proven'))}",
                 f"closure_wrapper_replacement_execution_require_runtime_mutability_result={policy.get('require_runtime_mutability_result', False)}",
                 f"closure_wrapper_replacement_execution_runtime_mutability_result_proven={policy.get('runtime_mutability_result_proven', False)}",
@@ -1406,6 +1438,9 @@ class NativeWebRuntime(WebReverseRuntime):
                     metadata={
                         "status": result.status,
                         "reason": result.reason,
+                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
                         "wrapper_installed": policy.get("wrapper_installed", False),
                         "runtime_mutated": policy.get("runtime_mutated", False),
                         "cdp_command_sent": policy.get("cdp_command_sent", False),
@@ -1425,6 +1460,9 @@ class NativeWebRuntime(WebReverseRuntime):
                         "status": "ready_for_review" if result.status == "applied" else "not_available",
                         "available": bool((execution.get("restore_plan") or {}).get("available")) if isinstance(execution.get("restore_plan"), dict) else False,
                         "requires_review": True,
+                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
                         "function_name": execution.get("function_name"),
                     },
                 ),
@@ -1452,9 +1490,13 @@ class NativeWebRuntime(WebReverseRuntime):
             result = ClosureWrapperRestoreExecutionManager().execute(page, spec)
             execution = result.execution if isinstance(result.execution, dict) else {}
             policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = execution.get("wrapper_strategy_descriptor") if isinstance(execution.get("wrapper_strategy_descriptor"), dict) else {}
             verification = [
                 f"closure_wrapper_restore_execution_status={result.status}",
                 f"closure_wrapper_restore_execution_reason={result.reason or ''}",
+                f"closure_wrapper_restore_execution_strategy={strategy.get('strategy', execution.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_restore_execution_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_restore_execution_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
                 f"closure_wrapper_restore_execution_review_approved={policy.get('review_approved', False)}",
                 f"closure_wrapper_restore_execution_execute_requested={policy.get('execute_requested', False)}",
                 f"closure_wrapper_restore_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
@@ -1474,6 +1516,9 @@ class NativeWebRuntime(WebReverseRuntime):
                     metadata={
                         "status": result.status,
                         "reason": result.reason,
+                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
                         "wrapper_restored": policy.get("wrapper_restored", False),
                         "runtime_mutated": policy.get("runtime_mutated", False),
                         "cdp_command_sent": policy.get("cdp_command_sent", False),
@@ -1505,9 +1550,11 @@ class NativeWebRuntime(WebReverseRuntime):
         if self._is_closure_wrapper_event_harvest_request(protection_name, context):
             spec = ClosureWrapperEventHarvestSpec.from_context(context)
             result = ClosureWrapperEventHarvestManager().harvest(page, spec)
+            strategy_counts = result.snapshot.get("strategyCounts") if isinstance(result.snapshot.get("strategyCounts"), dict) else {}
             verification = [
                 f"closure_wrapper_events_status={result.status}",
                 f"closure_wrapper_events_count={result.event_count}",
+                f"closure_wrapper_events_strategy_count={len(strategy_counts)}",
                 f"closure_wrapper_events_runtime_mutated={result.side_effect_policy.get('runtime_mutated', False)}",
                 f"closure_wrapper_events_cdp_command_sent={result.side_effect_policy.get('cdp_command_sent', False)}",
                 f"context_keys={sorted(context.keys())}",
@@ -1524,6 +1571,7 @@ class NativeWebRuntime(WebReverseRuntime):
                     metadata={
                         "status": result.status,
                         "event_count": result.event_count,
+                        "strategy_counts": strategy_counts,
                         "runtime_mutated": False,
                         "calls_mcp": False,
                         "mobile_runtime_used": False,

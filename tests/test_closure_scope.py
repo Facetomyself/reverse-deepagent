@@ -19,6 +19,7 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperReplacementPlanManager,
     ClosureWrapperReplacementPlanSpec,
 )
+from reverse_deepagent.browser.hooks.closure_scope import closure_wrapper_strategy_descriptor
 
 
 class ClosureScopeCDPSession:
@@ -214,6 +215,10 @@ class ClosureWrapperReplacementPlanManagerTests(unittest.TestCase):
         self.assertFalse(payload["plan"]["runtime_mutated"])
         self.assertFalse(payload["plan"]["cdp_command_sent"])
         self.assertFalse(payload["plan"]["callframe_evaluated"])
+        self.assertEqual(payload["plan"]["wrapper_strategy_descriptor"]["strategy"], "log-only-call-through")
+        self.assertTrue(payload["plan"]["wrapper_strategy_descriptor"]["supported_for_install"])
+        self.assertFalse(payload["plan"]["wrapper_strategy_descriptor"]["strategy_plan_only"])
+        self.assertTrue(payload["plan"]["replacement_feasibility"]["wrapper_strategy_supported_for_install"])
         self.assertTrue(payload["plan"]["replacement_feasibility"]["lexical_binding_proven"])
         self.assertTrue(payload["plan"]["replacement_feasibility"]["reviewed_executor_available"])
         self.assertEqual(payload["plan"]["replacement_feasibility"]["reviewed_executor_scope"], "same-process-retained-paused-session")
@@ -223,6 +228,50 @@ class ClosureWrapperReplacementPlanManagerTests(unittest.TestCase):
         self.assertTrue(payload["side_effect_policy"]["read_only"])
         self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
         self.assertFalse(payload["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_plans_descriptor_for_plan_only_wrapper_strategy_without_enabling_install(self) -> None:
+        spec = ClosureWrapperReplacementPlanSpec.from_context(
+            {
+                "closure_function_candidates": [
+                    {
+                        "function_name": "buildSign",
+                        "candidate_id": "closure:cf-closure-1:buildSign",
+                        "hook_kind": "closure-scope",
+                        "hook_supported": False,
+                        "callFrameId": "cf-closure-1",
+                        "evidence_expression": "typeof buildSign",
+                    }
+                ],
+                "candidate_id": "closure:cf-closure-1:buildSign",
+                "wrapper_strategy": "arg-preview",
+            }
+        )
+
+        result = ClosureWrapperReplacementPlanManager().plan(spec)
+        payload = result.to_dict()
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = payload["plan"]["wrapper_strategy_descriptor"]
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.closure-wrapper-strategy.v1")
+        self.assertEqual(descriptor["strategy"], "arg-preview")
+        self.assertTrue(descriptor["supported_for_planning"])
+        self.assertFalse(descriptor["supported_for_install"])
+        self.assertTrue(descriptor["strategy_plan_only"])
+        self.assertIn("wrapper_strategy_plan_only", payload["plan"]["execution_blockers"])
+        self.assertIn("arg_preview_executor_not_implemented", payload["plan"]["execution_blockers"])
+        self.assertFalse(payload["plan"]["replacement_feasibility"]["reviewed_executor_available"])
+        self.assertTrue(payload["plan"]["replacement_feasibility"]["wrapper_strategy_plan_only"])
+        self.assertFalse(payload["plan"]["automatic_wrapper_replacement"])
+        self.assertFalse(payload["side_effect_policy"]["runtime_mutated"])
+
+    def test_strategy_descriptor_reports_unknown_strategy_as_unsupported(self) -> None:
+        descriptor = closure_wrapper_strategy_descriptor("unknown-preview")
+
+        self.assertEqual(descriptor["strategy"], "unknown-preview")
+        self.assertFalse(descriptor["known_strategy"])
+        self.assertFalse(descriptor["supported_for_planning"])
+        self.assertFalse(descriptor["supported_for_install"])
+        self.assertIn("unsupported_wrapper_strategy", descriptor["install_blockers"])
 
     def test_blocks_ambiguous_closure_candidate_selection(self) -> None:
         spec = ClosureWrapperReplacementPlanSpec.from_context(
@@ -287,8 +336,44 @@ class ClosureWrapperAssignmentSafetyManagerTests(unittest.TestCase):
         self.assertFalse(payload["assignment_safety"]["callframe_evaluated"])
         self.assertEqual(payload["assignment_safety"]["function_name"], "buildSign")
         self.assertEqual(payload["assignment_safety"]["callFrameId"], "cf-closure-1")
+        self.assertEqual(payload["assignment_safety"]["wrapper_strategy_descriptor"]["strategy"], "log-only-call-through")
+        self.assertTrue(payload["assignment_safety"]["wrapper_strategy_descriptor"]["supported_for_install"])
         self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
         self.assertFalse(payload["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_blocks_assignment_safety_for_plan_only_strategy_descriptor(self) -> None:
+        plan = ClosureWrapperReplacementPlanManager().plan(
+            ClosureWrapperReplacementPlanSpec.from_context(
+                {
+                    "closure_function_candidates": [
+                        {
+                            "function_name": "buildSign",
+                            "candidate_id": "closure:cf-closure-1:buildSign",
+                            "hook_kind": "closure-scope",
+                            "hook_supported": False,
+                            "callFrameId": "cf-closure-1",
+                            "evidence_expression": "typeof buildSign",
+                        }
+                    ],
+                    "candidate_id": "closure:cf-closure-1:buildSign",
+                    "wrapper_strategy": "return-preview",
+                }
+            )
+        ).plan
+        spec = ClosureWrapperAssignmentSafetySpec.from_context(
+            {
+                "prove_closure_wrapper_assignment_safety": True,
+                "closure_wrapper_replacement_plan": plan,
+            }
+        )
+
+        result = ClosureWrapperAssignmentSafetyManager().prove(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "wrapper_strategy_install_supported")
+        self.assertFalse(result.assignment_safety["assignment_safety_proven"])
+        self.assertEqual(result.assignment_safety["wrapper_strategy_descriptor"]["strategy"], "return-preview")
+        self.assertTrue(result.assignment_safety["wrapper_strategy_descriptor"]["strategy_plan_only"])
 
     def test_blocks_assignment_safety_when_lexical_evidence_is_missing(self) -> None:
         plan = self._ready_plan()
@@ -343,6 +428,8 @@ class ClosureWrapperRuntimeMutabilityPreflightManagerTests(unittest.TestCase):
         self.assertFalse(payload["preflight"]["callframe_evaluated"])
         self.assertEqual(payload["preflight"]["function_name"], "buildSign")
         self.assertEqual(payload["preflight"]["expected_callframe_id"], "cf-closure-1")
+        self.assertEqual(payload["preflight"]["wrapper_strategy_descriptor"]["strategy"], "log-only-call-through")
+        self.assertTrue(payload["preflight"]["wrapper_strategy_descriptor"]["supported_for_install"])
         self.assertTrue(payload["preflight"]["probe_plan"]["requires_allow_side_effects_evaluation"])
         self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
         self.assertFalse(payload["side_effect_policy"]["mobile_runtime_used"])
@@ -443,6 +530,8 @@ class ClosureWrapperRuntimeMutabilityResultManagerTests(unittest.TestCase):
         self.assertTrue(result.result["runtime_mutability_probe_executed"])
         self.assertTrue(result.result["temporary_assignment_confirmed"])
         self.assertTrue(result.result["original_restored"])
+        self.assertEqual(result.result["wrapper_strategy_descriptor"]["strategy"], "log-only-call-through")
+        self.assertTrue(result.result["wrapper_strategy_descriptor"]["supported_for_install"])
         self.assertFalse(result.result["wrapper_installed"])
         self.assertTrue(result.side_effect_policy["cdp_command_sent"])
         self.assertTrue(result.side_effect_policy["callframe_evaluated"])
@@ -580,7 +669,10 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
         self.assertEqual(result.execution["schema_version"], "reverse-deepagent.closure-wrapper-replacement-execution.v1")
         self.assertEqual(result.execution["function_name"], "buildSign")
+        self.assertEqual(result.execution["wrapper_strategy_descriptor"]["strategy"], "log-only-call-through")
+        self.assertTrue(result.execution["wrapper_strategy_descriptor"]["supported_for_install"])
         self.assertIn("restore_expression", result.execution["restore_plan"])
+        self.assertEqual(result.execution["restore_plan"]["wrapper_strategy"], "log-only-call-through")
         eval_calls = [params for method, params in session.calls if method == "Debugger.evaluateOnCallFrame"]
         self.assertGreaterEqual(len(eval_calls), 2)
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
@@ -656,6 +748,36 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "closure_wrapper_assignment_safety_proof_required")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+        self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)
+
+    def test_blocks_replacement_execution_for_plan_only_strategy_without_cdp_side_effects(self) -> None:
+        session, page = self._preserve_pause()
+        plan = self._ready_plan()
+        plan["wrapper_strategy"] = "arg-preview"
+        plan["wrapper_strategy_descriptor"] = closure_wrapper_strategy_descriptor("arg-preview")
+        plan["replacement_feasibility"]["wrapper_strategy_supported_for_install"] = False
+        plan["replacement_feasibility"]["wrapper_strategy_plan_only"] = True
+        proof = dict(self._assignment_safety(self._ready_plan()), wrapper_strategy="arg-preview")
+        spec = ClosureWrapperReplacementExecutionSpec.from_context(
+            {
+                "closure_wrapper_replacement_execution": True,
+                "closure_wrapper_replacement_plan": plan,
+                "closure_wrapper_assignment_safety": proof,
+                "wrapper_strategy": "arg-preview",
+                "pause_session_id": "closure-exec-session",
+                "execute_closure_wrapper_replacement": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "wrapper_strategy_install_not_supported")
+        self.assertEqual(result.execution["wrapper_strategy_descriptor"]["strategy"], "arg-preview")
+        self.assertTrue(result.execution["wrapper_strategy_descriptor"]["strategy_plan_only"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["runtime_mutated"])
         self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)

@@ -245,12 +245,14 @@ class FakeRawPage:
                     {
                         "marker": "reverse-deepagent:closure-wrapper:closure:native-cf-1:buildSign",
                         "functionName": "buildSign",
+                        "wrapperStrategy": "log-only-call-through",
                         "kind": "return",
                         "argumentCount": 2,
                     }
                 ],
                 "eventCount": 1,
                 "totalEventCount": 1,
+                "strategyCounts": {"log-only-call-through": 1},
                 "markerCount": 1,
             }
         if "__REVERSE_AGENT_OBJECT_ROOT_MUTATION_AUDIT__" in expression:
@@ -4286,6 +4288,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.applied_actions, ["plan_closure_wrapper_replacement"])
         self.assertIn("closure_wrapper_replacement_plan_status=ready_for_review", result.verification)
         self.assertIn("closure_wrapper_replacement_plan_only=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_strategy=log-only-call-through", result.verification)
+        self.assertIn("closure_wrapper_replacement_strategy_supported_for_install=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_strategy_plan_only=False", result.verification)
         self.assertIn("closure_wrapper_replacement_wrapper_installed=False", result.verification)
         self.assertIn("closure_wrapper_replacement_runtime_mutated=False", result.verification)
         self.assertIn("closure_wrapper_replacement_cdp_command_sent=False", result.verification)
@@ -4293,6 +4298,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.next_action, "review_closure_wrapper_replacement_plan_before_execution")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-replacement-plan.json")
         self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertEqual(result.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertTrue(result.artifacts[0].metadata["wrapper_strategy_supported_for_install"])
+        self.assertFalse(result.artifacts[0].metadata["wrapper_strategy_plan_only"])
         self.assertFalse(result.artifacts[0].metadata["wrapper_installed"])
         self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
         self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
@@ -4334,11 +4342,17 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.applied_actions, ["prove_closure_wrapper_assignment_safety"])
         self.assertIn("closure_wrapper_assignment_safety_status=ready_for_review", result.verification)
         self.assertIn("closure_wrapper_assignment_safety_proven=True", result.verification)
+        self.assertIn("closure_wrapper_assignment_safety_strategy=log-only-call-through", result.verification)
+        self.assertIn("closure_wrapper_assignment_safety_strategy_supported_for_install=True", result.verification)
+        self.assertIn("closure_wrapper_assignment_safety_strategy_plan_only=False", result.verification)
         self.assertIn("closure_wrapper_assignment_safety_runtime_mutated=False", result.verification)
         self.assertIn("closure_wrapper_assignment_safety_cdp_command_sent=False", result.verification)
         self.assertIn("closure_wrapper_assignment_safety_callframe_evaluated=False", result.verification)
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-assignment-safety.json")
         self.assertTrue(result.artifacts[0].metadata["assignment_safety_proven"])
+        self.assertEqual(result.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertTrue(result.artifacts[0].metadata["wrapper_strategy_supported_for_install"])
+        self.assertFalse(result.artifacts[0].metadata["wrapper_strategy_plan_only"])
         self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
 
     def test_native_web_runtime_preflights_closure_wrapper_runtime_mutability_without_browser_session(self) -> None:
@@ -4366,12 +4380,18 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.applied_actions, ["preflight_closure_wrapper_runtime_mutability"])
         self.assertIn("closure_wrapper_runtime_mutability_preflight_status=ready_for_review", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_probe_ready_for_review=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_strategy=log-only-call-through", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_strategy_supported_for_install=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_strategy_plan_only=False", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_proven=False", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_runtime_mutated=False", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_cdp_command_sent=False", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_callframe_evaluated=False", result.verification)
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-runtime-mutability-preflight.json")
         self.assertTrue(result.artifacts[0].metadata["runtime_mutability_probe_ready_for_review"])
+        self.assertEqual(result.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertTrue(result.artifacts[0].metadata["wrapper_strategy_supported_for_install"])
+        self.assertFalse(result.artifacts[0].metadata["wrapper_strategy_plan_only"])
         self.assertFalse(result.artifacts[0].metadata["runtime_mutability_proven"])
         self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
 
@@ -4416,6 +4436,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.status.value, "success")
         self.assertEqual(result.applied_actions, ["execute_reviewed_closure_wrapper_runtime_mutability_probe"])
         self.assertIn("closure_wrapper_runtime_mutability_result_status=proven", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_result_strategy=log-only-call-through", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_result_strategy_supported_for_install=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_result_strategy_plan_only=False", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_review_approved=True", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_proven=True", result.verification)
         self.assertIn("closure_wrapper_runtime_mutability_probe_executed=True", result.verification)
@@ -4427,6 +4450,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.next_action, "review_runtime_mutability_result_then_optionally_execute_closure_wrapper_replacement")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-runtime-mutability-result.json")
         self.assertTrue(result.artifacts[0].metadata["runtime_mutability_proven"])
+        self.assertEqual(result.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertTrue(result.artifacts[0].metadata["wrapper_strategy_supported_for_install"])
+        self.assertFalse(result.artifacts[0].metadata["wrapper_strategy_plan_only"])
         self.assertTrue(result.artifacts[0].metadata["original_restored"])
         self.assertFalse(result.artifacts[0].metadata["wrapper_installed"])
         page = provider.session.context.pages[0]
@@ -4531,6 +4557,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.status.value, "success")
         self.assertEqual(result.applied_actions, ["execute_reviewed_closure_wrapper_replacement"])
         self.assertIn("closure_wrapper_replacement_execution_status=applied", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_strategy=log-only-call-through", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_strategy_supported_for_install=True", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_strategy_plan_only=False", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_assignment_safety_proven=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_require_runtime_mutability_result=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_runtime_mutability_result_proven=True", result.verification)
@@ -4541,12 +4570,16 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("closure_wrapper_replacement_execution_callframe_evaluated=True", result.verification)
         self.assertEqual(result.next_action, "invoke_target_flow_and_review_closure_wrapper_events_or_restore")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-replacement-execution.json")
+        self.assertEqual(result.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertTrue(result.artifacts[0].metadata["wrapper_strategy_supported_for_install"])
+        self.assertFalse(result.artifacts[0].metadata["wrapper_strategy_plan_only"])
         self.assertTrue(result.artifacts[0].metadata["wrapper_installed"])
         self.assertTrue(result.artifacts[0].metadata["runtime_mutated"])
         self.assertTrue(result.artifacts[0].metadata["require_runtime_mutability_result"])
         self.assertTrue(result.artifacts[0].metadata["runtime_mutability_result_proven"])
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/closure-wrapper-restore-plan.json")
         self.assertTrue(result.artifacts[1].metadata["available"])
+        self.assertEqual(result.artifacts[1].metadata["wrapper_strategy"], "log-only-call-through")
         page = provider.session.context.pages[0]
         eval_calls = [params for method, params in page._cdp_session.calls if method == "Debugger.evaluateOnCallFrame"]
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
@@ -4559,6 +4592,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
                     "requires_review": True,
                     "function_name": "buildSign",
                     "marker": "reverse-deepagent:closure-wrapper:closure:native-cf-1:buildSign",
+                    "wrapper_strategy": "log-only-call-through",
                     "restore_expression": ClosureWrapperReplacementExecutionManager._restore_expression(
                         function_name="buildSign",
                         marker="reverse-deepagent:closure-wrapper:closure:native-cf-1:buildSign",
@@ -4573,6 +4607,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(restore.status.value, "success")
         self.assertEqual(restore.applied_actions, ["execute_reviewed_closure_wrapper_restore"])
         self.assertIn("closure_wrapper_restore_execution_status=restored", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_strategy=log-only-call-through", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_strategy_supported_for_install=True", restore.verification)
+        self.assertIn("closure_wrapper_restore_execution_strategy_plan_only=False", restore.verification)
         self.assertIn("closure_wrapper_restore_execution_review_approved=True", restore.verification)
         self.assertIn("closure_wrapper_restore_execution_wrapper_restored=True", restore.verification)
         self.assertIn("closure_wrapper_restore_execution_runtime_mutated=True", restore.verification)
@@ -4580,6 +4617,9 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("closure_wrapper_restore_execution_callframe_evaluated=True", restore.verification)
         self.assertEqual(restore.next_action, "review_closure_wrapper_restore_result_or_continue_target_flow")
         self.assertEqual(restore.artifacts[0].path, "virtual://workspace/closure-wrapper-restore-execution.json")
+        self.assertEqual(restore.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertTrue(restore.artifacts[0].metadata["wrapper_strategy_supported_for_install"])
+        self.assertFalse(restore.artifacts[0].metadata["wrapper_strategy_plan_only"])
         self.assertTrue(restore.artifacts[0].metadata["wrapper_restored"])
         self.assertTrue(restore.artifacts[0].metadata["runtime_mutated"])
         eval_calls = [params for method, params in page._cdp_session.calls if method == "Debugger.evaluateOnCallFrame"]
@@ -4599,11 +4639,13 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(events.applied_actions, ["harvest_closure_wrapper_events"])
         self.assertIn("closure_wrapper_events_status=success", events.verification)
         self.assertIn("closure_wrapper_events_count=1", events.verification)
+        self.assertIn("closure_wrapper_events_strategy_count=1", events.verification)
         self.assertIn("closure_wrapper_events_runtime_mutated=False", events.verification)
         self.assertIn("closure_wrapper_events_cdp_command_sent=False", events.verification)
         self.assertEqual(events.next_action, "inspect_closure_wrapper_events")
         self.assertEqual(events.artifacts[0].path, "virtual://workspace/closure-wrapper-events.json")
         self.assertEqual(events.artifacts[0].metadata["event_count"], 1)
+        self.assertEqual(events.artifacts[0].metadata["strategy_counts"]["log-only-call-through"], 1)
         self.assertFalse(events.artifacts[0].metadata["runtime_mutated"])
         BreakpointManager.clear_paused_sessions()
 

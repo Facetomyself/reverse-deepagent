@@ -13,6 +13,197 @@ from reverse_deepagent.browser.hooks.breakpoints import BreakpointManager, Break
 JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
 
 
+CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION = "reverse-deepagent.closure-wrapper-strategy.v1"
+DEFAULT_CLOSURE_WRAPPER_STRATEGY = "log-only-call-through"
+
+
+CLOSURE_WRAPPER_STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
+    "log-only-call-through": {
+        "label": "Log-only call-through wrapper",
+        "description": "Install a reviewed same-process wrapper that records argument count plus return/throw metadata, then calls the original target unchanged.",
+        "supported_for_planning": True,
+        "supported_for_install": True,
+        "reviewed_execution_supported": True,
+        "strategy_plan_only": False,
+        "side_effect_profile": "reviewed-call-through-observation",
+        "invokes_target": "only_when_target_flow_invokes_wrapper",
+        "captures_arguments": False,
+        "captures_argument_count": True,
+        "captures_return": True,
+        "captures_throw": True,
+        "captures_return_value": False,
+        "captures_throw_value": False,
+        "mutates_arguments": False,
+        "overrides_return": False,
+        "suppresses_throw": False,
+        "requires_restore": True,
+        "requires_review": True,
+        "requires_same_process_pause": True,
+        "execution_scope": "same-process-retained-paused-session",
+        "event_kinds": ["return", "throw"],
+        "install_blockers": [],
+    },
+    "arg-preview": {
+        "label": "Argument preview plan",
+        "description": "Plan-only descriptor for a future argument-preview wrapper. It is not installable by the current executor.",
+        "supported_for_planning": True,
+        "supported_for_install": False,
+        "reviewed_execution_supported": False,
+        "strategy_plan_only": True,
+        "side_effect_profile": "plan-only-argument-preview",
+        "invokes_target": "not_supported_by_current_executor",
+        "captures_arguments": True,
+        "captures_argument_count": True,
+        "captures_return": False,
+        "captures_throw": False,
+        "captures_return_value": False,
+        "captures_throw_value": False,
+        "mutates_arguments": False,
+        "overrides_return": False,
+        "suppresses_throw": False,
+        "requires_restore": True,
+        "requires_review": True,
+        "requires_same_process_pause": True,
+        "execution_scope": "plan-only",
+        "event_kinds": ["argument-preview"],
+        "install_blockers": ["wrapper_strategy_plan_only", "arg_preview_executor_not_implemented"],
+    },
+    "return-preview": {
+        "label": "Return preview plan",
+        "description": "Plan-only descriptor for a future return-preview wrapper. It must not override return values.",
+        "supported_for_planning": True,
+        "supported_for_install": False,
+        "reviewed_execution_supported": False,
+        "strategy_plan_only": True,
+        "side_effect_profile": "plan-only-return-preview",
+        "invokes_target": "not_supported_by_current_executor",
+        "captures_arguments": False,
+        "captures_argument_count": True,
+        "captures_return": True,
+        "captures_throw": False,
+        "captures_return_value": True,
+        "captures_throw_value": False,
+        "mutates_arguments": False,
+        "overrides_return": False,
+        "suppresses_throw": False,
+        "requires_restore": True,
+        "requires_review": True,
+        "requires_same_process_pause": True,
+        "execution_scope": "plan-only",
+        "event_kinds": ["return-preview"],
+        "install_blockers": ["wrapper_strategy_plan_only", "return_preview_executor_not_implemented"],
+    },
+    "throw-preview": {
+        "label": "Throw preview plan",
+        "description": "Plan-only descriptor for a future throw-preview wrapper. It must rethrow unchanged.",
+        "supported_for_planning": True,
+        "supported_for_install": False,
+        "reviewed_execution_supported": False,
+        "strategy_plan_only": True,
+        "side_effect_profile": "plan-only-throw-preview",
+        "invokes_target": "not_supported_by_current_executor",
+        "captures_arguments": False,
+        "captures_argument_count": True,
+        "captures_return": False,
+        "captures_throw": True,
+        "captures_return_value": False,
+        "captures_throw_value": True,
+        "mutates_arguments": False,
+        "overrides_return": False,
+        "suppresses_throw": False,
+        "requires_restore": True,
+        "requires_review": True,
+        "requires_same_process_pause": True,
+        "execution_scope": "plan-only",
+        "event_kinds": ["throw-preview"],
+        "install_blockers": ["wrapper_strategy_plan_only", "throw_preview_executor_not_implemented"],
+    },
+    "blocked-mutation-plan": {
+        "label": "Blocked mutation plan",
+        "description": "Plan-only descriptor that records a rejected mutation-style wrapper request without enabling argument mutation or return override.",
+        "supported_for_planning": True,
+        "supported_for_install": False,
+        "reviewed_execution_supported": False,
+        "strategy_plan_only": True,
+        "side_effect_profile": "blocked-mutation-plan",
+        "invokes_target": "blocked",
+        "captures_arguments": False,
+        "captures_argument_count": False,
+        "captures_return": False,
+        "captures_throw": False,
+        "captures_return_value": False,
+        "captures_throw_value": False,
+        "mutates_arguments": False,
+        "overrides_return": False,
+        "suppresses_throw": False,
+        "requires_restore": False,
+        "requires_review": True,
+        "requires_same_process_pause": True,
+        "execution_scope": "blocked-plan-only",
+        "event_kinds": [],
+        "install_blockers": ["wrapper_strategy_plan_only", "mutation_style_wrapper_blocked"],
+    },
+}
+
+
+def normalize_closure_wrapper_strategy(value: Any) -> str:
+    strategy = str(value or DEFAULT_CLOSURE_WRAPPER_STRATEGY).strip()
+    return strategy or DEFAULT_CLOSURE_WRAPPER_STRATEGY
+
+
+def closure_wrapper_strategy_descriptor(strategy: Any) -> dict[str, Any]:
+    normalized = normalize_closure_wrapper_strategy(strategy)
+    template = CLOSURE_WRAPPER_STRATEGY_CATALOG.get(normalized)
+    if template is None:
+        return {
+            "schema_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "strategy": normalized,
+            "known_strategy": False,
+            "supported_for_planning": False,
+            "supported_for_install": False,
+            "reviewed_execution_supported": False,
+            "strategy_plan_only": True,
+            "side_effect_profile": "unknown",
+            "invokes_target": "blocked",
+            "captures_arguments": False,
+            "captures_argument_count": False,
+            "captures_return": False,
+            "captures_throw": False,
+            "captures_return_value": False,
+            "captures_throw_value": False,
+            "mutates_arguments": False,
+            "overrides_return": False,
+            "suppresses_throw": False,
+            "requires_restore": False,
+            "requires_review": True,
+            "requires_same_process_pause": True,
+            "execution_scope": "unsupported",
+            "event_kinds": [],
+            "install_blockers": ["unsupported_wrapper_strategy"],
+            "next_action": "choose_supported_closure_wrapper_strategy",
+        }
+    descriptor = dict(template)
+    descriptor.update(
+        {
+            "schema_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "strategy": normalized,
+            "known_strategy": True,
+            "next_action": (
+                "review_and_execute_log_only_call_through_wrapper"
+                if template.get("supported_for_install")
+                else "review_strategy_descriptor_and_keep_plan_only"
+            ),
+        }
+    )
+    descriptor["install_blockers"] = list(template.get("install_blockers") or [])
+    descriptor["event_kinds"] = list(template.get("event_kinds") or [])
+    return descriptor
+
+
+def closure_wrapper_strategy_supported_for_install(strategy: Any) -> bool:
+    return bool(closure_wrapper_strategy_descriptor(strategy).get("supported_for_install"))
+
+
 @dataclass(slots=True)
 class ClosureScopeDiscoverySpec:
     """Explicit paused-callframe closure scope discovery request.
@@ -260,7 +451,7 @@ class ClosureWrapperReplacementPlanSpec:
     candidate_id: str | None = None
     function_name: str | None = None
     callframe_id: str | None = None
-    wrapper_strategy: str = "log-only-call-through"
+    wrapper_strategy: str = DEFAULT_CLOSURE_WRAPPER_STRATEGY
     reviewer_note: str | None = None
 
     @classmethod
@@ -283,8 +474,8 @@ class ClosureWrapperReplacementPlanSpec:
         explicit_candidate = context.get("candidate")
         if isinstance(explicit_candidate, dict):
             candidates.insert(0, dict(explicit_candidate))
-        wrapper_strategy = str(
-            context.get("wrapper_strategy", context.get("wrapperStrategy", "log-only-call-through")) or "log-only-call-through"
+        wrapper_strategy = normalize_closure_wrapper_strategy(
+            context.get("wrapper_strategy", context.get("wrapperStrategy", DEFAULT_CLOSURE_WRAPPER_STRATEGY))
         )
         return cls(
             candidates=candidates,
@@ -360,6 +551,7 @@ class ClosureWrapperReplacementPlanManager:
                 candidate_count=candidate_count,
                 policy=policy,
                 selected_candidate={},
+                spec=spec,
             )
         if not selected:
             return self._blocked(
@@ -368,6 +560,7 @@ class ClosureWrapperReplacementPlanManager:
                 candidate_count=candidate_count,
                 policy=policy,
                 selected_candidate={},
+                spec=spec,
             )
         validation_reason = self._candidate_blocker(selected)
         if validation_reason:
@@ -377,6 +570,17 @@ class ClosureWrapperReplacementPlanManager:
                 candidate_count=candidate_count,
                 policy=policy,
                 selected_candidate=selected,
+                spec=spec,
+            )
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy)
+        if not strategy_descriptor.get("supported_for_planning"):
+            return self._blocked(
+                status="blocked",
+                reason="unsupported_wrapper_strategy",
+                candidate_count=candidate_count,
+                policy=policy,
+                selected_candidate=selected,
+                spec=spec,
             )
         plan = self._plan_payload(spec, selected, status="ready_for_review", reason=None, policy=policy)
         return ClosureWrapperReplacementPlanResult(
@@ -395,8 +599,9 @@ class ClosureWrapperReplacementPlanManager:
         candidate_count: int,
         policy: dict[str, Any],
         selected_candidate: dict[str, Any],
+        spec: ClosureWrapperReplacementPlanSpec | None = None,
     ) -> ClosureWrapperReplacementPlanResult:
-        spec = ClosureWrapperReplacementPlanSpec(candidates=[selected_candidate] if selected_candidate else [])
+        spec = spec or ClosureWrapperReplacementPlanSpec(candidates=[selected_candidate] if selected_candidate else [])
         plan = self._plan_payload(spec, selected_candidate, status=status, reason=reason, policy=policy)
         return ClosureWrapperReplacementPlanResult(
             status=status,
@@ -448,6 +653,7 @@ class ClosureWrapperReplacementPlanManager:
         function_name = str(candidate.get("function_name") or candidate.get("name") or "")
         callframe_id = str(candidate.get("callFrameId") or candidate.get("callframe_id") or "")
         evidence_expression = str(candidate.get("evidence_expression") or "")
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy)
         lexical_binding_proven = bool(function_name and evidence_expression == f"typeof {function_name}")
         execution_blockers = [
             "assignment_safety_not_proven",
@@ -455,6 +661,8 @@ class ClosureWrapperReplacementPlanManager:
             "same_process_retained_pause_required",
             "automatic_replacement_not_supported",
         ]
+        if not strategy_descriptor.get("supported_for_install"):
+            execution_blockers.extend(str(item) for item in strategy_descriptor.get("install_blockers", []))
         if status != "ready_for_review" and reason:
             execution_blockers.insert(0, reason)
         feasibility = {
@@ -462,10 +670,13 @@ class ClosureWrapperReplacementPlanManager:
             "lexical_binding_proven": lexical_binding_proven,
             "assignment_safety_proven": False,
             "restore_plan_available": False,
-            "restore_plan_available_after_execution": True,
-            "reviewed_executor_available": True,
-            "reviewed_executor_scope": "same-process-retained-paused-session",
+            "restore_plan_available_after_execution": bool(strategy_descriptor.get("requires_restore", True)),
+            "reviewed_executor_available": bool(strategy_descriptor.get("supported_for_install")),
+            "reviewed_executor_scope": strategy_descriptor.get("execution_scope") or "same-process-retained-paused-session",
             "automatic_replacement_supported": False,
+            "wrapper_strategy_supported_for_planning": bool(strategy_descriptor.get("supported_for_planning")),
+            "wrapper_strategy_supported_for_install": bool(strategy_descriptor.get("supported_for_install")),
+            "wrapper_strategy_plan_only": bool(strategy_descriptor.get("strategy_plan_only")),
             "reason": reason or "review_required_before_any_future_wrapper_replacement",
         }
         review_steps = [
@@ -488,6 +699,8 @@ class ClosureWrapperReplacementPlanManager:
             "cdp_command_sent": False,
             "callframe_evaluated": False,
             "wrapper_strategy": spec.wrapper_strategy,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
             "reviewer_note": spec.reviewer_note,
             "selected_candidate": candidate,
             "replacement_feasibility": feasibility,
@@ -540,7 +753,7 @@ class ClosureWrapperAssignmentSafetySpec:
     candidate_id: str | None = None
     function_name: str | None = None
     callframe_id: str | None = None
-    wrapper_strategy: str = "log-only-call-through"
+    wrapper_strategy: str = DEFAULT_CLOSURE_WRAPPER_STRATEGY
     reviewer_note: str | None = None
 
     @classmethod
@@ -563,12 +776,11 @@ class ClosureWrapperAssignmentSafetySpec:
         selected_candidate = dict(raw_candidate) if isinstance(raw_candidate, dict) else ClosureWrapperReplacementExecutionSpec._selected_candidate(plan)
         if not requested and not plan and not selected_candidate:
             return None
-        wrapper_strategy = str(
+        wrapper_strategy = normalize_closure_wrapper_strategy(
             context.get(
                 "wrapper_strategy",
-                context.get("wrapperStrategy", plan.get("wrapper_strategy", "log-only-call-through")),
+                context.get("wrapperStrategy", plan.get("wrapper_strategy", DEFAULT_CLOSURE_WRAPPER_STRATEGY)),
             )
-            or "log-only-call-through"
         )
         return cls(
             plan=plan,
@@ -612,7 +824,11 @@ class ClosureWrapperAssignmentSafetyResult:
 class ClosureWrapperAssignmentSafetyManager:
     """Prove static safety gates for one reviewed closure wrapper assignment."""
 
-    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+    SUPPORTED_STRATEGIES = {
+        strategy
+        for strategy, descriptor in CLOSURE_WRAPPER_STRATEGY_CATALOG.items()
+        if descriptor.get("supported_for_install")
+    }
 
     def prove(self, spec: ClosureWrapperAssignmentSafetySpec | None) -> ClosureWrapperAssignmentSafetyResult:
         policy = self._side_effect_policy()
@@ -643,6 +859,7 @@ class ClosureWrapperAssignmentSafetyManager:
         candidate_id = str(spec.candidate_id or candidate.get("candidate_id") or "")
         evidence_expression = str(candidate.get("evidence_expression") or "")
         feasibility = spec.plan.get("replacement_feasibility") if isinstance(spec.plan.get("replacement_feasibility"), dict) else {}
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy)
         return [
             self._check("plan_ready_for_review", str(spec.plan.get("status") or "") == "ready_for_review", required=True, evidence=spec.plan.get("status")),
             self._check("candidate_is_closure_scope", str(candidate.get("hook_kind") or "") == "closure-scope", required=True, evidence=candidate.get("hook_kind")),
@@ -656,10 +873,16 @@ class ClosureWrapperAssignmentSafetyManager:
                 evidence=evidence_expression,
             ),
             self._check(
-                "wrapper_strategy_supported",
-                spec.wrapper_strategy in self.SUPPORTED_STRATEGIES,
+                "wrapper_strategy_known",
+                strategy_descriptor.get("supported_for_planning") is True,
                 required=True,
-                evidence=spec.wrapper_strategy,
+                evidence=strategy_descriptor,
+            ),
+            self._check(
+                "wrapper_strategy_install_supported",
+                closure_wrapper_strategy_supported_for_install(spec.wrapper_strategy),
+                required=True,
+                evidence=strategy_descriptor,
             ),
             self._check("plan_is_read_only", spec.plan.get("runtime_mutated") is False and spec.plan.get("wrapper_installed") is False, required=True, evidence={"runtime_mutated": spec.plan.get("runtime_mutated"), "wrapper_installed": spec.plan.get("wrapper_installed")}),
             self._check("reviewed_executor_available", feasibility.get("reviewed_executor_available") is True, required=True, evidence=feasibility.get("reviewed_executor_available")),
@@ -686,6 +909,7 @@ class ClosureWrapperAssignmentSafetyManager:
         function_name = str((spec.function_name if spec else None) or candidate.get("function_name") or candidate.get("name") or "")
         callframe_id = str((spec.callframe_id if spec else None) or candidate.get("callFrameId") or candidate.get("callframe_id") or "")
         passed_required = all(item.get("passed") for item in checks if item.get("required"))
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy if spec else None)
         assignment_safety = {
             "schema_version": "reverse-deepagent.closure-wrapper-assignment-safety.v1",
             "status": status,
@@ -704,6 +928,8 @@ class ClosureWrapperAssignmentSafetyManager:
             "function_name": function_name,
             "callFrameId": callframe_id,
             "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
             "selected_candidate": candidate,
             "check_count": len(checks),
             "passed_required_check_count": sum(1 for item in checks if item.get("required") and item.get("passed")),
@@ -762,7 +988,7 @@ class ClosureWrapperRuntimeMutabilityPreflightSpec:
     callframe_index: int = 0
     expected_callframe_id: str | None = None
     function_name: str | None = None
-    wrapper_strategy: str = "log-only-call-through"
+    wrapper_strategy: str = DEFAULT_CLOSURE_WRAPPER_STRATEGY
     reviewer_note: str | None = None
 
     @classmethod
@@ -803,7 +1029,9 @@ class ClosureWrapperRuntimeMutabilityPreflightSpec:
                 )
             ),
             function_name=_string_or_none(context.get("function_name", context.get("functionName", assignment_safety.get("function_name")))),
-            wrapper_strategy=str(context.get("wrapper_strategy", context.get("wrapperStrategy", assignment_safety.get("wrapper_strategy", "log-only-call-through"))) or "log-only-call-through"),
+            wrapper_strategy=normalize_closure_wrapper_strategy(
+                context.get("wrapper_strategy", context.get("wrapperStrategy", assignment_safety.get("wrapper_strategy", DEFAULT_CLOSURE_WRAPPER_STRATEGY)))
+            ),
             reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
         )
 
@@ -832,7 +1060,7 @@ class ClosureWrapperRuntimeMutabilityPreflightResult:
 class ClosureWrapperRuntimeMutabilityPreflightManager:
     """Prepare a review checkpoint for a future runtime assignment mutability probe."""
 
-    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+    SUPPORTED_STRATEGIES = ClosureWrapperAssignmentSafetyManager.SUPPORTED_STRATEGIES
 
     def preflight(self, spec: ClosureWrapperRuntimeMutabilityPreflightSpec | None) -> ClosureWrapperRuntimeMutabilityPreflightResult:
         policy = self._side_effect_policy()
@@ -854,13 +1082,15 @@ class ClosureWrapperRuntimeMutabilityPreflightManager:
         proof = spec.assignment_safety if isinstance(spec.assignment_safety, dict) else {}
         function_name = str(spec.function_name or proof.get("function_name") or "")
         callframe_id = str(spec.expected_callframe_id or proof.get("callFrameId") or proof.get("callframe_id") or "")
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy)
         return [
             self._check("assignment_safety_proven", proof.get("assignment_safety_proven") is True, required=True, evidence=proof.get("assignment_safety_proven")),
             self._check("safe_to_request_reviewed_execution", proof.get("safe_to_request_reviewed_execution") is True, required=True, evidence=proof.get("safe_to_request_reviewed_execution")),
             self._check("function_name_safe_identifier", bool(JS_IDENTIFIER_RE.fullmatch(function_name)), required=True, evidence=function_name),
             self._check("stable_callframe_id_present", bool(callframe_id), required=True, evidence=callframe_id),
             self._check("same_process_pause_session_provided", bool(spec.pause_session_id), required=True, evidence=spec.pause_session_id),
-            self._check("wrapper_strategy_supported", spec.wrapper_strategy in self.SUPPORTED_STRATEGIES, required=True, evidence=spec.wrapper_strategy),
+            self._check("wrapper_strategy_known", strategy_descriptor.get("supported_for_planning") is True, required=True, evidence=strategy_descriptor),
+            self._check("wrapper_strategy_install_supported", closure_wrapper_strategy_supported_for_install(spec.wrapper_strategy), required=True, evidence=strategy_descriptor),
             self._check("runtime_mutability_not_already_claimed", proof.get("runtime_mutability_proven") is not True, required=False, evidence=proof.get("runtime_mutability_proven")),
             self._check("runtime_probe_not_executed", True, required=False, evidence="preflight-only"),
         ]
@@ -882,6 +1112,7 @@ class ClosureWrapperRuntimeMutabilityPreflightManager:
         function_name = str((spec.function_name if spec else None) or proof.get("function_name") or "")
         callframe_id = str((spec.expected_callframe_id if spec else None) or proof.get("callFrameId") or proof.get("callframe_id") or "")
         passed_required = all(item.get("passed") for item in checks if item.get("required"))
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy if spec else None)
         preflight = {
             "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-preflight.v1",
             "status": status,
@@ -900,6 +1131,8 @@ class ClosureWrapperRuntimeMutabilityPreflightManager:
             "expected_callframe_id": callframe_id,
             "function_name": function_name,
             "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
             "probe_plan": {
                 "probe_kind": "reviewed-same-process-callframe-assignment-mutability",
                 "requires_same_process_retained_pause": True,
@@ -907,6 +1140,9 @@ class ClosureWrapperRuntimeMutabilityPreflightManager:
                 "would_send_cdp_command": True,
                 "would_mutate_runtime_temporarily": True,
                 "default_execute_now": False,
+                "strategy_supported_for_install": bool(strategy_descriptor.get("supported_for_install")),
+                "strategy_plan_only": bool(strategy_descriptor.get("strategy_plan_only")),
+                "strategy_install_blockers": list(strategy_descriptor.get("install_blockers") or []),
                 "review_steps": [
                     "confirm_same_process_pause_session_is_still_live",
                     "review_assignment_safety_proof",
@@ -973,7 +1209,7 @@ class ClosureWrapperRuntimeMutabilityResultSpec:
     callframe_index: int = 0
     expected_callframe_id: str | None = None
     function_name: str | None = None
-    wrapper_strategy: str = "log-only-call-through"
+    wrapper_strategy: str = DEFAULT_CLOSURE_WRAPPER_STRATEGY
     review_approved: bool = False
     execute: bool = False
     reviewer_note: str | None = None
@@ -1017,7 +1253,9 @@ class ClosureWrapperRuntimeMutabilityResultSpec:
                 )
             ),
             function_name=_string_or_none(context.get("function_name", context.get("functionName", preflight.get("function_name")))),
-            wrapper_strategy=str(context.get("wrapper_strategy", context.get("wrapperStrategy", preflight.get("wrapper_strategy", "log-only-call-through"))) or "log-only-call-through"),
+            wrapper_strategy=normalize_closure_wrapper_strategy(
+                context.get("wrapper_strategy", context.get("wrapperStrategy", preflight.get("wrapper_strategy", DEFAULT_CLOSURE_WRAPPER_STRATEGY)))
+            ),
             review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
             execute=bool(context.get("execute_closure_wrapper_runtime_mutability_probe", context.get("executeClosureWrapperRuntimeMutabilityProbe", requested))),
             reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
@@ -1060,7 +1298,7 @@ class ClosureWrapperRuntimeMutabilityResult:
 class ClosureWrapperRuntimeMutabilityResultManager:
     """Run one reviewed temporary assignment mutability probe from a retained pause."""
 
-    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+    SUPPORTED_STRATEGIES = ClosureWrapperAssignmentSafetyManager.SUPPORTED_STRATEGIES
 
     def execute(self, page: BrowserPage, spec: ClosureWrapperRuntimeMutabilityResultSpec | None) -> ClosureWrapperRuntimeMutabilityResult:
         if spec is None:
@@ -1134,6 +1372,8 @@ class ClosureWrapperRuntimeMutabilityResultManager:
             "preflight": dict(spec.preflight) if spec else {},
             "function_name": spec.function_name if spec else None,
             "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": closure_wrapper_strategy_descriptor(spec.wrapper_strategy if spec else None),
             "runtime_mutability_proven": False,
             "runtime_mutability_probe_executed": False,
             "temporary_assignment_attempted": False,
@@ -1162,8 +1402,10 @@ class ClosureWrapperRuntimeMutabilityResultManager:
             return "review_approval_required"
         if not spec.pause_session_id:
             return "pause_session_id_required"
-        if spec.wrapper_strategy not in cls.SUPPORTED_STRATEGIES:
+        if not closure_wrapper_strategy_descriptor(spec.wrapper_strategy).get("supported_for_planning"):
             return "unsupported_wrapper_strategy"
+        if not closure_wrapper_strategy_supported_for_install(spec.wrapper_strategy):
+            return "wrapper_strategy_install_not_supported"
         function_name = str(spec.function_name or spec.preflight.get("function_name") or "")
         if not JS_IDENTIFIER_RE.fullmatch(function_name):
             return "missing_or_unsafe_closure_function_name"
@@ -1255,6 +1497,7 @@ class ClosureWrapperRuntimeMutabilityResultManager:
         value_payload = value if isinstance(value, dict) else {}
         temporary_assignment_confirmed = bool(value_payload.get("temporaryAssignmentConfirmed")) if value_payload else status == "proven"
         original_restored = bool(value_payload.get("originalRestored")) if value_payload else status == "proven"
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy)
         return {
             "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-result.v1",
             "status": status,
@@ -1271,6 +1514,8 @@ class ClosureWrapperRuntimeMutabilityResultManager:
             "function_name": function_name,
             "marker": marker,
             "wrapper_strategy": spec.wrapper_strategy,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
             "runtime_mutability_proven": status == "proven",
             "runtime_mutability_probe_executed": bool(evaluation),
             "temporary_assignment_attempted": bool(evaluation),
@@ -1317,6 +1562,7 @@ class ClosureWrapperRuntimeMutabilityResultManager:
         temporary_assignment_attempted: bool,
         original_restored: bool,
     ) -> dict[str, Any]:
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy)
         return {
             "read_only": False,
             "plan_only": False,
@@ -1352,7 +1598,7 @@ class ClosureWrapperReplacementExecutionSpec:
     expected_callframe_id: str | None = None
     candidate_id: str | None = None
     function_name: str | None = None
-    wrapper_strategy: str = "log-only-call-through"
+    wrapper_strategy: str = DEFAULT_CLOSURE_WRAPPER_STRATEGY
     assignment_safety_proof: dict[str, Any] = field(default_factory=dict)
     runtime_mutability_result: dict[str, Any] = field(default_factory=dict)
     require_runtime_mutability_result: bool = False
@@ -1384,12 +1630,11 @@ class ClosureWrapperReplacementExecutionSpec:
         callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex"))
         if callframe_index_raw is None:
             callframe_index_raw = selected_candidate.get("callframe_index", selected_candidate.get("callFrameIndex", 0))
-        strategy = str(
+        strategy = normalize_closure_wrapper_strategy(
             context.get(
                 "wrapper_strategy",
-                context.get("wrapperStrategy", plan.get("wrapper_strategy", "log-only-call-through")),
+                context.get("wrapperStrategy", plan.get("wrapper_strategy", DEFAULT_CLOSURE_WRAPPER_STRATEGY)),
             )
-            or "log-only-call-through"
         )
         assignment_safety_proof = cls._coerce_assignment_safety_proof(
             context.get("closure_wrapper_assignment_safety")
@@ -1504,7 +1749,7 @@ class ClosureWrapperReplacementExecutionResult:
 class ClosureWrapperReplacementExecutionManager:
     """Run one explicitly reviewed closure wrapper replacement from a retained pause."""
 
-    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+    SUPPORTED_STRATEGIES = ClosureWrapperAssignmentSafetyManager.SUPPORTED_STRATEGIES
 
     def execute(self, page: BrowserPage, spec: ClosureWrapperReplacementExecutionSpec | None) -> ClosureWrapperReplacementExecutionResult:
         if spec is None:
@@ -1515,7 +1760,7 @@ class ClosureWrapperReplacementExecutionManager:
             return self._blocked("blocked", reason, spec=spec, selected_candidate=selected_candidate)
         function_name = str(spec.function_name or selected_candidate.get("function_name") or selected_candidate.get("name") or "")
         marker = self._marker(spec, selected_candidate, function_name)
-        expression = self._install_expression(function_name=function_name, marker=marker)
+        expression = self._install_expression(function_name=function_name, marker=marker, wrapper_strategy=spec.wrapper_strategy)
         action_spec = PausedSessionActionSpec(
             pause_session_id=str(spec.pause_session_id),
             action="evaluate",
@@ -1580,6 +1825,8 @@ class ClosureWrapperReplacementExecutionManager:
             "runtime_mutability_result_proven": self._runtime_mutability_result_proven(spec, candidate) if spec else False,
             "selected_candidate": candidate,
             "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": closure_wrapper_strategy_descriptor(spec.wrapper_strategy if spec else None),
             "wrapper_installed": False,
             "runtime_mutated": False,
             "cdp_command_sent": False,
@@ -1608,8 +1855,10 @@ class ClosureWrapperReplacementExecutionManager:
             return "review_approval_required"
         if not spec.pause_session_id:
             return "pause_session_id_required"
-        if spec.wrapper_strategy not in cls.SUPPORTED_STRATEGIES:
+        if not closure_wrapper_strategy_descriptor(spec.wrapper_strategy).get("supported_for_planning"):
             return "unsupported_wrapper_strategy"
+        if not closure_wrapper_strategy_supported_for_install(spec.wrapper_strategy):
+            return "wrapper_strategy_install_not_supported"
         if not candidate:
             return "missing_selected_candidate"
         if str(candidate.get("hook_kind") or "") != "closure-scope":
@@ -1709,12 +1958,14 @@ class ClosureWrapperReplacementExecutionManager:
         return f"reverse-deepagent:closure-wrapper:{safe}"
 
     @staticmethod
-    def _install_expression(*, function_name: str, marker: str) -> str:
+    def _install_expression(*, function_name: str, marker: str, wrapper_strategy: str = DEFAULT_CLOSURE_WRAPPER_STRATEGY) -> str:
         function_literal = json.dumps(function_name)
         marker_literal = json.dumps(marker)
+        strategy_literal = json.dumps(normalize_closure_wrapper_strategy(wrapper_strategy))
         return f"""(() => {{
   const __rdgName = {function_literal};
   const __rdgMarker = {marker_literal};
+  const __rdgStrategy = {strategy_literal};
   const __rdgPrevious = {function_name};
   if (typeof __rdgPrevious !== "function") {{
     return {{ ok: false, reason: "target_not_function", functionName: __rdgName, previousType: typeof __rdgPrevious }};
@@ -1728,6 +1979,7 @@ class ClosureWrapperReplacementExecutionManager:
       __rdgRoot.events.push({{
         marker: __rdgMarker,
         functionName: __rdgName,
+        wrapperStrategy: __rdgStrategy,
         kind: "return",
         argumentCount: args.length,
         resultType: typeof __rdgResult,
@@ -1739,6 +1991,7 @@ class ClosureWrapperReplacementExecutionManager:
       __rdgRoot.events.push({{
         marker: __rdgMarker,
         functionName: __rdgName,
+        wrapperStrategy: __rdgStrategy,
         kind: "throw",
         argumentCount: args.length,
         errorName: __rdgError && __rdgError.name,
@@ -1789,6 +2042,7 @@ class ClosureWrapperReplacementExecutionManager:
         reason: str | None,
         side_effect_policy: dict[str, Any],
     ) -> dict[str, Any]:
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy if spec else None)
         return {
             "schema_version": "reverse-deepagent.closure-wrapper-replacement-execution.v1",
             "status": status,
@@ -1810,6 +2064,8 @@ class ClosureWrapperReplacementExecutionManager:
                 "observed_callframe_id": spec.runtime_mutability_result.get("observed_callframe_id"),
             },
             "wrapper_strategy": spec.wrapper_strategy,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
             "selected_candidate": candidate,
             "pause_session_id": spec.pause_session_id,
             "callframe_index": spec.callframe_index,
@@ -1827,6 +2083,9 @@ class ClosureWrapperReplacementExecutionManager:
                 "requires_review": True,
                 "function_name": function_name,
                 "marker": marker,
+                "wrapper_strategy": spec.wrapper_strategy,
+                "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+                "wrapper_strategy_descriptor": strategy_descriptor,
                 "restore_expression": self._restore_expression(function_name=function_name, marker=marker),
                 "next_action": "review_restore_expression_before_uninstalling_closure_wrapper",
             },
@@ -1879,6 +2138,7 @@ class ClosureWrapperReplacementExecutionManager:
         runtime_mutated: bool,
         wrapper_installed: bool,
     ) -> dict[str, Any]:
+        strategy_descriptor = closure_wrapper_strategy_descriptor(spec.wrapper_strategy if spec else None)
         return {
             "read_only": False,
             "plan_only": False,
@@ -1887,6 +2147,10 @@ class ClosureWrapperReplacementExecutionManager:
             "execute_requested": bool(spec.execute) if spec else False,
             "require_runtime_mutability_result": bool(spec.require_runtime_mutability_result) if spec else False,
             "runtime_mutability_result_proven": ClosureWrapperReplacementExecutionManager._runtime_mutability_result_proven(spec, ClosureWrapperReplacementExecutionSpec._selected_candidate(spec.plan)) if spec else False,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
+            "wrapper_strategy_supported_for_install": bool(strategy_descriptor.get("supported_for_install")),
+            "wrapper_strategy_plan_only": bool(strategy_descriptor.get("strategy_plan_only")),
             "files_mutated": False,
             "artifacts_written_by_manager": False,
             "cdp_command_sent": cdp_command_sent,
@@ -2068,6 +2332,9 @@ class ClosureWrapperRestoreExecutionManager:
             "review_approved": bool(spec.review_approved) if spec else False,
             "execute_requested": bool(spec.execute) if spec else False,
             "restore_plan": dict(spec.restore_plan) if spec else {},
+            "wrapper_strategy": (spec.restore_plan.get("wrapper_strategy") if spec else None),
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": closure_wrapper_strategy_descriptor((spec.restore_plan.get("wrapper_strategy") if spec else None)),
             "function_name": spec.function_name if spec else None,
             "marker": spec.marker if spec else None,
             "wrapper_restored": False,
@@ -2141,6 +2408,8 @@ class ClosureWrapperRestoreExecutionManager:
         reason: str | None,
         side_effect_policy: dict[str, Any],
     ) -> dict[str, Any]:
+        wrapper_strategy = normalize_closure_wrapper_strategy(spec.restore_plan.get("wrapper_strategy", DEFAULT_CLOSURE_WRAPPER_STRATEGY))
+        strategy_descriptor = closure_wrapper_strategy_descriptor(wrapper_strategy)
         return {
             "schema_version": "reverse-deepagent.closure-wrapper-restore-execution.v1",
             "status": status,
@@ -2150,6 +2419,9 @@ class ClosureWrapperRestoreExecutionManager:
             "review_approved": spec.review_approved,
             "execute_requested": spec.execute,
             "restore_plan": dict(spec.restore_plan),
+            "wrapper_strategy": wrapper_strategy,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
             "pause_session_id": spec.pause_session_id,
             "callframe_index": spec.callframe_index,
             "expected_callframe_id": spec.expected_callframe_id,
@@ -2195,12 +2467,17 @@ class ClosureWrapperRestoreExecutionManager:
         runtime_mutated: bool,
         wrapper_restored: bool,
     ) -> dict[str, Any]:
+        strategy_descriptor = closure_wrapper_strategy_descriptor((spec.restore_plan.get("wrapper_strategy") if spec else None))
         return {
             "read_only": False,
             "plan_only": False,
             "requires_review": True,
             "review_approved": bool(spec.review_approved) if spec else False,
             "execute_requested": bool(spec.execute) if spec else False,
+            "strategy_descriptor_version": CLOSURE_WRAPPER_STRATEGY_DESCRIPTOR_VERSION,
+            "wrapper_strategy_descriptor": strategy_descriptor,
+            "wrapper_strategy_supported_for_install": bool(strategy_descriptor.get("supported_for_install")),
+            "wrapper_strategy_plan_only": bool(strategy_descriptor.get("strategy_plan_only")),
             "files_mutated": False,
             "artifacts_written_by_manager": False,
             "cdp_command_sent": cdp_command_sent,
@@ -2330,11 +2607,17 @@ class ClosureWrapperEventHarvestManager:
     if (__rdgNames.size && !__rdgNames.has(event.functionName)) return false;
     return true;
   }}).slice(-__rdgLimit);
+  const __rdgStrategyCounts = {{}};
+  for (const event of __rdgFiltered) {{
+    const strategy = event && event.wrapperStrategy ? String(event.wrapperStrategy) : "unknown";
+    __rdgStrategyCounts[strategy] = (__rdgStrategyCounts[strategy] || 0) + 1;
+  }}
   return {{
     ok: true,
     events: __rdgFiltered,
     eventCount: __rdgFiltered.length,
     totalEventCount: __rdgEvents.length,
+    strategyCounts: __rdgStrategyCounts,
     markerCount: Object.keys((__rdgRoot && __rdgRoot.originals) || {{}}).length,
     filters: {{ markers: Array.from(__rdgMarkers), functionNames: Array.from(__rdgNames), limit: __rdgLimit }}
   }};
