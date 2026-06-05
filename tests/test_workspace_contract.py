@@ -104,6 +104,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/debugger/paused-session-live-continuation-preflight.json",
         )
         self.assertEqual(routes["workspace/paused-session-live-continuation-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-target-attach-readiness.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-target-attach-readiness.json"].future_path,
+            "/workspace/debugger/paused-session-target-attach-readiness.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-target-attach-readiness.json"].category, "audit")
         self.assertEqual(routes["workspace/closure-functions.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(routes["workspace/closure-functions.json"].future_path, "/workspace/debugger/closure-functions.json")
         self.assertEqual(routes["workspace/closure-functions.json"].category, "trace")

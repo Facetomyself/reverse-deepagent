@@ -6,6 +6,9 @@ from .breakpoints import (
     PausedSessionLiveContinuationPreflightManager,
     PausedSessionLiveContinuationPreflightResult,
     PausedSessionLiveContinuationPreflightSpec,
+    PausedSessionTargetAttachReadinessManager,
+    PausedSessionTargetAttachReadinessResult,
+    PausedSessionTargetAttachReadinessSpec,
 )
 from .closure_scope import (
     ClosureScopeDiscoveryManager,
@@ -185,6 +188,9 @@ __all__ = [
     "PausedSessionLiveContinuationPreflightManager",
     "PausedSessionLiveContinuationPreflightResult",
     "PausedSessionLiveContinuationPreflightSpec",
+    "PausedSessionTargetAttachReadinessManager",
+    "PausedSessionTargetAttachReadinessResult",
+    "PausedSessionTargetAttachReadinessSpec",
     "BrowserHookManager",
     "ClosureScopeDiscoveryManager",
     "ClosureScopeDiscoveryResult",

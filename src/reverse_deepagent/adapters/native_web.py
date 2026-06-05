@@ -124,6 +124,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionActionSpec,
     PausedSessionLiveContinuationPreflightManager,
     PausedSessionLiveContinuationPreflightSpec,
+    PausedSessionTargetAttachReadinessManager,
+    PausedSessionTargetAttachReadinessSpec,
     SourceLogpointManager,
     SourceLogpointSpec,
 )
@@ -1126,6 +1128,74 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_target_attach_readiness_request(protection_name, context):
+            spec = PausedSessionTargetAttachReadinessSpec.from_context(context)
+            result = PausedSessionTargetAttachReadinessManager().assess(spec)
+            readiness = result.readiness if isinstance(result.readiness, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
+            paused_evidence = readiness.get("paused_session_evidence") if isinstance(readiness.get("paused_session_evidence"), dict) else {}
+            target_correlation = readiness.get("target_correlation") if isinstance(readiness.get("target_correlation"), dict) else {}
+            attachability = readiness.get("attachability") if isinstance(readiness.get("attachability"), dict) else {}
+            callframe_recovery = readiness.get("callframe_recovery") if isinstance(readiness.get("callframe_recovery"), dict) else {}
+            action_capability = readiness.get("action_capability") if isinstance(readiness.get("action_capability"), dict) else {}
+            verification = [
+                f"paused_session_target_attach_readiness_status={result.status}",
+                f"paused_session_target_attach_readiness_reason={result.reason or ''}",
+                f"paused_session_target_attach_readiness_source={readiness.get('source', 'unknown')}",
+                f"paused_session_target_attach_readiness_requested_action={readiness.get('requested_action')}",
+                f"paused_session_target_attach_readiness_proven={readiness.get('target_attach_readiness_proven', False)}",
+                f"paused_session_target_attach_cross_process_execution_ready={readiness.get('cross_process_execution_ready', False)}",
+                f"paused_session_target_attach_cross_process_live_continuation_supported={readiness.get('cross_process_live_continuation_supported', False)}",
+                f"paused_session_target_attach_blockers={','.join(str(item) for item in blockers)}",
+                f"paused_session_target_attach_expected_url={target_correlation.get('expected_url')}",
+                f"paused_session_target_attach_candidate_count={target_correlation.get('candidate_count', 0)}",
+                f"paused_session_target_attach_url_match={target_correlation.get('url_match', False)}",
+                f"paused_session_target_attach_candidate_available={attachability.get('cdp_target_attach_candidate_available', False)}",
+                f"paused_session_target_attach_target_id_available={attachability.get('target_id_available', False)}",
+                f"paused_session_target_attach_would_attach_cdp_target={attachability.get('would_attach_cdp_target', False)}",
+                f"paused_session_target_attach_would_probe_cdp_target={attachability.get('would_probe_cdp_target', False)}",
+                f"paused_session_target_attach_stable_live_callframe_available={callframe_recovery.get('stable_live_callframe_available', False)}",
+                f"paused_session_target_attach_requires_new_paused_event={callframe_recovery.get('requires_new_paused_event_after_attach', True)}",
+                f"paused_session_target_attach_action_is_live={action_capability.get('is_live_action', False)}",
+                f"paused_session_target_attach_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_target_attach_browser_resumed={policy.get('browser_resumed', False)}",
+                f"paused_session_target_attach_debugger_stepped={policy.get('debugger_stepped', False)}",
+                f"paused_session_target_attach_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-target-attach-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only cross-process paused-session target attach readiness proof.",
+                    metadata={
+                        "status": result.status,
+                        "readiness_status": readiness.get("status"),
+                        "source": readiness.get("source"),
+                        "pause_session_id": readiness.get("pause_session_id"),
+                        "requested_action": readiness.get("requested_action"),
+                        "target_attach_readiness_proven": readiness.get("target_attach_readiness_proven", False),
+                        "cross_process_live_continuation_supported": readiness.get("cross_process_live_continuation_supported", False),
+                        "cross_process_execution_ready": readiness.get("cross_process_execution_ready", False),
+                        "blockers": blockers,
+                        "paused_session_evidence": paused_evidence,
+                        "target_correlation": target_correlation,
+                        "attachability": attachability,
+                        "callframe_recovery": callframe_recovery,
+                        "action_capability": action_capability,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["assess_paused_session_target_attach_readiness"],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_attach_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=readiness.get("next_action") or "inspect_attach_readiness_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_attach_review" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_live_continuation_preflight_request(protection_name, context):
             spec = PausedSessionLiveContinuationPreflightSpec.from_context(context)
@@ -4790,6 +4860,8 @@ class NativeWebRuntime(WebReverseRuntime):
         normalized = protection_name.strip().lower()
         if NativeWebRuntime._is_paused_session_live_continuation_preflight_request(protection_name, context):
             return False
+        if NativeWebRuntime._is_paused_session_target_attach_readiness_request(protection_name, context):
+            return False
         if normalized in {
             "paused-session",
             "pause-session",
@@ -4832,6 +4904,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "crossProcessPausedSessionLivePreflight",
                 "preflight_paused_session_live_continuation",
                 "preflightPausedSessionLiveContinuation",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_target_attach_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-target-attach-readiness",
+            "pause-session-target-attach-readiness",
+            "debugger-paused-session-target-attach-readiness",
+            "cross-process-paused-session-target-attach-readiness",
+            "cross-process-target-attach-readiness",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_target_attach_readiness",
+                "pausedSessionTargetAttachReadiness",
+                "paused-session-target-attach-readiness",
+                "cross_process_target_attach_readiness",
+                "crossProcessTargetAttachReadiness",
+                "cross_process_paused_session_target_attach_readiness",
+                "crossProcessPausedSessionTargetAttachReadiness",
             )
         )
 

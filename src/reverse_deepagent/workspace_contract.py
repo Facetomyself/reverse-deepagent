@@ -318,6 +318,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_debugger_session", "workspace/debugger-session.json", "/workspace/debugger/", "debugger-session.json", "trace", ("debugger", "protector")),
         ("workspace_debugger_timeline", "workspace/debugger-timeline.json", "/workspace/debugger/", "debugger-timeline.json", "trace", ("debugger", "timeline")),
         ("workspace_paused_session_live_continuation_preflight", "workspace/paused-session-live-continuation-preflight.json", "/workspace/debugger/", "paused-session-live-continuation-preflight.json", "audit", ("debugger", "browser_runtime", "review")),
+        ("workspace_paused_session_target_attach_readiness", "workspace/paused-session-target-attach-readiness.json", "/workspace/debugger/", "paused-session-target-attach-readiness.json", "audit", ("debugger", "browser_runtime", "review")),
         ("workspace_closure_functions", "workspace/closure-functions.json", "/workspace/debugger/", "closure-functions.json", "trace", ("debugger", "hook", "review")),
         ("workspace_closure_function_candidates", "workspace/closure-function-candidates.json", "/workspace/hooks/", "closure-function-candidates.json", "triage", ("debugger", "hook", "review")),
         ("workspace_closure_wrapper_replacement_plan", "workspace/closure-wrapper-replacement-plan.json", "/workspace/hooks/", "closure-wrapper-replacement-plan.json", "triage", ("debugger", "hook", "review")),

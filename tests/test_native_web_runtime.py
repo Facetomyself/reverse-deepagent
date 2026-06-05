@@ -5102,6 +5102,62 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("native-same-process-live-preflight", BreakpointManager._paused_sessions)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_native_web_runtime_assesses_paused_session_target_attach_readiness_without_attaching(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            initial = runtime.apply_minimal_protection(
+                "set-breakpoint",
+                {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 4,
+                    "trigger_expression": "debugger; 'scheduled'",
+                    "keep_paused": True,
+                    "pause_session_id": "native-attach-ready",
+                    "persist_paused_session": True,
+                    "paused_session_store_dir": tmpdir,
+                },
+            )
+            self.assertEqual(initial.status.value, "success")
+            page = provider.session.context.pages[0]
+            call_count = len(page._cdp_session.calls)
+
+            BreakpointManager.clear_paused_sessions()
+            follow_up = runtime.apply_minimal_protection(
+                "paused-session-target-attach-readiness",
+                {
+                    "pause_session_id": "native-attach-ready",
+                    "requested_action": "evaluate",
+                    "paused_session_store_dir": tmpdir,
+                    "target_candidates": [
+                        {
+                            "targetId": "target-native-1",
+                            "type": "page",
+                            "url": "https://example.test/assets/app.js",
+                        }
+                    ],
+                },
+            )
+
+            self.assertEqual(follow_up.status.value, "success")
+            self.assertEqual(follow_up.applied_actions, ["assess_paused_session_target_attach_readiness"])
+            self.assertEqual(follow_up.next_action, "review_target_attach_plan_before_cross_process_continuation_executor")
+            self.assertIn("paused_session_target_attach_readiness_status=ready_for_attach_review", follow_up.verification)
+            self.assertIn("paused_session_target_attach_readiness_source=durable_snapshot", follow_up.verification)
+            self.assertIn("paused_session_target_attach_readiness_proven=True", follow_up.verification)
+            self.assertIn("paused_session_target_attach_cross_process_execution_ready=False", follow_up.verification)
+            self.assertIn("paused_session_target_attach_cross_process_live_continuation_supported=False", follow_up.verification)
+            self.assertIn("paused_session_target_attach_would_attach_cdp_target=False", follow_up.verification)
+            self.assertIn("paused_session_target_attach_cdp_command_sent=False", follow_up.verification)
+            self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/paused-session-target-attach-readiness.json")
+            self.assertTrue(follow_up.artifacts[0].metadata["target_attach_readiness_proven"])
+            self.assertFalse(follow_up.artifacts[0].metadata["cross_process_execution_ready"])
+            self.assertEqual(follow_up.artifacts[0].metadata["target_correlation"]["selected_target"]["target_id"], "target-native-1")
+            self.assertFalse(follow_up.artifacts[0].metadata["attachability"]["would_attach_cdp_target"])
+            self.assertFalse(follow_up.artifacts[0].metadata["callframe_recovery"]["durable_callframe_id_reusable"])
+            self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_native_web_runtime_reports_missing_paused_session_preflight(self) -> None:
         BreakpointManager.clear_paused_sessions()
         provider = FakeProvider()

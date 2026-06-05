@@ -34,6 +34,9 @@ def _optional_bool(value: Any) -> bool | None:
     return bool(value)
 
 
+PAUSED_SESSION_LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe", "eval"}
+
+
 @dataclass(slots=True)
 class BreakpointSpec:
     """Provider-neutral breakpoint request."""
@@ -409,10 +412,466 @@ class PausedSessionLiveContinuationPreflightResult:
         }
 
 
+@dataclass(slots=True)
+class PausedSessionTargetAttachReadinessSpec:
+    """Read-only target attach readiness proof for future cross-process paused-session continuation."""
+
+    pause_session_id: str
+    requested_action: str = "inspect"
+    paused_session_store_dir: str | None = None
+    debugger_session: dict[str, Any] = field(default_factory=dict)
+    debugger_timeline: dict[str, Any] = field(default_factory=dict)
+    paused: dict[str, Any] = field(default_factory=dict)
+    callframes: list[dict[str, Any]] = field(default_factory=list)
+    callframe_index: int = 0
+    continuation_preflight: dict[str, Any] = field(default_factory=dict)
+    target_candidates: list[dict[str, Any]] = field(default_factory=list)
+    expected_url: str | None = None
+    expected_frame_id: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionTargetAttachReadinessSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_target_attach_readiness")
+            or context.get("pausedSessionTargetAttachReadiness")
+            or context.get("paused-session-target-attach-readiness")
+            or context.get("cross_process_target_attach_readiness")
+            or context.get("crossProcessTargetAttachReadiness")
+            or context.get("cross_process_paused_session_target_attach_readiness")
+            or context.get("crossProcessPausedSessionTargetAttachReadiness")
+        )
+        session_id = context.get("pause_session_id") or context.get("pauseSessionId") or context.get("debugger_session_id") or context.get("debuggerSessionId")
+        if not session_id and not requested:
+            return None
+        action = str(
+            context.get(
+                "requested_action",
+                context.get("requestedAction", context.get("paused_session_action", context.get("pausedSessionAction", "inspect"))),
+            )
+            or "inspect"
+        ).strip().replace("-", "_").lower()
+        store_dir = context.get(
+            "paused_session_store_dir",
+            context.get("pausedSessionStoreDir", context.get("pause_session_store_dir", context.get("pauseSessionStoreDir"))),
+        )
+        debugger_session = _first_dict(
+            context,
+            "debugger_session",
+            "debuggerSession",
+            "debugger-session",
+            "paused_session",
+            "pausedSession",
+        )
+        if isinstance(debugger_session.get("debugger_session"), dict):
+            debugger_session = dict(debugger_session["debugger_session"])
+        debugger_timeline = _first_dict(context, "debugger_timeline", "debuggerTimeline", "debugger-timeline")
+        paused = _first_dict(context, "debugger_paused", "debuggerPaused", "debugger-paused", "paused")
+        preflight = _first_dict(
+            context,
+            "continuation_preflight",
+            "continuationPreflight",
+            "paused_session_live_continuation_preflight",
+            "pausedSessionLiveContinuationPreflight",
+            "paused-session-live-continuation-preflight",
+        )
+        if isinstance(preflight.get("preflight"), dict):
+            preflight = dict(preflight["preflight"])
+        callframes_raw = context.get("callframes") or context.get("callFrames")
+        if isinstance(callframes_raw, dict):
+            callframes_raw = callframes_raw.get("callframes") or callframes_raw.get("callFrames") or callframes_raw.get("items")
+        target_raw = (
+            context.get("target_candidates")
+            or context.get("targetCandidates")
+            or context.get("cdp_targets")
+            or context.get("cdpTargets")
+            or context.get("browser_targets")
+            or context.get("browserTargets")
+        )
+        expected_url_raw = context.get("expected_url", context.get("expectedUrl"))
+        expected_frame_id_raw = context.get("expected_frame_id", context.get("expectedFrameId"))
+        return cls(
+            pause_session_id=str(session_id or ""),
+            requested_action=action,
+            paused_session_store_dir=str(store_dir) if store_dir else None,
+            debugger_session=debugger_session,
+            debugger_timeline=debugger_timeline,
+            paused=paused,
+            callframes=[item for item in callframes_raw if isinstance(item, dict)] if isinstance(callframes_raw, list) else [],
+            callframe_index=int(context.get("callframe_index", context.get("callFrameIndex", 0)) or 0),
+            continuation_preflight=preflight,
+            target_candidates=cls._coerce_target_candidates(target_raw),
+            expected_url=(str(expected_url_raw).strip() or None) if expected_url_raw is not None else None,
+            expected_frame_id=(str(expected_frame_id_raw).strip() or None) if expected_frame_id_raw is not None else None,
+        )
+
+    @staticmethod
+    def _coerce_target_candidates(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, dict):
+            for key in ("targets", "items", "entries", "targetInfos", "target_infos"):
+                nested = value.get(key)
+                if isinstance(nested, list):
+                    return [item for item in nested if isinstance(item, dict)]
+            return [value]
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        return []
+
+
+@dataclass(slots=True)
+class PausedSessionTargetAttachReadinessResult:
+    status: str
+    readiness: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "readiness": self.readiness,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionTargetAttachReadinessManager:
+    """Prove whether a paused-session snapshot has enough metadata for a future CDP target attach review."""
+
+    LIVE_ACTIONS = PAUSED_SESSION_LIVE_ACTIONS
+
+    def assess(self, spec: PausedSessionTargetAttachReadinessSpec | None) -> PausedSessionTargetAttachReadinessResult:
+        policy = PausedSessionLiveContinuationPreflightManager._side_effect_policy()
+        if spec is None or not spec.pause_session_id:
+            readiness = self._readiness_payload(
+                spec=None,
+                source="missing",
+                durable_snapshot={},
+                registry_entry={},
+                blockers=["paused_session_evidence_missing", "target_candidate_missing", "cross_process_live_continuation_not_implemented"],
+            )
+            return PausedSessionTargetAttachReadinessResult(status="blocked", readiness=readiness, side_effect_policy=policy, reason="paused_session_evidence_missing")
+        registry_entry = BreakpointManager._paused_sessions.get(spec.pause_session_id)
+        durable_snapshot = self._load_durable_snapshot(spec)
+        source = "registry" if registry_entry else "durable_snapshot" if durable_snapshot else "provided_artifact" if any((spec.debugger_session, spec.paused, spec.callframes, spec.continuation_preflight)) else "missing"
+        blockers = self._blockers(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot, source=source)
+        attach_ready = not any(blocker in blockers for blocker in ("paused_session_evidence_missing", "target_candidate_missing", "target_id_missing", "target_url_mismatch", "paused_target_url_missing", "cdp_target_not_attachable"))
+        status = "ready_for_attach_review" if attach_ready else "blocked"
+        readiness = self._readiness_payload(spec=spec, source=source, durable_snapshot=durable_snapshot, registry_entry=registry_entry or {}, blockers=blockers)
+        return PausedSessionTargetAttachReadinessResult(status=status, readiness=readiness, side_effect_policy=policy, reason=blockers[0] if blockers else None)
+
+    @staticmethod
+    def _load_durable_snapshot(spec: PausedSessionTargetAttachReadinessSpec) -> dict[str, Any]:
+        path = BreakpointManager._paused_session_store_path(spec.pause_session_id, spec.paused_session_store_dir)
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    @classmethod
+    def _blockers(
+        cls,
+        spec: PausedSessionTargetAttachReadinessSpec,
+        *,
+        registry_entry: dict[str, Any] | None,
+        durable_snapshot: dict[str, Any],
+        source: str,
+    ) -> list[str]:
+        blockers: list[str] = []
+        callframes = cls._callframes(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot)
+        expected_url = cls._expected_url(spec, callframes, registry_entry=registry_entry, durable_snapshot=durable_snapshot)
+        selected_target = cls._selected_target_candidate(spec, expected_url)
+        if source == "missing":
+            blockers.append("paused_session_evidence_missing")
+        if not expected_url:
+            blockers.append("paused_target_url_missing")
+        if not spec.target_candidates and source != "registry":
+            blockers.append("target_candidate_missing")
+        if selected_target and not cls._target_id(selected_target):
+            blockers.append("target_id_missing")
+        if spec.target_candidates and expected_url and not selected_target:
+            blockers.append("target_url_mismatch")
+        if selected_target and not cls._target_attachable(selected_target):
+            blockers.append("cdp_target_not_attachable")
+        if cls._requested_action_requires_live_callframe(spec) and not cls._stable_live_callframe_available(spec, source=source, registry_entry=registry_entry, callframes=callframes):
+            blockers.append("stable_live_callframe_unavailable")
+        blockers.append("cross_process_live_continuation_not_implemented")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _readiness_payload(
+        cls,
+        *,
+        spec: PausedSessionTargetAttachReadinessSpec | None,
+        source: str,
+        durable_snapshot: dict[str, Any],
+        registry_entry: dict[str, Any],
+        blockers: list[str],
+    ) -> dict[str, Any]:
+        callframes = cls._callframes(spec, registry_entry=registry_entry, durable_snapshot=durable_snapshot) if spec else []
+        expected_url = cls._expected_url(spec, callframes, registry_entry=registry_entry, durable_snapshot=durable_snapshot) if spec else None
+        selected_target = cls._selected_target_candidate(spec, expected_url) if spec else {}
+        selected_callframe = cls._selected_callframe_summary(spec, callframes) if spec else {}
+        same_process_registry = source == "registry" and bool(registry_entry)
+        target_attach_ready = not any(blocker in blockers for blocker in ("paused_session_evidence_missing", "target_candidate_missing", "target_id_missing", "target_url_mismatch", "paused_target_url_missing", "cdp_target_not_attachable"))
+        stable_live_callframe_available = bool(spec and cls._stable_live_callframe_available(spec, source=source, registry_entry=registry_entry, callframes=callframes))
+        action_is_live = bool(spec and spec.requested_action in cls.LIVE_ACTIONS)
+        continuation_preflight = cls._continuation_preflight(spec, durable_snapshot=durable_snapshot, registry_entry=registry_entry) if spec else {}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-target-attach-readiness.v1",
+            "status": "ready_for_attach_review" if target_attach_ready else "blocked",
+            "source": source,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "requested_action": spec.requested_action if spec else None,
+            "same_process_registry": same_process_registry,
+            "durable_snapshot_found": bool(durable_snapshot),
+            "provided_artifact_found": bool(spec and any((spec.debugger_session, spec.paused, spec.callframes, spec.continuation_preflight))),
+            "target_attach_readiness_proven": target_attach_ready,
+            "cross_process_live_continuation_supported": False,
+            "cross_process_execution_ready": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(target_attach_ready=target_attach_ready, blockers=blockers),
+            "paused_session_evidence": {
+                "source": source,
+                "debugger_session_lifecycle": cls._debugger_lifecycle(spec, durable_snapshot=durable_snapshot, registry_entry=registry_entry) if spec else "missing",
+                "callframe_count": len(callframes),
+                "selected_callframe": selected_callframe,
+                "durable_callframe_id_present": bool(selected_callframe.get("has_callframe_id")) and source == "durable_snapshot",
+                "stable_live_callframe_available": stable_live_callframe_available,
+            },
+            "target_correlation": {
+                "expected_url": expected_url,
+                "expected_frame_id": spec.expected_frame_id if spec else None,
+                "candidate_count": len(spec.target_candidates) if spec else 0,
+                "selected_target": cls._target_summary(selected_target),
+                "url_match": bool(selected_target),
+                "match_strategy": "same_process_registry" if same_process_registry else "exact_or_prefix_url" if selected_target else "none",
+            },
+            "attachability": {
+                "cdp_target_attach_candidate_available": bool(selected_target) or same_process_registry,
+                "target_id_available": bool(cls._target_id(selected_target)) or same_process_registry,
+                "target_type_supported": cls._target_attachable(selected_target) or same_process_registry,
+                "would_attach_cdp_target": False,
+                "would_probe_cdp_target": False,
+                "requires_explicit_future_attach_step": True,
+            },
+            "callframe_recovery": {
+                "stable_live_callframe_available": stable_live_callframe_available,
+                "selected_callframe_has_id": bool(selected_callframe.get("has_callframe_id")),
+                "durable_callframe_id_reusable": False,
+                "requires_new_paused_event_after_attach": not same_process_registry,
+            },
+            "action_capability": {
+                "requested_action": spec.requested_action if spec else None,
+                "is_live_action": action_is_live,
+                "inspect_supported": bool(spec and (source != "missing" or bool(callframes))),
+                "target_attach_review_supported": target_attach_ready,
+                "evaluate_supported": False,
+                "step_supported": False,
+                "resume_supported": False,
+                "reason": "cross_process_live_continuation_not_implemented",
+            },
+            "continuation_preflight_summary": {
+                "status": continuation_preflight.get("status"),
+                "source": continuation_preflight.get("source"),
+                "live_continuation_available": bool(continuation_preflight.get("live_continuation_available")),
+                "blockers": continuation_preflight.get("blockers") if isinstance(continuation_preflight.get("blockers"), list) else [],
+            },
+            "side_effect_policy": PausedSessionLiveContinuationPreflightManager._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "paused_session_evidence_missing": ("session_evidence", "No paused-session registry entry, durable snapshot, or provided artifact was found.", "collect_or_load_paused_session_snapshot"),
+            "paused_target_url_missing": ("target_correlation", "No URL was available from the selected callframe, debugger session, snapshot, or explicit expected_url.", "provide_expected_url_or_callframe_url"),
+            "target_candidate_missing": ("cdp_target", "No candidate CDP target metadata was provided for cross-process attach review.", "provide_target_candidates_from_browser_provider"),
+            "target_id_missing": ("cdp_target", "The matched target metadata does not expose a targetId / target_id.", "collect_target_id_before_attach_review"),
+            "target_url_mismatch": ("target_correlation", "Candidate targets do not match the paused callframe URL.", "refresh_targets_and_match_paused_frame_url"),
+            "cdp_target_not_attachable": ("cdp_target", "The matched target type is not attachable for debugger continuation.", "select_page_or_webview_target"),
+            "stable_live_callframe_unavailable": ("callframe", "A durable or provided callFrameId is not a reusable live callFrameId for cross-process actions.", "capture_new_paused_event_after_future_attach"),
+            "cross_process_live_continuation_not_implemented": ("capability_boundary", "This proof is read-only readiness metadata; cross-process resume / step / evaluate is still not implemented.", "review_attach_readiness_before_implementing_executor"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_attach_readiness"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_attach_readiness"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_attach_readiness"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, target_attach_ready: bool, blockers: list[str]) -> str:
+        if target_attach_ready:
+            return "review_target_attach_plan_before_cross_process_continuation_executor"
+        if "target_candidate_missing" in blockers:
+            return "collect_cdp_target_candidates_before_attach_review"
+        if "target_url_mismatch" in blockers:
+            return "refresh_target_candidates_and_match_paused_url"
+        if "paused_session_evidence_missing" in blockers:
+            return "collect_or_load_paused_session_snapshot"
+        return "inspect_attach_readiness_blockers"
+
+    @classmethod
+    def _callframes(
+        cls,
+        spec: PausedSessionTargetAttachReadinessSpec,
+        *,
+        registry_entry: dict[str, Any] | None,
+        durable_snapshot: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        if registry_entry and isinstance(registry_entry.get("paused_events"), list):
+            return BreakpointManager._callframes_from_paused(registry_entry["paused_events"])
+        durable_frames = durable_snapshot.get("callframes")
+        if isinstance(durable_frames, list):
+            return [item for item in durable_frames if isinstance(item, dict)]
+        return list(spec.callframes)
+
+    @classmethod
+    def _expected_url(
+        cls,
+        spec: PausedSessionTargetAttachReadinessSpec,
+        callframes: list[dict[str, Any]],
+        *,
+        registry_entry: dict[str, Any] | None,
+        durable_snapshot: dict[str, Any],
+    ) -> str | None:
+        if spec.expected_url:
+            return spec.expected_url
+        selected = cls._selected_callframe(spec, callframes)
+        location = selected.get("location") if isinstance(selected.get("location"), dict) else {}
+        for value in (
+            selected.get("url"),
+            location.get("url"),
+            spec.debugger_session.get("url"),
+            spec.debugger_session.get("page_url"),
+            durable_snapshot.get("url"),
+            durable_snapshot.get("page_url"),
+            registry_entry.get("page").url if registry_entry and registry_entry.get("page") is not None and hasattr(registry_entry.get("page"), "url") else None,
+        ):
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    @staticmethod
+    def _selected_callframe(spec: PausedSessionTargetAttachReadinessSpec, callframes: list[dict[str, Any]]) -> dict[str, Any]:
+        if spec.callframe_index < 0 or spec.callframe_index >= len(callframes):
+            return {}
+        return callframes[spec.callframe_index]
+
+    @classmethod
+    def _selected_callframe_summary(cls, spec: PausedSessionTargetAttachReadinessSpec, callframes: list[dict[str, Any]]) -> dict[str, Any]:
+        frame = cls._selected_callframe(spec, callframes)
+        if not frame:
+            return {}
+        location = frame.get("location") if isinstance(frame.get("location"), dict) else {}
+        return {
+            "function_name": frame.get("functionName") or frame.get("function_name") or frame.get("name"),
+            "url": frame.get("url") or location.get("url"),
+            "line_number": location.get("lineNumber", location.get("line_number")),
+            "column_number": location.get("columnNumber", location.get("column_number")),
+            "has_callframe_id": bool(frame.get("callFrameId") or frame.get("callframe_id") or frame.get("callFrameID")),
+        }
+
+    @classmethod
+    def _selected_target_candidate(cls, spec: PausedSessionTargetAttachReadinessSpec, expected_url: str | None) -> dict[str, Any]:
+        if not expected_url:
+            return {}
+        normalized_expected = cls._normalize_url(expected_url)
+        for candidate in spec.target_candidates:
+            candidate_url = candidate.get("url") or candidate.get("targetUrl") or candidate.get("target_url")
+            if not isinstance(candidate_url, str):
+                continue
+            normalized_candidate = cls._normalize_url(candidate_url)
+            if normalized_candidate == normalized_expected or normalized_expected.startswith(normalized_candidate) or normalized_candidate.startswith(normalized_expected):
+                return candidate
+        return {}
+
+    @staticmethod
+    def _normalize_url(value: str) -> str:
+        return value.split("#", 1)[0].rstrip("/")
+
+    @staticmethod
+    def _target_id(target: dict[str, Any]) -> str:
+        value = target.get("targetId") or target.get("target_id") or target.get("id")
+        return str(value).strip() if value is not None else ""
+
+    @classmethod
+    def _target_summary(cls, target: dict[str, Any]) -> dict[str, Any]:
+        if not target:
+            return {}
+        return {
+            "target_id": cls._target_id(target),
+            "type": target.get("type") or target.get("targetType") or target.get("target_type"),
+            "url": target.get("url") or target.get("targetUrl") or target.get("target_url"),
+            "attached": _optional_bool(target.get("attached")),
+            "browser_context_id": target.get("browserContextId") or target.get("browser_context_id"),
+        }
+
+    @classmethod
+    def _target_attachable(cls, target: dict[str, Any]) -> bool:
+        if not target:
+            return False
+        target_type = str(target.get("type") or target.get("targetType") or target.get("target_type") or "page").strip().lower()
+        return target_type in {"page", "webview", "iframe", "service_worker", "worker"}
+
+    @classmethod
+    def _stable_live_callframe_available(
+        cls,
+        spec: PausedSessionTargetAttachReadinessSpec,
+        *,
+        source: str,
+        registry_entry: dict[str, Any] | None,
+        callframes: list[dict[str, Any]],
+    ) -> bool:
+        return source == "registry" and bool(registry_entry) and bool(cls._selected_callframe_summary(spec, callframes).get("has_callframe_id"))
+
+    @classmethod
+    def _requested_action_requires_live_callframe(cls, spec: PausedSessionTargetAttachReadinessSpec) -> bool:
+        return spec.requested_action in {"evaluate", "evaluate_on_callframe", "eval"}
+
+    @staticmethod
+    def _debugger_lifecycle(
+        spec: PausedSessionTargetAttachReadinessSpec,
+        *,
+        durable_snapshot: dict[str, Any],
+        registry_entry: dict[str, Any],
+    ) -> str:
+        for source in (
+            registry_entry.get("debugger_session") if isinstance(registry_entry.get("debugger_session"), dict) else {},
+            durable_snapshot.get("debugger_session") if isinstance(durable_snapshot.get("debugger_session"), dict) else {},
+            spec.debugger_session,
+        ):
+            lifecycle = source.get("lifecycle") or source.get("status")
+            if lifecycle:
+                return str(lifecycle)
+        return "unknown"
+
+    @staticmethod
+    def _continuation_preflight(
+        spec: PausedSessionTargetAttachReadinessSpec,
+        *,
+        durable_snapshot: dict[str, Any],
+        registry_entry: dict[str, Any],
+    ) -> dict[str, Any]:
+        if spec.continuation_preflight:
+            return dict(spec.continuation_preflight)
+        if isinstance(durable_snapshot.get("continuation_preflight"), dict):
+            return dict(durable_snapshot["continuation_preflight"])
+        if registry_entry and isinstance(registry_entry.get("debugger_session"), dict):
+            preflight = registry_entry["debugger_session"].get("continuation_preflight")
+            if isinstance(preflight, dict):
+                return dict(preflight)
+        return {}
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 
-    LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe", "eval"}
+    LIVE_ACTIONS = PAUSED_SESSION_LIVE_ACTIONS
 
     def preflight(self, spec: PausedSessionLiveContinuationPreflightSpec | None) -> PausedSessionLiveContinuationPreflightResult:
         policy = self._side_effect_policy()

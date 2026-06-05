@@ -981,6 +981,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_debugger_session": "trace",
     "workspace_debugger_timeline": "trace",
     "workspace_paused_session_live_continuation_preflight": "audit",
+    "workspace_paused_session_target_attach_readiness": "audit",
     "workspace_closure_functions": "trace",
     "workspace_closure_function_candidates": "triage",
     "workspace_closure_wrapper_replacement_plan": "triage",
@@ -1793,6 +1794,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["debugger-timeline.json"] = evidence.details
         elif evidence.source == "paused_session_live_continuation_preflight":
             payloads["paused-session-live-continuation-preflight.json"] = evidence.details
+        elif evidence.source == "paused_session_target_attach_readiness":
+            payloads["paused-session-target-attach-readiness.json"] = evidence.details
         elif evidence.source == "closure_functions":
             payloads["closure-functions.json"] = evidence.details
         elif evidence.source == "closure_function_candidates":

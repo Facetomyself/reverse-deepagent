@@ -48,6 +48,14 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "live_continuation_preflight",
             "liveContinuationPreflight",
         )
+        target_attach_readiness = _object_alias(
+            payload,
+            "paused_session_target_attach_readiness",
+            "paused-session-target-attach-readiness",
+            "pausedSessionTargetAttachReadiness",
+            "target_attach_readiness",
+            "targetAttachReadiness",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -67,8 +75,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         target_diagnostics = preflight.get("target_diagnostics") if isinstance(preflight.get("target_diagnostics"), dict) else {}
         callframe_diagnostics = preflight.get("callframe_diagnostics") if isinstance(preflight.get("callframe_diagnostics"), dict) else {}
         action_capability = preflight.get("action_capability") if isinstance(preflight.get("action_capability"), dict) else {}
+        readiness = _first_object(target_attach_readiness.get("readiness"), target_attach_readiness)
+        target_correlation = readiness.get("target_correlation") if isinstance(readiness.get("target_correlation"), dict) else {}
+        attachability = readiness.get("attachability") if isinstance(readiness.get("attachability"), dict) else {}
+        callframe_recovery = readiness.get("callframe_recovery") if isinstance(readiness.get("callframe_recovery"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -85,6 +97,10 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             warnings.append("durable_snapshot_is_inspect_only")
         if preflight_status == "unavailable":
             warnings.append("paused_session_unavailable")
+        if readiness.get("status") == "blocked":
+            blockers.append("paused_session_target_attach_readiness_blocked")
+        if readiness.get("target_attach_readiness_proven") and not readiness.get("cross_process_execution_ready"):
+            warnings.append("target_attach_ready_but_cross_process_execution_not_implemented")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -145,10 +161,25 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "step_supported": _boolish(action_capability.get("step_supported")),
                     "resume_supported": _boolish(action_capability.get("resume_supported")),
                 },
+                "target_attach_readiness": {
+                    "status": _string(readiness.get("status") or "unknown"),
+                    "source": _string(readiness.get("source") or "unknown"),
+                    "target_attach_readiness_proven": _boolish(readiness.get("target_attach_readiness_proven")),
+                    "cross_process_live_continuation_supported": _boolish(readiness.get("cross_process_live_continuation_supported")),
+                    "cross_process_execution_ready": _boolish(readiness.get("cross_process_execution_ready")),
+                    "blockers": readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else [],
+                    "expected_url": _string(target_correlation.get("expected_url")),
+                    "candidate_count": target_correlation.get("candidate_count", 0),
+                    "url_match": _boolish(target_correlation.get("url_match")),
+                    "target_id_available": _boolish(attachability.get("target_id_available")),
+                    "would_attach_cdp_target": _boolish(attachability.get("would_attach_cdp_target")),
+                    "stable_live_callframe_available": _boolish(callframe_recovery.get("stable_live_callframe_available")),
+                    "requires_new_paused_event_after_attach": _boolish(callframe_recovery.get("requires_new_paused_event_after_attach")),
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -294,10 +325,14 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "use_live_same_process_paused_session_before_resume_step_or_evaluate"
     if "paused_session_live_preflight_blocked" in blockers:
         return "reproduce_pause_in_current_process_before_live_action"
+    if "paused_session_target_attach_readiness_blocked" in blockers:
+        return "collect_target_candidates_or_match_paused_url_before_attach_review"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
         return "collect_debugger_pause_artifacts_before_review"
+    if "target_attach_ready_but_cross_process_execution_not_implemented" in warnings:
+        return "review_target_attach_plan_before_cross_process_continuation_executor"
     if requested_action in _LIVE_ACTIONS and not live_available:
         return "attach_live_paused_session_or_limit_to_inspect_only_review"
     if "paused_session_has_no_callframes" in warnings:
@@ -313,11 +348,13 @@ def _review_required_items(
     blockers: list[str],
     warnings: list[str],
     preflight: dict[str, Any],
+    readiness: dict[str, Any],
     session: dict[str, Any],
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     diagnostics = _preflight_diagnostics_for_review(preflight)
+    attach_diagnostics = _attach_readiness_diagnostics_for_review(readiness)
     for code in blockers:
         items.append(
             {
@@ -327,10 +364,16 @@ def _review_required_items(
                 "preflight_source": _string(preflight.get("source")),
                 "reason": _string(preflight.get("reason") or preflight.get("blocked_reason") or session.get("reason") or paused.get("reason")),
                 "diagnostics": diagnostics,
+                "attach_readiness_diagnostics": attach_diagnostics,
             }
         )
     for code in warnings:
-        if code in {"durable_snapshot_is_inspect_only", "paused_session_unavailable", "paused_session_has_no_callframes"}:
+        if code in {
+            "durable_snapshot_is_inspect_only",
+            "paused_session_unavailable",
+            "paused_session_has_no_callframes",
+            "target_attach_ready_but_cross_process_execution_not_implemented",
+        }:
             items.append(
                 {
                     "code": code,
@@ -339,6 +382,7 @@ def _review_required_items(
                     "preflight_source": _string(preflight.get("source")),
                     "reason": _string(preflight.get("reason") or preflight.get("blocked_reason") or paused.get("reason")),
                     "diagnostics": diagnostics,
+                    "attach_readiness_diagnostics": attach_diagnostics,
                 }
             )
     return items
@@ -356,4 +400,22 @@ def _preflight_diagnostics_for_review(preflight: dict[str, Any]) -> dict[str, An
         "cdp_target_available": _boolish(target.get("cdp_target_available")),
         "stable_callframe_required": _boolish(callframe.get("stable_callframe_required")),
         "stable_callframe_available": _boolish(callframe.get("stable_callframe_available")),
+    }
+
+
+def _attach_readiness_diagnostics_for_review(readiness: dict[str, Any]) -> dict[str, Any]:
+    target_correlation = readiness.get("target_correlation") if isinstance(readiness.get("target_correlation"), dict) else {}
+    attachability = readiness.get("attachability") if isinstance(readiness.get("attachability"), dict) else {}
+    callframe_recovery = readiness.get("callframe_recovery") if isinstance(readiness.get("callframe_recovery"), dict) else {}
+    return {
+        "target_attach_readiness_proven": _boolish(readiness.get("target_attach_readiness_proven")),
+        "cross_process_execution_ready": _boolish(readiness.get("cross_process_execution_ready")),
+        "cross_process_live_continuation_supported": _boolish(readiness.get("cross_process_live_continuation_supported")),
+        "expected_url": _string(target_correlation.get("expected_url")),
+        "candidate_count": target_correlation.get("candidate_count", 0),
+        "url_match": _boolish(target_correlation.get("url_match")),
+        "target_id_available": _boolish(attachability.get("target_id_available")),
+        "would_attach_cdp_target": _boolish(attachability.get("would_attach_cdp_target")),
+        "stable_live_callframe_available": _boolish(callframe_recovery.get("stable_live_callframe_available")),
+        "requires_new_paused_event_after_attach": _boolish(callframe_recovery.get("requires_new_paused_event_after_attach")),
     }

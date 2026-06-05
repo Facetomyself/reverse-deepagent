@@ -9,6 +9,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionActionSpec,
     PausedSessionLiveContinuationPreflightManager,
     PausedSessionLiveContinuationPreflightSpec,
+    PausedSessionTargetAttachReadinessManager,
+    PausedSessionTargetAttachReadinessSpec,
 )
 
 
@@ -634,6 +636,90 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.preflight["action_capability"]["evaluate_supported"])
         self.assertIn("callframe", {detail["category"] for detail in result.preflight["blocker_details"]})
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_target_attach_readiness_proves_durable_snapshot_target_match_without_side_effects(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = RecordingCDPSession(emit_pause_on_evaluate=True)
+            manager = BreakpointManager()
+            initial = manager.set_breakpoint(
+                FakeBreakpointPage(session),
+                BreakpointSpec.from_context(
+                    {
+                        "url_pattern": ".*app\\.js$",
+                        "line_number": 3,
+                        "trigger_expression": "debugger; 'scheduled'",
+                        "keep_paused": True,
+                        "pause_session_id": "attach-ready",
+                        "persist_paused_session": True,
+                        "paused_session_store_dir": tmpdir,
+                    }
+                ),
+            )
+            self.assertEqual(initial.status, "success")
+            initial_call_count = len(session.calls)
+
+            BreakpointManager.clear_paused_sessions()
+            result = PausedSessionTargetAttachReadinessManager().assess(
+                PausedSessionTargetAttachReadinessSpec.from_context(
+                    {
+                        "pause_session_id": "attach-ready",
+                        "requested_action": "evaluate",
+                        "paused_session_store_dir": tmpdir,
+                        "target_candidates": [
+                            {
+                                "targetId": "target-1",
+                                "type": "page",
+                                "url": "https://example.test/app.js",
+                                "attached": False,
+                            }
+                        ],
+                    }
+                )
+            )
+
+            self.assertEqual(result.status, "ready_for_attach_review")
+            self.assertEqual(result.reason, "stable_live_callframe_unavailable")
+            self.assertEqual(result.readiness["source"], "durable_snapshot")
+            self.assertTrue(result.readiness["target_attach_readiness_proven"])
+            self.assertFalse(result.readiness["cross_process_execution_ready"])
+            self.assertFalse(result.readiness["cross_process_live_continuation_supported"])
+            self.assertIn("stable_live_callframe_unavailable", result.readiness["blockers"])
+            self.assertIn("cross_process_live_continuation_not_implemented", result.readiness["blockers"])
+            self.assertEqual(result.readiness["target_correlation"]["selected_target"]["target_id"], "target-1")
+            self.assertTrue(result.readiness["target_correlation"]["url_match"])
+            self.assertTrue(result.readiness["attachability"]["target_id_available"])
+            self.assertFalse(result.readiness["attachability"]["would_attach_cdp_target"])
+            self.assertFalse(result.readiness["callframe_recovery"]["durable_callframe_id_reusable"])
+            self.assertTrue(result.readiness["callframe_recovery"]["requires_new_paused_event_after_attach"])
+            self.assertFalse(result.readiness["action_capability"]["evaluate_supported"])
+            self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+            self.assertFalse(result.side_effect_policy["cdp_target_attached"])
+            self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+            self.assertEqual(len(session.calls), initial_call_count)
+
+    def test_target_attach_readiness_blocks_when_target_candidates_do_not_match_paused_url(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        result = PausedSessionTargetAttachReadinessManager().assess(
+            PausedSessionTargetAttachReadinessSpec.from_context(
+                {
+                    "pause_session_id": "artifact-target-mismatch",
+                    "requested_action": "resume",
+                    "debugger_session": {"session_id": "artifact-target-mismatch", "lifecycle": "retained_paused"},
+                    "callframes": [{"functionName": "sign", "url": "https://example.test/app.js", "callFrameId": "cf-stale"}],
+                    "target_candidates": [{"targetId": "target-2", "type": "page", "url": "https://other.test/app.js"}],
+                }
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "target_url_mismatch")
+        self.assertEqual(result.readiness["source"], "provided_artifact")
+        self.assertFalse(result.readiness["target_attach_readiness_proven"])
+        self.assertIn("target_url_mismatch", result.readiness["blockers"])
+        self.assertFalse(result.readiness["target_correlation"]["url_match"])
+        self.assertFalse(result.readiness["attachability"]["would_probe_cdp_target"])
+        self.assertFalse(result.side_effect_policy["browser_resumed"])
 
     def test_missing_paused_session_reports_unavailable_preflight(self) -> None:
         BreakpointManager.clear_paused_sessions()

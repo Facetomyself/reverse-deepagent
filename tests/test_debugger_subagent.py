@@ -167,6 +167,84 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(result["side_effect_policy"]["debugger_stepped"])
         self.assertFalse(result["side_effect_policy"]["callframe_evaluated"])
 
+    def test_review_debugger_artifacts_warns_for_attach_ready_without_cross_process_executor(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_target_attach_readiness": {
+                "status": "ready_for_attach_review",
+                "readiness": {
+                    "status": "ready_for_attach_review",
+                    "source": "durable_snapshot",
+                    "pause_session_id": "attach-ready-1",
+                    "requested_action": "evaluate",
+                    "target_attach_readiness_proven": True,
+                    "cross_process_live_continuation_supported": False,
+                    "cross_process_execution_ready": False,
+                    "blockers": ["stable_live_callframe_unavailable", "cross_process_live_continuation_not_implemented"],
+                    "target_correlation": {
+                        "expected_url": "https://example.test/app.js",
+                        "candidate_count": 1,
+                        "url_match": True,
+                    },
+                    "attachability": {
+                        "target_id_available": True,
+                        "would_attach_cdp_target": False,
+                    },
+                    "callframe_recovery": {
+                        "stable_live_callframe_available": False,
+                        "requires_new_paused_event_after_attach": True,
+                    },
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("target_attach_ready_but_cross_process_execution_not_implemented", result["warnings"])
+        self.assertEqual(result["next_action"], "review_target_attach_plan_before_cross_process_continuation_executor")
+        readiness = result["summary"]["target_attach_readiness"]
+        self.assertTrue(readiness["target_attach_readiness_proven"])
+        self.assertFalse(readiness["cross_process_execution_ready"])
+        self.assertEqual(readiness["expected_url"], "https://example.test/app.js")
+        self.assertTrue(readiness["target_id_available"])
+        self.assertFalse(readiness["would_attach_cdp_target"])
+        self.assertEqual(result["review_required_items"][0]["code"], "target_attach_ready_but_cross_process_execution_not_implemented")
+        self.assertFalse(result["review_required_items"][0]["attach_readiness_diagnostics"]["cross_process_execution_ready"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_debugger_artifacts_blocks_target_attach_readiness_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_target_attach_readiness": {
+                "readiness": {
+                    "status": "blocked",
+                    "source": "provided_artifact",
+                    "pause_session_id": "attach-blocked-1",
+                    "target_attach_readiness_proven": False,
+                    "cross_process_execution_ready": False,
+                    "blockers": ["target_url_mismatch", "cross_process_live_continuation_not_implemented"],
+                    "target_correlation": {
+                        "expected_url": "https://example.test/app.js",
+                        "candidate_count": 1,
+                        "url_match": False,
+                    },
+                    "attachability": {
+                        "target_id_available": False,
+                        "would_attach_cdp_target": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_target_attach_readiness_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "collect_target_candidates_or_match_paused_url_before_attach_review")
+        self.assertFalse(result["summary"]["target_attach_readiness"]["target_attach_readiness_proven"])
+        self.assertFalse(result["review_required_items"][0]["attach_readiness_diagnostics"]["url_match"])
+
     def test_review_debugger_artifacts_warns_when_no_artifacts_are_present(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         result = tool("{}")
