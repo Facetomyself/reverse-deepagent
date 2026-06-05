@@ -80,6 +80,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "live_callframe_recovery",
             "liveCallframeRecovery",
         )
+        cross_process_one_action = _object_alias(
+            payload,
+            "paused_session_cross_process_one_action_execution",
+            "paused-session-cross-process-one-action-execution",
+            "pausedSessionCrossProcessOneActionExecution",
+            "cross_process_one_action_execution",
+            "crossProcessOneActionExecution",
+            "cross_process_one_action",
+            "crossProcessOneAction",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -106,11 +116,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         execution_plan = _first_object(cross_process_execution_plan.get("plan"), cross_process_execution_plan)
         attach_probe = _first_object(cross_process_attach_probe.get("probe"), cross_process_attach_probe)
         callframe_recovery_artifact = _first_object(live_callframe_recovery.get("recovery"), live_callframe_recovery)
+        one_action_execution = _first_object(cross_process_one_action.get("execution"), cross_process_one_action)
         execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -129,12 +140,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             warnings.append("paused_session_unavailable")
         if readiness.get("status") == "blocked":
             blockers.append("paused_session_target_attach_readiness_blocked")
-        if readiness.get("target_attach_readiness_proven") and not readiness.get("cross_process_execution_ready"):
-            warnings.append("target_attach_ready_but_cross_process_execution_not_implemented")
+        if readiness.get("target_attach_readiness_proven") and not execution_plan:
+            warnings.append("target_attach_ready_but_execution_plan_not_observed")
         if execution_plan.get("status") == "blocked":
             blockers.append("paused_session_cross_process_execution_plan_blocked")
-        if execution_plan.get("execution_plan_ready_for_review") and not execution_plan.get("cross_process_executor_implemented"):
-            warnings.append("cross_process_execution_plan_ready_but_executor_not_implemented")
+        if execution_plan.get("execution_plan_ready_for_review") and not attach_probe:
+            warnings.append("cross_process_execution_plan_ready_but_attach_probe_not_observed")
         attach_probe_status = _string(attach_probe.get("status"))
         if attach_probe_status == "blocked":
             blockers.append("paused_session_cross_process_attach_probe_blocked")
@@ -145,12 +156,21 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         if attach_probe_status == "review_required":
             warnings.append("cross_process_attach_probe_review_required")
         if attach_probe_status == "attached" and not _boolish(attach_probe.get("live_callframe_recovered")):
-            warnings.append("attach_probe_ready_but_live_callframe_recovery_not_implemented")
+            warnings.append("attach_probe_ready_but_live_callframe_recovery_not_observed")
         recovery_status = _string(callframe_recovery_artifact.get("status"))
+        one_action_status = _string(one_action_execution.get("status"))
         if recovery_status == "blocked":
             blockers.append("paused_session_live_callframe_recovery_blocked")
-        if recovery_status == "recovered":
-            warnings.append("live_callframe_recovered_executor_not_implemented")
+        if recovery_status == "recovered" and not one_action_execution:
+            warnings.append("live_callframe_recovered_one_action_not_observed")
+        if one_action_status in {"blocked", "failed"}:
+            blockers.append("paused_session_cross_process_one_action_execution_blocked")
+        if one_action_status == "ready_for_review":
+            warnings.append("cross_process_one_action_requires_review_approval")
+        if one_action_status == "review_required":
+            warnings.append("cross_process_one_action_review_required")
+        if one_action_status == "executed":
+            warnings.append("cross_process_one_action_executed_review_result")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -277,10 +297,26 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "callframe_evaluated": _boolish(callframe_recovery_artifact.get("callframe_evaluated")),
                     "blockers": callframe_recovery_artifact.get("blockers") if isinstance(callframe_recovery_artifact.get("blockers"), list) else [],
                 },
+                "cross_process_one_action_execution": {
+                    "status": _string(one_action_execution.get("status") or "unknown"),
+                    "pause_session_id": _string(one_action_execution.get("pause_session_id")),
+                    "requested_action": _string(one_action_execution.get("requested_action") or "unknown"),
+                    "method": _string(one_action_execution.get("method")),
+                    "target_id": _string(one_action_execution.get("target_id")),
+                    "attached_session_id_present": bool(one_action_execution.get("attached_session_id")),
+                    "live_callframe_id_present": bool(one_action_execution.get("live_callframe_id")),
+                    "live_callframe_recovered": _boolish(one_action_execution.get("live_callframe_recovered")),
+                    "live_action_executed": _boolish(one_action_execution.get("live_action_executed")),
+                    "browser_resumed": _boolish(one_action_execution.get("browser_resumed")),
+                    "debugger_stepped": _boolish(one_action_execution.get("debugger_stepped")),
+                    "callframe_evaluated": _boolish(one_action_execution.get("callframe_evaluated")),
+                    "cdp_methods": one_action_execution.get("cdp_methods") if isinstance(one_action_execution.get("cdp_methods"), list) else [],
+                    "blockers": one_action_execution.get("blockers") if isinstance(one_action_execution.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, one_action_execution, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -438,22 +474,28 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_cross_process_attach_probe_error"
     if "paused_session_live_callframe_recovery_blocked" in blockers:
         return "capture_new_paused_event_after_attach"
+    if "paused_session_cross_process_one_action_execution_blocked" in blockers:
+        return "inspect_cross_process_one_action_error"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
         return "collect_debugger_pause_artifacts_before_review"
-    if "target_attach_ready_but_cross_process_execution_not_implemented" in warnings:
-        return "review_target_attach_plan_before_cross_process_continuation_executor"
+    if "target_attach_ready_but_execution_plan_not_observed" in warnings:
+        return "plan_cross_process_execution_after_target_attach_readiness"
     if "cross_process_attach_probe_requires_review_approval" in warnings:
         return "approve_cross_process_attach_probe"
     if "cross_process_attach_probe_review_required" in warnings:
         return "approve_cross_process_attach_probe"
-    if "live_callframe_recovered_executor_not_implemented" in warnings:
+    if "live_callframe_recovered_one_action_not_observed" in warnings:
         return "plan_cross_process_one_action_executor"
-    if "attach_probe_ready_but_live_callframe_recovery_not_implemented" in warnings:
+    if "cross_process_one_action_requires_review_approval" in warnings or "cross_process_one_action_review_required" in warnings:
+        return "approve_cross_process_one_action_execution"
+    if "cross_process_one_action_executed_review_result" in warnings:
+        return "review_cross_process_one_action_result"
+    if "attach_probe_ready_but_live_callframe_recovery_not_observed" in warnings:
         return "review_attach_probe_result_before_live_callframe_recovery"
-    if "cross_process_execution_plan_ready_but_executor_not_implemented" in warnings:
-        return "implement_reviewed_cross_process_attach_probe_next"
+    if "cross_process_execution_plan_ready_but_attach_probe_not_observed" in warnings:
+        return "run_reviewed_cross_process_attach_probe_next"
     if requested_action in _LIVE_ACTIONS and not live_available:
         return "attach_live_paused_session_or_limit_to_inspect_only_review"
     if "paused_session_has_no_callframes" in warnings:
@@ -473,6 +515,7 @@ def _review_required_items(
     execution_plan: dict[str, Any],
     attach_probe: dict[str, Any],
     live_callframe_recovery: dict[str, Any],
+    one_action_execution: dict[str, Any],
     session: dict[str, Any],
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -482,6 +525,7 @@ def _review_required_items(
     execution_plan_diagnostics = _cross_process_execution_plan_diagnostics_for_review(execution_plan)
     attach_probe_diagnostics = _cross_process_attach_probe_diagnostics_for_review(attach_probe)
     live_callframe_recovery_diagnostics = _live_callframe_recovery_diagnostics_for_review(live_callframe_recovery)
+    one_action_diagnostics = _cross_process_one_action_diagnostics_for_review(one_action_execution)
     for code in blockers:
         items.append(
             {
@@ -495,6 +539,7 @@ def _review_required_items(
                 "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
                 "cross_process_attach_probe_diagnostics": attach_probe_diagnostics,
                 "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
+                "cross_process_one_action_diagnostics": one_action_diagnostics,
             }
         )
     for code in warnings:
@@ -502,12 +547,15 @@ def _review_required_items(
             "durable_snapshot_is_inspect_only",
             "paused_session_unavailable",
             "paused_session_has_no_callframes",
-            "target_attach_ready_but_cross_process_execution_not_implemented",
-            "cross_process_execution_plan_ready_but_executor_not_implemented",
+            "target_attach_ready_but_execution_plan_not_observed",
+            "cross_process_execution_plan_ready_but_attach_probe_not_observed",
             "cross_process_attach_probe_requires_review_approval",
             "cross_process_attach_probe_review_required",
-            "attach_probe_ready_but_live_callframe_recovery_not_implemented",
-            "live_callframe_recovered_executor_not_implemented",
+            "attach_probe_ready_but_live_callframe_recovery_not_observed",
+            "live_callframe_recovered_one_action_not_observed",
+            "cross_process_one_action_requires_review_approval",
+            "cross_process_one_action_review_required",
+            "cross_process_one_action_executed_review_result",
         }:
             items.append(
                 {
@@ -521,6 +569,7 @@ def _review_required_items(
                     "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
                     "cross_process_attach_probe_diagnostics": attach_probe_diagnostics,
                     "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
+                    "cross_process_one_action_diagnostics": one_action_diagnostics,
                 }
             )
     return items
@@ -611,4 +660,24 @@ def _live_callframe_recovery_diagnostics_for_review(recovery: dict[str, Any]) ->
         "debugger_stepped": _boolish(recovery.get("debugger_stepped")),
         "callframe_evaluated": _boolish(recovery.get("callframe_evaluated")),
         "blockers": recovery.get("blockers") if isinstance(recovery.get("blockers"), list) else [],
+    }
+
+
+def _cross_process_one_action_diagnostics_for_review(execution: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": _string(execution.get("status") or "unknown"),
+        "requested_action": _string(execution.get("requested_action") or "unknown"),
+        "method": _string(execution.get("method")),
+        "target_id": _string(execution.get("target_id")),
+        "attached_session_id_present": bool(execution.get("attached_session_id")),
+        "live_callframe_id_present": bool(execution.get("live_callframe_id")),
+        "live_callframe_recovered": _boolish(execution.get("live_callframe_recovered")),
+        "execute_action_requested": _boolish(execution.get("execute_action_requested")),
+        "review_approved": _boolish(execution.get("review_approved")),
+        "live_action_executed": _boolish(execution.get("live_action_executed")),
+        "browser_resumed": _boolish(execution.get("browser_resumed")),
+        "debugger_stepped": _boolish(execution.get("debugger_stepped")),
+        "callframe_evaluated": _boolish(execution.get("callframe_evaluated")),
+        "cdp_methods": execution.get("cdp_methods") if isinstance(execution.get("cdp_methods"), list) else [],
+        "blockers": execution.get("blockers") if isinstance(execution.get("blockers"), list) else [],
     }

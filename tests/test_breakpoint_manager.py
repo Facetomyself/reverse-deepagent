@@ -11,6 +11,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessAttachProbeSpec,
     PausedSessionCrossProcessExecutionPlanManager,
     PausedSessionCrossProcessExecutionPlanSpec,
+    PausedSessionCrossProcessOneActionManager,
+    PausedSessionCrossProcessOneActionSpec,
     PausedSessionLiveCallframeRecoveryManager,
     PausedSessionLiveCallframeRecoverySpec,
     PausedSessionLiveContinuationPreflightManager,
@@ -768,13 +770,13 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "ready_for_executor_review")
         self.assertTrue(plan["execution_plan_ready_for_review"])
         self.assertFalse(plan["cross_process_execution_ready"])
-        self.assertFalse(plan["cross_process_executor_implemented"])
-        self.assertEqual(plan["next_action"], "implement_reviewed_cross_process_attach_probe_next")
+        self.assertTrue(plan["cross_process_executor_implemented"])
+        self.assertEqual(plan["next_action"], "run_reviewed_cross_process_attach_probe_next")
         self.assertEqual(plan["target_attach_readiness_summary"]["selected_target"]["target_id"], "target-1")
         self.assertTrue(plan["review_gates"]["attach_probe_review_required"])
         self.assertTrue(plan["review_gates"]["action_execution_review_required"])
         self.assertTrue(plan["callframe_recovery_plan"]["requires_new_paused_event_after_attach"])
-        self.assertIn("cross_process_execution_executor_not_implemented", plan["capability_boundaries"])
+        self.assertIn("full_cross_process_continuation_not_implemented", plan["capability_boundaries"])
         self.assertFalse(result.side_effect_policy["would_attach_cdp_target"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["browser_resumed"])
@@ -964,6 +966,98 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("cross_process_attach_probe_required", result.recovery["blockers"])
         self.assertEqual(result.recovery["next_action"], "run_reviewed_cross_process_attach_probe")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_cross_process_one_action_executes_reviewed_evaluate_once(self) -> None:
+        session = RecordingCDPSession()
+        spec = PausedSessionCrossProcessOneActionSpec.from_context(
+            {
+                "paused_session_cross_process_one_action": True,
+                "execute_cross_process_one_action": True,
+                "review_approved": True,
+                "requested_action": "evaluate",
+                "expression": "typeof buildSign",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "recover-1",
+                        "requested_action": "evaluate",
+                        "target_id": "target-recover-1",
+                        "target_attached": True,
+                        "target_detached": False,
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_recovered": True,
+                        "live_callframe_id": "live-cf-1",
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionCrossProcessOneActionManager().execute(FakeBreakpointPage(session), spec)
+
+        self.assertEqual(result.status, "executed")
+        self.assertEqual(session.calls[-1][0], "Debugger.evaluateOnCallFrame")
+        self.assertEqual(session.calls[-1][1]["sessionId"], "attached-session-1")
+        self.assertEqual(session.calls[-1][1]["callFrameId"], "live-cf-1")
+        self.assertEqual(result.execution["method"], "Debugger.evaluateOnCallFrame")
+        self.assertTrue(result.execution["live_action_executed"])
+        self.assertTrue(result.execution["callframe_evaluated"])
+        self.assertFalse(result.execution["browser_resumed"])
+        self.assertFalse(result.execution["debugger_stepped"])
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["callframe_evaluated"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_cross_process_one_action_requires_review_approval(self) -> None:
+        session = RecordingCDPSession()
+        spec = PausedSessionCrossProcessOneActionSpec.from_context(
+            {
+                "paused_session_cross_process_one_action": True,
+                "execute_cross_process_one_action": True,
+                "requested_action": "resume",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "target_detached": False,
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_recovered": True,
+                        "live_callframe_id": "live-cf-1",
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionCrossProcessOneActionManager().execute(FakeBreakpointPage(session), spec)
+
+        self.assertEqual(result.status, "review_required")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(result.execution["next_action"], "approve_cross_process_one_action_execution")
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_cross_process_one_action_blocks_detached_attach_probe_session(self) -> None:
+        spec = PausedSessionCrossProcessOneActionSpec.from_context(
+            {
+                "paused_session_cross_process_one_action": True,
+                "requested_action": "resume",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "target_detached": True,
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_recovered": True,
+                        "live_callframe_id": "live-cf-1",
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionCrossProcessOneActionManager().execute(FakeBreakpointPage(RecordingCDPSession()), spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("attached_session_retained_required", result.execution["blockers"])
+        self.assertEqual(result.execution["next_action"], "rerun_attach_probe_without_detach_for_one_action")
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
 
     def test_cross_process_execution_plan_blocks_without_attach_readiness(self) -> None:

@@ -183,7 +183,7 @@ class CoordinatorTests(unittest.TestCase):
                         "plan": {
                             "execution_plan_ready_for_review": True,
                             "cross_process_execution_ready": False,
-                            "cross_process_executor_implemented": False,
+                            "cross_process_executor_implemented": True,
                         },
                     },
                     confidence=ConfidenceLevel.MEDIUM,
@@ -213,6 +213,21 @@ class CoordinatorTests(unittest.TestCase):
                             "live_callframe_recovered": True,
                             "one_action_executor_ready_for_review": True,
                             "live_action_executed": False,
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native paused-session cross-process one-action execution",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="paused_session_cross_process_one_action_execution",
+                    details={
+                        "status": "executed",
+                        "execution": {
+                            "live_action_executed": True,
+                            "callframe_evaluated": True,
+                            "browser_resumed": False,
+                            "debugger_stepped": False,
                         },
                     },
                     confidence=ConfidenceLevel.MEDIUM,
@@ -615,11 +630,13 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["paused-session-live-continuation-preflight.json"]["preflight"]["source"], "durable_snapshot")
         self.assertTrue(payloads["paused-session-target-attach-readiness.json"]["readiness"]["target_attach_readiness_proven"])
         self.assertTrue(payloads["paused-session-cross-process-execution-plan.json"]["plan"]["execution_plan_ready_for_review"])
-        self.assertFalse(payloads["paused-session-cross-process-execution-plan.json"]["plan"]["cross_process_executor_implemented"])
+        self.assertTrue(payloads["paused-session-cross-process-execution-plan.json"]["plan"]["cross_process_executor_implemented"])
         self.assertTrue(payloads["paused-session-cross-process-attach-probe.json"]["probe"]["target_attached"])
         self.assertFalse(payloads["paused-session-cross-process-attach-probe.json"]["probe"]["live_action_executed"])
         self.assertTrue(payloads["paused-session-live-callframe-recovery.json"]["recovery"]["live_callframe_recovered"])
         self.assertFalse(payloads["paused-session-live-callframe-recovery.json"]["recovery"]["live_action_executed"])
+        self.assertTrue(payloads["paused-session-cross-process-one-action-execution.json"]["execution"]["live_action_executed"])
+        self.assertTrue(payloads["paused-session-cross-process-one-action-execution.json"]["execution"]["callframe_evaluated"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -732,6 +749,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_execution_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_attach_probe"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_live_callframe_recovery"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_one_action_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")

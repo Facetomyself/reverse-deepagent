@@ -128,6 +128,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessAttachProbeSpec,
     PausedSessionCrossProcessExecutionPlanManager,
     PausedSessionCrossProcessExecutionPlanSpec,
+    PausedSessionCrossProcessOneActionManager,
+    PausedSessionCrossProcessOneActionSpec,
     PausedSessionLiveCallframeRecoveryManager,
     PausedSessionLiveCallframeRecoverySpec,
     PausedSessionLiveContinuationPreflightManager,
@@ -1136,6 +1138,69 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_cross_process_one_action_request(protection_name, context):
+            spec = PausedSessionCrossProcessOneActionSpec.from_context(context)
+            result = PausedSessionCrossProcessOneActionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_cross_process_one_action_status={result.status}",
+                f"paused_session_cross_process_one_action_reason={result.reason or ''}",
+                f"paused_session_cross_process_one_action_requested_action={execution.get('requested_action')}",
+                f"paused_session_cross_process_one_action_method={execution.get('method')}",
+                f"paused_session_cross_process_one_action_target_id={execution.get('target_id')}",
+                f"paused_session_cross_process_one_action_attached_session_id_present={bool(execution.get('attached_session_id'))}",
+                f"paused_session_cross_process_one_action_live_callframe_id_present={bool(execution.get('live_callframe_id'))}",
+                f"paused_session_cross_process_one_action_recovery_status={execution.get('live_callframe_recovery_status')}",
+                f"paused_session_cross_process_one_action_live_callframe_recovered={execution.get('live_callframe_recovered', False)}",
+                f"paused_session_cross_process_one_action_execute_requested={execution.get('execute_action_requested', False)}",
+                f"paused_session_cross_process_one_action_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_cross_process_one_action_live_action_executed={execution.get('live_action_executed', False)}",
+                f"paused_session_cross_process_one_action_browser_resumed={execution.get('browser_resumed', False)}",
+                f"paused_session_cross_process_one_action_debugger_stepped={execution.get('debugger_stepped', False)}",
+                f"paused_session_cross_process_one_action_callframe_evaluated={execution.get('callframe_evaluated', False)}",
+                f"paused_session_cross_process_one_action_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_cross_process_one_action_debugger_domain_enabled={execution.get('debugger_domain_enabled', False)}",
+                f"paused_session_cross_process_one_action_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_cross_process_one_action_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_cross_process_one_action_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"paused_session_cross_process_one_action_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-cross-process-one-action-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated one-action execution after live callFrame recovery.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "pause_session_id": execution.get("pause_session_id"),
+                        "requested_action": execution.get("requested_action"),
+                        "method": execution.get("method"),
+                        "target_id": execution.get("target_id"),
+                        "attached_session_id_present": bool(execution.get("attached_session_id")),
+                        "live_callframe_id_present": bool(execution.get("live_callframe_id")),
+                        "live_action_executed": execution.get("live_action_executed", False),
+                        "browser_resumed": execution.get("browser_resumed", False),
+                        "debugger_stepped": execution.get("debugger_stepped", False),
+                        "callframe_evaluated": execution.get("callframe_evaluated", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_cross_process_one_action"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_cross_process_one_action_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_live_callframe_recovery_request(protection_name, context):
             spec = PausedSessionLiveCallframeRecoverySpec.from_context(context)
@@ -5139,6 +5204,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_cross_process_one_action_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_live_callframe_recovery_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_attach_probe_request(protection_name, context):
@@ -5167,6 +5234,35 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_cross_process_one_action_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-cross-process-one-action",
+            "pause-session-cross-process-one-action",
+            "debugger-paused-session-cross-process-one-action",
+            "cross-process-paused-session-one-action",
+            "cross-process-one-action",
+            "execute-cross-process-one-action",
+            "execute-cross-process-paused-session-action",
+            "reviewed-cross-process-one-action",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_cross_process_one_action",
+                "pausedSessionCrossProcessOneAction",
+                "paused-session-cross-process-one-action",
+                "cross_process_one_action",
+                "crossProcessOneAction",
+                "execute_cross_process_one_action",
+                "executeCrossProcessOneAction",
+                "cross_process_paused_session_action",
+                "crossProcessPausedSessionAction",
             )
         )
 

@@ -5256,6 +5256,54 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["one_action_executor_ready_for_review"])
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_cross_process_one_action_from_native_runtime_executes_once(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-cross-process-one-action",
+            {
+                "paused_session_cross_process_one_action": True,
+                "execute_cross_process_one_action": True,
+                "review_approved": True,
+                "requested_action": "evaluate",
+                "expression": "typeof buildSign",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "native-one-action-1",
+                        "requested_action": "evaluate",
+                        "target_id": "target-native-recover-1",
+                        "target_attached": True,
+                        "target_detached": False,
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_recovered": True,
+                        "live_callframe_id": "native-live-cf-1",
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_cross_process_one_action"])
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-cross-process-one-action-execution.json")
+        self.assertEqual(page._cdp_session.calls[-1][0], "Debugger.evaluateOnCallFrame")
+        self.assertEqual(page._cdp_session.calls[-1][1]["sessionId"], "attached-session-1")
+        self.assertEqual(page._cdp_session.calls[-1][1]["callFrameId"], "native-live-cf-1")
+        self.assertIn("paused_session_cross_process_one_action_status=executed", result.verification)
+        self.assertIn("paused_session_cross_process_one_action_method=Debugger.evaluateOnCallFrame", result.verification)
+        self.assertIn("paused_session_cross_process_one_action_live_action_executed=True", result.verification)
+        self.assertIn("paused_session_cross_process_one_action_callframe_evaluated=True", result.verification)
+        self.assertIn("paused_session_cross_process_one_action_cdp_command_sent=True", result.verification)
+        self.assertIn("paused_session_cross_process_one_action_debugger_domain_enabled=False", result.verification)
+        self.assertIn("paused_session_cross_process_one_action_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_cross_process_one_action_mobile_runtime_used=False", result.verification)
+        self.assertTrue(result.artifacts[0].metadata["live_action_executed"])
+        self.assertTrue(result.artifacts[0].metadata["callframe_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["browser_resumed"])
+        self.assertFalse(result.artifacts[0].metadata["debugger_stepped"])
+
     def test_paused_session_cross_process_attach_probe_from_native_runtime_requires_review_and_attaches_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
@@ -5270,7 +5318,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
                 "target_id_available": True,
             },
             "cross_process_execution_ready": False,
-            "cross_process_executor_implemented": False,
+            "cross_process_executor_implemented": True,
         }
 
         result = runtime.apply_minimal_protection(
@@ -5346,11 +5394,11 @@ class NativeWebRuntimeTests(unittest.TestCase):
 
         self.assertEqual(follow_up.status.value, "success")
         self.assertEqual(follow_up.applied_actions, ["plan_paused_session_cross_process_execution"])
-        self.assertEqual(follow_up.next_action, "implement_reviewed_cross_process_attach_probe_next")
+        self.assertEqual(follow_up.next_action, "run_reviewed_cross_process_attach_probe_next")
         self.assertIn("paused_session_cross_process_execution_plan_status=ready_for_executor_review", follow_up.verification)
         self.assertIn("paused_session_cross_process_execution_plan_ready_for_review=True", follow_up.verification)
         self.assertIn("paused_session_cross_process_execution_ready=False", follow_up.verification)
-        self.assertIn("paused_session_cross_process_executor_implemented=False", follow_up.verification)
+        self.assertIn("paused_session_cross_process_executor_implemented=True", follow_up.verification)
         self.assertIn("paused_session_cross_process_would_attach_cdp_target=False", follow_up.verification)
         self.assertIn("paused_session_cross_process_cdp_command_sent=False", follow_up.verification)
         self.assertIn("paused_session_cross_process_calls_mcp=False", follow_up.verification)
@@ -5358,7 +5406,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/paused-session-cross-process-execution-plan.json")
         self.assertTrue(follow_up.artifacts[0].metadata["execution_plan_ready_for_review"])
         self.assertFalse(follow_up.artifacts[0].metadata["cross_process_execution_ready"])
-        self.assertFalse(follow_up.artifacts[0].metadata["cross_process_executor_implemented"])
+        self.assertTrue(follow_up.artifacts[0].metadata["cross_process_executor_implemented"])
         self.assertEqual(
             follow_up.artifacts[0].metadata["target_attach_readiness_summary"]["selected_target"]["target_id"],
             "target-native-plan-1",

@@ -167,7 +167,7 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(result["side_effect_policy"]["debugger_stepped"])
         self.assertFalse(result["side_effect_policy"]["callframe_evaluated"])
 
-    def test_review_debugger_artifacts_warns_for_attach_ready_without_cross_process_executor(self) -> None:
+    def test_review_debugger_artifacts_warns_for_attach_ready_without_execution_plan(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {
             "paused_session_target_attach_readiness": {
@@ -201,15 +201,15 @@ class DebuggerSubagentTests(unittest.TestCase):
         result = tool(json.dumps(payload))
 
         self.assertEqual(result["status"], "warn")
-        self.assertIn("target_attach_ready_but_cross_process_execution_not_implemented", result["warnings"])
-        self.assertEqual(result["next_action"], "review_target_attach_plan_before_cross_process_continuation_executor")
+        self.assertIn("target_attach_ready_but_execution_plan_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "plan_cross_process_execution_after_target_attach_readiness")
         readiness = result["summary"]["target_attach_readiness"]
         self.assertTrue(readiness["target_attach_readiness_proven"])
         self.assertFalse(readiness["cross_process_execution_ready"])
         self.assertEqual(readiness["expected_url"], "https://example.test/app.js")
         self.assertTrue(readiness["target_id_available"])
         self.assertFalse(readiness["would_attach_cdp_target"])
-        self.assertEqual(result["review_required_items"][0]["code"], "target_attach_ready_but_cross_process_execution_not_implemented")
+        self.assertEqual(result["review_required_items"][0]["code"], "target_attach_ready_but_execution_plan_not_observed")
         self.assertFalse(result["review_required_items"][0]["attach_readiness_diagnostics"]["cross_process_execution_ready"])
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
@@ -256,8 +256,8 @@ class DebuggerSubagentTests(unittest.TestCase):
                     "requested_action": "evaluate",
                     "execution_plan_ready_for_review": True,
                     "cross_process_execution_ready": False,
-                    "cross_process_executor_implemented": False,
-                    "cross_process_action_supported": False,
+                    "cross_process_executor_implemented": True,
+                    "cross_process_action_supported": True,
                     "target_attach_readiness_proven": True,
                     "blockers": [],
                     "target_attach_readiness_summary": {
@@ -280,12 +280,12 @@ class DebuggerSubagentTests(unittest.TestCase):
         result = tool(json.dumps(payload))
 
         self.assertEqual(result["status"], "warn")
-        self.assertIn("cross_process_execution_plan_ready_but_executor_not_implemented", result["warnings"])
-        self.assertEqual(result["next_action"], "implement_reviewed_cross_process_attach_probe_next")
+        self.assertIn("cross_process_execution_plan_ready_but_attach_probe_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "run_reviewed_cross_process_attach_probe_next")
         plan = result["summary"]["cross_process_execution_plan"]
         self.assertTrue(plan["execution_plan_ready_for_review"])
         self.assertFalse(plan["cross_process_execution_ready"])
-        self.assertFalse(plan["cross_process_executor_implemented"])
+        self.assertTrue(plan["cross_process_executor_implemented"])
         self.assertTrue(plan["target_id_available"])
         self.assertTrue(plan["requires_new_paused_event_after_attach"])
         self.assertTrue(result["review_required_items"][0]["cross_process_execution_plan_diagnostics"]["execution_plan_ready_for_review"])
@@ -319,7 +319,7 @@ class DebuggerSubagentTests(unittest.TestCase):
         result = tool(json.dumps(payload))
 
         self.assertEqual(result["status"], "warn")
-        self.assertIn("attach_probe_ready_but_live_callframe_recovery_not_implemented", result["warnings"])
+        self.assertIn("attach_probe_ready_but_live_callframe_recovery_not_observed", result["warnings"])
         self.assertEqual(result["next_action"], "review_attach_probe_result_before_live_callframe_recovery")
         probe = result["summary"]["cross_process_attach_probe"]
         self.assertEqual(probe["status"], "attached")
@@ -363,7 +363,7 @@ class DebuggerSubagentTests(unittest.TestCase):
         result = tool(json.dumps(payload))
 
         self.assertEqual(result["status"], "warn")
-        self.assertIn("live_callframe_recovered_executor_not_implemented", result["warnings"])
+        self.assertIn("live_callframe_recovered_one_action_not_observed", result["warnings"])
         self.assertEqual(result["next_action"], "plan_cross_process_one_action_executor")
         recovery = result["summary"]["live_callframe_recovery"]
         self.assertEqual(recovery["status"], "recovered")
@@ -397,6 +397,69 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["live_callframe_recovery_diagnostics"]["status"], "blocked")
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_warns_for_cross_process_one_action_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_one_action_execution": {
+                "execution": {
+                    "status": "executed",
+                    "pause_session_id": "one-action-review-1",
+                    "requested_action": "evaluate",
+                    "method": "Debugger.evaluateOnCallFrame",
+                    "target_id": "target-review-1",
+                    "attached_session_id": "attached-session-1",
+                    "live_callframe_id": "live-cf-1",
+                    "live_callframe_recovered": True,
+                    "execute_action_requested": True,
+                    "review_approved": True,
+                    "live_action_executed": True,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": True,
+                    "cdp_methods": ["Debugger.evaluateOnCallFrame"],
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_one_action_executed_review_result", result["warnings"])
+        self.assertEqual(result["next_action"], "review_cross_process_one_action_result")
+        execution = result["summary"]["cross_process_one_action_execution"]
+        self.assertEqual(execution["status"], "executed")
+        self.assertTrue(execution["live_action_executed"])
+        self.assertTrue(execution["callframe_evaluated"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_one_action_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_one_action_execution": {
+                "execution": {
+                    "status": "failed",
+                    "requested_action": "resume",
+                    "method": "Debugger.resume",
+                    "attached_session_id": "attached-session-1",
+                    "live_callframe_id": "live-cf-1",
+                    "live_action_executed": False,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": False,
+                    "blockers": ["cross_process_one_action_failed"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_one_action_execution_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_cross_process_one_action_error")
+        self.assertEqual(result["review_required_items"][0]["cross_process_one_action_diagnostics"]["status"], "failed")
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_blocks_cross_process_attach_probe_failure(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {
@@ -428,7 +491,7 @@ class DebuggerSubagentTests(unittest.TestCase):
                     "status": "blocked",
                     "execution_plan_ready_for_review": False,
                     "cross_process_execution_ready": False,
-                    "cross_process_executor_implemented": False,
+                    "cross_process_executor_implemented": True,
                     "blockers": ["target_attach_readiness_required"],
                 }
             }

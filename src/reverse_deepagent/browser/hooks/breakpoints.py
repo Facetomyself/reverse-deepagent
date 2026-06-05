@@ -696,7 +696,7 @@ class PausedSessionTargetAttachReadinessManager:
             "target_url_mismatch": ("target_correlation", "Candidate targets do not match the paused callframe URL.", "refresh_targets_and_match_paused_frame_url"),
             "cdp_target_not_attachable": ("cdp_target", "The matched target type is not attachable for debugger continuation.", "select_page_or_webview_target"),
             "stable_live_callframe_unavailable": ("callframe", "A durable or provided callFrameId is not a reusable live callFrameId for cross-process actions.", "capture_new_paused_event_after_future_attach"),
-            "cross_process_live_continuation_not_implemented": ("capability_boundary", "This proof is read-only readiness metadata; cross-process resume / step / evaluate is still not implemented.", "review_attach_readiness_before_implementing_executor"),
+            "cross_process_live_continuation_not_implemented": ("capability_boundary", "This proof is read-only readiness metadata; full automatic cross-process multi-step continuation is still not implemented.", "review_attach_readiness_before_cross_process_execution_plan"),
         }
         return [
             {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_attach_readiness"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_attach_readiness"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_attach_readiness"))[2]}
@@ -999,13 +999,15 @@ class PausedSessionCrossProcessExecutionPlanManager:
             "target_attach_readiness_status": readiness.get("status"),
             "execution_plan_ready_for_review": target_attach_ready,
             "cross_process_execution_ready": False,
-            "cross_process_executor_implemented": False,
-            "cross_process_action_supported": False,
+            "cross_process_executor_implemented": True,
+            "cross_process_action_supported": action_is_live,
+            "cross_process_execution_readiness_reason": "requires_reviewed_attach_probe_live_callframe_recovery_and_one_action_execution_evidence",
+            "full_cross_process_continuation_supported": False,
             "blockers": blockers,
             "blocker_details": cls._blocker_details(blockers),
             "capability_boundaries": [
-                "cross_process_execution_executor_not_implemented",
-                "future_attach_probe_requires_explicit_review",
+                "full_cross_process_continuation_not_implemented",
+                "reviewed_attach_probe_required",
                 "durable_callframe_id_not_reusable_for_live_actions",
             ],
             "reason": blockers[0] if blockers else None,
@@ -1065,25 +1067,25 @@ class PausedSessionCrossProcessExecutionPlanManager:
                 "description": "Reviewer confirms paused-session evidence and CDP target correlation.",
             },
             {
-                "stage": "future_reviewed_attach_probe",
-                "status": "blocked_until_executor_exists",
+                "stage": "reviewed_attach_probe",
+                "status": "review_gate_required",
                 "side_effects": False,
-                "description": "Future executor may attach the correlated CDP target only after explicit review approval.",
+                "description": "Reviewed attach-probe baseline may attach the correlated CDP target only after explicit review approval.",
             },
             {
-                "stage": "future_live_callframe_recovery",
+                "stage": "live_callframe_recovery",
                 "status": "required" if action_is_live else "not_required_for_inspect",
                 "side_effects": False,
-                "description": "Future executor must capture a new live paused event after attach; durable callFrameId is not reusable.",
+                "description": "Live callFrame recovery must observe a new paused event after attach; durable callFrameId is not reusable.",
             },
         ]
         if action_is_live:
             stages.append(
                 {
-                    "stage": f"future_reviewed_{action}_execution",
-                    "status": "blocked_until_executor_exists",
+                    "stage": f"reviewed_one_action_{action}_execution",
+                    "status": "review_gate_required",
                     "side_effects": False,
-                    "description": "Future executor may run exactly one reviewed paused-session action after live callframe recovery.",
+                    "description": "One-action executor may run exactly one reviewed paused-session action after live callFrame recovery.",
                 }
             )
         return stages
@@ -1108,7 +1110,7 @@ class PausedSessionCrossProcessExecutionPlanManager:
             return "produce_paused_session_target_attach_readiness"
         if any(blocker.startswith("target_attach_readiness") or blocker == "target_attach_candidate_not_selected" for blocker in blockers):
             return "resolve_target_attach_readiness_blockers"
-        return "implement_reviewed_cross_process_attach_probe_next"
+        return "run_reviewed_cross_process_attach_probe_next"
 
 
 @dataclass(slots=True)
@@ -1711,6 +1713,375 @@ class PausedSessionLiveCallframeRecoveryManager:
         if "cross_process_attach_probe_required" in blockers or "cross_process_target_not_attached" in blockers:
             return "run_reviewed_cross_process_attach_probe"
         return "inspect_live_callframe_recovery_blockers"
+
+
+@dataclass(slots=True)
+class PausedSessionCrossProcessOneActionSpec:
+    """Execute exactly one reviewed live debugger action after callFrame recovery."""
+
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    cross_process_attach_probe: dict[str, Any] = field(default_factory=dict)
+    execute_action: bool = False
+    review_approved: bool = False
+    requested_action: str = "resume"
+    expression: str | None = None
+    callframe_evaluation_policy: str = "read_only"
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    live_callframe_id: str | None = None
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionCrossProcessOneActionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_cross_process_one_action")
+            or context.get("pausedSessionCrossProcessOneAction")
+            or context.get("paused-session-cross-process-one-action")
+            or context.get("cross_process_one_action")
+            or context.get("crossProcessOneAction")
+            or context.get("execute_cross_process_one_action")
+            or context.get("executeCrossProcessOneAction")
+            or context.get("cross_process_paused_session_action")
+            or context.get("crossProcessPausedSessionAction")
+        )
+        recovery_container = _first_dict(
+            context,
+            "paused_session_live_callframe_recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "paused-session-live-callframe-recovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+            "cross_process_live_callframe_recovery",
+            "crossProcessLiveCallframeRecovery",
+        )
+        recovery = dict(recovery_container.get("recovery")) if isinstance(recovery_container.get("recovery"), dict) else recovery_container
+        attach_container = _first_dict(
+            context,
+            "paused_session_cross_process_attach_probe",
+            "pausedSessionCrossProcessAttachProbe",
+            "paused-session-cross-process-attach-probe",
+            "cross_process_attach_probe",
+            "crossProcessAttachProbe",
+        )
+        attach_probe = dict(attach_container.get("probe")) if isinstance(attach_container.get("probe"), dict) else attach_container
+        if not requested and not recovery:
+            return None
+        action = str(
+            context.get(
+                "requested_action",
+                context.get("requestedAction", context.get("action", recovery.get("requested_action", "resume"))),
+            )
+            or "resume"
+        ).strip().replace("-", "_").lower()
+        execute_raw = context.get("execute_cross_process_one_action", context.get("executeCrossProcessOneAction", context.get("execute_action", context.get("executeAction", False))))
+        approved_raw = context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))
+        expression = context.get("expression") or context.get("callframe_expression") or context.get("callFrameExpression")
+        policy = str(context.get("callframe_evaluation_policy", context.get("callFrameEvaluationPolicy", "read_only")) or "read_only").strip().replace("-", "_").lower()
+        attached_session_id = (
+            context.get("attached_session_id")
+            or context.get("attachedSessionId")
+            or recovery.get("attached_session_id")
+            or attach_probe.get("attached_session_id")
+        )
+        live_callframe_id = context.get("live_callframe_id") or context.get("liveCallframeId") or context.get("callFrameId") or recovery.get("live_callframe_id")
+        pause_session_id = (
+            context.get("pause_session_id")
+            or context.get("pauseSessionId")
+            or recovery.get("pause_session_id")
+            or attach_probe.get("pause_session_id")
+        )
+        target_id = context.get("target_id") or context.get("targetId") or recovery.get("target_id") or attach_probe.get("target_id")
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        return cls(
+            live_callframe_recovery=recovery,
+            cross_process_attach_probe=attach_probe,
+            execute_action=bool(execute_raw),
+            review_approved=bool(approved_raw),
+            requested_action=action,
+            expression=str(expression) if expression is not None else None,
+            callframe_evaluation_policy=policy,
+            pause_session_id=str(pause_session_id) if pause_session_id else None,
+            target_id=str(target_id).strip() if target_id else None,
+            attached_session_id=str(attached_session_id).strip() if attached_session_id else None,
+            live_callframe_id=str(live_callframe_id).strip() if live_callframe_id else None,
+            reviewer=str(reviewer) if reviewer else None,
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionCrossProcessOneActionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionCrossProcessOneActionManager:
+    """Run exactly one reviewed cross-process paused-session debugger action."""
+
+    ACTION_METHODS = {
+        "resume": "Debugger.resume",
+        "step_over": "Debugger.stepOver",
+        "stepover": "Debugger.stepOver",
+        "over": "Debugger.stepOver",
+        "step_into": "Debugger.stepInto",
+        "stepinto": "Debugger.stepInto",
+        "into": "Debugger.stepInto",
+        "step_out": "Debugger.stepOut",
+        "stepout": "Debugger.stepOut",
+        "out": "Debugger.stepOut",
+    }
+
+    def execute(self, page: BrowserPage | None, spec: PausedSessionCrossProcessOneActionSpec | None) -> PausedSessionCrossProcessOneActionResult:
+        blockers = self._blockers(spec)
+        if blockers:
+            payload = self._payload(spec, status="blocked", blockers=blockers)
+            return PausedSessionCrossProcessOneActionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy(False), reason=blockers[0])
+        if spec and not spec.execute_action:
+            payload = self._payload(spec, status="ready_for_review", blockers=[])
+            return PausedSessionCrossProcessOneActionResult(status="ready_for_review", execution=payload, side_effect_policy=self._side_effect_policy(False))
+        if spec and not spec.review_approved:
+            payload = self._payload(spec, status="review_required", blockers=["review_approval_required"])
+            return PausedSessionCrossProcessOneActionResult(status="review_required", execution=payload, side_effect_policy=self._side_effect_policy(False), reason="review_approval_required")
+        if page is None:
+            payload = self._payload(spec, status="blocked", blockers=["browser_page_required"])
+            return PausedSessionCrossProcessOneActionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy(False), reason="browser_page_required")
+        session = page.cdp_session()
+        if session is None:
+            payload = self._payload(spec, status="blocked", blockers=["cdp_session_required"])
+            return PausedSessionCrossProcessOneActionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy(False), reason="cdp_session_required")
+
+        assert spec is not None
+        method = self._method_for_action(spec.requested_action)
+        params = self._params_for_action(spec, method=method)
+        methods = [method]
+        error: str | None = None
+        result_payload: Any = {}
+        try:
+            result_payload = session.send(method, params)
+        except Exception as exc:
+            error = str(exc)
+        status = "executed" if error is None else "failed"
+        blockers_after = [] if status == "executed" else ["cross_process_one_action_failed"]
+        payload = self._payload(
+            spec,
+            status=status,
+            blockers=blockers_after,
+            cdp_methods=methods,
+            cdp_params=params,
+            action_result=result_payload,
+            error=error,
+        )
+        policy = self._side_effect_policy(
+            True,
+            action=spec.requested_action,
+            evaluation_sent=method == "Debugger.evaluateOnCallFrame",
+        )
+        return PausedSessionCrossProcessOneActionResult(status=status, execution=payload, side_effect_policy=policy, reason=blockers_after[0] if blockers_after else None, error=error)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionCrossProcessOneActionSpec | None) -> list[str]:
+        if spec is None:
+            return ["cross_process_one_action_request_missing"]
+        blockers: list[str] = []
+        recovery = spec.live_callframe_recovery
+        if not recovery:
+            blockers.append("live_callframe_recovery_required")
+        elif recovery.get("status") == "blocked" or not recovery.get("live_callframe_recovered"):
+            blockers.append("live_callframe_recovery_blocked")
+        if recovery.get("target_detached"):
+            blockers.append("attached_session_retained_required")
+        if not spec.attached_session_id:
+            blockers.append("attached_session_id_required")
+        if not spec.live_callframe_id:
+            blockers.append("live_callframe_id_required")
+        if not cls._method_for_action(spec.requested_action):
+            blockers.append("unsupported_cross_process_action")
+        if spec.requested_action in {"evaluate", "evaluate_on_callframe"}:
+            if not spec.expression:
+                blockers.append("callframe_expression_required")
+            decision = cls._evaluation_policy_decision(spec.expression or "", spec.callframe_evaluation_policy)
+            if decision["blocked"]:
+                blockers.append("blocked_by_callframe_evaluation_policy")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: PausedSessionCrossProcessOneActionSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        cdp_methods: list[str] | None = None,
+        cdp_params: dict[str, Any] | None = None,
+        action_result: Any = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        recovery = spec.live_callframe_recovery if spec else {}
+        action = spec.requested_action if spec else None
+        method = cls._method_for_action(action or "")
+        evaluation = {}
+        if method == "Debugger.evaluateOnCallFrame" and cdp_methods:
+            evaluation = BreakpointManager._normalize_callframe_evaluation(spec.expression or "", action_result, 0, spec.live_callframe_id or "") if spec else {}
+            evaluation = BreakpointManager._with_evaluation_policy_metadata(evaluation, cls._evaluation_policy_decision(spec.expression or "", spec.callframe_evaluation_policy)) if spec else evaluation
+        return {
+            "schema_version": "reverse-deepagent.paused-session-cross-process-one-action-execution.v1",
+            "status": status,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "requested_action": action,
+            "reviewer": spec.reviewer if spec else None,
+            "target_id": spec.target_id if spec else None,
+            "attached_session_id": spec.attached_session_id if spec else None,
+            "live_callframe_id": spec.live_callframe_id if spec else None,
+            "live_callframe_recovery_status": recovery.get("status"),
+            "live_callframe_recovered": bool(recovery.get("live_callframe_recovered")),
+            "execute_action_requested": bool(spec and spec.execute_action),
+            "review_approved": bool(spec and spec.review_approved),
+            "method": method,
+            "expression": spec.expression if spec and method == "Debugger.evaluateOnCallFrame" else None,
+            "callframe_evaluation_policy": spec.callframe_evaluation_policy if spec else None,
+            "evaluation_policy_decision": cls._evaluation_policy_decision(spec.expression or "", spec.callframe_evaluation_policy) if spec and method == "Debugger.evaluateOnCallFrame" else {},
+            "live_action_executed": status == "executed",
+            "browser_resumed": status == "executed" and method == "Debugger.resume",
+            "debugger_stepped": status == "executed" and method in {"Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"},
+            "callframe_evaluated": status == "executed" and method == "Debugger.evaluateOnCallFrame",
+            "cross_process_action_executed": status == "executed",
+            "debugger_domain_enabled": False,
+            "runtime_mutated": False,
+            "cdp_methods": cdp_methods or [],
+            "cdp_params_summary": cls._params_summary(cdp_params or {}),
+            "action_result_summary": cls._result_summary(action_result),
+            "evaluation": evaluation,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "side_effect_policy": cls._side_effect_policy(bool(cdp_methods), action=action or "", evaluation_sent=method == "Debugger.evaluateOnCallFrame" and bool(cdp_methods)),
+            "error": error,
+        }
+
+    @classmethod
+    def _params_for_action(cls, spec: PausedSessionCrossProcessOneActionSpec, *, method: str) -> dict[str, Any]:
+        params: dict[str, Any] = {"sessionId": spec.attached_session_id}
+        if method == "Debugger.evaluateOnCallFrame":
+            decision = cls._evaluation_policy_decision(spec.expression or "", spec.callframe_evaluation_policy)
+            params.update(
+                {
+                    "callFrameId": spec.live_callframe_id,
+                    "expression": spec.expression,
+                    "returnByValue": True,
+                    "silent": True,
+                    "throwOnSideEffect": decision["throw_on_side_effect"],
+                }
+            )
+        return params
+
+    @classmethod
+    def _method_for_action(cls, action: str) -> str:
+        normalized = str(action or "").strip().replace("-", "_").lower()
+        if normalized in {"evaluate", "evaluate_on_callframe", "eval"}:
+            return "Debugger.evaluateOnCallFrame"
+        return cls.ACTION_METHODS.get(normalized, "")
+
+    @staticmethod
+    def _evaluation_policy_decision(expression: str, policy: str) -> dict[str, Any]:
+        return BreakpointManager._evaluation_policy_decision(expression, policy)
+
+    @staticmethod
+    def _side_effect_policy(cdp_sent: bool, *, action: str = "", evaluation_sent: bool = False) -> dict[str, Any]:
+        method = PausedSessionCrossProcessOneActionManager._method_for_action(action)
+        return {
+            "read_only": not cdp_sent,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": cdp_sent,
+            "cdp_target_attached": False,
+            "cdp_target_detached": False,
+            "debugger_domain_enabled": False,
+            "browser_resumed": cdp_sent and method == "Debugger.resume",
+            "debugger_stepped": cdp_sent and method in {"Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"},
+            "callframe_evaluated": bool(evaluation_sent),
+            "runtime_mutated": False,
+            "live_action_executed": cdp_sent,
+            "cross_process_action_executed": cdp_sent,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _params_summary(params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "session_id_present": bool(params.get("sessionId")),
+            "callframe_id_present": bool(params.get("callFrameId")),
+            "expression_present": bool(params.get("expression")),
+            "throw_on_side_effect": params.get("throwOnSideEffect"),
+            "keys": sorted(str(key) for key in params.keys()),
+        }
+
+    @staticmethod
+    def _result_summary(result: Any) -> dict[str, Any]:
+        if not isinstance(result, dict):
+            return {"type": type(result).__name__, "keys": []}
+        payload = result.get("result") if isinstance(result.get("result"), dict) else result
+        if not isinstance(payload, dict):
+            return {"type": type(payload).__name__, "keys": sorted(str(key) for key in result.keys())}
+        return {
+            "type": str(payload.get("type") or type(payload).__name__),
+            "subtype": payload.get("subtype"),
+            "description": payload.get("description"),
+            "has_value": "value" in payload,
+            "keys": sorted(str(key) for key in payload.keys()),
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "cross_process_one_action_request_missing": ("request", "No cross-process one-action execution request was provided.", "request_cross_process_one_action_execution"),
+            "live_callframe_recovery_required": ("live_callframe", "A read-only live callFrame recovery artifact is required before action execution.", "recover_live_callframe_after_attach"),
+            "live_callframe_recovery_blocked": ("live_callframe", "The supplied live callFrame recovery artifact is blocked or did not recover a live callFrame.", "resolve_live_callframe_recovery_blockers"),
+            "attached_session_retained_required": ("cdp_session", "The attach probe has already detached the target session; rerun the reviewed attach probe with a retained session before execution.", "rerun_attach_probe_without_detach_for_one_action"),
+            "attached_session_id_required": ("cdp_session", "An attached CDP session id is required for the flattened one-action command.", "provide_attached_session_id"),
+            "live_callframe_id_required": ("debugger", "A fresh live callFrameId is required for cross-process action execution.", "recover_live_callframe_after_attach"),
+            "unsupported_cross_process_action": ("action", "Only resume, step_over, step_into, step_out, and evaluate are supported by the one-action executor baseline.", "select_supported_cross_process_action"),
+            "callframe_expression_required": ("action", "A callframe expression is required for evaluate actions.", "provide_callframe_expression"),
+            "blocked_by_callframe_evaluation_policy": ("review", "The requested expression is blocked by the callframe evaluation policy.", "review_or_lower_expression_risk"),
+            "review_approval_required": ("review", "Executing a cross-process live debugger action requires explicit review approval.", "approve_cross_process_one_action_execution"),
+            "browser_page_required": ("runtime", "A BrowserPage with CDP access is required for one-action execution.", "provide_browser_page_for_one_action_execution"),
+            "cdp_session_required": ("runtime", "The active page does not expose a CDP session.", "use_cdp_capable_browser_provider"),
+            "cross_process_one_action_failed": ("cdp", "The reviewed one-action CDP command failed.", "inspect_cross_process_one_action_error"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_one_action"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_one_action"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_one_action"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if "review_approval_required" in blockers:
+            return "approve_cross_process_one_action_execution"
+        if "attached_session_retained_required" in blockers:
+            return "rerun_attach_probe_without_detach_for_one_action"
+        if any(item in blockers for item in ("live_callframe_recovery_required", "live_callframe_recovery_blocked", "live_callframe_id_required")):
+            return "recover_live_callframe_after_attach"
+        if "blocked_by_callframe_evaluation_policy" in blockers:
+            return "review_or_lower_expression_risk"
+        if status == "ready_for_review":
+            return "approve_cross_process_one_action_execution"
+        if status == "executed":
+            return "review_cross_process_one_action_result"
+        return "inspect_cross_process_one_action_blockers"
 
 
 class PausedSessionLiveContinuationPreflightManager:
