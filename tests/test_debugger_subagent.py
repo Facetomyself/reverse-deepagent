@@ -492,11 +492,84 @@ class DebuggerSubagentTests(unittest.TestCase):
         result = tool(json.dumps(payload))
 
         self.assertEqual(result["status"], "warn")
-        self.assertIn("next_paused_event_captured_recover_live_callframe", result["warnings"])
-        self.assertEqual(result["next_action"], "recover_live_callframe_from_captured_pause")
+        self.assertIn("next_paused_event_captured_continuation_checkpoint_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_cross_process_continuation")
         execution = result["summary"]["next_paused_event_capture_execution"]
         self.assertTrue(execution["paused_event_captured"])
         self.assertTrue(execution["live_callframe_recovery_ready"])
+
+    def test_review_debugger_artifacts_warns_for_continuation_checkpoint_live_recovery(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_continuation_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_live_callframe_recovery",
+                    "paused_event_captured": True,
+                    "callframe_count": 1,
+                    "selected_callframe_id": "live-cf-3",
+                    "manual_checkpoint_required": True,
+                    "next_action": "recover_live_callframe_from_captured_pause",
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_continuation_checkpoint_requires_live_callframe_recovery", result["warnings"])
+        self.assertEqual(result["next_action"], "recover_live_callframe_from_captured_pause")
+        checkpoint = result["summary"]["cross_process_continuation_checkpoint"]
+        self.assertTrue(checkpoint["paused_event_captured"])
+        self.assertEqual(checkpoint["callframe_count"], 1)
+        self.assertTrue(checkpoint["manual_checkpoint_required"])
+
+    def test_review_debugger_artifacts_warns_for_continuation_checkpoint_next_action(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_continuation_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_next_action_review",
+                    "paused_event_captured": True,
+                    "callframe_count": 1,
+                    "selected_callframe_id": "live-cf-4",
+                    "live_callframe_recovered": True,
+                    "continuation_ready_for_next_action": True,
+                    "manual_checkpoint_required": True,
+                    "next_action": "plan_next_cross_process_one_action",
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_continuation_checkpoint_ready_for_next_action_review", result["warnings"])
+        self.assertEqual(result["next_action"], "plan_next_cross_process_one_action")
+        checkpoint = result["summary"]["cross_process_continuation_checkpoint"]
+        self.assertTrue(checkpoint["continuation_ready_for_next_action"])
+
+    def test_review_debugger_artifacts_blocks_continuation_checkpoint_blocked(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_continuation_checkpoint": {
+                "checkpoint": {
+                    "status": "blocked",
+                    "paused_event_captured": False,
+                    "callframe_count": 0,
+                    "manual_checkpoint_required": True,
+                    "next_action": "inspect_continuation_checkpoint_blockers",
+                    "blockers": ["next_paused_event_not_captured"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_continuation_checkpoint_blockers")
 
     def test_review_debugger_artifacts_warns_for_cross_process_one_action_execution_result(self) -> None:
         tool = make_review_debugger_artifacts_tool()

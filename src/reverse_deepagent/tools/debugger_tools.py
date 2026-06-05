@@ -106,6 +106,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "next_paused_event_capture_execution",
             "nextPausedEventCaptureExecution",
         )
+        cross_process_continuation_checkpoint = _object_alias(
+            payload,
+            "paused_session_cross_process_continuation_checkpoint",
+            "paused-session-cross-process-continuation-checkpoint",
+            "pausedSessionCrossProcessContinuationCheckpoint",
+            "cross_process_continuation_checkpoint",
+            "crossProcessContinuationCheckpoint",
+            "paused_session_continuation_checkpoint",
+            "pausedSessionContinuationCheckpoint",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -135,11 +145,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         one_action_execution = _first_object(cross_process_one_action.get("execution"), cross_process_one_action)
         next_capture_plan = _first_object(next_paused_event_capture_plan.get("plan"), next_paused_event_capture_plan)
         next_capture_execution = _first_object(next_paused_event_capture_execution.get("execution"), next_paused_event_capture_execution)
+        continuation_checkpoint = _first_object(cross_process_continuation_checkpoint.get("checkpoint"), cross_process_continuation_checkpoint)
         execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, next_paused_event_capture_plan, next_paused_event_capture_execution)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -205,7 +216,17 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         if next_capture_execution_status == "review_required":
             warnings.append("next_paused_event_capture_execution_review_required")
         if next_capture_execution_status == "captured":
-            warnings.append("next_paused_event_captured_recover_live_callframe")
+            if not continuation_checkpoint:
+                warnings.append("next_paused_event_captured_continuation_checkpoint_not_observed")
+            else:
+                warnings.append("next_paused_event_captured_recover_live_callframe")
+        continuation_checkpoint_status = _string(continuation_checkpoint.get("status"))
+        if continuation_checkpoint_status == "blocked":
+            blockers.append("paused_session_cross_process_continuation_checkpoint_blocked")
+        if continuation_checkpoint_status == "ready_for_live_callframe_recovery":
+            warnings.append("cross_process_continuation_checkpoint_requires_live_callframe_recovery")
+        if continuation_checkpoint_status == "ready_for_next_action_review":
+            warnings.append("cross_process_continuation_checkpoint_ready_for_next_action_review")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -367,10 +388,24 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "live_callframe_recovery_ready": _boolish(next_capture_execution.get("live_callframe_recovery_ready")),
                     "blockers": next_capture_execution.get("blockers") if isinstance(next_capture_execution.get("blockers"), list) else [],
                 },
+                "cross_process_continuation_checkpoint": {
+                    "status": _string(continuation_checkpoint.get("status") or "unknown"),
+                    "pause_session_id": _string(continuation_checkpoint.get("pause_session_id")),
+                    "target_id": _string(continuation_checkpoint.get("target_id")),
+                    "paused_event_captured": _boolish(continuation_checkpoint.get("paused_event_captured")),
+                    "callframe_count": continuation_checkpoint.get("callframe_count", 0),
+                    "selected_callframe_id_present": bool(continuation_checkpoint.get("selected_callframe_id")),
+                    "live_callframe_recovered": _boolish(continuation_checkpoint.get("live_callframe_recovered")),
+                    "continuation_ready_for_next_action": _boolish(continuation_checkpoint.get("continuation_ready_for_next_action")),
+                    "continuation_ready_for_next_capture_plan": _boolish(continuation_checkpoint.get("continuation_ready_for_next_capture_plan")),
+                    "manual_checkpoint_required": _boolish(continuation_checkpoint.get("manual_checkpoint_required")),
+                    "next_action": _string(continuation_checkpoint.get("next_action")),
+                    "blockers": continuation_checkpoint.get("blockers") if isinstance(continuation_checkpoint.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, one_action_execution, next_capture_execution, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, one_action_execution, next_capture_execution, continuation_checkpoint, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -534,6 +569,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_next_paused_event_capture_plan_blockers"
     if "paused_session_next_paused_event_capture_execution_blocked" in blockers:
         return "inspect_next_paused_event_capture_execution_blockers"
+    if "paused_session_cross_process_continuation_checkpoint_blocked" in blockers:
+        return "inspect_continuation_checkpoint_blockers"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
@@ -554,6 +591,12 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "review_next_paused_event_capture_plan"
     if "next_paused_event_capture_execution_requires_review" in warnings or "next_paused_event_capture_execution_review_required" in warnings:
         return "approve_next_paused_event_capture_execution"
+    if "next_paused_event_captured_continuation_checkpoint_not_observed" in warnings:
+        return "checkpoint_cross_process_continuation"
+    if "cross_process_continuation_checkpoint_requires_live_callframe_recovery" in warnings:
+        return "recover_live_callframe_from_captured_pause"
+    if "cross_process_continuation_checkpoint_ready_for_next_action_review" in warnings:
+        return "plan_next_cross_process_one_action"
     if "next_paused_event_captured_recover_live_callframe" in warnings:
         return "recover_live_callframe_from_captured_pause"
     if "cross_process_one_action_executed_review_result" in warnings:
@@ -583,6 +626,7 @@ def _review_required_items(
     live_callframe_recovery: dict[str, Any],
     one_action_execution: dict[str, Any],
     next_capture_execution: dict[str, Any],
+    continuation_checkpoint: dict[str, Any],
     session: dict[str, Any],
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -594,6 +638,7 @@ def _review_required_items(
     live_callframe_recovery_diagnostics = _live_callframe_recovery_diagnostics_for_review(live_callframe_recovery)
     one_action_diagnostics = _cross_process_one_action_diagnostics_for_review(one_action_execution)
     next_capture_diagnostics = _next_paused_event_capture_execution_diagnostics_for_review(next_capture_execution)
+    continuation_checkpoint_diagnostics = _continuation_checkpoint_diagnostics_for_review(continuation_checkpoint)
     for code in blockers:
         items.append(
             {
@@ -609,6 +654,7 @@ def _review_required_items(
                 "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
                 "cross_process_one_action_diagnostics": one_action_diagnostics,
                 "next_paused_event_capture_execution_diagnostics": next_capture_diagnostics,
+                "continuation_checkpoint_diagnostics": continuation_checkpoint_diagnostics,
             }
         )
     for code in warnings:
@@ -630,6 +676,9 @@ def _review_required_items(
             "next_paused_event_capture_execution_requires_review",
             "next_paused_event_capture_execution_review_required",
             "next_paused_event_captured_recover_live_callframe",
+            "next_paused_event_captured_continuation_checkpoint_not_observed",
+            "cross_process_continuation_checkpoint_requires_live_callframe_recovery",
+            "cross_process_continuation_checkpoint_ready_for_next_action_review",
         }:
             items.append(
                 {
@@ -645,6 +694,7 @@ def _review_required_items(
                     "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
                     "cross_process_one_action_diagnostics": one_action_diagnostics,
                     "next_paused_event_capture_execution_diagnostics": next_capture_diagnostics,
+                "continuation_checkpoint_diagnostics": continuation_checkpoint_diagnostics,
                 }
             )
     return items
@@ -757,6 +807,23 @@ def _cross_process_one_action_diagnostics_for_review(execution: dict[str, Any]) 
         "blockers": execution.get("blockers") if isinstance(execution.get("blockers"), list) else [],
     }
 
+
+
+def _continuation_checkpoint_diagnostics_for_review(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    if not checkpoint:
+        return {}
+    return {
+        "status": _string(checkpoint.get("status") or "unknown"),
+        "paused_event_captured": _boolish(checkpoint.get("paused_event_captured")),
+        "callframe_count": checkpoint.get("callframe_count", 0),
+        "selected_callframe_id_present": bool(checkpoint.get("selected_callframe_id")),
+        "live_callframe_recovered": _boolish(checkpoint.get("live_callframe_recovered")),
+        "continuation_ready_for_next_action": _boolish(checkpoint.get("continuation_ready_for_next_action")),
+        "continuation_ready_for_next_capture_plan": _boolish(checkpoint.get("continuation_ready_for_next_capture_plan")),
+        "manual_checkpoint_required": _boolish(checkpoint.get("manual_checkpoint_required")),
+        "next_action": _string(checkpoint.get("next_action")),
+        "blockers": checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else [],
+    }
 
 def _next_paused_event_capture_execution_diagnostics_for_review(execution: dict[str, Any]) -> dict[str, Any]:
     return {

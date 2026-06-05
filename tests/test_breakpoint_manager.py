@@ -13,6 +13,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionCrossProcessOneActionManager,
     PausedSessionCrossProcessOneActionSpec,
+    PausedSessionCrossProcessContinuationCheckpointManager,
+    PausedSessionCrossProcessContinuationCheckpointSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
     PausedSessionNextPausedEventCaptureExecutionSpec,
     PausedSessionNextPausedEventCapturePlanManager,
@@ -1162,6 +1164,85 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "review_required")
         self.assertEqual(result.reason, "review_approval_required")
         self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+
+    def test_cross_process_continuation_checkpoint_ready_for_live_callframe_recovery(self) -> None:
+        spec = PausedSessionCrossProcessContinuationCheckpointSpec.from_context(
+            {
+                "paused_session_cross_process_continuation_checkpoint": True,
+                "paused_session_next_paused_event_capture_execution": {
+                    "execution": {
+                        "status": "captured",
+                        "pause_session_id": "checkpoint-1",
+                        "target_id": "target-checkpoint-1",
+                        "attached_session_id": "attached-session-1",
+                        "method": "Debugger.stepOver",
+                        "paused_event_captured": True,
+                        "captured_event_count": 1,
+                        "live_callframe_recovery_ready": True,
+                        "callframes": [{"callFrameId": "live-cf-3", "functionName": "buildSign"}],
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionCrossProcessContinuationCheckpointManager().checkpoint(spec)
+
+        self.assertEqual(result.status, "ready_for_live_callframe_recovery")
+        self.assertEqual(result.checkpoint["schema_version"], "reverse-deepagent.paused-session-cross-process-continuation-checkpoint.v1")
+        self.assertTrue(result.checkpoint["paused_event_captured"])
+        self.assertEqual(result.checkpoint["callframe_count"], 1)
+        self.assertEqual(result.checkpoint["selected_callframe_id"], "live-cf-3")
+        self.assertEqual(result.checkpoint["next_action"], "recover_live_callframe_from_captured_pause")
+        self.assertEqual(result.checkpoint["live_callframe_recovery_input"]["callFrames"][0]["callFrameId"], "live-cf-3")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["paused_event_captured"])
+        self.assertFalse(result.side_effect_policy["browser_resumed"])
+        self.assertFalse(result.side_effect_policy["debugger_stepped"])
+        self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_cross_process_continuation_checkpoint_ready_for_next_action_after_recovery(self) -> None:
+        spec = PausedSessionCrossProcessContinuationCheckpointSpec.from_context(
+            {
+                "paused_session_cross_process_continuation_checkpoint": True,
+                "paused_session_next_paused_event_capture_execution": {
+                    "execution": {
+                        "status": "captured",
+                        "pause_session_id": "checkpoint-2",
+                        "target_id": "target-checkpoint-2",
+                        "attached_session_id": "attached-session-1",
+                        "method": "Debugger.stepOver",
+                        "paused_event_captured": True,
+                        "captured_event_count": 1,
+                        "live_callframe_recovery_ready": True,
+                        "callframes": [{"callFrameId": "live-cf-4", "functionName": "buildSign"}],
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "checkpoint-2",
+                        "target_id": "target-checkpoint-2",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_recovered": True,
+                        "live_callframe_id": "live-cf-4",
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionCrossProcessContinuationCheckpointManager().checkpoint(spec)
+
+        self.assertEqual(result.status, "ready_for_next_action_review")
+        self.assertTrue(result.checkpoint["continuation_ready_for_next_action"])
+        self.assertFalse(result.checkpoint["continuation_ready_for_next_capture_plan"])
+        self.assertEqual(result.checkpoint["live_callframe_id"], "live-cf-4")
+        self.assertEqual(result.checkpoint["next_action"], "plan_next_cross_process_one_action")
+        self.assertEqual(result.checkpoint["next_action_review_input"]["live_callframe_id"], "live-cf-4")
+        self.assertFalse(result.side_effect_policy["cross_process_action_executed"])
 
     def test_cross_process_one_action_blocks_detached_attach_probe_session(self) -> None:
         spec = PausedSessionCrossProcessOneActionSpec.from_context(

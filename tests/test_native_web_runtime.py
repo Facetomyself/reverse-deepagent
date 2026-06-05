@@ -5353,6 +5353,50 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_next_paused_event_capture_execution_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_cross_process_continuation_checkpoint_from_native_runtime_is_read_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-cross-process-continuation-checkpoint",
+            {
+                "paused_session_cross_process_continuation_checkpoint": True,
+                "paused_session_next_paused_event_capture_execution": {
+                    "execution": {
+                        "status": "captured",
+                        "pause_session_id": "native-checkpoint-1",
+                        "target_id": "target-native-checkpoint-1",
+                        "attached_session_id": "attached-session-1",
+                        "method": "Debugger.stepOver",
+                        "paused_event_captured": True,
+                        "captured_event_count": 1,
+                        "live_callframe_recovery_ready": True,
+                        "callframes": [{"callFrameId": "native-live-cf-3", "functionName": "buildSign"}],
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "recover_live_callframe_from_captured_pause")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-cross-process-continuation-checkpoint.json")
+        self.assertTrue(result.artifacts[0].metadata["paused_event_captured"])
+        self.assertEqual(result.artifacts[0].metadata["callframe_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["live_callframe_recovered"])
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_status=ready_for_live_callframe_recovery", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_paused_event_captured=False", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_event_subscribed=False", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_browser_resumed=False", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_debugger_stepped=False", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_callframe_evaluated=False", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_cross_process_one_action_from_native_runtime_executes_once(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

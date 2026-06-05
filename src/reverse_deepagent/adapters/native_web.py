@@ -130,6 +130,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionCrossProcessOneActionManager,
     PausedSessionCrossProcessOneActionSpec,
+    PausedSessionCrossProcessContinuationCheckpointManager,
+    PausedSessionCrossProcessContinuationCheckpointSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
     PausedSessionNextPausedEventCaptureExecutionSpec,
     PausedSessionNextPausedEventCapturePlanManager,
@@ -1142,6 +1144,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
+            spec = PausedSessionCrossProcessContinuationCheckpointSpec.from_context(context)
+            result = PausedSessionCrossProcessContinuationCheckpointManager().checkpoint(spec)
+            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else []
+            verification = [
+                f"paused_session_cross_process_continuation_checkpoint_status={result.status}",
+                f"paused_session_cross_process_continuation_checkpoint_reason={result.reason or ''}",
+                f"paused_session_cross_process_continuation_checkpoint_capture_status={checkpoint.get('capture_execution_status')}",
+                f"paused_session_cross_process_continuation_checkpoint_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_callframe_count={checkpoint.get('callframe_count', 0)}",
+                f"paused_session_cross_process_continuation_checkpoint_live_callframe_recovered={checkpoint.get('live_callframe_recovered', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_ready_for_next_action={checkpoint.get('continuation_ready_for_next_action', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_ready_for_next_capture_plan={checkpoint.get('continuation_ready_for_next_capture_plan', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_browser_resumed={policy.get('browser_resumed', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_debugger_stepped={policy.get('debugger_stepped', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_cross_process_continuation_checkpoint_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-cross-process-continuation-checkpoint.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only cross-process paused-session continuation checkpoint after next paused-event capture.",
+                    metadata={
+                        "status": result.status,
+                        "checkpoint_status": checkpoint.get("status"),
+                        "pause_session_id": checkpoint.get("pause_session_id"),
+                        "target_id": checkpoint.get("target_id"),
+                        "paused_event_captured": checkpoint.get("paused_event_captured", False),
+                        "callframe_count": checkpoint.get("callframe_count", 0),
+                        "live_callframe_recovered": checkpoint.get("live_callframe_recovered", False),
+                        "continuation_ready_for_next_action": checkpoint.get("continuation_ready_for_next_action", False),
+                        "continuation_ready_for_next_capture_plan": checkpoint.get("continuation_ready_for_next_capture_plan", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status in {"ready_for_live_callframe_recovery", "ready_for_next_action_review"} else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=checkpoint.get("next_action") or "inspect_continuation_checkpoint_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_live_callframe_recovery", "ready_for_next_action_review"} else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
             spec = PausedSessionNextPausedEventCaptureExecutionSpec.from_context(context)
@@ -5310,6 +5366,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_next_paused_event_capture_plan_request(protection_name, context):
@@ -5348,6 +5406,31 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_paused_session_cross_process_continuation_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-cross-process-continuation-checkpoint",
+            "pause-session-cross-process-continuation-checkpoint",
+            "debugger-paused-session-cross-process-continuation-checkpoint",
+            "cross-process-continuation-checkpoint",
+            "paused-session-continuation-checkpoint",
+            "review-cross-process-continuation-checkpoint",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_cross_process_continuation_checkpoint",
+                "pausedSessionCrossProcessContinuationCheckpoint",
+                "paused-session-cross-process-continuation-checkpoint",
+                "cross_process_continuation_checkpoint",
+                "crossProcessContinuationCheckpoint",
+                "paused_session_continuation_checkpoint",
+                "pausedSessionContinuationCheckpoint",
+            )
+        )
+
+    @staticmethod
     def _is_paused_session_next_paused_event_capture_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {
@@ -5376,6 +5459,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_next_paused_event_capture_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
             return False
         if normalized in {

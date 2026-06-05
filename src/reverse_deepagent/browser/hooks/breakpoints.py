@@ -2626,6 +2626,239 @@ class PausedSessionNextPausedEventCaptureExecutionManager:
         return "inspect_next_paused_event_capture_execution_blockers"
 
 
+@dataclass(slots=True)
+class PausedSessionCrossProcessContinuationCheckpointSpec:
+    """Review-only checkpoint after next paused-event capture execution."""
+
+    next_paused_event_capture_execution: dict[str, Any] = field(default_factory=dict)
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    cross_process_one_action_execution: dict[str, Any] = field(default_factory=dict)
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    checkpoint_index: int = 0
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionCrossProcessContinuationCheckpointSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_cross_process_continuation_checkpoint")
+            or context.get("pausedSessionCrossProcessContinuationCheckpoint")
+            or context.get("paused-session-cross-process-continuation-checkpoint")
+            or context.get("cross_process_continuation_checkpoint")
+            or context.get("crossProcessContinuationCheckpoint")
+            or context.get("paused_session_continuation_checkpoint")
+            or context.get("pausedSessionContinuationCheckpoint")
+        )
+        capture_container = _first_dict(
+            context,
+            "paused_session_next_paused_event_capture_execution",
+            "pausedSessionNextPausedEventCaptureExecution",
+            "paused-session-next-paused-event-capture-execution",
+            "next_paused_event_capture_execution",
+            "nextPausedEventCaptureExecution",
+        )
+        capture = dict(capture_container.get("execution")) if isinstance(capture_container.get("execution"), dict) else capture_container
+        recovery_container = _first_dict(
+            context,
+            "paused_session_live_callframe_recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "paused-session-live-callframe-recovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+        )
+        recovery = dict(recovery_container.get("recovery")) if isinstance(recovery_container.get("recovery"), dict) else recovery_container
+        action_container = _first_dict(
+            context,
+            "paused_session_cross_process_one_action_execution",
+            "pausedSessionCrossProcessOneActionExecution",
+            "paused-session-cross-process-one-action-execution",
+            "cross_process_one_action_execution",
+            "crossProcessOneActionExecution",
+        )
+        action = dict(action_container.get("execution")) if isinstance(action_container.get("execution"), dict) else action_container
+        if not requested and not capture:
+            return None
+        index_raw = context.get("checkpoint_index", context.get("checkpointIndex", capture.get("checkpoint_index", 0)))
+        try:
+            checkpoint_index = int(index_raw)
+        except (TypeError, ValueError):
+            checkpoint_index = 0
+        return cls(
+            next_paused_event_capture_execution=capture,
+            live_callframe_recovery=recovery,
+            cross_process_one_action_execution=action,
+            pause_session_id=str(context.get("pause_session_id") or context.get("pauseSessionId") or capture.get("pause_session_id") or recovery.get("pause_session_id") or "").strip() or None,
+            target_id=str(context.get("target_id") or context.get("targetId") or capture.get("target_id") or recovery.get("target_id") or "").strip() or None,
+            attached_session_id=str(context.get("attached_session_id") or context.get("attachedSessionId") or capture.get("attached_session_id") or recovery.get("attached_session_id") or "").strip() or None,
+            checkpoint_index=max(0, checkpoint_index),
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip() or None,
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionCrossProcessContinuationCheckpointResult:
+    status: str
+    checkpoint: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "checkpoint": self.checkpoint,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class PausedSessionCrossProcessContinuationCheckpointManager:
+    """Read-only checkpoint that links captured pause evidence to the next reviewed step."""
+
+    def checkpoint(self, spec: PausedSessionCrossProcessContinuationCheckpointSpec | None) -> PausedSessionCrossProcessContinuationCheckpointResult:
+        blockers = self._blockers(spec)
+        payload = self._payload(spec, blockers=blockers)
+        status = payload["status"]
+        return PausedSessionCrossProcessContinuationCheckpointResult(status=status, checkpoint=payload, side_effect_policy=self._side_effect_policy(), reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionCrossProcessContinuationCheckpointSpec | None) -> list[str]:
+        if spec is None:
+            return ["continuation_checkpoint_request_missing"]
+        blockers: list[str] = []
+        capture = spec.next_paused_event_capture_execution
+        recovery = spec.live_callframe_recovery
+        if not capture:
+            blockers.append("next_paused_event_capture_execution_required")
+        elif capture.get("status") != "captured" or not capture.get("paused_event_captured"):
+            blockers.append("next_paused_event_not_captured")
+        if capture and not capture.get("live_callframe_recovery_ready"):
+            blockers.append("captured_pause_missing_live_callframe")
+        if recovery and (recovery.get("status") == "blocked" or recovery.get("live_callframe_recovered") is False):
+            blockers.append("live_callframe_recovery_blocked")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionCrossProcessContinuationCheckpointSpec | None, *, blockers: list[str]) -> dict[str, Any]:
+        capture = spec.next_paused_event_capture_execution if spec else {}
+        recovery = spec.live_callframe_recovery if spec else {}
+        action = spec.cross_process_one_action_execution if spec else {}
+        callframes = capture.get("callframes") if isinstance(capture.get("callframes"), list) else []
+        selected_callframe = capture.get("selected_callframe") if isinstance(capture.get("selected_callframe"), dict) else (callframes[0] if callframes and isinstance(callframes[0], dict) else {})
+        recovered = bool(recovery.get("live_callframe_recovered"))
+        action_executed = bool(action.get("live_action_executed"))
+        status = "blocked" if blockers else "ready_for_next_action_review" if recovered else "ready_for_live_callframe_recovery"
+        return {
+            "schema_version": "reverse-deepagent.paused-session-cross-process-continuation-checkpoint.v1",
+            "status": status,
+            "checkpoint_index": spec.checkpoint_index if spec else 0,
+            "pause_session_id": spec.pause_session_id if spec else capture.get("pause_session_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "target_id": spec.target_id if spec else capture.get("target_id"),
+            "attached_session_id_present": bool(spec and spec.attached_session_id),
+            "capture_execution_status": capture.get("status"),
+            "paused_event_captured": bool(capture.get("paused_event_captured")),
+            "captured_event_count": capture.get("captured_event_count", 0),
+            "captured_method": capture.get("method"),
+            "callframe_count": len(callframes),
+            "selected_callframe": selected_callframe,
+            "selected_callframe_id": selected_callframe.get("callFrameId"),
+            "fresh_paused_event_after_capture": bool(capture.get("fresh_paused_event_after_capture")),
+            "live_callframe_recovery_status": recovery.get("status"),
+            "live_callframe_recovered": recovered,
+            "live_callframe_id": recovery.get("live_callframe_id"),
+            "one_action_execution_status": action.get("status"),
+            "one_action_live_action_executed": action_executed,
+            "continuation_ready_for_next_action": recovered,
+            "continuation_ready_for_next_capture_plan": action_executed,
+            "manual_checkpoint_required": True,
+            "recommended_followups": cls._recommended_followups(status=status, recovered=recovered, action_executed=action_executed),
+            "live_callframe_recovery_input": cls._live_callframe_recovery_input(spec, capture, callframes),
+            "next_action_review_input": cls._next_action_review_input(spec, recovery),
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers, recovered=recovered, action_executed=action_executed),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _live_callframe_recovery_input(spec: PausedSessionCrossProcessContinuationCheckpointSpec | None, capture: dict[str, Any], callframes: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "paused_session_live_callframe_recovery": True,
+            "pause_session_id": spec.pause_session_id if spec else capture.get("pause_session_id"),
+            "target_id": spec.target_id if spec else capture.get("target_id"),
+            "attached_session_id": spec.attached_session_id if spec else capture.get("attached_session_id"),
+            "fresh_paused_event_after_attach": True,
+            "callFrames": callframes,
+            "source_artifact": "workspace/paused-session-next-paused-event-capture-execution.json",
+        }
+
+    @staticmethod
+    def _next_action_review_input(spec: PausedSessionCrossProcessContinuationCheckpointSpec | None, recovery: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "paused_session_cross_process_one_action": True,
+            "pause_session_id": spec.pause_session_id if spec else recovery.get("pause_session_id"),
+            "target_id": spec.target_id if spec else recovery.get("target_id"),
+            "attached_session_id": spec.attached_session_id if spec else recovery.get("attached_session_id"),
+            "live_callframe_id": recovery.get("live_callframe_id"),
+            "source_artifact": "workspace/paused-session-live-callframe-recovery.json",
+        }
+
+    @staticmethod
+    def _recommended_followups(*, status: str, recovered: bool, action_executed: bool) -> list[dict[str, Any]]:
+        if status == "blocked":
+            return [{"step": "resolve_checkpoint_blockers", "review_required": True, "side_effects": False}]
+        if not recovered:
+            return [{"step": "recover_live_callframe_from_captured_pause", "review_required": True, "side_effects": False}]
+        if not action_executed:
+            return [{"step": "plan_next_cross_process_one_action", "review_required": True, "side_effects": False}]
+        return [{"step": "plan_next_paused_event_capture", "review_required": True, "side_effects": False}]
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "continuation_checkpoint_request_missing": ("request", "No cross-process continuation checkpoint request was provided.", "request_continuation_checkpoint"),
+            "next_paused_event_capture_execution_required": ("capture", "A next paused-event capture execution artifact is required.", "execute_next_paused_event_capture"),
+            "next_paused_event_not_captured": ("capture", "The supplied next paused-event capture execution did not capture a paused event.", "rerun_capture_with_presubscription_or_reproduce_pause"),
+            "captured_pause_missing_live_callframe": ("debugger", "The captured paused event does not contain a live callFrame candidate.", "capture_pause_with_callframes"),
+            "live_callframe_recovery_blocked": ("debugger", "The supplied live callFrame recovery evidence is blocked.", "resolve_live_callframe_recovery_blockers"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_continuation_checkpoint"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_continuation_checkpoint"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_continuation_checkpoint"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], recovered: bool, action_executed: bool) -> str:
+        if blockers:
+            return "inspect_continuation_checkpoint_blockers"
+        if not recovered:
+            return "recover_live_callframe_from_captured_pause"
+        if not action_executed:
+            return "plan_next_cross_process_one_action"
+        return "plan_next_paused_event_capture"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 
