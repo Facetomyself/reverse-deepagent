@@ -3536,6 +3536,364 @@ class PausedSessionMultiStepContinuationWorkflowManager:
         ]
 
 
+@dataclass(slots=True)
+class PausedSessionMultiStepContinuationExecutionSpec:
+    """Review-gated one-iteration executor for a planned paused-session continuation workflow."""
+
+    workflow: dict[str, Any] = field(default_factory=dict)
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    cross_process_attach_probe: dict[str, Any] = field(default_factory=dict)
+    execute_iteration: bool = False
+    review_approved: bool = False
+    selected_step_index: int = 1
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    live_callframe_id: str | None = None
+    timeout_ms: int = 5000
+    observed_paused_event: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+    require_matching_session_id: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionMultiStepContinuationExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_multi_step_continuation_execution")
+            or context.get("pausedSessionMultiStepContinuationExecution")
+            or context.get("paused-session-multi-step-continuation-execution")
+            or context.get("execute_paused_session_continuation_iteration")
+            or context.get("executePausedSessionContinuationIteration")
+            or context.get("cross_process_multi_step_continuation_execution")
+            or context.get("crossProcessMultiStepContinuationExecution")
+        )
+        workflow_container = _first_dict(
+            context,
+            "paused_session_multi_step_continuation_workflow",
+            "pausedSessionMultiStepContinuationWorkflow",
+            "paused-session-multi-step-continuation-workflow",
+            "multi_step_continuation_workflow",
+            "multiStepContinuationWorkflow",
+            "continuation_workflow",
+            "continuationWorkflow",
+        )
+        workflow = dict(workflow_container.get("workflow")) if isinstance(workflow_container.get("workflow"), dict) else workflow_container
+        recovery_container = _first_dict(
+            context,
+            "paused_session_live_callframe_recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "paused-session-live-callframe-recovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+        )
+        recovery = dict(recovery_container.get("recovery")) if isinstance(recovery_container.get("recovery"), dict) else recovery_container
+        attach_container = _first_dict(
+            context,
+            "paused_session_cross_process_attach_probe",
+            "pausedSessionCrossProcessAttachProbe",
+            "paused-session-cross-process-attach-probe",
+            "cross_process_attach_probe",
+            "crossProcessAttachProbe",
+        )
+        attach_probe = dict(attach_container.get("probe")) if isinstance(attach_container.get("probe"), dict) else attach_container
+        if not requested and not workflow:
+            return None
+        index_raw = context.get("selected_step_index", context.get("selectedStepIndex", context.get("step_index", context.get("stepIndex", 1))))
+        timeout_raw = context.get("timeout_ms", context.get("timeoutMs", 5000))
+        try:
+            selected_step_index = int(index_raw)
+        except (TypeError, ValueError):
+            selected_step_index = 1
+        try:
+            timeout_ms = int(timeout_raw)
+        except (TypeError, ValueError):
+            timeout_ms = 5000
+        execute_raw = context.get("execute_paused_session_continuation_iteration", context.get("executePausedSessionContinuationIteration", context.get("execute_iteration", context.get("executeIteration", False))))
+        approved_raw = context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))
+        event = _first_dict(context, "observed_paused_event", "observedPausedEvent", "debugger_paused_event", "debuggerPausedEvent", "paused_event", "pausedEvent")
+        attached_session_id = context.get("attached_session_id") or context.get("attachedSessionId") or recovery.get("attached_session_id") or attach_probe.get("attached_session_id")
+        live_callframe_id = context.get("live_callframe_id") or context.get("liveCallframeId") or context.get("callFrameId") or recovery.get("live_callframe_id")
+        pause_session_id = context.get("pause_session_id") or context.get("pauseSessionId") or workflow.get("pause_session_id") or recovery.get("pause_session_id")
+        target_id = context.get("target_id") or context.get("targetId") or workflow.get("target_id") or recovery.get("target_id")
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        match_raw = context.get("require_matching_session_id", context.get("requireMatchingSessionId", True))
+        return cls(
+            workflow=workflow,
+            live_callframe_recovery=recovery,
+            cross_process_attach_probe=attach_probe,
+            execute_iteration=bool(execute_raw),
+            review_approved=bool(approved_raw),
+            selected_step_index=max(1, selected_step_index),
+            pause_session_id=str(pause_session_id).strip() if pause_session_id else None,
+            target_id=str(target_id).strip() if target_id else None,
+            attached_session_id=str(attached_session_id).strip() if attached_session_id else None,
+            live_callframe_id=str(live_callframe_id).strip() if live_callframe_id else None,
+            timeout_ms=max(10, timeout_ms),
+            observed_paused_event=event,
+            reviewer=str(reviewer).strip() if reviewer else None,
+            require_matching_session_id=bool(match_raw),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionMultiStepContinuationExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionMultiStepContinuationExecutionManager:
+    """Execute at most one reviewed step from a multi-step continuation workflow."""
+
+    def execute(self, page: BrowserPage | None, spec: PausedSessionMultiStepContinuationExecutionSpec | None) -> PausedSessionMultiStepContinuationExecutionResult:
+        blockers = self._blockers(spec)
+        if blockers:
+            payload = self._payload(spec, status="blocked", blockers=blockers)
+            return PausedSessionMultiStepContinuationExecutionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy({}), reason=blockers[0])
+        if spec and not spec.execute_iteration:
+            payload = self._payload(spec, status="ready_for_review", blockers=[])
+            return PausedSessionMultiStepContinuationExecutionResult(status="ready_for_review", execution=payload, side_effect_policy=self._side_effect_policy({}))
+        if spec and not spec.review_approved:
+            payload = self._payload(spec, status="review_required", blockers=["review_approval_required"])
+            return PausedSessionMultiStepContinuationExecutionResult(status="review_required", execution=payload, side_effect_policy=self._side_effect_policy({}), reason="review_approval_required")
+        assert spec is not None
+        step = self._selected_step(spec)
+        method = str(step.get("method") or "")
+        inner: dict[str, Any]
+        inner_policy: dict[str, Any]
+        error: str | None = None
+        if method == "Debugger.evaluateOnCallFrame":
+            result = PausedSessionCrossProcessOneActionManager().execute(
+                page,
+                PausedSessionCrossProcessOneActionSpec(
+                    live_callframe_recovery=spec.live_callframe_recovery,
+                    cross_process_attach_probe=spec.cross_process_attach_probe,
+                    execute_action=True,
+                    review_approved=True,
+                    requested_action="evaluate",
+                    expression=self._step_expression(step),
+                    callframe_evaluation_policy="read_only",
+                    pause_session_id=spec.pause_session_id,
+                    target_id=spec.target_id,
+                    attached_session_id=spec.attached_session_id,
+                    live_callframe_id=spec.live_callframe_id,
+                    reviewer=spec.reviewer,
+                ),
+            )
+            inner = result.execution
+            inner_policy = result.side_effect_policy
+            error = result.error
+            status = "executed" if result.status == "executed" else result.status
+            blockers_after = [] if status == "executed" else [result.reason or "planned_step_execution_failed"]
+            executor_artifact = "workspace/paused-session-cross-process-one-action-execution.json"
+        else:
+            result = PausedSessionPreActionSubscribeAndActionManager().execute(
+                page,
+                PausedSessionPreActionSubscribeAndActionSpec(
+                    live_callframe_recovery=spec.live_callframe_recovery,
+                    cross_process_attach_probe=spec.cross_process_attach_probe,
+                    execute_orchestration=True,
+                    review_approved=True,
+                    requested_action=self._action_for_method(method),
+                    pause_session_id=spec.pause_session_id,
+                    target_id=spec.target_id,
+                    attached_session_id=spec.attached_session_id,
+                    live_callframe_id=spec.live_callframe_id,
+                    timeout_ms=spec.timeout_ms,
+                    observed_paused_event=spec.observed_paused_event,
+                    reviewer=spec.reviewer,
+                    require_matching_session_id=spec.require_matching_session_id,
+                ),
+            )
+            inner = result.orchestration
+            inner_policy = result.side_effect_policy
+            error = result.error
+            status = "executed" if result.status == "captured" else result.status
+            blockers_after = [] if status == "executed" else [result.reason or "planned_step_execution_failed"]
+            executor_artifact = "workspace/paused-session-pre-action-subscribe-and-action.json"
+        payload = self._payload(spec, status=status, blockers=blockers_after, inner_result=inner, inner_policy=inner_policy, executor_artifact=executor_artifact, error=error)
+        return PausedSessionMultiStepContinuationExecutionResult(status=status, execution=payload, side_effect_policy=self._side_effect_policy(inner_policy), reason=blockers_after[0] if blockers_after else None, error=error)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionMultiStepContinuationExecutionSpec | None) -> list[str]:
+        if spec is None:
+            return ["multi_step_execution_request_missing"]
+        blockers: list[str] = []
+        workflow = spec.workflow
+        step = cls._selected_step(spec)
+        recovery = spec.live_callframe_recovery
+        if not workflow:
+            blockers.append("multi_step_workflow_required")
+        elif workflow.get("status") != "ready_for_review":
+            blockers.append("multi_step_workflow_not_ready")
+        if not step:
+            blockers.append("planned_step_not_found")
+        else:
+            method = str(step.get("method") or "")
+            if method not in {"Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut", "Debugger.evaluateOnCallFrame"}:
+                blockers.append("unsupported_planned_step_method")
+            if method == "Debugger.evaluateOnCallFrame" and not cls._step_expression(step):
+                blockers.append("evaluate_expression_required")
+            if step.get("fingerprint") in set(workflow.get("duplicate_fingerprints") if isinstance(workflow.get("duplicate_fingerprints"), list) else []):
+                blockers.append("duplicate_planned_step_fingerprint")
+        if not recovery:
+            blockers.append("live_callframe_recovery_required")
+        elif recovery.get("status") == "blocked" or not recovery.get("live_callframe_recovered"):
+            blockers.append("live_callframe_recovery_blocked")
+        if recovery.get("target_detached"):
+            blockers.append("attached_session_retained_required")
+        if not spec.attached_session_id:
+            blockers.append("attached_session_id_required")
+        if not spec.live_callframe_id:
+            blockers.append("live_callframe_id_required")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _selected_step(spec: PausedSessionMultiStepContinuationExecutionSpec | None) -> dict[str, Any]:
+        if spec is None:
+            return {}
+        steps = spec.workflow.get("planned_steps") if isinstance(spec.workflow.get("planned_steps"), list) else []
+        for step in steps:
+            if isinstance(step, dict) and int(step.get("step_index", 0) or 0) == spec.selected_step_index:
+                return step
+        return steps[spec.selected_step_index - 1] if 0 <= spec.selected_step_index - 1 < len(steps) and isinstance(steps[spec.selected_step_index - 1], dict) else {}
+
+    @staticmethod
+    def _step_expression(step: dict[str, Any]) -> str | None:
+        value = step.get("expression") or step.get("callframe_expression") or step.get("callFrameExpression")
+        return str(value) if value is not None else None
+
+    @staticmethod
+    def _action_for_method(method: str) -> str:
+        return {
+            "Debugger.resume": "resume",
+            "Debugger.stepOver": "step_over",
+            "Debugger.stepInto": "step_into",
+            "Debugger.stepOut": "step_out",
+        }.get(method, method)
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: PausedSessionMultiStepContinuationExecutionSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        inner_result: dict[str, Any] | None = None,
+        inner_policy: dict[str, Any] | None = None,
+        executor_artifact: str | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        workflow = spec.workflow if spec else {}
+        step = cls._selected_step(spec) if spec else {}
+        policy = inner_policy or {}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-multi-step-continuation-execution.v1",
+            "status": status,
+            "workflow_id": workflow.get("workflow_id"),
+            "pause_session_id": spec.pause_session_id if spec else workflow.get("pause_session_id"),
+            "target_id": spec.target_id if spec else workflow.get("target_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "selected_step_index": spec.selected_step_index if spec else None,
+            "selected_step": step,
+            "selected_method": step.get("method"),
+            "execute_iteration_requested": bool(spec and spec.execute_iteration),
+            "review_approved": bool(spec and spec.review_approved),
+            "executor_artifact": executor_artifact or step.get("expected_executor_artifact"),
+            "executor_result": inner_result or {},
+            "executor_status": (inner_result or {}).get("status"),
+            "paused_event_captured": bool((inner_result or {}).get("paused_event_captured")),
+            "live_callframe_recovery_ready": bool((inner_result or {}).get("live_callframe_recovery_ready")),
+            "callframe_evaluated": bool(policy.get("callframe_evaluated")),
+            "browser_resumed": bool(policy.get("browser_resumed")),
+            "debugger_stepped": bool(policy.get("debugger_stepped")),
+            "cdp_command_sent": bool(policy.get("cdp_command_sent")),
+            "debugger_event_subscribed": bool(policy.get("debugger_event_subscribed")),
+            "manual_checkpoint_required_after_step": True,
+            "expected_followup_checkpoint": "workspace/paused-session-cross-process-continuation-checkpoint.json",
+            "multi_step_iteration_executed": status == "executed",
+            "automatic_loop": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers, paused_captured=bool((inner_result or {}).get("paused_event_captured"))),
+            "side_effect_policy": cls._side_effect_policy(policy),
+            "error": error,
+        }
+
+    @staticmethod
+    def _side_effect_policy(inner_policy: dict[str, Any]) -> dict[str, Any]:
+        cdp_sent = bool(inner_policy.get("cdp_command_sent"))
+        return {
+            "read_only": not cdp_sent,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": cdp_sent,
+            "debugger_event_subscribed": bool(inner_policy.get("debugger_event_subscribed")),
+            "paused_event_captured": bool(inner_policy.get("paused_event_captured")),
+            "browser_resumed": bool(inner_policy.get("browser_resumed")),
+            "debugger_stepped": bool(inner_policy.get("debugger_stepped")),
+            "callframe_evaluated": bool(inner_policy.get("callframe_evaluated")),
+            "runtime_mutated": False,
+            "cross_process_action_executed": bool(inner_policy.get("cross_process_action_executed") or cdp_sent),
+            "multi_step_continuation_executed": cdp_sent,
+            "bounded_one_iteration_only": True,
+            "automatic_loop": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "multi_step_execution_request_missing": ("request", "No multi-step continuation execution request was provided.", "request_multi_step_continuation_execution"),
+            "multi_step_workflow_required": ("workflow", "A ready multi-step continuation workflow is required.", "plan_multi_step_continuation_workflow"),
+            "multi_step_workflow_not_ready": ("workflow", "The supplied continuation workflow is not ready for review.", "review_or_replan_multi_step_continuation_workflow"),
+            "planned_step_not_found": ("workflow", "The selected planned step does not exist.", "select_existing_planned_step"),
+            "unsupported_planned_step_method": ("action", "The selected step method is not supported by the bounded executor.", "select_supported_debugger_action"),
+            "evaluate_expression_required": ("action", "Evaluate-on-callframe execution requires an expression in the planned step.", "provide_evaluate_expression"),
+            "duplicate_planned_step_fingerprint": ("journal", "The selected step fingerprint already exists in the workflow duplicate guard.", "review_duplicate_step_before_execution"),
+            "live_callframe_recovery_required": ("debugger", "Fresh live callFrame recovery evidence is required before execution.", "recover_live_callframe_from_checkpoint"),
+            "live_callframe_recovery_blocked": ("debugger", "The supplied live callFrame recovery evidence is blocked.", "resolve_live_callframe_recovery_blockers"),
+            "attached_session_retained_required": ("debugger", "A retained attached session is required for execution.", "rerun_attach_probe_without_detach_or_attach_again"),
+            "attached_session_id_required": ("debugger", "The attached flattened CDP session id is required.", "provide_attached_session_id"),
+            "live_callframe_id_required": ("debugger", "The recovered live callFrame id is required.", "recover_live_callframe_from_checkpoint"),
+            "review_approval_required": ("review", "Executing a planned continuation iteration requires explicit review approval.", "approve_multi_step_continuation_iteration"),
+            "planned_step_execution_failed": ("runtime", "The selected planned step failed during execution.", "inspect_multi_step_continuation_execution"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_multi_step_continuation_execution"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_multi_step_continuation_execution"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_multi_step_continuation_execution"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], paused_captured: bool) -> str:
+        if blockers:
+            return "inspect_multi_step_continuation_execution_blockers"
+        if status == "ready_for_review":
+            return "approve_multi_step_continuation_iteration"
+        if status == "review_required":
+            return "approve_multi_step_continuation_iteration"
+        if status == "executed" and paused_captured:
+            return "checkpoint_cross_process_continuation"
+        if status == "executed":
+            return "review_multi_step_continuation_execution_result"
+        if status == "timed_out":
+            return "review_or_rerun_multi_step_continuation_iteration"
+        return "inspect_multi_step_continuation_execution"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 

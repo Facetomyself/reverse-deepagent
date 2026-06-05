@@ -305,6 +305,21 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session multi-step continuation execution",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="paused_session_multi_step_continuation_execution",
+                    details={
+                        "status": "executed",
+                        "execution": {
+                            "selected_step_index": 1,
+                            "selected_method": "Debugger.stepOver",
+                            "multi_step_iteration_executed": True,
+                            "manual_checkpoint_required_after_step": True,
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native closure wrapper replacement plan",
                     kind=EvidenceKind.HOOK,
                     source="closure_wrapper_replacement_plan",
@@ -719,6 +734,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payloads["paused-session-cross-process-continuation-checkpoint.json"]["checkpoint"]["paused_event_captured"])
         self.assertTrue(payloads["paused-session-cross-process-continuation-checkpoint.json"]["checkpoint"]["manual_checkpoint_required"])
         self.assertTrue(payloads["paused-session-multi-step-continuation-workflow.json"]["workflow"]["execute_at_most_one_action_per_review"])
+        self.assertTrue(payloads["paused-session-multi-step-continuation-execution.json"]["execution"]["multi_step_iteration_executed"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -837,6 +853,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_pre_action_subscribe_and_action"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_continuation_checkpoint"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_multi_step_continuation_workflow"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_multi_step_continuation_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")

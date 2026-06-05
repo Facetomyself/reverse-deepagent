@@ -534,6 +534,58 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertTrue(result["review_required_items"][0]["multi_step_continuation_workflow_diagnostics"]["manual_checkpoint_required_after_each_step"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_warns_for_multi_step_continuation_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_execution": {
+                "execution": {
+                    "status": "ready_for_review",
+                    "workflow_id": "workflow-exec-review-1",
+                    "selected_step_index": 1,
+                    "selected_method": "Debugger.stepOver",
+                    "multi_step_iteration_executed": False,
+                    "automatic_loop": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_continuation_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_multi_step_continuation_iteration")
+        execution = result["summary"]["multi_step_continuation_execution"]
+        self.assertEqual(execution["status"], "ready_for_review")
+        self.assertEqual(execution["selected_method"], "Debugger.stepOver")
+        self.assertFalse(execution["automatic_loop"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_multi_step_continuation_execution_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_execution": {
+                "execution": {
+                    "status": "executed",
+                    "workflow_id": "workflow-exec-review-2",
+                    "selected_step_index": 1,
+                    "selected_method": "Debugger.stepOver",
+                    "paused_event_captured": True,
+                    "manual_checkpoint_required_after_step": True,
+                    "multi_step_iteration_executed": True,
+                    "automatic_loop": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_continuation_execution_checkpoint_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_cross_process_continuation")
+        self.assertTrue(result["review_required_items"][0]["multi_step_continuation_execution_diagnostics"]["manual_checkpoint_required_after_step"])
+
     def test_review_debugger_artifacts_blocks_multi_step_continuation_workflow(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {
