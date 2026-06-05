@@ -134,6 +134,7 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertIn("cloakbrowser_production_lifecycle_declared", rule_ids)
         self.assertIn("hosted_cdp_reference_lifecycle_declared", rule_ids)
         self.assertIn("browserless_cdp_contract_declared", rule_ids)
+        self.assertIn("browserbase_cdp_contract_declared", rule_ids)
         playwright_rule = next(rule for rule in rules if rule["rule_id"] == "playwright_chromium_lifecycle_declared")
         self.assertEqual(playwright_rule["provider_ids"], ["playwright-chromium"])
         self.assertEqual(playwright_rule["transports"], ["playwright"])
@@ -154,10 +155,16 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertEqual(browserless_rule["transports"], ["browserless-cdp"])
         self.assertIn("supports_runtime_eval", browserless_rule["requires_all"])
         self.assertEqual(browserless_rule["metadata_equals"]["health_check_mode"], "explicit-browserless-cdp-contract-smoke")
+        browserbase_rule = next(rule for rule in rules if rule["rule_id"] == "browserbase_cdp_contract_declared")
+        self.assertEqual(browserbase_rule["provider_ids"], ["browserbase-cdp"])
+        self.assertEqual(browserbase_rule["transports"], ["browserbase-cdp"])
+        self.assertIn("supports_launch", browserbase_rule["requires_all"])
+        self.assertEqual(browserbase_rule["metadata_equals"]["health_check_mode"], "explicit-browserbase-session-smoke")
         self.assertIn("endpoint_security_policy", remote_rule["required_metadata_keys"])
         self.assertIn("stealth_policy", cloak_rule["required_metadata_keys"])
         self.assertIn("allocation_lifecycle_policy", hosted_rule["required_metadata_keys"])
         self.assertIn("account_boundary_policy", browserless_rule["required_metadata_keys"])
+        self.assertIn("allocation_lifecycle_policy", browserbase_rule["required_metadata_keys"])
 
     def test_builtin_provider_specific_readiness_rules_pass_without_runtime_side_effects(self) -> None:
         providers = [

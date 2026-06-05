@@ -8,7 +8,7 @@ from reverse_deepagent.browser.base import BrowserProvider
 
 BROWSER_SMOKE_MATRIX_VERSION = "2026-05-31.lifecycle-baseline"
 BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION = "2026-05-31.metadata-compatibility-v1"
-BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-05.production-readiness-v4"
+BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-05.production-readiness-v5"
 DEFAULT_BROWSER_PROVIDER_MATRIX: tuple[str, ...] = (
     "playwright-chromium",
     "cloakbrowser",
@@ -263,6 +263,36 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             "browserless-cdp should declare a reviewed hosted-CDP connect contract, Browserless-owned "
             "session lifecycle metadata, and explicit endpoint smoke requirements without probing endpoints "
             "during metadata listing"
+        ),
+    ),
+    BrowserProviderProductionReadinessRule(
+        rule_id="browserbase_cdp_contract_declared",
+        severity="warning",
+        provider_ids=("browserbase-cdp",),
+        transports=("browserbase-cdp",),
+        requires_all=(
+            "supports_launch",
+            "supports_connect",
+            "supports_cdp",
+            "supports_response_body",
+            "supports_request_initiator",
+            "supports_script_source",
+            "supports_websocket_frames",
+            "supports_breakpoints",
+            "supports_runtime_eval",
+            "managed_browser",
+        ),
+        metadata_equals=(
+            ("readiness_tier", "review-required"),
+            ("health_check_mode", "explicit-browserbase-session-smoke"),
+            ("profile_lifecycle", "browserbase-session-owned"),
+            ("session_recovery", "explicit-connect-url-or-created-session-connect-url"),
+        ),
+        required_metadata_keys=("account_boundary_policy", "endpoint_security_policy", "allocation_lifecycle_policy"),
+        message=(
+            "browserbase-cdp should declare explicit Browserbase Session creation / connectUrl attach "
+            "metadata, account-boundary controls, and smoke evidence requirements without reading API keys "
+            "or creating sessions during metadata listing"
         ),
     ),
 )

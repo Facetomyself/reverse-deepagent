@@ -264,7 +264,7 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.browser_providers")
         self.assertIn("provider_registration_metadata", matrix)
         self.assertEqual(matrix["compatibility_rule_version"], "2026-05-31.metadata-compatibility-v1")
-        self.assertEqual(matrix["production_readiness_version"], "2026-06-05.production-readiness-v4")
+        self.assertEqual(matrix["production_readiness_version"], "2026-06-05.production-readiness-v5")
         self.assertIn("compatibility_rules", matrix)
         self.assertIn("production_readiness_rules", matrix)
         self.assertGreaterEqual(len(matrix["compatibility_rules"]), 10)
