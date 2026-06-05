@@ -233,6 +233,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/hooks/closure-wrapper-continuation-execution.json",
         )
         self.assertEqual(routes["workspace/closure-wrapper-continuation-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-checkpoint.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(
+            routes["workspace/closure-wrapper-continuation-checkpoint.json"].future_path,
+            "/workspace/hooks/closure-wrapper-continuation-checkpoint.json",
+        )
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-checkpoint.json"].category, "triage")
         self.assertEqual(routes["workspace/workspace-dual-write-plan.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/workspace-dual-write-pilot-result.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/workspace-dual-write-pilot-result.json"].future_path, "/workspace/delivery/workspace-dual-write-pilot-result.json")

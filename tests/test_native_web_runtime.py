@@ -4915,6 +4915,82 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(len(page._cdp_session.calls), call_count + 1)
         self.assertEqual(page._cdp_session.calls[-1][0], "Debugger.stepOver")
 
+    def test_native_web_runtime_reviews_closure_wrapper_continuation_checkpoint_without_side_effects(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-continuation-checkpoint",
+            {
+                "closure_wrapper_continuation_checkpoint": True,
+                "closure_wrapper_continuation_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "plan_id": "native-wrapper-plan-1",
+                        "workflow_id": "native-wrapper-workflow-1",
+                        "wrapper_strategy": "log-only-call-through",
+                        "function_name": "buildSign",
+                        "selected_step_index": 1,
+                        "selected_method": "Debugger.stepOver",
+                        "wrapper_continuation_iteration_executed": True,
+                        "paused_event_captured": True,
+                        "post_execution_event_harvest_required": True,
+                        "manual_checkpoint_required_after_step": True,
+                        "automatic_wrapper_continuation": False,
+                        "automatic_multi_step_loop": False,
+                    }
+                },
+                "closure_wrapper_events": {"status": "success", "event_count": 1},
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "native-wrapper-pause-1",
+                        "target_id": "native-wrapper-target-1",
+                        "paused_event_captured": True,
+                        "continuation_ready_for_next_action": True,
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "next_iteration": {
+                            "available": True,
+                            "workflow_step_index": 2,
+                            "method": "Debugger.stepOver",
+                        }
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_next_closure_wrapper_continuation_iteration")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-continuation-checkpoint.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["wrapper_strategy"], "log-only-call-through")
+        self.assertEqual(result.artifacts[0].metadata["function_name"], "buildSign")
+        self.assertEqual(result.artifacts[0].metadata["post_execution_event_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["paused_session_checkpoint_ready"])
+        self.assertTrue(result.artifacts[0].metadata["next_iteration_available"])
+        self.assertIn("closure_wrapper_continuation_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_event_count=1", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_cdp_command_sent=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_event_subscribed=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_paused_event_captured=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_runtime_mutated=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_wrapper_installed=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_wrapper_restored=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_wrapper_events_harvested=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_iteration_executed=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_automatic_wrapper_continuation=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_automatic_multi_step_loop=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_calls_mcp=False", result.verification)
+        self.assertIn("closure_wrapper_continuation_checkpoint_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_native_web_runtime_reviews_cross_process_session_lifecycle_without_side_effects(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

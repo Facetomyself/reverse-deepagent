@@ -6,6 +6,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureScopeDiscoverySpec,
     ClosureWrapperAssignmentSafetyManager,
     ClosureWrapperAssignmentSafetySpec,
+    ClosureWrapperContinuationCheckpointManager,
+    ClosureWrapperContinuationCheckpointSpec,
     ClosureWrapperContinuationExecutionPlanManager,
     ClosureWrapperContinuationExecutionPlanSpec,
     ClosureWrapperContinuationExecutionManager,
@@ -1184,6 +1186,103 @@ class ClosureWrapperContinuationExecutionManagerTests(unittest.TestCase):
         self.assertIn("multi_step_workflow_required", execution["blockers"])
         self.assertIn("live_callframe_recovery_required", execution["blockers"])
         self.assertEqual(execution["next_action"], "inspect_closure_wrapper_continuation_execution_blockers")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+
+class ClosureWrapperContinuationCheckpointManagerTests(unittest.TestCase):
+    def test_checkpoint_ready_after_events_and_paused_session_checkpoint(self) -> None:
+        spec = ClosureWrapperContinuationCheckpointSpec.from_context(
+            {
+                "closure_wrapper_continuation_checkpoint": True,
+                "closure_wrapper_continuation_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "plan_id": "wrapper-continuation-plan-1",
+                        "workflow_id": "wrapper-workflow-1",
+                        "wrapper_strategy": "log-only-call-through",
+                        "function_name": "buildSign",
+                        "selected_step_index": 1,
+                        "selected_method": "Debugger.stepOver",
+                        "wrapper_continuation_iteration_executed": True,
+                        "paused_event_captured": True,
+                        "post_execution_event_harvest_required": True,
+                        "manual_checkpoint_required_after_step": True,
+                        "automatic_wrapper_continuation": False,
+                        "automatic_multi_step_loop": False,
+                    }
+                },
+                "closure_wrapper_events": {"status": "success", "event_count": 1},
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "pause-1",
+                        "target_id": "target-1",
+                        "paused_event_captured": True,
+                        "continuation_ready_for_next_action": True,
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "next_iteration": {
+                            "available": True,
+                            "workflow_step_index": 2,
+                            "method": "Debugger.stepOver",
+                        }
+                    }
+                },
+            }
+        )
+
+        result = ClosureWrapperContinuationCheckpointManager().checkpoint(spec)
+        checkpoint = result.checkpoint
+        policy = result.side_effect_policy
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(checkpoint["schema_version"], "reverse-deepagent.closure-wrapper-continuation-checkpoint.v1")
+        self.assertTrue(checkpoint["ready_for_review"])
+        self.assertEqual(checkpoint["next_action"], "review_next_closure_wrapper_continuation_iteration")
+        self.assertEqual(checkpoint["post_execution_event_count"], 1)
+        self.assertTrue(checkpoint["paused_session_checkpoint_ready"])
+        self.assertTrue(checkpoint["next_iteration_available"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["runtime_mutated"])
+        self.assertFalse(policy["wrapper_installed"])
+        self.assertFalse(policy["wrapper_restored"])
+        self.assertFalse(policy["wrapper_events_harvested"])
+        self.assertFalse(policy["wrapper_continuation_iteration_executed"])
+        self.assertFalse(policy["automatic_wrapper_continuation"])
+        self.assertFalse(policy["automatic_multi_step_loop"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
+
+    def test_checkpoint_blocks_without_followup_events_or_checkpoint(self) -> None:
+        spec = ClosureWrapperContinuationCheckpointSpec.from_context(
+            {
+                "closure_wrapper_continuation_checkpoint": True,
+                "closure_wrapper_continuation_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "wrapper_continuation_iteration_executed": True,
+                        "post_execution_event_harvest_required": True,
+                        "manual_checkpoint_required_after_step": True,
+                        "automatic_wrapper_continuation": False,
+                        "automatic_multi_step_loop": False,
+                    }
+                },
+            }
+        )
+
+        result = ClosureWrapperContinuationCheckpointManager().checkpoint(spec)
+        checkpoint = result.checkpoint
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("closure_wrapper_events_required", checkpoint["blockers"])
+        self.assertIn("paused_session_continuation_checkpoint_required", checkpoint["blockers"])
+        self.assertEqual(checkpoint["next_action"], "harvest_wrapper_events_after_reviewed_execution")
         self.assertTrue(result.side_effect_policy["read_only"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])

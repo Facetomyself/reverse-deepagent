@@ -3612,6 +3612,306 @@ class ClosureWrapperContinuationExecutionManager:
         return "inspect_closure_wrapper_continuation_execution"
 
 
+@dataclass(slots=True)
+class ClosureWrapperContinuationCheckpointSpec:
+    """Read-only follow-up checkpoint after one wrapper-aware continuation iteration."""
+
+    continuation_execution: dict[str, Any] = field(default_factory=dict)
+    event_harvest: dict[str, Any] = field(default_factory=dict)
+    continuation_checkpoint: dict[str, Any] = field(default_factory=dict)
+    multi_step_loop_plan: dict[str, Any] = field(default_factory=dict)
+    previous_checkpoint: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+    requested: bool = False
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperContinuationCheckpointSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_continuation_checkpoint")
+            or context.get("closureWrapperContinuationCheckpoint")
+            or context.get("closure-wrapper-continuation-checkpoint")
+            or context.get("checkpoint_closure_wrapper_continuation")
+            or context.get("checkpointClosureWrapperContinuation")
+            or context.get("wrapper_continuation_checkpoint")
+            or context.get("wrapperContinuationCheckpoint")
+        )
+        execution_container = _first_dict(
+            context,
+            "closure_wrapper_continuation_execution",
+            "closureWrapperContinuationExecution",
+            "closure-wrapper-continuation-execution",
+            "wrapper_continuation_execution",
+            "wrapperContinuationExecution",
+        )
+        execution = dict(execution_container.get("execution")) if isinstance(execution_container.get("execution"), dict) else execution_container
+        events_container = _first_dict(
+            context,
+            "closure_wrapper_events",
+            "closureWrapperEvents",
+            "closure-wrapper-events",
+            "closure_wrapper_event_harvest",
+            "closureWrapperEventHarvest",
+            "event_harvest",
+            "eventHarvest",
+        )
+        checkpoint_container = _first_dict(
+            context,
+            "paused_session_cross_process_continuation_checkpoint",
+            "pausedSessionCrossProcessContinuationCheckpoint",
+            "paused-session-cross-process-continuation-checkpoint",
+            "cross_process_continuation_checkpoint",
+            "crossProcessContinuationCheckpoint",
+            "continuation_checkpoint",
+            "continuationCheckpoint",
+        )
+        checkpoint = dict(checkpoint_container.get("checkpoint")) if isinstance(checkpoint_container.get("checkpoint"), dict) else checkpoint_container
+        loop_container = _first_dict(
+            context,
+            "paused_session_multi_step_loop_plan",
+            "pausedSessionMultiStepLoopPlan",
+            "paused-session-multi-step-loop-plan",
+            "multi_step_loop_plan",
+            "multiStepLoopPlan",
+            "loop_plan",
+            "loopPlan",
+        )
+        loop_plan = dict(loop_container.get("loop_plan")) if isinstance(loop_container.get("loop_plan"), dict) else loop_container
+        previous_container = _first_dict(
+            context,
+            "previous_closure_wrapper_continuation_checkpoint",
+            "previousClosureWrapperContinuationCheckpoint",
+            "previous-wrapper-continuation-checkpoint",
+        )
+        previous = dict(previous_container.get("checkpoint")) if isinstance(previous_container.get("checkpoint"), dict) else previous_container
+        if not requested and not any((execution, events_container, checkpoint, loop_plan)):
+            return None
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        return cls(
+            continuation_execution=execution,
+            event_harvest=events_container,
+            continuation_checkpoint=checkpoint,
+            multi_step_loop_plan=loop_plan,
+            previous_checkpoint=previous,
+            reviewer=str(reviewer).strip() if reviewer else None,
+            requested=requested,
+        )
+
+
+@dataclass(slots=True)
+class ClosureWrapperContinuationCheckpointResult:
+    status: str
+    checkpoint: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-continuation-checkpoint.v1",
+            "status": self.status,
+            "checkpoint": self.checkpoint,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class ClosureWrapperContinuationCheckpointManager:
+    """Compose wrapper events and paused-session checkpoint evidence after one iteration."""
+
+    def checkpoint(self, spec: ClosureWrapperContinuationCheckpointSpec | None) -> ClosureWrapperContinuationCheckpointResult:
+        blockers = self._blockers(spec)
+        status = "blocked" if blockers else "ready_for_review"
+        payload = self._payload(spec, status=status, blockers=blockers)
+        return ClosureWrapperContinuationCheckpointResult(
+            status=status,
+            checkpoint=payload,
+            side_effect_policy=self._side_effect_policy(),
+            reason=blockers[0] if blockers else None,
+        )
+
+    @classmethod
+    def _blockers(cls, spec: ClosureWrapperContinuationCheckpointSpec | None) -> list[str]:
+        if spec is None:
+            return ["closure_wrapper_continuation_checkpoint_request_missing"]
+        blockers: list[str] = []
+        execution = spec.continuation_execution
+        events = spec.event_harvest
+        checkpoint = spec.continuation_checkpoint
+        if not execution:
+            blockers.append("closure_wrapper_continuation_execution_required")
+        else:
+            if execution.get("status") != "executed" or execution.get("wrapper_continuation_iteration_executed") is not True:
+                blockers.append("closure_wrapper_continuation_execution_not_executed")
+            if execution.get("automatic_wrapper_continuation") is not False:
+                blockers.append("automatic_wrapper_continuation_must_remain_disabled")
+            if execution.get("automatic_multi_step_loop") is not False:
+                blockers.append("automatic_multi_step_loop_must_remain_disabled")
+            if execution.get("post_execution_event_harvest_required") is not True:
+                blockers.append("post_execution_event_harvest_requirement_missing")
+            if execution.get("manual_checkpoint_required_after_step") is not True:
+                blockers.append("manual_continuation_checkpoint_requirement_missing")
+        if not events:
+            blockers.append("closure_wrapper_events_required")
+        else:
+            if events.get("status") not in {"success"}:
+                blockers.append("closure_wrapper_events_not_successful")
+            if cls._event_count(events) <= 0:
+                blockers.append("closure_wrapper_events_empty")
+        if not checkpoint:
+            blockers.append("paused_session_continuation_checkpoint_required")
+        elif not cls._checkpoint_ready(checkpoint):
+            blockers.append("paused_session_continuation_checkpoint_not_ready")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _event_count(events: dict[str, Any]) -> int:
+        raw = events.get("event_count", events.get("eventCount"))
+        if raw is None and isinstance(events.get("snapshot"), dict):
+            raw = events["snapshot"].get("eventCount")
+        try:
+            return int(raw or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _checkpoint_ready(checkpoint: dict[str, Any]) -> bool:
+        return (
+            checkpoint.get("status") in {"ready_for_next_action_review", "ready_for_live_callframe_recovery"}
+            or checkpoint.get("continuation_ready_for_next_action") is True
+            or checkpoint.get("live_callframe_recovery_ready") is True
+        )
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: ClosureWrapperContinuationCheckpointSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+    ) -> dict[str, Any]:
+        execution = spec.continuation_execution if spec else {}
+        events = spec.event_harvest if spec else {}
+        checkpoint = spec.continuation_checkpoint if spec else {}
+        loop_plan = spec.multi_step_loop_plan if spec else {}
+        previous = spec.previous_checkpoint if spec else {}
+        ready = status == "ready_for_review"
+        event_count = cls._event_count(events)
+        checkpoint_ready = cls._checkpoint_ready(checkpoint)
+        next_iteration = loop_plan.get("next_iteration") if isinstance(loop_plan.get("next_iteration"), dict) else {}
+        selected_step = execution.get("selected_step") if isinstance(execution.get("selected_step"), dict) else {}
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-continuation-checkpoint.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "reviewer": spec.reviewer if spec else None,
+            "plan_id": execution.get("plan_id"),
+            "workflow_id": execution.get("workflow_id"),
+            "pause_session_id": execution.get("pause_session_id") or checkpoint.get("pause_session_id"),
+            "target_id": execution.get("target_id") or checkpoint.get("target_id"),
+            "wrapper_strategy": execution.get("wrapper_strategy"),
+            "function_name": execution.get("function_name"),
+            "selected_step_index": execution.get("selected_step_index"),
+            "selected_method": execution.get("selected_method") or selected_step.get("method"),
+            "wrapper_continuation_iteration_executed": bool(execution.get("wrapper_continuation_iteration_executed")),
+            "paused_event_captured": bool(execution.get("paused_event_captured") or checkpoint.get("paused_event_captured")),
+            "post_execution_event_harvest_observed": bool(events),
+            "post_execution_event_harvest_status": events.get("status"),
+            "post_execution_event_count": event_count,
+            "paused_session_checkpoint_observed": bool(checkpoint),
+            "paused_session_checkpoint_status": checkpoint.get("status"),
+            "paused_session_checkpoint_ready": checkpoint_ready,
+            "live_callframe_recovered": bool(checkpoint.get("live_callframe_recovered")),
+            "next_iteration_available": bool(next_iteration.get("available")),
+            "next_iteration_step_index": next_iteration.get("workflow_step_index"),
+            "next_iteration_method": next_iteration.get("method"),
+            "previous_checkpoint_status": previous.get("status"),
+            "followup_requirements": {
+                "wrapper_events_harvested": bool(events),
+                "wrapper_events_non_empty": event_count > 0,
+                "paused_session_checkpoint_ready": checkpoint_ready,
+                "manual_review_required_before_next_iteration": True,
+                "automatic_wrapper_continuation": False,
+                "automatic_multi_step_loop": False,
+            },
+            "next_iteration_review_input": {
+                "closure_wrapper_continuation_execution_plan": True,
+                "closure_wrapper_continuation_checkpoint": True,
+                "paused_session_cross_process_continuation_checkpoint": checkpoint,
+                "paused_session_multi_step_loop_plan": loop_plan,
+                "source_artifact": "workspace/closure-wrapper-continuation-checkpoint.json",
+            },
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers, checkpoint_ready=checkpoint_ready, next_iteration_available=bool(next_iteration.get("available"))),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "closure_wrapper_continuation_checkpoint_request_missing": ("request", "No wrapper continuation checkpoint request was provided.", "provide_wrapper_continuation_followup_artifacts"),
+            "closure_wrapper_continuation_execution_required": ("execution", "The reviewed wrapper continuation execution artifact is required.", "execute_reviewed_closure_wrapper_continuation_iteration"),
+            "closure_wrapper_continuation_execution_not_executed": ("execution", "The wrapper continuation execution did not complete one reviewed iteration.", "approve_closure_wrapper_continuation_iteration"),
+            "automatic_wrapper_continuation_must_remain_disabled": ("safety", "Automatic wrapper continuation must remain disabled.", "disable_automatic_wrapper_continuation"),
+            "automatic_multi_step_loop_must_remain_disabled": ("safety", "Automatic multi-step loops must remain disabled.", "disable_automatic_multi_step_loop"),
+            "post_execution_event_harvest_requirement_missing": ("hook", "The execution artifact did not require post-execution wrapper event harvest.", "recreate_execution_artifact_with_followup_requirements"),
+            "manual_continuation_checkpoint_requirement_missing": ("debugger", "The execution artifact did not require a manual continuation checkpoint.", "recreate_execution_artifact_with_followup_requirements"),
+            "closure_wrapper_events_required": ("hook", "Wrapper event harvest evidence is required after execution.", "harvest_closure_wrapper_events_after_reviewed_execution"),
+            "closure_wrapper_events_not_successful": ("hook", "Wrapper event harvest did not complete successfully.", "rerun_closure_wrapper_event_harvest"),
+            "closure_wrapper_events_empty": ("hook", "Wrapper event harvest is empty; invoke the reviewed target flow or inspect wrapper coverage.", "invoke_target_flow_then_harvest_closure_wrapper_events"),
+            "paused_session_continuation_checkpoint_required": ("debugger", "Paused-session continuation checkpoint evidence is required.", "checkpoint_cross_process_continuation"),
+            "paused_session_continuation_checkpoint_not_ready": ("debugger", "Paused-session checkpoint is not ready for the next reviewed action.", "recover_live_callframe_or_checkpoint_continuation"),
+        }
+        return [
+            {
+                "code": blocker,
+                "category": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_checkpoint"))[0],
+                "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_checkpoint"))[1],
+                "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_closure_wrapper_continuation_checkpoint"))[2],
+            }
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], checkpoint_ready: bool, next_iteration_available: bool) -> str:
+        if blockers:
+            if "closure_wrapper_events_required" in blockers or "closure_wrapper_events_empty" in blockers:
+                return "harvest_wrapper_events_after_reviewed_execution"
+            if "paused_session_continuation_checkpoint_required" in blockers or "paused_session_continuation_checkpoint_not_ready" in blockers:
+                return "checkpoint_or_recover_paused_session_continuation"
+            return "resolve_closure_wrapper_continuation_checkpoint_blockers"
+        if status == "ready_for_review" and checkpoint_ready and next_iteration_available:
+            return "review_next_closure_wrapper_continuation_iteration"
+        if status == "ready_for_review":
+            return "review_closure_wrapper_continuation_checkpoint"
+        return "inspect_closure_wrapper_continuation_checkpoint"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "wrapper_installed": False,
+            "wrapper_restored": False,
+            "wrapper_events_harvested": False,
+            "wrapper_continuation_iteration_executed": False,
+            "automatic_wrapper_continuation": False,
+            "automatic_multi_step_loop": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
 def _string_or_none(value: Any) -> str | None:
     if value is None:
         return None

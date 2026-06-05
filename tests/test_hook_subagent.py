@@ -503,6 +503,54 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["side_effect_policy"]["read_only"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_continuation_checkpoint_review(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_continuation_checkpoint": {
+                "status": "ready_for_review",
+                "checkpoint": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "post_execution_event_count": 1,
+                    "next_action": "review_next_closure_wrapper_continuation_iteration",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_continuation_checkpoint_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_closure_wrapper_continuation_checkpoint")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_checkpoint_status"], "ready_for_review")
+        self.assertTrue(result["summary"]["closure_wrapper_continuation_checkpoint_ready"])
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_checkpoint_event_count"], 1)
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_checkpoint_next_action"], "review_next_closure_wrapper_continuation_iteration")
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_continuation_checkpoint_status"], "ready_for_review")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
+    def test_review_hook_artifacts_blocks_closure_wrapper_continuation_checkpoint(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_continuation_checkpoint": {
+                "status": "blocked",
+                "checkpoint": {
+                    "status": "blocked",
+                    "blockers": ["closure_wrapper_events_required"],
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("closure_wrapper_continuation_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_closure_wrapper_continuation_checkpoint_blockers")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_checkpoint_status"], "blocked")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
     def test_review_hook_artifacts_warns_for_async_chunk_traversal_graph(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
