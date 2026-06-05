@@ -1111,6 +1111,315 @@ class PausedSessionCrossProcessExecutionPlanManager:
         return "implement_reviewed_cross_process_attach_probe_next"
 
 
+@dataclass(slots=True)
+class PausedSessionCrossProcessAttachProbeSpec:
+    """Explicit reviewed CDP target attach probe after cross-process execution planning."""
+
+    cross_process_execution_plan: dict[str, Any] = field(default_factory=dict)
+    target_attach_readiness: dict[str, Any] = field(default_factory=dict)
+    execute_probe: bool = False
+    review_approved: bool = False
+    detach_after_probe: bool = True
+    reviewer: str | None = None
+    target_id: str | None = None
+    pause_session_id: str | None = None
+    requested_action: str = "inspect"
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionCrossProcessAttachProbeSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_cross_process_attach_probe")
+            or context.get("pausedSessionCrossProcessAttachProbe")
+            or context.get("paused-session-cross-process-attach-probe")
+            or context.get("cross_process_paused_session_attach_probe")
+            or context.get("crossProcessPausedSessionAttachProbe")
+            or context.get("execute_cross_process_attach_probe")
+            or context.get("executeCrossProcessAttachProbe")
+        )
+        plan_container = _first_dict(
+            context,
+            "paused_session_cross_process_execution_plan",
+            "pausedSessionCrossProcessExecutionPlan",
+            "paused-session-cross-process-execution-plan",
+            "cross_process_execution_plan",
+            "crossProcessExecutionPlan",
+        )
+        plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        readiness_container = _first_dict(
+            context,
+            "paused_session_target_attach_readiness",
+            "pausedSessionTargetAttachReadiness",
+            "paused-session-target-attach-readiness",
+            "target_attach_readiness",
+            "targetAttachReadiness",
+        )
+        readiness = dict(readiness_container.get("readiness")) if isinstance(readiness_container.get("readiness"), dict) else readiness_container
+        if not requested and not plan and not readiness:
+            return None
+        target_id = (
+            context.get("target_id")
+            or context.get("targetId")
+            or cls._target_id_from_plan(plan)
+            or cls._target_id_from_readiness(readiness)
+        )
+        session_id = (
+            context.get("pause_session_id")
+            or context.get("pauseSessionId")
+            or plan.get("pause_session_id")
+            or readiness.get("pause_session_id")
+        )
+        action = str(
+            context.get(
+                "requested_action",
+                context.get("requestedAction", plan.get("requested_action", readiness.get("requested_action", "inspect"))),
+            )
+            or "inspect"
+        ).strip().replace("-", "_").lower()
+        execute_raw = context.get("execute_cross_process_attach_probe", context.get("executeCrossProcessAttachProbe", context.get("execute_probe", context.get("executeProbe", False))))
+        approved_raw = context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))
+        detach_raw = context.get("detach_after_probe", context.get("detachAfterProbe", True))
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        return cls(
+            cross_process_execution_plan=plan,
+            target_attach_readiness=readiness,
+            execute_probe=bool(execute_raw),
+            review_approved=bool(approved_raw),
+            detach_after_probe=bool(detach_raw),
+            reviewer=str(reviewer) if reviewer else None,
+            target_id=str(target_id).strip() if target_id else None,
+            pause_session_id=str(session_id) if session_id else None,
+            requested_action=action,
+        )
+
+    @staticmethod
+    def _target_id_from_plan(plan: dict[str, Any]) -> str:
+        summary = plan.get("target_attach_readiness_summary") if isinstance(plan.get("target_attach_readiness_summary"), dict) else {}
+        selected = summary.get("selected_target") if isinstance(summary.get("selected_target"), dict) else {}
+        value = selected.get("target_id") or selected.get("targetId") or selected.get("id")
+        return str(value).strip() if value is not None else ""
+
+    @staticmethod
+    def _target_id_from_readiness(readiness: dict[str, Any]) -> str:
+        correlation = readiness.get("target_correlation") if isinstance(readiness.get("target_correlation"), dict) else {}
+        selected = correlation.get("selected_target") if isinstance(correlation.get("selected_target"), dict) else {}
+        value = selected.get("target_id") or selected.get("targetId") or selected.get("id")
+        return str(value).strip() if value is not None else ""
+
+
+@dataclass(slots=True)
+class PausedSessionCrossProcessAttachProbeResult:
+    status: str
+    probe: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "probe": self.probe,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionCrossProcessAttachProbeManager:
+    """Run one explicit reviewed Target.attachToTarget probe without live debugger actions."""
+
+    def probe(self, page: BrowserPage | None, spec: PausedSessionCrossProcessAttachProbeSpec | None) -> PausedSessionCrossProcessAttachProbeResult:
+        blockers = self._blockers(spec)
+        if blockers:
+            payload = self._probe_payload(spec, status="blocked", blockers=blockers)
+            return PausedSessionCrossProcessAttachProbeResult(status="blocked", probe=payload, side_effect_policy=self._side_effect_policy(False), reason=blockers[0])
+        if spec and not spec.execute_probe:
+            payload = self._probe_payload(spec, status="ready_for_review", blockers=[])
+            return PausedSessionCrossProcessAttachProbeResult(status="ready_for_review", probe=payload, side_effect_policy=self._side_effect_policy(False))
+        if spec and not spec.review_approved:
+            payload = self._probe_payload(spec, status="review_required", blockers=["review_approval_required"])
+            return PausedSessionCrossProcessAttachProbeResult(status="review_required", probe=payload, side_effect_policy=self._side_effect_policy(False), reason="review_approval_required")
+        if page is None:
+            payload = self._probe_payload(spec, status="blocked", blockers=["browser_page_required"])
+            return PausedSessionCrossProcessAttachProbeResult(status="blocked", probe=payload, side_effect_policy=self._side_effect_policy(False), reason="browser_page_required")
+        session = page.cdp_session()
+        if session is None:
+            payload = self._probe_payload(spec, status="blocked", blockers=["cdp_session_required"])
+            return PausedSessionCrossProcessAttachProbeResult(status="blocked", probe=payload, side_effect_policy=self._side_effect_policy(False), reason="cdp_session_required")
+        methods: list[str] = []
+        attach_payload: dict[str, Any] = {}
+        detach_payload: dict[str, Any] = {}
+        detach_completed = False
+        error: str | None = None
+        session_id = ""
+        try:
+            methods.append("Target.attachToTarget")
+            attach_result = session.send("Target.attachToTarget", {"targetId": spec.target_id, "flatten": True})
+            attach_payload = attach_result if isinstance(attach_result, dict) else {"result": attach_result}
+            session_id = str(attach_payload.get("sessionId") or attach_payload.get("session_id") or "")
+            if spec.detach_after_probe and session_id:
+                methods.append("Target.detachFromTarget")
+                detach_result = session.send("Target.detachFromTarget", {"sessionId": session_id})
+                detach_payload = detach_result if isinstance(detach_result, dict) else {"result": detach_result}
+                detach_completed = True
+        except Exception as exc:
+            error = str(exc)
+        status = "attached" if session_id and not error else "failed"
+        blockers_after = [] if status == "attached" else ["target_attach_probe_failed"]
+        payload = self._probe_payload(
+            spec,
+            status=status,
+            blockers=blockers_after,
+            session_id=session_id,
+            attach_payload=attach_payload,
+            detach_payload={**detach_payload, "__detach_completed": True} if detach_completed else detach_payload,
+            cdp_methods=methods,
+            error=error,
+        )
+        return PausedSessionCrossProcessAttachProbeResult(
+            status=status,
+            probe=payload,
+            side_effect_policy=self._side_effect_policy(True, target_attached=bool(session_id), target_detached=detach_completed),
+            reason=blockers_after[0] if blockers_after else None,
+            error=error,
+        )
+
+    @staticmethod
+    def _blockers(spec: PausedSessionCrossProcessAttachProbeSpec | None) -> list[str]:
+        blockers: list[str] = []
+        if spec is None:
+            blockers.append("cross_process_attach_probe_request_missing")
+            return blockers
+        plan = spec.cross_process_execution_plan
+        readiness = spec.target_attach_readiness
+        if not plan:
+            blockers.append("cross_process_execution_plan_required")
+        if plan and plan.get("status") == "blocked":
+            blockers.append("cross_process_execution_plan_blocked")
+        if plan and not plan.get("execution_plan_ready_for_review"):
+            blockers.append("cross_process_execution_plan_not_ready")
+        if not readiness and not plan.get("target_attach_readiness_proven"):
+            blockers.append("target_attach_readiness_required")
+        if not spec.target_id:
+            blockers.append("target_id_required")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _probe_payload(
+        cls,
+        spec: PausedSessionCrossProcessAttachProbeSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        session_id: str = "",
+        attach_payload: dict[str, Any] | None = None,
+        detach_payload: dict[str, Any] | None = None,
+        cdp_methods: list[str] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        attach_payload = attach_payload or {}
+        detach_payload = detach_payload or {}
+        plan = spec.cross_process_execution_plan if spec else {}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-cross-process-attach-probe.v1",
+            "status": status,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "requested_action": spec.requested_action if spec else None,
+            "target_id": spec.target_id if spec else None,
+            "reviewer": spec.reviewer if spec else None,
+            "execute_probe_requested": bool(spec and spec.execute_probe),
+            "review_approved": bool(spec and spec.review_approved),
+            "detach_after_probe": bool(spec.detach_after_probe) if spec else True,
+            "attach_attempted": bool(cdp_methods and "Target.attachToTarget" in cdp_methods),
+            "target_attached": bool(session_id),
+            "attached_session_id": session_id,
+            "detach_attempted": bool(cdp_methods and "Target.detachFromTarget" in cdp_methods),
+            "target_detached": bool(detach_payload.get("__detach_completed") or detach_payload),
+            "debugger_domain_enabled": False,
+            "live_callframe_recovered": False,
+            "live_action_executed": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "cdp_methods": cdp_methods or [],
+            "attach_result_summary": cls._redact_attach_payload(attach_payload or {}),
+            "detach_result_summary": cls._redact_attach_payload({key: value for key, value in (detach_payload or {}).items() if key != "__detach_completed"}),
+            "cross_process_execution_plan_summary": {
+                "status": plan.get("status"),
+                "execution_plan_ready_for_review": bool(plan.get("execution_plan_ready_for_review")),
+                "cross_process_execution_ready": bool(plan.get("cross_process_execution_ready")),
+                "cross_process_executor_implemented": bool(plan.get("cross_process_executor_implemented")),
+            },
+            "side_effect_policy": cls._side_effect_policy(bool(cdp_methods), target_attached=bool(session_id), target_detached=bool(detach_payload.get("__detach_completed") or detach_payload)),
+            "error": error,
+        }
+
+    @staticmethod
+    def _redact_attach_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        if not payload:
+            return {}
+        return {
+            "session_id_present": bool(payload.get("sessionId") or payload.get("session_id")),
+            "keys": sorted(str(key) for key in payload.keys()),
+        }
+
+    @staticmethod
+    def _side_effect_policy(cdp_sent: bool, *, target_attached: bool = False, target_detached: bool = False) -> dict[str, Any]:
+        return {
+            "read_only": not cdp_sent,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "would_attach_cdp_target": False,
+            "cdp_command_sent": cdp_sent,
+            "cdp_target_attached": target_attached,
+            "cdp_target_detached": target_detached,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "live_action_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "cross_process_attach_probe_request_missing": ("request", "No cross-process attach probe request was provided.", "request_cross_process_attach_probe"),
+            "cross_process_execution_plan_required": ("plan", "A cross-process execution plan descriptor is required before attach probing.", "produce_cross_process_execution_plan"),
+            "cross_process_execution_plan_blocked": ("plan", "The supplied cross-process execution plan is blocked.", "resolve_cross_process_execution_plan_blockers"),
+            "cross_process_execution_plan_not_ready": ("plan", "The supplied cross-process execution plan is not ready for review.", "review_cross_process_execution_plan"),
+            "target_attach_readiness_required": ("readiness", "Target attach readiness evidence is required before attach probing.", "produce_paused_session_target_attach_readiness"),
+            "target_id_required": ("cdp_target", "A target id is required for Target.attachToTarget.", "collect_target_id_before_attach_probe"),
+            "review_approval_required": ("review", "Executing Target.attachToTarget requires explicit review approval.", "approve_cross_process_attach_probe"),
+            "browser_page_required": ("runtime", "A BrowserPage with CDP access is required for the attach probe.", "provide_browser_page_for_attach_probe"),
+            "cdp_session_required": ("runtime", "The active page does not expose a CDP session.", "use_cdp_capable_browser_provider"),
+            "target_attach_probe_failed": ("cdp_target", "Target.attachToTarget failed or did not return a session id.", "inspect_attach_probe_error"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_attach_probe"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_attach_probe"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_attach_probe"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if "review_approval_required" in blockers:
+            return "approve_cross_process_attach_probe"
+        if any(blocker in blockers for blocker in ("cross_process_execution_plan_required", "cross_process_execution_plan_blocked", "cross_process_execution_plan_not_ready")):
+            return "resolve_cross_process_execution_plan_blockers"
+        if "target_id_required" in blockers:
+            return "collect_target_id_before_attach_probe"
+        if status == "ready_for_review":
+            return "approve_cross_process_attach_probe"
+        if status == "attached":
+            return "review_attach_probe_result_before_live_callframe_recovery"
+        return "inspect_cross_process_attach_probe_blockers"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 

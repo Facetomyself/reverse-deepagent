@@ -116,6 +116,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/debugger/paused-session-cross-process-execution-plan.json",
         )
         self.assertEqual(routes["workspace/paused-session-cross-process-execution-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-cross-process-attach-probe.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-cross-process-attach-probe.json"].future_path,
+            "/workspace/debugger/paused-session-cross-process-attach-probe.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-cross-process-attach-probe.json"].category, "audit")
         self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(
             routes["workspace/recursive-continuation-readiness.json"].future_path,

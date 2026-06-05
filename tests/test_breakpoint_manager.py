@@ -7,6 +7,8 @@ from reverse_deepagent.browser.hooks import (
     BreakpointManager,
     BreakpointSpec,
     PausedSessionActionSpec,
+    PausedSessionCrossProcessAttachProbeManager,
+    PausedSessionCrossProcessAttachProbeSpec,
     PausedSessionCrossProcessExecutionPlanManager,
     PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionLiveContinuationPreflightManager,
@@ -87,6 +89,10 @@ class RecordingCDPSession:
                     )
             return {}
         if method == "Debugger.resume":
+            return {}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "attached-session-1"}
+        if method == "Target.detachFromTarget":
             return {}
         return {}
 
@@ -774,6 +780,111 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["callframe_evaluated"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+
+    def test_paused_session_cross_process_attach_probe_ready_for_review_without_side_effects(self) -> None:
+        plan = {
+            "status": "ready_for_executor_review",
+            "execution_plan_ready_for_review": True,
+            "target_attach_readiness_proven": True,
+            "pause_session_id": "attach-probe-1",
+            "requested_action": "evaluate",
+            "target_attach_readiness_summary": {
+                "selected_target": {"target_id": "target-attach-1", "type": "page"},
+                "target_id_available": True,
+            },
+        }
+        spec = PausedSessionCrossProcessAttachProbeSpec.from_context(
+            {
+                "paused_session_cross_process_attach_probe": True,
+                "paused_session_cross_process_execution_plan": {"plan": plan},
+            }
+        )
+
+        result = PausedSessionCrossProcessAttachProbeManager().probe(None, spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.probe["next_action"], "approve_cross_process_attach_probe")
+        self.assertFalse(result.probe["attach_attempted"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_paused_session_cross_process_attach_probe_blocks_without_plan(self) -> None:
+        spec = PausedSessionCrossProcessAttachProbeSpec.from_context({"paused_session_cross_process_attach_probe": True})
+
+        result = PausedSessionCrossProcessAttachProbeManager().probe(None, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("cross_process_execution_plan_required", result.probe["blockers"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_paused_session_cross_process_attach_probe_requires_review_approval(self) -> None:
+        session = RecordingCDPSession()
+        page = FakeBreakpointPage(session)
+        plan = {
+            "status": "ready_for_executor_review",
+            "execution_plan_ready_for_review": True,
+            "target_attach_readiness_proven": True,
+            "target_attach_readiness_summary": {
+                "selected_target": {"target_id": "target-attach-1", "type": "page"},
+                "target_id_available": True,
+            },
+        }
+        spec = PausedSessionCrossProcessAttachProbeSpec.from_context(
+            {
+                "paused_session_cross_process_attach_probe": True,
+                "execute_cross_process_attach_probe": True,
+                "review_approved": False,
+                "paused_session_cross_process_execution_plan": {"plan": plan},
+            }
+        )
+
+        result = PausedSessionCrossProcessAttachProbeManager().probe(page, spec)
+
+        self.assertEqual(result.status, "review_required")
+        self.assertIn("review_approval_required", result.probe["blockers"])
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_paused_session_cross_process_attach_probe_attaches_and_detaches_only(self) -> None:
+        session = RecordingCDPSession()
+        page = FakeBreakpointPage(session)
+        plan = {
+            "status": "ready_for_executor_review",
+            "execution_plan_ready_for_review": True,
+            "target_attach_readiness_proven": True,
+            "pause_session_id": "attach-probe-1",
+            "requested_action": "evaluate",
+            "target_attach_readiness_summary": {
+                "selected_target": {"target_id": "target-attach-1", "type": "page"},
+                "target_id_available": True,
+            },
+        }
+        spec = PausedSessionCrossProcessAttachProbeSpec.from_context(
+            {
+                "paused_session_cross_process_attach_probe": True,
+                "execute_cross_process_attach_probe": True,
+                "review_approved": True,
+                "paused_session_cross_process_execution_plan": {"plan": plan},
+            }
+        )
+
+        result = PausedSessionCrossProcessAttachProbeManager().probe(page, spec)
+
+        self.assertEqual(result.status, "attached")
+        self.assertEqual(result.probe["attached_session_id"], "attached-session-1")
+        self.assertEqual(result.probe["cdp_methods"], ["Target.attachToTarget", "Target.detachFromTarget"])
+        self.assertIn(("Target.attachToTarget", {"targetId": "target-attach-1", "flatten": True}), session.calls)
+        self.assertIn(("Target.detachFromTarget", {"sessionId": "attached-session-1"}), session.calls)
+        forbidden = {"Debugger.enable", "Debugger.resume", "Debugger.stepOver", "Debugger.evaluateOnCallFrame", "Runtime.evaluate"}
+        self.assertFalse(any(method in forbidden for method, _ in session.calls))
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["cdp_target_attached"])
+        self.assertTrue(result.side_effect_policy["cdp_target_detached"])
+        self.assertFalse(result.side_effect_policy["live_action_executed"])
+        self.assertFalse(result.probe["debugger_domain_enabled"])
+        self.assertFalse(result.probe["live_callframe_recovered"])
 
     def test_cross_process_execution_plan_blocks_without_attach_readiness(self) -> None:
         result = PausedSessionCrossProcessExecutionPlanManager().plan(

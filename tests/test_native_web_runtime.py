@@ -34,6 +34,10 @@ class FakeCDPSession:
             return {"body": '{"native":true}', "base64Encoded": False}
         if method == "Debugger.getScriptSource":
             return {"scriptSource": "function buildSign(){ return 'x-sign'; }"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "attached-session-1"}
+        if method == "Target.detachFromTarget":
+            return {}
         if method == "Debugger.setBreakpointByUrl":
             self.last_breakpoint_params = params or {}
             return {"breakpointId": "bp-native-1", "locations": [{"scriptId": "script-1", "lineNumber": params.get("lineNumber", 0)}]}
@@ -5194,6 +5198,54 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertFalse(follow_up.artifacts[0].metadata["attachability"]["would_attach_cdp_target"])
             self.assertFalse(follow_up.artifacts[0].metadata["callframe_recovery"]["durable_callframe_id_reusable"])
             self.assertEqual(len(page._cdp_session.calls), call_count)
+
+
+    def test_paused_session_cross_process_attach_probe_from_native_runtime_requires_review_and_attaches_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        plan = {
+            "status": "ready_for_executor_review",
+            "execution_plan_ready_for_review": True,
+            "pause_session_id": "native-attach-probe",
+            "requested_action": "evaluate",
+            "target_attach_readiness_proven": True,
+            "target_attach_readiness_summary": {
+                "selected_target": {"target_id": "target-native-probe-1", "type": "page"},
+                "target_id_available": True,
+            },
+            "cross_process_execution_ready": False,
+            "cross_process_executor_implemented": False,
+        }
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-cross-process-attach-probe",
+            {
+                "paused_session_cross_process_attach_probe": True,
+                "execute_cross_process_attach_probe": True,
+                "review_approved": True,
+                "paused_session_cross_process_execution_plan": {"plan": plan},
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertIn("probe_paused_session_cross_process_attach", result.applied_actions)
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-cross-process-attach-probe.json")
+        self.assertIn("paused_session_cross_process_attach_probe_attach_attempted=True", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_target_attached=True", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_target_detached=True", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_debugger_domain_enabled=False", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_live_callframe_recovered=False", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_live_action_executed=False", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_browser_resumed=False", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_debugger_stepped=False", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_callframe_evaluated=False", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_cross_process_attach_probe_mobile_runtime_used=False", result.verification)
+        page = provider.session.context.pages[0]
+        self.assertIn(("Target.attachToTarget", {"targetId": "target-native-probe-1", "flatten": True}), page._cdp_session.calls)
+        self.assertIn(("Target.detachFromTarget", {"sessionId": "attached-session-1"}), page._cdp_session.calls)
+        forbidden = {"Debugger.enable", "Debugger.resume", "Debugger.stepOver", "Debugger.evaluateOnCallFrame", "Runtime.evaluate"}
+        self.assertFalse(any(method in forbidden for method, _ in page._cdp_session.calls))
 
     def test_native_web_runtime_plans_cross_process_paused_execution_without_cdp_action(self) -> None:
         provider = FakeProvider()

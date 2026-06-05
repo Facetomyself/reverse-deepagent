@@ -124,6 +124,8 @@ from reverse_deepagent.browser.hooks import (
     PageMutationAuditManager,
     PageMutationAuditSpec,
     PausedSessionActionSpec,
+    PausedSessionCrossProcessAttachProbeManager,
+    PausedSessionCrossProcessAttachProbeSpec,
     PausedSessionCrossProcessExecutionPlanManager,
     PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionLiveContinuationPreflightManager,
@@ -1132,6 +1134,87 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_cross_process_attach_probe_request(protection_name, context):
+            spec = PausedSessionCrossProcessAttachProbeSpec.from_context(context)
+            result = PausedSessionCrossProcessAttachProbeManager().probe(page, spec)
+            probe = result.probe if isinstance(result.probe, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = probe.get("blockers") if isinstance(probe.get("blockers"), list) else []
+            verification = [
+                f"paused_session_cross_process_attach_probe_status={result.status}",
+                f"paused_session_cross_process_attach_probe_reason={result.reason or ''}",
+                f"paused_session_cross_process_attach_probe_target_id={probe.get('target_id')}",
+                f"paused_session_cross_process_attach_probe_requested_action={probe.get('requested_action')}",
+                f"paused_session_cross_process_attach_probe_execute_requested={probe.get('execute_probe_requested', False)}",
+                f"paused_session_cross_process_attach_probe_review_approved={probe.get('review_approved', False)}",
+                f"paused_session_cross_process_attach_probe_attach_attempted={probe.get('attach_attempted', False)}",
+                f"paused_session_cross_process_attach_probe_target_attached={probe.get('target_attached', False)}",
+                f"paused_session_cross_process_attach_probe_target_detached={probe.get('target_detached', False)}",
+                f"paused_session_cross_process_attach_probe_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_cross_process_attach_probe_debugger_domain_enabled={probe.get('debugger_domain_enabled', False)}",
+                f"paused_session_cross_process_attach_probe_live_callframe_recovered={probe.get('live_callframe_recovered', False)}",
+                f"paused_session_cross_process_attach_probe_live_action_executed={probe.get('live_action_executed', False)}",
+                f"paused_session_cross_process_attach_probe_browser_resumed={probe.get('browser_resumed', False)}",
+                f"paused_session_cross_process_attach_probe_debugger_stepped={probe.get('debugger_stepped', False)}",
+                f"paused_session_cross_process_attach_probe_callframe_evaluated={probe.get('callframe_evaluated', False)}",
+                f"paused_session_cross_process_attach_probe_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_cross_process_attach_probe_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_cross_process_attach_probe_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"paused_session_cross_process_attach_probe_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-cross-process-attach-probe.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed cross-process paused-session Target.attachToTarget probe.",
+                    metadata={
+                        "status": result.status,
+                        "probe_status": probe.get("status"),
+                        "pause_session_id": probe.get("pause_session_id"),
+                        "requested_action": probe.get("requested_action"),
+                        "target_id": probe.get("target_id"),
+                        "execute_probe_requested": probe.get("execute_probe_requested", False),
+                        "review_approved": probe.get("review_approved", False),
+                        "attach_attempted": probe.get("attach_attempted", False),
+                        "target_attached": probe.get("target_attached", False),
+                        "target_detached": probe.get("target_detached", False),
+                        "debugger_domain_enabled": probe.get("debugger_domain_enabled", False),
+                        "live_callframe_recovered": probe.get("live_callframe_recovered", False),
+                        "live_action_executed": probe.get("live_action_executed", False),
+                        "browser_resumed": probe.get("browser_resumed", False),
+                        "debugger_stepped": probe.get("debugger_stepped", False),
+                        "callframe_evaluated": probe.get("callframe_evaluated", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            if result.status == "attached":
+                status = ExecutionStatus.SUCCESS
+                next_action = probe.get("next_action") or "review_attach_probe_result_before_live_callframe_recovery"
+                applied_actions = ["probe_paused_session_cross_process_attach"]
+                confidence = ConfidenceLevel.MEDIUM
+            elif result.status in {"ready_for_review", "review_required", "blocked"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = probe.get("next_action") or "approve_cross_process_attach_probe"
+                applied_actions = []
+                confidence = ConfidenceLevel.LOW
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = probe.get("next_action") or "inspect_cross_process_attach_probe_error"
+                applied_actions = ["probe_paused_session_cross_process_attach"] if probe.get("attach_attempted") else []
+                confidence = ConfidenceLevel.LOW
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=confidence,
             )
         if self._is_paused_session_cross_process_execution_plan_request(protection_name, context):
             spec = PausedSessionCrossProcessExecutionPlanSpec.from_context(context)
@@ -4992,6 +5075,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_cross_process_attach_probe_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_execution_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_live_continuation_preflight_request(protection_name, context):
@@ -5016,6 +5101,31 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_cross_process_attach_probe_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-cross-process-attach-probe",
+            "pause-session-cross-process-attach-probe",
+            "debugger-paused-session-cross-process-attach-probe",
+            "cross-process-paused-session-attach-probe",
+            "probe-cross-process-paused-session-attach",
+            "execute-cross-process-attach-probe",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_cross_process_attach_probe",
+                "pausedSessionCrossProcessAttachProbe",
+                "paused-session-cross-process-attach-probe",
+                "cross_process_paused_session_attach_probe",
+                "crossProcessPausedSessionAttachProbe",
+                "execute_cross_process_attach_probe",
+                "executeCrossProcessAttachProbe",
             )
         )
 

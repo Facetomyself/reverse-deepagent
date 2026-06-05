@@ -291,6 +291,71 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertTrue(result["review_required_items"][0]["cross_process_execution_plan_diagnostics"]["execution_plan_ready_for_review"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+
+    def test_review_debugger_artifacts_warns_after_cross_process_attach_probe_without_live_callframe(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_attach_probe": {
+                "probe": {
+                    "status": "attached",
+                    "pause_session_id": "attach-probe-review-1",
+                    "requested_action": "evaluate",
+                    "target_id": "target-review-1",
+                    "attach_attempted": True,
+                    "target_attached": True,
+                    "target_detached": True,
+                    "debugger_domain_enabled": False,
+                    "live_callframe_recovered": False,
+                    "live_action_executed": False,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": False,
+                    "cdp_methods": ["Target.attachToTarget", "Target.detachFromTarget"],
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("attach_probe_ready_but_live_callframe_recovery_not_implemented", result["warnings"])
+        self.assertEqual(result["next_action"], "review_attach_probe_result_before_live_callframe_recovery")
+        probe = result["summary"]["cross_process_attach_probe"]
+        self.assertEqual(probe["status"], "attached")
+        self.assertTrue(probe["attach_attempted"])
+        self.assertTrue(probe["target_attached"])
+        self.assertTrue(probe["target_detached"])
+        self.assertFalse(probe["debugger_domain_enabled"])
+        self.assertFalse(probe["live_callframe_recovered"])
+        self.assertFalse(probe["live_action_executed"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(result["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_attach_probe_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_attach_probe": {
+                "probe": {
+                    "status": "blocked",
+                    "target_id": "",
+                    "attach_attempted": False,
+                    "target_attached": False,
+                    "target_detached": False,
+                    "blockers": ["target_id_required"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_attach_probe_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_cross_process_attach_probe_blockers")
+        self.assertEqual(result["review_required_items"][0]["cross_process_attach_probe_diagnostics"]["status"], "blocked")
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_blocks_cross_process_execution_plan_failure(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {
