@@ -162,7 +162,7 @@ reverse-agent-demo \
   --artifact-root "<repo-root>/artifacts/native-web-with-provider-smoke"
 ```
 
-`--browser-provider-smoke-json` 只读取现有 UTF-8 JSON object，并把它写入本次 pipeline 的 `workspace/browser-provider-smoke.json`、`exports/artifact-index.json` 和 `workspace/backend-artifact-manifest.json`；它不会生成 smoke、不会调用 provider factory、不会检查 availability、不会启动浏览器、不会探测 CDP 端点，也不会调用 MCP。
+`--browser-provider-smoke-json` 只读取现有 UTF-8 JSON object，并把它写入本次 pipeline 的 `workspace/browser-provider-smoke.json`、`exports/artifact-index.json` 和 `workspace/backend-artifact-manifest.json`；写入前会追加 metadata-only `attachment_acceptance`，检查 schema、`ok`、side-effect policy、resolved provider 与当前 BrowserProvider runtime provider 是否匹配，以及 launch-smoke 模式是否真有 passed smoke result。metadata-only / availability-check evidence 可以作为 provider metadata evidence 附上，但 `runtime_launch_smoke_accepted=false`，不会被误称为 launch smoke 通过；provider 不匹配、schema 错误、`ok=false`、MCP / mobile full-chain side effect 或非 launch-smoke 模式启动浏览器会被标成 blocked。这个路径不会生成 smoke、不会调用 provider factory、不会检查 availability、不会启动浏览器、不会探测 CDP 端点，也不会调用 MCP。
 
 Native Web 的 CDP WebSocket frame 采集是 **post-attach-only**：只有在导航或目标 socket 流量发生前预先 attach `CDPEventCacheCollector`，才能从 `Network.webSocketFrameSent` / `Network.webSocketFrameReceived` 事件拿到帧；没有预订阅、预订阅后未观察到帧或 provider 不支持 CDP event subscription 时，collector 会输出 `websocket_event_cache_required_before_navigation`、`websocket_event_cache_attached_no_frames_observed`、`cdp_event_subscription_unavailable` 或 `network_domain_unavailable` 等结构化诊断，并固定 `historical_replay_supported=false`。这不是历史 WebSocket frame replay；需要补证据时应提前 attach CDP event cache，或启用 runtime WebSocket hook timeline fallback。
 

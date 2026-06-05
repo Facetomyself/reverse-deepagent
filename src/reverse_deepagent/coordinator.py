@@ -827,12 +827,18 @@ def write_outputs(
     output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
     if "rebuild_plan" in rebuild_artifact_paths:
         output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
+    capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
     browser_provider_smoke_path: Path | None = None
+    browser_provider_smoke_attachment: dict[str, Any] | None = None
+    browser_provider_smoke_acceptance: dict[str, Any] | None = None
     if browser_provider_smoke is not None:
+        browser_provider_smoke_attachment = dict(browser_provider_smoke)
+        browser_provider_smoke_acceptance = _browser_provider_smoke_acceptance(browser_provider_smoke_attachment, capabilities)
+        browser_provider_smoke_attachment["attachment_acceptance"] = browser_provider_smoke_acceptance
         browser_provider_smoke_path = _write_workspace_json(
             base_dir,
             "workspace_browser_provider_smoke",
-            browser_provider_smoke,
+            browser_provider_smoke_attachment,
             workspace_resolver,
             workspace_write_records,
         )
@@ -843,7 +849,6 @@ def write_outputs(
     manifest_path = base_dir / "workspace" / "backend-artifact-manifest.json"
     output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
-    capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
     runtime_artifacts = export_bundle.get("artifacts", []) if isinstance(export_bundle, dict) else []
     backend_artifact_manifest = _build_backend_artifact_manifest(capabilities, output_paths, extra_artifacts=runtime_artifacts)
     manifest_path = _write_workspace_json(base_dir, "workspace_backend_artifact_manifest", backend_artifact_manifest.model_dump(mode="json"), workspace_resolver, workspace_write_records)
@@ -872,7 +877,8 @@ def write_outputs(
     }
     if browser_provider_smoke_path is not None:
         artifact_index["workspace"]["browser_provider_smoke"] = str(browser_provider_smoke_path)
-        artifact_index["browser_provider_smoke"] = browser_provider_smoke
+        artifact_index["browser_provider_smoke"] = browser_provider_smoke_attachment
+        artifact_index["browser_provider_smoke_acceptance"] = browser_provider_smoke_acceptance
     if enable_workspace_dual_write:
         dual_write_plan = _workspace_dual_write_plan_payload(
             workspace_write_records,
@@ -1065,6 +1071,91 @@ def _artifact_manifest_entry_metadata(capabilities: RuntimeBackendCapabilities, 
         if provider_transport:
             metadata["browser_provider_transport"] = provider_transport
     return metadata
+
+
+def _browser_provider_smoke_acceptance(smoke_payload: dict[str, Any], capabilities: RuntimeBackendCapabilities) -> dict[str, Any]:
+    """Review existing BrowserProvider smoke JSON before attaching it to Web artifacts.
+
+    This is deliberately a metadata-only acceptance gate. It does not generate
+    smoke evidence, call provider factories, check availability, probe CDP,
+    launch browsers, call MCP, or inspect mobile runtimes.
+    """
+
+    provider = capabilities.config.get("provider") if isinstance(capabilities.config, dict) else None
+    expected_provider_id = str(provider.get("provider_id") or "") if isinstance(provider, dict) else ""
+    resolved_provider_id = str(smoke_payload.get("resolved_provider_id") or "")
+    requested_provider_id = str(smoke_payload.get("requested_provider_id") or "")
+    mode = str(smoke_payload.get("mode") or "unknown")
+    schema_version = str(smoke_payload.get("schema_version") or "")
+    side_effect_policy = smoke_payload.get("side_effect_policy") if isinstance(smoke_payload.get("side_effect_policy"), dict) else {}
+    provider_row = smoke_payload.get("provider") if isinstance(smoke_payload.get("provider"), dict) else {}
+    provider_smoke = provider_row.get("smoke") if isinstance(provider_row.get("smoke"), dict) else {}
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if schema_version != "reverse-deepagent.browser-provider-smoke.v1":
+        blockers.append("browser_provider_smoke_schema_mismatch")
+    if not bool(smoke_payload.get("ok")):
+        blockers.append("browser_provider_smoke_not_ok")
+    if not resolved_provider_id:
+        blockers.append("resolved_provider_id_missing")
+    if expected_provider_id and resolved_provider_id and expected_provider_id != resolved_provider_id:
+        blockers.append("browser_provider_smoke_provider_mismatch")
+    if bool(side_effect_policy.get("calls_mcp")):
+        blockers.append("browser_provider_smoke_calls_mcp")
+    if bool(side_effect_policy.get("touches_mobile_full_runtime_chains")):
+        blockers.append("browser_provider_smoke_touches_mobile_full_runtime_chain")
+    if mode == "launch-smoke":
+        if not bool(side_effect_policy.get("launch_smoke_requested")):
+            blockers.append("launch_smoke_mode_without_launch_request")
+        if provider_smoke and provider_smoke.get("status") != "passed":
+            blockers.append("launch_smoke_not_passed")
+        if not provider_smoke:
+            warnings.append("launch_smoke_result_not_embedded")
+    elif bool(side_effect_policy.get("starts_browser")):
+        blockers.append("browser_started_outside_launch_smoke_mode")
+    if mode == "metadata-only":
+        warnings.append("metadata_only_evidence_not_launch_smoke")
+    if mode == "availability-check":
+        warnings.append("availability_check_evidence_not_launch_smoke")
+    if not expected_provider_id:
+        warnings.append("runtime_provider_not_comparable")
+
+    evidence_level = mode if mode in {"metadata-only", "availability-check", "launch-smoke"} else "unknown"
+    accepted = not blockers
+    launch_smoke_accepted = accepted and evidence_level == "launch-smoke"
+    status = "accepted" if accepted else "blocked"
+    next_action = (
+        "review_browser_provider_launch_smoke_result"
+        if launch_smoke_accepted
+        else "optionally_run_explicit_launch_browser_smoke"
+        if accepted
+        else "regenerate_browser_provider_smoke_evidence"
+    )
+    return {
+        "schema_version": "reverse-deepagent.browser-provider-smoke-acceptance.v1",
+        "status": status,
+        "accepted": accepted,
+        "runtime_launch_smoke_accepted": launch_smoke_accepted,
+        "evidence_level": evidence_level,
+        "expected_provider_id": expected_provider_id or None,
+        "requested_provider_id": requested_provider_id or None,
+        "resolved_provider_id": resolved_provider_id or None,
+        "provider_match": bool(not expected_provider_id or expected_provider_id == resolved_provider_id),
+        "blockers": blockers,
+        "warnings": sorted(set(warnings)),
+        "side_effect_policy": {
+            "metadata_only": True,
+            "generates_smoke": False,
+            "provider_factory_invoked": False,
+            "availability_checked": False,
+            "cdp_endpoint_probed": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+        "next_action": next_action,
+    }
 
 
 def _artifact_category_from_key(key: str) -> str:

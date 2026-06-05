@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from reverse_deepagent.coordinator import (
     _artifact_category_from_key,
+    _browser_provider_smoke_acceptance,
     _extract_workspace_artifact_payloads,
     build_default_runtime_registry,
     build_runtime,
@@ -1117,7 +1118,15 @@ class CoordinatorTests(unittest.TestCase):
             smoke_path = root / "workspace" / "browser-provider-smoke.json"
             self.assertEqual(output.artifacts["workspace_browser_provider_smoke"], str(smoke_path))
             self.assertTrue(smoke_path.exists())
-            self.assertEqual(json.loads(smoke_path.read_text(encoding="utf-8")), smoke_payload)
+            attached_smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+            self.assertEqual(attached_smoke["schema_version"], smoke_payload["schema_version"])
+            self.assertEqual(attached_smoke["resolved_provider_id"], smoke_payload["resolved_provider_id"])
+            acceptance = attached_smoke["attachment_acceptance"]
+            self.assertTrue(acceptance["accepted"])
+            self.assertFalse(acceptance["runtime_launch_smoke_accepted"])
+            self.assertEqual(acceptance["evidence_level"], "metadata-only")
+            self.assertIn("metadata_only_evidence_not_launch_smoke", acceptance["warnings"])
+            self.assertIn("runtime_provider_not_comparable", acceptance["warnings"])
 
             manifest = json.loads(Path(output.artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
             manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
@@ -1135,7 +1144,33 @@ class CoordinatorTests(unittest.TestCase):
 
             index = json.loads(Path(output.artifacts["index"]).read_text(encoding="utf-8"))
             self.assertEqual(index["workspace"]["browser_provider_smoke"], str(smoke_path))
-            self.assertEqual(index["browser_provider_smoke"], smoke_payload)
+            self.assertEqual(index["browser_provider_smoke"]["attachment_acceptance"], acceptance)
+            self.assertEqual(index["browser_provider_smoke_acceptance"], acceptance)
+
+    def test_browser_provider_smoke_acceptance_blocks_provider_mismatch(self) -> None:
+        acceptance = _browser_provider_smoke_acceptance(
+            {
+                "schema_version": "reverse-deepagent.browser-provider-smoke.v1",
+                "mode": "launch-smoke",
+                "ok": True,
+                "requested_provider_id": "remote-cdp",
+                "resolved_provider_id": "remote-cdp",
+                "provider": {"smoke": {"status": "passed"}},
+                "side_effect_policy": {"launch_smoke_requested": True, "starts_browser": True, "calls_mcp": False},
+            },
+            RuntimeBackendCapabilities(
+                backend_id="native-web",
+                display_name="Native Web",
+                transport="browser-provider",
+                config={"provider": {"provider_id": "cloakbrowser", "transport": "cloakbrowser-playwright"}},
+            ),
+        )
+
+        self.assertFalse(acceptance["accepted"])
+        self.assertFalse(acceptance["runtime_launch_smoke_accepted"])
+        self.assertIn("browser_provider_smoke_provider_mismatch", acceptance["blockers"])
+        self.assertFalse(acceptance["provider_match"])
+        self.assertEqual(acceptance["next_action"], "regenerate_browser_provider_smoke_evidence")
 
 
 if __name__ == "__main__":
