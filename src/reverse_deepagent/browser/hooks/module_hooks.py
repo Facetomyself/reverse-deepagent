@@ -4291,6 +4291,395 @@ def _clip(value: Any, max_length: int) -> str:
 
 
 @dataclass(slots=True)
+class RecursiveContinuationReadinessSpec:
+    """Normalize recursive traversal continuation evidence across custom-loader, async-chunk, and federation flows."""
+
+    custom_loader_continuation_journal: dict[str, Any] = field(default_factory=dict)
+    custom_loader_recursive_plan: dict[str, Any] = field(default_factory=dict)
+    custom_loader_recursive_followup: dict[str, Any] = field(default_factory=dict)
+    custom_loader_recursive_execution: dict[str, Any] = field(default_factory=dict)
+    async_chunk_recursive_plan: dict[str, Any] = field(default_factory=dict)
+    async_chunk_recursive_followup: dict[str, Any] = field(default_factory=dict)
+    async_chunk_recursive_execution: dict[str, Any] = field(default_factory=dict)
+    module_federation_recursive_continuation_journal: dict[str, Any] = field(default_factory=dict)
+    module_federation_recursive_continuation_checkpoint: dict[str, Any] = field(default_factory=dict)
+    module_federation_recursive_execution: dict[str, Any] = field(default_factory=dict)
+    max_preview_length: int = 240
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "RecursiveContinuationReadinessSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("recursive_continuation_readiness")
+            or context.get("recursiveContinuationReadiness")
+            or context.get("recursive-continuation-readiness")
+            or context.get("traversal_continuation_readiness")
+            or context.get("traversalContinuationReadiness")
+            or context.get("review_recursive_continuation_readiness")
+            or context.get("reviewRecursiveContinuationReadiness")
+        )
+        custom_journal = cls._artifact_payload(
+            context,
+            "custom_loader_continuation_journal",
+            "customLoaderContinuationJournal",
+            "custom-loader-continuation-journal",
+        )
+        custom_plan = cls._artifact_payload(
+            context,
+            "custom_loader_recursive_traversal_plan",
+            "customLoaderRecursiveTraversalPlan",
+            "custom-loader-recursive-traversal-plan",
+        )
+        custom_followup = cls._artifact_payload(
+            context,
+            "custom_loader_recursive_traversal_followup",
+            "customLoaderRecursiveTraversalFollowup",
+            "custom-loader-recursive-traversal-followup",
+        )
+        custom_execution = cls._artifact_payload(
+            context,
+            "custom_loader_recursive_traversal_execution",
+            "customLoaderRecursiveTraversalExecution",
+            "custom-loader-recursive-traversal-execution",
+        )
+        async_plan = cls._artifact_payload(
+            context,
+            "async_chunk_recursive_traversal_plan",
+            "asyncChunkRecursiveTraversalPlan",
+            "async-chunk-recursive-traversal-plan",
+        )
+        async_followup = cls._artifact_payload(
+            context,
+            "async_chunk_recursive_traversal_followup",
+            "asyncChunkRecursiveTraversalFollowup",
+            "async-chunk-recursive-traversal-followup",
+        )
+        async_execution = cls._artifact_payload(
+            context,
+            "async_chunk_recursive_traversal_execution",
+            "asyncChunkRecursiveTraversalExecution",
+            "async-chunk-recursive-traversal-execution",
+        )
+        federation_journal = cls._artifact_payload(
+            context,
+            "module_federation_recursive_continuation_journal",
+            "moduleFederationRecursiveContinuationJournal",
+            "module-federation-recursive-continuation-journal",
+            "module_federation_recursive_traversal_continuation_journal",
+            "moduleFederationRecursiveTraversalContinuationJournal",
+            "module-federation-recursive-traversal-continuation-journal",
+        )
+        federation_checkpoint = cls._artifact_payload(
+            context,
+            "module_federation_recursive_continuation_checkpoint",
+            "moduleFederationRecursiveContinuationCheckpoint",
+            "module-federation-recursive-continuation-checkpoint",
+            "module_federation_recursive_traversal_continuation_checkpoint",
+            "moduleFederationRecursiveTraversalContinuationCheckpoint",
+            "module-federation-recursive-traversal-continuation-checkpoint",
+        )
+        federation_execution = cls._artifact_payload(
+            context,
+            "module_federation_recursive_traversal_execution",
+            "moduleFederationRecursiveTraversalExecution",
+            "module-federation-recursive-traversal-execution",
+        )
+        if not requested and not any(
+            (
+                custom_journal,
+                custom_plan,
+                custom_followup,
+                custom_execution,
+                async_plan,
+                async_followup,
+                async_execution,
+                federation_journal,
+                federation_checkpoint,
+                federation_execution,
+            )
+        ):
+            return None
+        return cls(
+            custom_loader_continuation_journal=custom_journal,
+            custom_loader_recursive_plan=custom_plan,
+            custom_loader_recursive_followup=custom_followup,
+            custom_loader_recursive_execution=custom_execution,
+            async_chunk_recursive_plan=async_plan,
+            async_chunk_recursive_followup=async_followup,
+            async_chunk_recursive_execution=async_execution,
+            module_federation_recursive_continuation_journal=federation_journal,
+            module_federation_recursive_continuation_checkpoint=federation_checkpoint,
+            module_federation_recursive_execution=federation_execution,
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+        )
+
+    @staticmethod
+    def _artifact_payload(context: dict[str, Any], *keys: str) -> dict[str, Any]:
+        value = _first_dict(context, *keys)
+        for nested in ("journal", "recursive_plan", "followup", "execution", "checkpoint", "readiness"):
+            if isinstance(value.get(nested), dict):
+                return dict(value[nested])
+        return value
+
+
+@dataclass(slots=True)
+class RecursiveContinuationReadinessResult:
+    status: str
+    readiness: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "readiness": self.readiness,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class RecursiveContinuationReadinessManager:
+    """Build a side-effect-free cross-system readiness descriptor for recursive traversal continuation."""
+
+    def assess(self, spec: RecursiveContinuationReadinessSpec | None) -> RecursiveContinuationReadinessResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            readiness = self._payload([], blockers=["recursive_continuation_evidence_missing"], policy=policy)
+            return RecursiveContinuationReadinessResult(status="unsupported", readiness=readiness, side_effect_policy=policy, reason="recursive_continuation_evidence_missing")
+
+        systems = [
+            self._custom_loader_system(spec),
+            self._async_chunk_system(spec),
+            self._module_federation_system(spec),
+        ]
+        present = [item for item in systems if item["artifact_count"] > 0]
+        blockers: list[str] = []
+        if not present:
+            blockers.append("recursive_continuation_evidence_missing")
+        for item in present:
+            blockers.extend(item.get("blocking_reasons", []))
+        status = "blocked" if blockers else "ready_for_review" if present else "unsupported"
+        readiness = self._payload(present, blockers=blockers, policy=policy)
+        return RecursiveContinuationReadinessResult(status=status, readiness=readiness, side_effect_policy=policy, reason=blockers[0] if blockers else None)
+
+    def _custom_loader_system(self, spec: RecursiveContinuationReadinessSpec) -> dict[str, Any]:
+        journal = spec.custom_loader_continuation_journal
+        plan = spec.custom_loader_recursive_plan
+        followup = spec.custom_loader_recursive_followup
+        execution = spec.custom_loader_recursive_execution
+        artifacts = {
+            "continuation_journal": journal,
+            "recursive_plan": plan,
+            "recursive_followup": followup,
+            "recursive_execution": execution,
+        }
+        statuses = self._artifact_statuses(artifacts)
+        blockers = self._status_blockers("custom_loader", statuses)
+        latest = self._latest_payload(execution, followup, plan, journal)
+        record_count = self._record_count(journal)
+        return {
+            "system": "custom_loader",
+            "schema_family": "reverse-deepagent.custom-loader-recursive-continuation",
+            "artifact_count": sum(bool(value) for value in artifacts.values()),
+            "artifact_statuses": statuses,
+            "journal_record_count": record_count,
+            "stage_count": self._stage_count(latest),
+            "latest_status": self._status(latest),
+            "latest_next_action": self._next_action(latest),
+            "continuation_ready": bool(record_count or self._status(latest) in {"ready_for_next_loop_review", "next_loop_plan_ready", "next_loop_module_diff_ready", "next_loop_execution_progressed", "next_loop_journal_appended"}),
+            "manual_checkpoint_required": self._manual_checkpoint_required(latest),
+            "bounded_recursion": self._bool_from(latest, "bounded_recursion", default=True),
+            "blocking_reasons": blockers,
+            "artifact_refs": {
+                "continuation_journal": "workspace/custom-loader-continuation-journal.json" if journal else "",
+                "recursive_plan": "workspace/custom-loader-recursive-traversal-plan.json" if plan else "",
+                "recursive_followup": "workspace/custom-loader-recursive-traversal-followup.json" if followup else "",
+                "recursive_execution": "workspace/custom-loader-recursive-traversal-execution.json" if execution else "",
+            },
+        }
+
+    def _async_chunk_system(self, spec: RecursiveContinuationReadinessSpec) -> dict[str, Any]:
+        plan = spec.async_chunk_recursive_plan
+        followup = spec.async_chunk_recursive_followup
+        execution = spec.async_chunk_recursive_execution
+        artifacts = {
+            "recursive_plan": plan,
+            "recursive_followup": followup,
+            "recursive_execution": execution,
+        }
+        statuses = self._artifact_statuses(artifacts)
+        blockers = self._status_blockers("async_chunk", statuses)
+        latest = self._latest_payload(execution, followup, plan)
+        return {
+            "system": "async_chunk",
+            "schema_family": "reverse-deepagent.async-chunk-recursive-continuation",
+            "artifact_count": sum(bool(value) for value in artifacts.values()),
+            "artifact_statuses": statuses,
+            "journal_record_count": 0,
+            "stage_count": self._stage_count(latest),
+            "latest_status": self._status(latest),
+            "latest_next_action": self._next_action(latest),
+            "continuation_ready": self._status(latest) in {"ready_for_next_loop_review", "next_loop_plan_ready", "next_loop_module_diff_ready", "next_loop_execution_progressed", "complete"},
+            "manual_checkpoint_required": self._manual_checkpoint_required(latest),
+            "bounded_recursion": self._bool_from(latest, "bounded_recursion", default=True),
+            "blocking_reasons": blockers,
+            "artifact_refs": {
+                "recursive_plan": "workspace/async-chunk-recursive-traversal-plan.json" if plan else "",
+                "recursive_followup": "workspace/async-chunk-recursive-traversal-followup.json" if followup else "",
+                "recursive_execution": "workspace/async-chunk-recursive-traversal-execution.json" if execution else "",
+            },
+        }
+
+    def _module_federation_system(self, spec: RecursiveContinuationReadinessSpec) -> dict[str, Any]:
+        journal = spec.module_federation_recursive_continuation_journal
+        checkpoint = spec.module_federation_recursive_continuation_checkpoint
+        execution = spec.module_federation_recursive_execution
+        artifacts = {
+            "continuation_journal": journal,
+            "continuation_checkpoint": checkpoint,
+            "recursive_execution": execution,
+        }
+        statuses = self._artifact_statuses(artifacts)
+        blockers = self._status_blockers("module_federation", statuses)
+        latest = self._latest_payload(checkpoint, execution, journal)
+        record_count = self._record_count(journal)
+        return {
+            "system": "module_federation",
+            "schema_family": "reverse-deepagent.module-federation-recursive-continuation",
+            "artifact_count": sum(bool(value) for value in artifacts.values()),
+            "artifact_statuses": statuses,
+            "journal_record_count": record_count,
+            "stage_count": self._stage_count(latest),
+            "latest_status": self._status(latest),
+            "latest_next_action": self._next_action(latest),
+            "continuation_ready": bool(record_count or self._status(latest) in {"ready_for_review", "next_execution_review_ready", "graph_rebuilt", "workflow_replanned", "complete"}),
+            "manual_checkpoint_required": self._manual_checkpoint_required(latest),
+            "bounded_recursion": self._bool_from(latest, "bounded_recursion", default=True),
+            "blocking_reasons": blockers,
+            "artifact_refs": {
+                "continuation_journal": "workspace/module-federation-recursive-continuation-journal.json" if journal else "",
+                "continuation_checkpoint": "workspace/module-federation-recursive-continuation-checkpoint.json" if checkpoint else "",
+                "recursive_execution": "workspace/module-federation-recursive-traversal-execution.json" if execution else "",
+            },
+        }
+
+    @classmethod
+    def _payload(cls, systems: list[dict[str, Any]], *, blockers: list[str], policy: dict[str, Any]) -> dict[str, Any]:
+        ready_systems = [item["system"] for item in systems if item.get("continuation_ready")]
+        blocked_systems = [item["system"] for item in systems if item.get("blocking_reasons")]
+        return {
+            "schema_version": "reverse-deepagent.recursive-continuation-readiness.v1",
+            "status": "blocked" if blockers else "ready_for_review" if systems else "unsupported",
+            "system_count": len(systems),
+            "ready_systems": ready_systems,
+            "blocked_systems": blocked_systems,
+            "blocking_reasons": list(dict.fromkeys(blockers)),
+            "systems": systems,
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "automatic_recursive_traversal": False,
+            "deeper_recursion_executor_ready": False,
+            "next_action": cls._readiness_next_action(systems, blockers),
+            "side_effect_policy": policy,
+        }
+
+    @staticmethod
+    def _artifact_statuses(artifacts: dict[str, dict[str, Any]]) -> dict[str, str]:
+        return {name: RecursiveContinuationReadinessManager._status(payload) for name, payload in artifacts.items() if payload}
+
+    @staticmethod
+    def _status(payload: dict[str, Any]) -> str:
+        for key in ("status", "checkpoint_status", "execution_status", "plan_status", "followup_status"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+        for nested in ("journal", "recursive_plan", "followup", "execution", "checkpoint"):
+            value = payload.get(nested)
+            if isinstance(value, dict) and value.get("status"):
+                return str(value["status"])
+        return "unknown"
+
+    @staticmethod
+    def _next_action(payload: dict[str, Any]) -> str:
+        value = payload.get("next_action")
+        return str(value) if value else ""
+
+    @staticmethod
+    def _latest_payload(*payloads: dict[str, Any]) -> dict[str, Any]:
+        for payload in payloads:
+            if payload:
+                return payload
+        return {}
+
+    @staticmethod
+    def _record_count(journal: dict[str, Any]) -> int:
+        if not journal:
+            return 0
+        count = journal.get("record_count")
+        try:
+            return int(count)
+        except (TypeError, ValueError):
+            records = journal.get("records")
+            return len(records) if isinstance(records, list) else 0
+
+    @staticmethod
+    def _stage_count(payload: dict[str, Any]) -> int:
+        stages = payload.get("stages")
+        return len(stages) if isinstance(stages, list) else 0
+
+    @staticmethod
+    def _manual_checkpoint_required(payload: dict[str, Any]) -> bool:
+        policy = payload.get("side_effect_policy") if isinstance(payload.get("side_effect_policy"), dict) else {}
+        return bool(payload.get("manual_checkpoint_required", policy.get("manual_checkpoint_required", True)))
+
+    @staticmethod
+    def _bool_from(payload: dict[str, Any], key: str, *, default: bool) -> bool:
+        policy = payload.get("side_effect_policy") if isinstance(payload.get("side_effect_policy"), dict) else {}
+        return bool(payload.get(key, policy.get(key, default)))
+
+    @staticmethod
+    def _status_blockers(prefix: str, statuses: dict[str, str]) -> list[str]:
+        blockers: list[str] = []
+        for name, status in statuses.items():
+            if status in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append(f"{prefix}_{name}_{status}")
+        return blockers
+
+    @staticmethod
+    def _readiness_next_action(systems: list[dict[str, Any]], blockers: list[str]) -> str:
+        if blockers:
+            return "resolve_recursive_continuation_readiness_blockers"
+        if not systems:
+            return "provide_recursive_continuation_artifacts"
+        if any(item.get("continuation_ready") for item in systems):
+            return "review_recursive_continuation_checkpoint_before_next_step"
+        return "collect_next_recursive_continuation_checkpoint_evidence"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "plan_only": True,
+            "review_required": True,
+            "manual_checkpoint_required": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "loader_invoked": False,
+            "chunk_request_sent": False,
+            "remote_factory_invoked": False,
+            "remote_code_executed": False,
+            "traversal_graph_rebuilt": False,
+            "workflow_replanned": False,
+            "automatic_queue_advance": False,
+            "automatic_recursive_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class ModuleFederationTraversalGraphSpec:
     """Review-only Module Federation remote traversal graph request."""
 

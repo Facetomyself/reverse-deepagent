@@ -964,6 +964,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_module_federation_recursive_traversal_execution": "audit",
     "workspace_module_federation_recursive_continuation_journal": "audit",
     "workspace_module_federation_recursive_continuation_checkpoint": "audit",
+    "workspace_recursive_continuation_readiness": "audit",
     "workspace_async_chunk_load_result": "trace",
     "workspace_source_map_fetch_plan": "triage",
     "workspace_source_map_fetch_result": "trace",
@@ -1766,6 +1767,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["module-federation-recursive-continuation-journal.json"] = evidence.details
         elif evidence.source == "module_federation_recursive_continuation_checkpoint":
             payloads["module-federation-recursive-continuation-checkpoint.json"] = evidence.details
+        elif evidence.source == "recursive_continuation_readiness":
+            payloads["recursive-continuation-readiness.json"] = evidence.details
         elif evidence.source == "async_chunk_load_result":
             payloads["async-chunk-load-result.json"] = evidence.details
         elif evidence.source == "source_map_fetch_plan":

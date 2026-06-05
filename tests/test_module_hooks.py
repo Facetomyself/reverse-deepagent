@@ -78,6 +78,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationExportHookPlanSpec,
     ModuleFederationExportHookInstallManager,
     ModuleFederationExportHookInstallSpec,
+    RecursiveContinuationReadinessManager,
+    RecursiveContinuationReadinessSpec,
     ModuleDiscoveryManager,
     ModuleDiscoverySpec,
     ModuleFederationGetInitPlanManager,
@@ -3610,6 +3612,74 @@ class AsyncChunkRecursiveTraversalPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "async_chunk_loop_execution_not_ready_for_recursion")
         self.assertEqual(result.recursive_plan["next_action"], "resolve_async_chunk_recursive_traversal_blockers")
+
+
+class RecursiveContinuationReadinessManagerTests(unittest.TestCase):
+    def test_assesses_cross_system_readiness_without_side_effects(self) -> None:
+        spec = RecursiveContinuationReadinessSpec.from_context(
+            {
+                "recursive_continuation_readiness": True,
+                "custom_loader_continuation_journal": {
+                    "schema_version": "reverse-deepagent.custom-loader-continuation-journal.v1",
+                    "status": "ready_for_review",
+                    "record_count": 1,
+                    "records": [{"candidate_fingerprint": "custom|loader|1"}],
+                },
+                "async_chunk_recursive_traversal_followup": {
+                    "schema_version": "reverse-deepagent.async-chunk-recursive-traversal-followup.v1",
+                    "status": "next_loop_plan_ready",
+                    "stages": [{"stage": "plan_next_bounded_async_chunk_traversal_loop", "status": "planned"}],
+                    "next_action": "review_next_async_chunk_traversal_loop_plan_before_execution",
+                },
+                "module_federation_recursive_continuation_checkpoint": {
+                    "schema_version": "reverse-deepagent.module-federation-recursive-continuation-checkpoint.v1",
+                    "status": "next_execution_review_ready",
+                    "stages": [{"stage": "review_next_module_federation_recursive_traversal_execution", "status": "ready_for_review"}],
+                    "next_action": "review_next_module_federation_recursive_traversal_execution",
+                },
+            }
+        )
+
+        result = RecursiveContinuationReadinessManager().assess(spec)
+        readiness = result.readiness
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(readiness["schema_version"], "reverse-deepagent.recursive-continuation-readiness.v1")
+        self.assertEqual(readiness["system_count"], 3)
+        self.assertEqual(set(readiness["ready_systems"]), {"custom_loader", "async_chunk", "module_federation"})
+        self.assertEqual(readiness["blocked_systems"], [])
+        self.assertTrue(readiness["review_required"])
+        self.assertTrue(readiness["manual_checkpoint_required"])
+        self.assertFalse(readiness["automatic_recursive_traversal"])
+        self.assertFalse(readiness["deeper_recursion_executor_ready"])
+        self.assertEqual(readiness["next_action"], "review_recursive_continuation_checkpoint_before_next_step")
+        self.assertFalse(result.side_effect_policy["artifacts_written"])
+        self.assertFalse(result.side_effect_policy["loader_invoked"])
+        self.assertFalse(result.side_effect_policy["chunk_request_sent"])
+        self.assertFalse(result.side_effect_policy["remote_factory_invoked"])
+        self.assertFalse(result.side_effect_policy["remote_code_executed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_blocks_when_any_recursive_artifact_is_blocked(self) -> None:
+        spec = RecursiveContinuationReadinessSpec.from_context(
+            {
+                "review_recursive_continuation_readiness": True,
+                "async_chunk_recursive_traversal_plan": {
+                    "schema_version": "reverse-deepagent.async-chunk-recursive-traversal-plan.v1",
+                    "status": "blocked",
+                    "next_action": "resolve_async_chunk_recursive_traversal_blockers",
+                },
+            }
+        )
+
+        result = RecursiveContinuationReadinessManager().assess(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("async_chunk_recursive_plan_blocked", result.readiness["blocking_reasons"])
+        self.assertEqual(result.readiness["blocked_systems"], ["async_chunk"])
+        self.assertEqual(result.readiness["next_action"], "resolve_recursive_continuation_readiness_blockers")
+        self.assertFalse(result.side_effect_policy["automatic_recursive_traversal"])
 
 
 class AsyncChunkRecursiveTraversalFollowupManagerTests(unittest.TestCase):

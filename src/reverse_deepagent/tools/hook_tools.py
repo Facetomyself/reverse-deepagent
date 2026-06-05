@@ -275,6 +275,22 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "module-federation-recursive-traversal-continuation-checkpoint",
             "moduleFederationRecursiveTraversalContinuationCheckpoint",
         )
+        recursive_continuation_readiness = _object_alias(
+            payload,
+            "recursive_continuation_readiness",
+            "recursive-continuation-readiness",
+            "recursiveContinuationReadiness",
+            "traversal_continuation_readiness",
+            "traversal-continuation-readiness",
+            "traversalContinuationReadiness",
+        )
+        if not recursive_continuation_readiness and payload.get("schema_version") == "reverse-deepagent.recursive-continuation-readiness.v1":
+            recursive_continuation_readiness = dict(payload)
+        if isinstance(recursive_continuation_readiness.get("readiness"), dict):
+            nested_readiness = dict(recursive_continuation_readiness["readiness"])
+            if "status" not in nested_readiness and recursive_continuation_readiness.get("status"):
+                nested_readiness["status"] = recursive_continuation_readiness.get("status")
+            recursive_continuation_readiness = nested_readiness
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -342,6 +358,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_recursive_traversal_execution,
                 module_federation_recursive_continuation_journal,
                 module_federation_recursive_continuation_checkpoint,
+                recursive_continuation_readiness,
             )
         ) + sum(bool(items) for items in (module_candidates, function_candidates))
         if not artifact_count:
@@ -538,6 +555,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("module_federation_recursive_continuation_journal_blocked")
         if _status(module_federation_recursive_continuation_checkpoint) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("module_federation_recursive_continuation_checkpoint_blocked")
+        if _status(recursive_continuation_readiness) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("recursive_continuation_readiness_blocked")
         federation_plan_status = _nested_status(module_federation_get_init_plan, "plan")
         if module_federation_get_init_plan and (
             _status(module_federation_get_init_plan) in {"ready_for_review", "planned"}
@@ -606,6 +625,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             or federation_recursive_continuation_checkpoint_status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_execution_review_ready", "complete"}
         ):
             warnings.append("module_federation_recursive_continuation_checkpoint_requires_review")
+        if recursive_continuation_readiness and _status(recursive_continuation_readiness) == "ready_for_review":
+            warnings.append("recursive_continuation_readiness_requires_review")
         if async_chunk_plan and not async_chunk_result and _status(async_chunk_plan) in {"ready_for_review", "planned"}:
             warnings.append("async_chunk_load_requires_review")
         async_chunk_diff_status = _nested_status(async_chunk_module_diff, "diff")
@@ -858,6 +879,11 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "module_federation_recursive_continuation_checkpoint_status": _status(module_federation_recursive_continuation_checkpoint) or federation_recursive_continuation_checkpoint_status,
                 "module_federation_recursive_continuation_checkpoint_stage_count": len(_listish(_nested_get(module_federation_recursive_continuation_checkpoint, "checkpoint", "stages") or module_federation_recursive_continuation_checkpoint.get("stages"))),
                 "module_federation_recursive_continuation_checkpoint_next_action": _nested_get(module_federation_recursive_continuation_checkpoint, "checkpoint", "next_action") or module_federation_recursive_continuation_checkpoint.get("next_action"),
+                "recursive_continuation_readiness_status": _status(recursive_continuation_readiness),
+                "recursive_continuation_readiness_system_count": _intish(recursive_continuation_readiness.get("system_count")),
+                "recursive_continuation_readiness_ready_systems": _listish(recursive_continuation_readiness.get("ready_systems")),
+                "recursive_continuation_readiness_blocked_systems": _listish(recursive_continuation_readiness.get("blocked_systems")),
+                "recursive_continuation_readiness_deeper_recursion_executor_ready": bool(recursive_continuation_readiness.get("deeper_recursion_executor_ready")),
                 "async_chunk_load_execution_attempted": bool(async_chunk_result.get("execution", {}).get("attempted") if isinstance(async_chunk_result.get("execution"), dict) else async_chunk_result.get("execution_attempted", False)),
                 "async_chunk_load_added_registry_key_count": len(_listish(async_chunk_result.get("addedRegistryKeys") or async_chunk_result.get("added_registry_keys"))),
                 "async_chunk_module_diff_matched_module_count": _intish(async_chunk_module_diff.get("matched_module_count") or _nested_get(async_chunk_module_diff, "diff", "matched_module_count")),
@@ -918,6 +944,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_recursive_traversal_execution,
                 module_federation_recursive_continuation_journal,
                 module_federation_recursive_continuation_checkpoint,
+                recursive_continuation_readiness,
             ),
             "side_effect_policy": {
                 "read_only": True,
@@ -1110,6 +1137,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "revise_module_federation_recursive_continuation_journal_inputs"
     if "module_federation_recursive_continuation_checkpoint_blocked" in blockers:
         return "resolve_module_federation_recursive_continuation_checkpoint_blockers"
+    if "recursive_continuation_readiness_blocked" in blockers:
+        return "resolve_recursive_continuation_readiness_blockers"
     if "custom_loader_execution_failed" in blockers:
         return "inspect_custom_loader_execution_failure"
     if "custom_loader_traversal_loop_execution_blocked" in blockers:
@@ -1204,6 +1233,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_module_federation_recursive_continuation_journal_append"
     if "module_federation_recursive_continuation_checkpoint_requires_review" in warnings:
         return "review_module_federation_recursive_continuation_checkpoint"
+    if "recursive_continuation_readiness_requires_review" in warnings:
+        return "review_recursive_continuation_readiness"
     if "custom_loader_traversal_requires_review" in warnings:
         return "review_custom_loader_traversal_plan"
     if "custom_loader_traversal_loop_plan_requires_review" in warnings:
@@ -1321,6 +1352,7 @@ def _review_required_items(
     module_federation_recursive_traversal_execution: dict[str, Any],
     module_federation_recursive_continuation_journal: dict[str, Any],
     module_federation_recursive_continuation_checkpoint: dict[str, Any],
+    recursive_continuation_readiness: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     closure_wrapper_strategy_descriptor = _closure_wrapper_strategy_descriptor(
@@ -1389,6 +1421,11 @@ def _review_required_items(
                 "module_federation_recursive_traversal_execution_status": _status(module_federation_recursive_traversal_execution) or _nested_status(module_federation_recursive_traversal_execution, "execution"),
                 "module_federation_recursive_continuation_journal_status": _status(module_federation_recursive_continuation_journal) or _nested_status(module_federation_recursive_continuation_journal, "journal"),
                 "module_federation_recursive_continuation_checkpoint_status": _status(module_federation_recursive_continuation_checkpoint) or _nested_status(module_federation_recursive_continuation_checkpoint, "checkpoint"),
+                "recursive_continuation_readiness_status": _status(recursive_continuation_readiness),
+                "recursive_continuation_readiness_system_count": _intish(recursive_continuation_readiness.get("system_count")),
+                "recursive_continuation_readiness_ready_systems": _listish(recursive_continuation_readiness.get("ready_systems")),
+                "recursive_continuation_readiness_blocked_systems": _listish(recursive_continuation_readiness.get("blocked_systems")),
+                "recursive_continuation_readiness_deeper_recursion_executor_ready": bool(recursive_continuation_readiness.get("deeper_recursion_executor_ready")),
                 "function_hook_error": str(function_hooks.get("error") or ""),
                 "module_hook_error": str(module_hooks.get("error") or ""),
                 "source_logpoint_error": str(source_logpoints.get("error") or ""),

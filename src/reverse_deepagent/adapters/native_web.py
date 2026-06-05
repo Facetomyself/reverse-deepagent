@@ -88,6 +88,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleFederationGetInitPlanSpec,
     ModuleFederationGetInitProbeManager,
     ModuleFederationGetInitProbeSpec,
+    RecursiveContinuationReadinessManager,
+    RecursiveContinuationReadinessSpec,
     BreakpointManager,
     BreakpointSpec,
     BrowserHookManager,
@@ -1903,6 +1905,73 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
+        if self._is_recursive_continuation_readiness_request(protection_name, context):
+            spec = RecursiveContinuationReadinessSpec.from_context(context)
+            result = RecursiveContinuationReadinessManager().assess(spec)
+            readiness = result.readiness if isinstance(result.readiness, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            systems = readiness.get("systems") if isinstance(readiness.get("systems"), list) else []
+            blockers = readiness.get("blocking_reasons") if isinstance(readiness.get("blocking_reasons"), list) else []
+            verification = [
+                f"recursive_continuation_readiness_status={result.status}",
+                f"recursive_continuation_readiness_reason={result.reason or ''}",
+                f"recursive_continuation_readiness_system_count={readiness.get('system_count', 0)}",
+                f"recursive_continuation_readiness_ready_systems={readiness.get('ready_systems', [])}",
+                f"recursive_continuation_readiness_blocked_systems={readiness.get('blocked_systems', [])}",
+                f"recursive_continuation_readiness_review_required={readiness.get('review_required', True)}",
+                f"recursive_continuation_readiness_manual_checkpoint_required={readiness.get('manual_checkpoint_required', True)}",
+                f"recursive_continuation_readiness_automatic_recursive_traversal={readiness.get('automatic_recursive_traversal', False)}",
+                f"recursive_continuation_readiness_deeper_recursion_executor_ready={readiness.get('deeper_recursion_executor_ready', False)}",
+                f"recursive_continuation_readiness_loader_invoked={policy.get('loader_invoked', False)}",
+                f"recursive_continuation_readiness_chunk_request_sent={policy.get('chunk_request_sent', False)}",
+                f"recursive_continuation_readiness_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"recursive_continuation_readiness_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"recursive_continuation_readiness_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"recursive_continuation_readiness_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"recursive_continuation_readiness_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"recursive_continuation_readiness_artifacts_written={policy.get('artifacts_written', False)}",
+                f"recursive_continuation_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"recursive_continuation_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/recursive-continuation-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only recursive traversal continuation readiness descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "readiness_status": readiness.get("status"),
+                        "system_count": readiness.get("system_count", 0),
+                        "ready_systems": readiness.get("ready_systems", []),
+                        "blocked_systems": readiness.get("blocked_systems", []),
+                        "blocking_reasons": blockers,
+                        "systems": systems,
+                        "review_required": readiness.get("review_required", True),
+                        "manual_checkpoint_required": readiness.get("manual_checkpoint_required", True),
+                        "automatic_recursive_traversal": readiness.get("automatic_recursive_traversal", False),
+                        "deeper_recursion_executor_ready": readiness.get("deeper_recursion_executor_ready", False),
+                    },
+                )
+            ]
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = readiness.get("next_action", "review_recursive_continuation_readiness")
+            elif result.status in {"blocked", "unsupported"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = readiness.get("next_action", "resolve_recursive_continuation_readiness_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = readiness.get("next_action", "provide_recursive_continuation_artifacts")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["assess_recursive_continuation_readiness"],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
         if self._is_module_federation_recursive_continuation_checkpoint_request(protection_name, context):
             spec = ModuleFederationRecursiveContinuationCheckpointSpec.from_context(context)
@@ -5537,6 +5606,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "module-federation-recursive-traversal-continuation-journal",
                 "append_module_federation_recursive_continuation_journal",
                 "appendModuleFederationRecursiveContinuationJournal",
+            )
+        )
+
+    @staticmethod
+    def _is_recursive_continuation_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "recursive-continuation-readiness",
+            "traversal-continuation-readiness",
+            "review-recursive-continuation-readiness",
+            "review-traversal-continuation-readiness",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "recursive_continuation_readiness",
+                "recursiveContinuationReadiness",
+                "recursive-continuation-readiness",
+                "traversal_continuation_readiness",
+                "traversalContinuationReadiness",
+                "review_recursive_continuation_readiness",
+                "reviewRecursiveContinuationReadiness",
             )
         )
 

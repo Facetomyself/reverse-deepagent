@@ -913,6 +913,43 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/function-hook-timeline.json")
         self.assertEqual(result.artifacts[1].metadata["event_count"], 2)
 
+    def test_native_web_runtime_assesses_recursive_continuation_readiness_without_execution(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "recursive-continuation-readiness",
+            {
+                "recursive_continuation_readiness": True,
+                "custom_loader_continuation_journal": {
+                    "status": "ready_for_review",
+                    "record_count": 1,
+                    "records": [{"candidate_fingerprint": "custom|loader|1"}],
+                },
+                "async_chunk_recursive_traversal_followup": {
+                    "status": "next_loop_plan_ready",
+                    "stages": [{"stage": "plan_next_bounded_async_chunk_traversal_loop", "status": "planned"}],
+                },
+                "module_federation_recursive_continuation_checkpoint": {
+                    "status": "next_execution_review_ready",
+                    "stages": [{"stage": "review_next_module_federation_recursive_traversal_execution", "status": "ready_for_review"}],
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["assess_recursive_continuation_readiness"])
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/recursive-continuation-readiness.json")
+        self.assertEqual(result.artifacts[0].metadata["system_count"], 3)
+        self.assertEqual(set(result.artifacts[0].metadata["ready_systems"]), {"custom_loader", "async_chunk", "module_federation"})
+        self.assertFalse(result.artifacts[0].metadata["automatic_recursive_traversal"])
+        self.assertFalse(result.artifacts[0].metadata["deeper_recursion_executor_ready"])
+        self.assertIn("recursive_continuation_readiness_status=ready_for_review", result.verification)
+        self.assertIn("recursive_continuation_readiness_system_count=3", result.verification)
+        self.assertIn("recursive_continuation_readiness_loader_invoked=False", result.verification)
+        self.assertIn("recursive_continuation_readiness_chunk_request_sent=False", result.verification)
+        self.assertIn("recursive_continuation_readiness_remote_code_executed=False", result.verification)
+        self.assertIn("recursive_continuation_readiness_artifacts_written=False", result.verification)
+
     def test_native_web_runtime_apply_minimal_protection_installs_module_hook(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

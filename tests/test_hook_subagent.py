@@ -1230,6 +1230,49 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["module_federation_recursive_continuation_checkpoint_status"], "next_execution_review_ready")
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_recursive_continuation_readiness(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        result = tool(json.dumps({
+            "recursive_continuation_readiness": {
+                "schema_version": "reverse-deepagent.recursive-continuation-readiness.v1",
+                "status": "ready_for_review",
+                "system_count": 3,
+                "ready_systems": ["custom_loader", "async_chunk", "module_federation"],
+                "blocked_systems": [],
+                "deeper_recursion_executor_ready": False,
+            }
+        }))
+
+        self.assertIn("recursive_continuation_readiness_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_recursive_continuation_readiness")
+        self.assertEqual(result["summary"]["recursive_continuation_readiness_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["recursive_continuation_readiness_system_count"], 3)
+        self.assertEqual(result["summary"]["recursive_continuation_readiness_ready_systems"], ["custom_loader", "async_chunk", "module_federation"])
+        self.assertFalse(result["summary"]["recursive_continuation_readiness_deeper_recursion_executor_ready"])
+        self.assertEqual(result["review_required_items"][0]["recursive_continuation_readiness_status"], "ready_for_review")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_hook_artifacts_blocks_for_recursive_continuation_readiness(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        result = tool(json.dumps({
+            "recursive_continuation_readiness": {
+                "readiness": {
+                    "schema_version": "reverse-deepagent.recursive-continuation-readiness.v1",
+                    "status": "blocked",
+                    "system_count": 1,
+                    "ready_systems": [],
+                    "blocked_systems": ["async_chunk"],
+                    "blocking_reasons": ["async_chunk_recursive_plan_blocked"],
+                    "deeper_recursion_executor_ready": False,
+                }
+            }
+        }))
+
+        self.assertIn("recursive_continuation_readiness_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_recursive_continuation_readiness_blockers")
+        self.assertEqual(result["summary"]["recursive_continuation_readiness_status"], "blocked")
+        self.assertEqual(result["summary"]["recursive_continuation_readiness_blocked_systems"], ["async_chunk"])
+
 
     def test_review_hook_artifacts_warns_for_module_federation_recursive_traversal_execution(self) -> None:
         tool = make_review_hook_artifacts_tool()

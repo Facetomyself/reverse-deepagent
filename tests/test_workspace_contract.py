@@ -110,6 +110,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/debugger/paused-session-target-attach-readiness.json",
         )
         self.assertEqual(routes["workspace/paused-session-target-attach-readiness.json"].category, "audit")
+        self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(
+            routes["workspace/recursive-continuation-readiness.json"].future_path,
+            "/workspace/runtime/recursive-continuation-readiness.json",
+        )
+        self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].category, "audit")
         self.assertEqual(routes["workspace/closure-functions.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(routes["workspace/closure-functions.json"].future_path, "/workspace/debugger/closure-functions.json")
         self.assertEqual(routes["workspace/closure-functions.json"].category, "trace")
