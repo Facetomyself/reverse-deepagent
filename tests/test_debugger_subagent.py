@@ -291,6 +291,68 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertTrue(result["review_required_items"][0]["cross_process_execution_plan_diagnostics"]["execution_plan_ready_for_review"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_warns_for_cross_process_session_lifecycle(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_session_lifecycle": {
+                "status": "ready_for_review",
+                "lifecycle": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "pause_session_id": "debugger-life-1",
+                    "target_id": "target-debugger-life",
+                    "session_diagnostics": {"attached_session_retained": True},
+                    "target_diagnostics": {
+                        "target_still_alive_proven": False,
+                        "target_still_alive_proof_requires_cdp_probe": True,
+                    },
+                    "debugger_diagnostics": {
+                        "live_callframe_recovered": True,
+                        "live_callframe_id_present": True,
+                    },
+                    "continuation_diagnostics": {
+                        "automatic_multi_step_loop_supported": False,
+                        "automatic_wrapper_continuation_supported": False,
+                    },
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_session_lifecycle_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_lifecycle_before_next_continuation_step")
+        lifecycle = result["summary"]["cross_process_session_lifecycle"]
+        self.assertTrue(lifecycle["ready_for_review"])
+        self.assertTrue(lifecycle["attached_session_retained"])
+        self.assertFalse(lifecycle["target_still_alive_proven"])
+        self.assertFalse(lifecycle["automatic_multi_step_loop_supported"])
+        self.assertFalse(lifecycle["automatic_wrapper_continuation_supported"])
+        self.assertTrue(result["review_required_items"][0]["cross_process_session_lifecycle_diagnostics"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_session_lifecycle(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_session_lifecycle": {
+                "status": "blocked",
+                "lifecycle": {
+                    "status": "blocked",
+                    "blockers": ["target_id_required"],
+                    "ready_for_review": False,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_session_lifecycle_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_paused_session_lifecycle_blockers")
+        self.assertFalse(result["summary"]["cross_process_session_lifecycle"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
 
     def test_review_debugger_artifacts_warns_after_cross_process_attach_probe_without_live_callframe(self) -> None:
         tool = make_review_debugger_artifacts_tool()

@@ -11,6 +11,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessAttachProbeSpec,
     PausedSessionCrossProcessExecutionPlanManager,
     PausedSessionCrossProcessExecutionPlanSpec,
+    PausedSessionCrossProcessSessionLifecycleManager,
+    PausedSessionCrossProcessSessionLifecycleSpec,
     PausedSessionCrossProcessOneActionManager,
     PausedSessionCrossProcessOneActionSpec,
     PausedSessionCrossProcessContinuationCheckpointManager,
@@ -1613,6 +1615,81 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("target_attach_readiness_required", result.plan["blockers"])
         self.assertEqual(result.plan["next_action"], "produce_paused_session_target_attach_readiness")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_cross_process_session_lifecycle_reviews_existing_evidence_without_side_effects(self) -> None:
+        spec = PausedSessionCrossProcessSessionLifecycleSpec.from_context(
+            {
+                "paused_session_cross_process_session_lifecycle": True,
+                "paused_session_cross_process_attach_probe": {
+                    "probe": {
+                        "status": "attached",
+                        "pause_session_id": "lifecycle-1",
+                        "target_id": "target-lifecycle-1",
+                        "attached_session_id": "attached-session-1",
+                        "target_attached": True,
+                        "target_detached": False,
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "lifecycle-1",
+                        "target_id": "target-lifecycle-1",
+                        "attached_session_id": "attached-session-1",
+                        "target_attached": True,
+                        "fresh_paused_event_after_attach": True,
+                        "live_callframe_recovered": True,
+                        "live_callframe_id": "live-cf-life-1",
+                    }
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "lifecycle-1",
+                        "target_id": "target-lifecycle-1",
+                        "continuation_ready_for_next_action": True,
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionCrossProcessSessionLifecycleManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        lifecycle = result.lifecycle
+        self.assertEqual(lifecycle["schema_version"], "reverse-deepagent.paused-session-cross-process-session-lifecycle.v1")
+        self.assertTrue(lifecycle["ready_for_review"])
+        self.assertEqual(lifecycle["pause_session_id"], "lifecycle-1")
+        self.assertEqual(lifecycle["target_id"], "target-lifecycle-1")
+        self.assertTrue(lifecycle["session_diagnostics"]["attached_session_retained"])
+        self.assertFalse(lifecycle["target_diagnostics"]["target_still_alive_proven"])
+        self.assertTrue(lifecycle["target_diagnostics"]["target_still_alive_proof_requires_cdp_probe"])
+        self.assertTrue(lifecycle["debugger_diagnostics"]["live_callframe_recovered"])
+        self.assertTrue(lifecycle["debugger_diagnostics"]["live_callframe_id_present"])
+        self.assertFalse(lifecycle["continuation_diagnostics"]["automatic_multi_step_loop_supported"])
+        self.assertFalse(lifecycle["continuation_diagnostics"]["automatic_wrapper_continuation_supported"])
+        self.assertEqual(lifecycle["next_action"], "review_paused_session_lifecycle_before_next_continuation_step")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["cdp_target_attached"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["paused_event_captured"])
+        self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+        self.assertFalse(result.side_effect_policy["cross_process_action_executed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_cross_process_session_lifecycle_blocks_without_identifiers_or_evidence(self) -> None:
+        spec = PausedSessionCrossProcessSessionLifecycleSpec.from_context({"paused_session_cross_process_session_lifecycle": True})
+
+        result = PausedSessionCrossProcessSessionLifecycleManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("pause_session_id_required", result.lifecycle["blockers"])
+        self.assertIn("target_id_required", result.lifecycle["blockers"])
+        self.assertIn("paused_session_lifecycle_evidence_required", result.lifecycle["blockers"])
+        self.assertEqual(result.lifecycle["next_action"], "produce_or_fix_target_attach_readiness")
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
 
     def test_missing_paused_session_reports_unavailable_preflight(self) -> None:

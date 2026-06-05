@@ -189,6 +189,24 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session cross-process session lifecycle",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="paused_session_cross_process_session_lifecycle",
+                    details={
+                        "status": "ready_for_review",
+                        "lifecycle": {
+                            "ready_for_review": True,
+                            "pause_session_id": "unit-paused-session",
+                            "target_id": "target-unit",
+                            "continuation_diagnostics": {
+                                "automatic_multi_step_loop_supported": False,
+                                "automatic_wrapper_continuation_supported": False,
+                            },
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native paused-session cross-process attach probe",
                     kind=EvidenceKind.CALLSTACK,
                     source="paused_session_cross_process_attach_probe",
@@ -733,6 +751,9 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payloads["paused-session-target-attach-readiness.json"]["readiness"]["target_attach_readiness_proven"])
         self.assertTrue(payloads["paused-session-cross-process-execution-plan.json"]["plan"]["execution_plan_ready_for_review"])
         self.assertTrue(payloads["paused-session-cross-process-execution-plan.json"]["plan"]["cross_process_executor_implemented"])
+        self.assertTrue(payloads["paused-session-cross-process-session-lifecycle.json"]["lifecycle"]["ready_for_review"])
+        self.assertFalse(payloads["paused-session-cross-process-session-lifecycle.json"]["lifecycle"]["continuation_diagnostics"]["automatic_multi_step_loop_supported"])
+        self.assertFalse(payloads["paused-session-cross-process-session-lifecycle.json"]["lifecycle"]["continuation_diagnostics"]["automatic_wrapper_continuation_supported"])
         self.assertTrue(payloads["paused-session-cross-process-attach-probe.json"]["probe"]["target_attached"])
         self.assertFalse(payloads["paused-session-cross-process-attach-probe.json"]["probe"]["live_action_executed"])
         self.assertTrue(payloads["paused-session-live-callframe-recovery.json"]["recovery"]["live_callframe_recovered"])
@@ -862,6 +883,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_live_continuation_preflight"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_target_attach_readiness"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_execution_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_session_lifecycle"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_attach_probe"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_live_callframe_recovery"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_one_action_execution"), "audit")

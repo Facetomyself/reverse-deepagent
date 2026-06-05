@@ -4746,6 +4746,69 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["automatic_multi_step_loop"])
         self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["cdp_command_sent"])
 
+    def test_native_web_runtime_reviews_cross_process_session_lifecycle_without_side_effects(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-cross-process-session-lifecycle",
+            {
+                "paused_session_cross_process_attach_probe": {
+                    "probe": {
+                        "status": "attached",
+                        "pause_session_id": "native-lifecycle-1",
+                        "target_id": "target-native-lifecycle",
+                        "attached_session_id": "attached-session-1",
+                        "target_attached": True,
+                        "target_detached": False,
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "native-lifecycle-1",
+                        "target_id": "target-native-lifecycle",
+                        "attached_session_id": "attached-session-1",
+                        "target_attached": True,
+                        "fresh_paused_event_after_attach": True,
+                        "live_callframe_recovered": True,
+                        "live_callframe_id": "live-cf-native-lifecycle",
+                    }
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "native-lifecycle-1",
+                        "target_id": "target-native-lifecycle",
+                        "continuation_ready_for_next_action": True,
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("paused_session_cross_process_session_lifecycle_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_ready_for_review=True", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_target_still_alive_proven=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_automatic_multi_step_loop=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_automatic_wrapper_continuation=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_cdp_target_attached=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_debugger_event_subscribed=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_paused_event_captured=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_callframe_evaluated=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_cross_process_action_executed=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_cross_process_session_lifecycle_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_paused_session_lifecycle_before_next_continuation_step")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-cross-process-session-lifecycle.json")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["target_still_alive_proven"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_multi_step_loop"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_wrapper_continuation"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["cdp_command_sent"])
+
     def test_native_web_runtime_apply_minimal_protection_audits_object_root_mutation(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

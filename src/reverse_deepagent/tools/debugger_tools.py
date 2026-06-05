@@ -64,6 +64,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "cross_process_execution_plan",
             "crossProcessExecutionPlan",
         )
+        cross_process_session_lifecycle = _object_alias(
+            payload,
+            "paused_session_cross_process_session_lifecycle",
+            "paused-session-cross-process-session-lifecycle",
+            "pausedSessionCrossProcessSessionLifecycle",
+            "cross_process_session_lifecycle",
+            "crossProcessSessionLifecycle",
+            "paused_session_lifecycle",
+            "pausedSessionLifecycle",
+        )
         cross_process_attach_probe = _object_alias(
             payload,
             "paused_session_cross_process_attach_probe",
@@ -172,6 +182,7 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         attachability = readiness.get("attachability") if isinstance(readiness.get("attachability"), dict) else {}
         callframe_recovery = readiness.get("callframe_recovery") if isinstance(readiness.get("callframe_recovery"), dict) else {}
         execution_plan = _first_object(cross_process_execution_plan.get("plan"), cross_process_execution_plan)
+        session_lifecycle = _first_object(cross_process_session_lifecycle.get("lifecycle"), cross_process_session_lifecycle)
         attach_probe = _first_object(cross_process_attach_probe.get("probe"), cross_process_attach_probe)
         callframe_recovery_artifact = _first_object(live_callframe_recovery.get("recovery"), live_callframe_recovery)
         one_action_execution = _first_object(cross_process_one_action.get("execution"), cross_process_one_action)
@@ -185,7 +196,7 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -210,6 +221,11 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             blockers.append("paused_session_cross_process_execution_plan_blocked")
         if execution_plan.get("execution_plan_ready_for_review") and not attach_probe:
             warnings.append("cross_process_execution_plan_ready_but_attach_probe_not_observed")
+        lifecycle_status = _string(session_lifecycle.get("status"))
+        if lifecycle_status == "blocked":
+            blockers.append("paused_session_cross_process_session_lifecycle_blocked")
+        if lifecycle_status == "ready_for_review":
+            warnings.append("cross_process_session_lifecycle_requires_review")
         attach_probe_status = _string(attach_probe.get("status"))
         if attach_probe_status == "blocked":
             blockers.append("paused_session_cross_process_attach_probe_blocked")
@@ -381,6 +397,22 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "action_execution_review_required": _boolish(execution_plan_gates.get("action_execution_review_required")),
                     "blockers": execution_plan.get("blockers") if isinstance(execution_plan.get("blockers"), list) else [],
                 },
+                "cross_process_session_lifecycle": {
+                    "status": _string(session_lifecycle.get("status") or "unknown"),
+                    "ready_for_review": _boolish(session_lifecycle.get("ready_for_review")),
+                    "pause_session_id": _string(session_lifecycle.get("pause_session_id")),
+                    "target_id": _string(session_lifecycle.get("target_id")),
+                    "requested_action": _string(session_lifecycle.get("requested_action") or "unknown"),
+                    "attached_session_retained": _boolish(_nested_get(session_lifecycle, "session_diagnostics", "attached_session_retained")),
+                    "target_still_alive_proven": _boolish(_nested_get(session_lifecycle, "target_diagnostics", "target_still_alive_proven")),
+                    "target_still_alive_proof_requires_cdp_probe": _boolish(_nested_get(session_lifecycle, "target_diagnostics", "target_still_alive_proof_requires_cdp_probe")),
+                    "live_callframe_recovered": _boolish(_nested_get(session_lifecycle, "debugger_diagnostics", "live_callframe_recovered")),
+                    "live_callframe_id_present": _boolish(_nested_get(session_lifecycle, "debugger_diagnostics", "live_callframe_id_present")),
+                    "automatic_multi_step_loop_supported": _boolish(_nested_get(session_lifecycle, "continuation_diagnostics", "automatic_multi_step_loop_supported")),
+                    "automatic_wrapper_continuation_supported": _boolish(_nested_get(session_lifecycle, "continuation_diagnostics", "automatic_wrapper_continuation_supported")),
+                    "next_action": _string(session_lifecycle.get("next_action")),
+                    "blockers": session_lifecycle.get("blockers") if isinstance(session_lifecycle.get("blockers"), list) else [],
+                },
                 "cross_process_attach_probe": {
                     "status": _string(attach_probe.get("status") or "unknown"),
                     "pause_session_id": _string(attach_probe.get("pause_session_id")),
@@ -506,7 +538,7 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, one_action_execution, pre_action_orchestration, next_capture_execution, continuation_checkpoint, multi_step_workflow, multi_step_execution, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, session_lifecycle, attach_probe, callframe_recovery_artifact, one_action_execution, pre_action_orchestration, next_capture_execution, continuation_checkpoint, multi_step_workflow, multi_step_execution, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -605,6 +637,15 @@ def _boolish(value: Any) -> bool:
     return bool(value)
 
 
+def _nested_get(payload: dict[str, Any], *keys: str) -> Any:
+    current: Any = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
 def _looks_paused(paused: dict[str, Any], session: dict[str, Any], timeline: dict[str, Any]) -> bool:
     text = " ".join(
         _string(value).lower()
@@ -658,6 +699,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "collect_target_candidates_or_match_paused_url_before_attach_review"
     if "paused_session_cross_process_execution_plan_blocked" in blockers:
         return "resolve_cross_process_execution_plan_blockers"
+    if "paused_session_cross_process_session_lifecycle_blocked" in blockers:
+        return "resolve_paused_session_lifecycle_blockers"
     if "paused_session_cross_process_attach_probe_blocked" in blockers:
         return "resolve_cross_process_attach_probe_blockers"
     if "paused_session_cross_process_attach_probe_failed" in blockers:
@@ -726,6 +769,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "review_attach_probe_result_before_live_callframe_recovery"
     if "cross_process_execution_plan_ready_but_attach_probe_not_observed" in warnings:
         return "run_reviewed_cross_process_attach_probe_next"
+    if "cross_process_session_lifecycle_requires_review" in warnings:
+        return "review_paused_session_lifecycle_before_next_continuation_step"
     if requested_action in _LIVE_ACTIONS and not live_available:
         return "attach_live_paused_session_or_limit_to_inspect_only_review"
     if "paused_session_has_no_callframes" in warnings:
@@ -743,6 +788,7 @@ def _review_required_items(
     preflight: dict[str, Any],
     readiness: dict[str, Any],
     execution_plan: dict[str, Any],
+    session_lifecycle: dict[str, Any],
     attach_probe: dict[str, Any],
     live_callframe_recovery: dict[str, Any],
     one_action_execution: dict[str, Any],
@@ -758,6 +804,7 @@ def _review_required_items(
     diagnostics = _preflight_diagnostics_for_review(preflight)
     attach_diagnostics = _attach_readiness_diagnostics_for_review(readiness)
     execution_plan_diagnostics = _cross_process_execution_plan_diagnostics_for_review(execution_plan)
+    session_lifecycle_diagnostics = _cross_process_session_lifecycle_diagnostics_for_review(session_lifecycle)
     attach_probe_diagnostics = _cross_process_attach_probe_diagnostics_for_review(attach_probe)
     live_callframe_recovery_diagnostics = _live_callframe_recovery_diagnostics_for_review(live_callframe_recovery)
     one_action_diagnostics = _cross_process_one_action_diagnostics_for_review(one_action_execution)
@@ -777,6 +824,7 @@ def _review_required_items(
                 "diagnostics": diagnostics,
                 "attach_readiness_diagnostics": attach_diagnostics,
                 "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
+                "cross_process_session_lifecycle_diagnostics": session_lifecycle_diagnostics,
                 "cross_process_attach_probe_diagnostics": attach_probe_diagnostics,
                 "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
                 "cross_process_one_action_diagnostics": one_action_diagnostics,
@@ -818,6 +866,7 @@ def _review_required_items(
             "multi_step_continuation_execution_review_required",
             "multi_step_continuation_execution_checkpoint_not_observed",
             "multi_step_continuation_execution_review_result",
+            "cross_process_session_lifecycle_requires_review",
         }:
             items.append(
                 {
@@ -829,6 +878,7 @@ def _review_required_items(
                     "diagnostics": diagnostics,
                     "attach_readiness_diagnostics": attach_diagnostics,
                     "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
+                    "cross_process_session_lifecycle_diagnostics": session_lifecycle_diagnostics,
                     "cross_process_attach_probe_diagnostics": attach_probe_diagnostics,
                     "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
                     "cross_process_one_action_diagnostics": one_action_diagnostics,
@@ -888,6 +938,30 @@ def _cross_process_execution_plan_diagnostics_for_review(plan: dict[str, Any]) -
         "requires_new_paused_event_after_attach": _boolish(callframe.get("requires_new_paused_event_after_attach")),
         "attach_probe_review_required": _boolish(gates.get("attach_probe_review_required")),
         "action_execution_review_required": _boolish(gates.get("action_execution_review_required")),
+    }
+
+
+def _cross_process_session_lifecycle_diagnostics_for_review(lifecycle: dict[str, Any]) -> dict[str, Any]:
+    session = lifecycle.get("session_diagnostics") if isinstance(lifecycle.get("session_diagnostics"), dict) else {}
+    target = lifecycle.get("target_diagnostics") if isinstance(lifecycle.get("target_diagnostics"), dict) else {}
+    debugger = lifecycle.get("debugger_diagnostics") if isinstance(lifecycle.get("debugger_diagnostics"), dict) else {}
+    continuation = lifecycle.get("continuation_diagnostics") if isinstance(lifecycle.get("continuation_diagnostics"), dict) else {}
+    return {
+        "status": _string(lifecycle.get("status") or "unknown"),
+        "ready_for_review": _boolish(lifecycle.get("ready_for_review")),
+        "pause_session_id": _string(lifecycle.get("pause_session_id")),
+        "target_id": _string(lifecycle.get("target_id")),
+        "attached_session_retained": _boolish(session.get("attached_session_retained")),
+        "target_lifecycle_observed": _boolish(session.get("target_lifecycle_observed")),
+        "target_still_alive_proven": _boolish(target.get("target_still_alive_proven")),
+        "target_still_alive_proof_requires_cdp_probe": _boolish(target.get("target_still_alive_proof_requires_cdp_probe")),
+        "live_callframe_recovered": _boolish(debugger.get("live_callframe_recovered")),
+        "live_callframe_id_present": _boolish(debugger.get("live_callframe_id_present")),
+        "next_paused_event_captured": _boolish(debugger.get("next_paused_event_captured")),
+        "automatic_multi_step_loop_supported": _boolish(continuation.get("automatic_multi_step_loop_supported")),
+        "automatic_live_callframe_recovery_supported": _boolish(continuation.get("automatic_live_callframe_recovery_supported")),
+        "automatic_wrapper_continuation_supported": _boolish(continuation.get("automatic_wrapper_continuation_supported")),
+        "blockers": lifecycle.get("blockers") if isinstance(lifecycle.get("blockers"), list) else [],
     }
 
 

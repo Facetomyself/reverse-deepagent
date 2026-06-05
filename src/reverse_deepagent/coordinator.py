@@ -984,6 +984,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_paused_session_live_continuation_preflight": "audit",
     "workspace_paused_session_target_attach_readiness": "audit",
     "workspace_paused_session_cross_process_execution_plan": "triage",
+    "workspace_paused_session_cross_process_session_lifecycle": "triage",
     "workspace_paused_session_cross_process_attach_probe": "audit",
     "workspace_paused_session_live_callframe_recovery": "audit",
     "workspace_paused_session_cross_process_one_action_execution": "audit",
@@ -1812,6 +1813,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["paused-session-target-attach-readiness.json"] = evidence.details
         elif evidence.source == "paused_session_cross_process_execution_plan":
             payloads["paused-session-cross-process-execution-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_cross_process_session_lifecycle":
+            payloads["paused-session-cross-process-session-lifecycle.json"] = evidence.details
         elif evidence.source == "paused_session_cross_process_attach_probe":
             payloads["paused-session-cross-process-attach-probe.json"] = evidence.details
         elif evidence.source == "paused_session_live_callframe_recovery":

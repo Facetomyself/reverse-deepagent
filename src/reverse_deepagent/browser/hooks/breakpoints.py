@@ -1115,6 +1115,452 @@ class PausedSessionCrossProcessExecutionPlanManager:
 
 
 @dataclass(slots=True)
+class PausedSessionCrossProcessSessionLifecycleSpec:
+    """Read-only lifecycle descriptor for cross-process paused-session continuation.
+
+    This descriptor only normalizes existing evidence. It does not attach targets, probe CDP,
+    enable Debugger, recover callFrames, subscribe to events, execute actions, or loop.
+    """
+
+    live_continuation_preflight: dict[str, Any] = field(default_factory=dict)
+    target_attach_readiness: dict[str, Any] = field(default_factory=dict)
+    cross_process_execution_plan: dict[str, Any] = field(default_factory=dict)
+    cross_process_attach_probe: dict[str, Any] = field(default_factory=dict)
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    next_paused_event_capture_execution: dict[str, Any] = field(default_factory=dict)
+    continuation_checkpoint: dict[str, Any] = field(default_factory=dict)
+    multi_step_workflow: dict[str, Any] = field(default_factory=dict)
+    multi_step_execution: dict[str, Any] = field(default_factory=dict)
+    requested_action: str = "inspect"
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    requested: bool = False
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionCrossProcessSessionLifecycleSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_cross_process_session_lifecycle")
+            or context.get("pausedSessionCrossProcessSessionLifecycle")
+            or context.get("paused-session-cross-process-session-lifecycle")
+            or context.get("cross_process_session_lifecycle")
+            or context.get("crossProcessSessionLifecycle")
+            or context.get("review_paused_session_lifecycle")
+            or context.get("reviewPausedSessionLifecycle")
+            or context.get("paused_session_lifecycle")
+            or context.get("pausedSessionLifecycle")
+        )
+        preflight = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_live_continuation_preflight",
+                "pausedSessionLiveContinuationPreflight",
+                "paused-session-live-continuation-preflight",
+                "live_continuation_preflight",
+                "liveContinuationPreflight",
+            ),
+            "preflight",
+        )
+        readiness = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_target_attach_readiness",
+                "pausedSessionTargetAttachReadiness",
+                "paused-session-target-attach-readiness",
+                "target_attach_readiness",
+                "targetAttachReadiness",
+            ),
+            "readiness",
+        )
+        plan = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_cross_process_execution_plan",
+                "pausedSessionCrossProcessExecutionPlan",
+                "paused-session-cross-process-execution-plan",
+                "cross_process_execution_plan",
+                "crossProcessExecutionPlan",
+            ),
+            "plan",
+        )
+        attach_probe = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_cross_process_attach_probe",
+                "pausedSessionCrossProcessAttachProbe",
+                "paused-session-cross-process-attach-probe",
+                "cross_process_attach_probe",
+                "crossProcessAttachProbe",
+            ),
+            "probe",
+        )
+        recovery = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_live_callframe_recovery",
+                "pausedSessionLiveCallframeRecovery",
+                "paused-session-live-callframe-recovery",
+                "live_callframe_recovery",
+                "liveCallframeRecovery",
+            ),
+            "recovery",
+        )
+        capture_execution = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_next_paused_event_capture_execution",
+                "pausedSessionNextPausedEventCaptureExecution",
+                "paused-session-next-paused-event-capture-execution",
+                "next_paused_event_capture_execution",
+                "nextPausedEventCaptureExecution",
+            ),
+            "execution",
+        )
+        checkpoint = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_cross_process_continuation_checkpoint",
+                "pausedSessionCrossProcessContinuationCheckpoint",
+                "paused-session-cross-process-continuation-checkpoint",
+                "continuation_checkpoint",
+                "continuationCheckpoint",
+            ),
+            "checkpoint",
+        )
+        workflow = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_multi_step_continuation_workflow",
+                "pausedSessionMultiStepContinuationWorkflow",
+                "paused-session-multi-step-continuation-workflow",
+                "multi_step_continuation_workflow",
+                "multiStepContinuationWorkflow",
+            ),
+            "workflow",
+        )
+        execution = cls._nested(
+            _first_dict(
+                context,
+                "paused_session_multi_step_continuation_execution",
+                "pausedSessionMultiStepContinuationExecution",
+                "paused-session-multi-step-continuation-execution",
+                "multi_step_continuation_execution",
+                "multiStepContinuationExecution",
+            ),
+            "execution",
+        )
+        if not requested and not any((preflight, readiness, plan, attach_probe, recovery, capture_execution, checkpoint, workflow, execution)):
+            return None
+        action = str(
+            context.get(
+                "requested_action",
+                context.get(
+                    "requestedAction",
+                    execution.get("selected_action")
+                    or execution.get("requested_action")
+                    or workflow.get("requested_action")
+                    or checkpoint.get("requested_action")
+                    or recovery.get("requested_action")
+                    or plan.get("requested_action")
+                    or preflight.get("requested_action")
+                    or "inspect",
+                ),
+            )
+            or "inspect"
+        ).strip().replace("-", "_").lower()
+        pause_session_id = (
+            context.get("pause_session_id")
+            or context.get("pauseSessionId")
+            or execution.get("pause_session_id")
+            or workflow.get("pause_session_id")
+            or checkpoint.get("pause_session_id")
+            or recovery.get("pause_session_id")
+            or attach_probe.get("pause_session_id")
+            or plan.get("pause_session_id")
+            or readiness.get("pause_session_id")
+            or preflight.get("pause_session_id")
+            or preflight.get("session_id")
+        )
+        target_id = (
+            context.get("target_id")
+            or context.get("targetId")
+            or recovery.get("target_id")
+            or attach_probe.get("target_id")
+            or cls._selected_target_id(readiness)
+            or cls._selected_target_id(plan.get("target_attach_readiness_summary") if isinstance(plan.get("target_attach_readiness_summary"), dict) else {})
+        )
+        return cls(
+            live_continuation_preflight=preflight,
+            target_attach_readiness=readiness,
+            cross_process_execution_plan=plan,
+            cross_process_attach_probe=attach_probe,
+            live_callframe_recovery=recovery,
+            next_paused_event_capture_execution=capture_execution,
+            continuation_checkpoint=checkpoint,
+            multi_step_workflow=workflow,
+            multi_step_execution=execution,
+            requested_action=action,
+            pause_session_id=str(pause_session_id) if pause_session_id else None,
+            target_id=str(target_id).strip() if target_id else None,
+            requested=requested,
+        )
+
+    @staticmethod
+    def _nested(value: dict[str, Any], key: str) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        nested = value.get(key)
+        if isinstance(nested, dict):
+            return dict(nested)
+        return dict(value)
+
+    @staticmethod
+    def _selected_target_id(value: dict[str, Any]) -> str:
+        if not isinstance(value, dict):
+            return ""
+        selected = value.get("selected_target") if isinstance(value.get("selected_target"), dict) else {}
+        if not selected:
+            correlation = value.get("target_correlation") if isinstance(value.get("target_correlation"), dict) else {}
+            selected = correlation.get("selected_target") if isinstance(correlation.get("selected_target"), dict) else {}
+        if not selected:
+            summary = value.get("target_attach_readiness_summary") if isinstance(value.get("target_attach_readiness_summary"), dict) else {}
+            selected = summary.get("selected_target") if isinstance(summary.get("selected_target"), dict) else {}
+        target_id = selected.get("target_id") or selected.get("targetId") or selected.get("id") or value.get("target_id") or value.get("targetId")
+        return str(target_id).strip() if target_id is not None else ""
+
+
+@dataclass(slots=True)
+class PausedSessionCrossProcessSessionLifecycleResult:
+    status: str
+    lifecycle: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "lifecycle": self.lifecycle,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class PausedSessionCrossProcessSessionLifecycleManager:
+    """Read-only lifecycle reviewer for cross-process paused-session continuation evidence."""
+
+    def review(self, spec: PausedSessionCrossProcessSessionLifecycleSpec | None) -> PausedSessionCrossProcessSessionLifecycleResult:
+        blockers = self._blockers(spec)
+        status = "ready_for_review" if not blockers else "blocked"
+        payload = self._payload(spec, status=status, blockers=blockers)
+        return PausedSessionCrossProcessSessionLifecycleResult(
+            status=status,
+            lifecycle=payload,
+            side_effect_policy=self._side_effect_policy(),
+            reason=blockers[0] if blockers else None,
+        )
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionCrossProcessSessionLifecycleSpec | None) -> list[str]:
+        if spec is None:
+            return ["paused_session_lifecycle_request_missing"]
+        blockers: list[str] = []
+        if not spec.pause_session_id:
+            blockers.append("pause_session_id_required")
+        if not spec.target_id:
+            blockers.append("target_id_required")
+        if not any((spec.live_continuation_preflight, spec.target_attach_readiness, spec.cross_process_execution_plan, spec.cross_process_attach_probe, spec.live_callframe_recovery, spec.continuation_checkpoint, spec.multi_step_workflow, spec.multi_step_execution)):
+            blockers.append("paused_session_lifecycle_evidence_required")
+        if spec.target_attach_readiness:
+            readiness_status = str(spec.target_attach_readiness.get("status") or "")
+            if readiness_status in {"blocked", "failed", "failure", "error", "unsupported"} or spec.target_attach_readiness.get("target_attach_readiness_proven") is False:
+                blockers.append("target_attach_readiness_not_ready")
+        if spec.cross_process_execution_plan:
+            plan_status = str(spec.cross_process_execution_plan.get("status") or "")
+            if plan_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("cross_process_execution_plan_not_ready")
+        if spec.cross_process_attach_probe:
+            probe_status = str(spec.cross_process_attach_probe.get("status") or "")
+            if probe_status in {"failed", "failure", "error", "unsupported"}:
+                blockers.append("attach_probe_failed")
+        if spec.live_callframe_recovery:
+            recovery_status = str(spec.live_callframe_recovery.get("status") or "")
+            if recovery_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("live_callframe_recovery_not_ready")
+        if spec.multi_step_execution:
+            execution_status = str(spec.multi_step_execution.get("status") or "")
+            if execution_status in {"failed", "failure", "error", "unsupported"}:
+                blockers.append("multi_step_execution_failed")
+        if spec.requested_action in PAUSED_SESSION_LIVE_ACTIONS and not cls._has_live_callframe_path(spec):
+            blockers.append("live_callframe_recovery_or_checkpoint_required_for_live_action")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _has_live_callframe_path(cls, spec: PausedSessionCrossProcessSessionLifecycleSpec) -> bool:
+        recovery = spec.live_callframe_recovery
+        checkpoint = spec.continuation_checkpoint
+        workflow = spec.multi_step_workflow
+        execution = spec.multi_step_execution
+        return bool(
+            (recovery and recovery.get("status") == "recovered" and recovery.get("live_callframe_recovered") is True)
+            or (checkpoint and (checkpoint.get("continuation_ready_for_next_action") is True or checkpoint.get("live_callframe_recovery_ready") is True or str(checkpoint.get("status") or "") in {"ready_for_next_action_review", "ready_for_live_callframe_recovery"}))
+            or (workflow and str(workflow.get("status") or "") in {"ready_for_review", "planned"})
+            or (execution and str(execution.get("status") or "") in {"executed", "captured", "ready_for_review"})
+        )
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionCrossProcessSessionLifecycleSpec | None, *, status: str, blockers: list[str]) -> dict[str, Any]:
+        preflight = spec.live_continuation_preflight if spec else {}
+        readiness = spec.target_attach_readiness if spec else {}
+        plan = spec.cross_process_execution_plan if spec else {}
+        probe = spec.cross_process_attach_probe if spec else {}
+        recovery = spec.live_callframe_recovery if spec else {}
+        capture = spec.next_paused_event_capture_execution if spec else {}
+        checkpoint = spec.continuation_checkpoint if spec else {}
+        workflow = spec.multi_step_workflow if spec else {}
+        execution = spec.multi_step_execution if spec else {}
+        attached_session_id = probe.get("attached_session_id") or recovery.get("attached_session_id") or execution.get("attached_session_id")
+        live_callframe_id = recovery.get("live_callframe_id") or execution.get("live_callframe_id") or checkpoint.get("live_callframe_id")
+        target_attached = bool(probe.get("target_attached") or recovery.get("target_attached") or execution.get("target_attached"))
+        target_detached = bool(probe.get("target_detached"))
+        callframe_recovered = bool(recovery.get("live_callframe_recovered") or execution.get("live_callframe_recovered"))
+        ready = status == "ready_for_review"
+        return {
+            "schema_version": "reverse-deepagent.paused-session-cross-process-session-lifecycle.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "target_id": spec.target_id if spec else None,
+            "requested_action": spec.requested_action if spec else "inspect",
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "evidence_statuses": {
+                "live_continuation_preflight": preflight.get("status"),
+                "target_attach_readiness": readiness.get("status"),
+                "cross_process_execution_plan": plan.get("status"),
+                "cross_process_attach_probe": probe.get("status"),
+                "live_callframe_recovery": recovery.get("status"),
+                "next_paused_event_capture_execution": capture.get("status"),
+                "continuation_checkpoint": checkpoint.get("status"),
+                "multi_step_workflow": workflow.get("status"),
+                "multi_step_execution": execution.get("status"),
+            },
+            "session_diagnostics": {
+                "live_preflight_available": bool(preflight),
+                "live_continuation_available": bool(preflight.get("live_continuation_available") or preflight.get("available")),
+                "durable_snapshot_source": preflight.get("source") == "durable_snapshot" or preflight.get("source") == "artifact",
+                "attached_session_id_present": bool(attached_session_id),
+                "attached_session_retained": bool(attached_session_id and not target_detached),
+                "target_attached": target_attached,
+                "target_detached": target_detached,
+                "target_lifecycle_observed": bool(probe or recovery or execution),
+            },
+            "target_diagnostics": {
+                "target_attach_readiness_proven": bool(readiness.get("target_attach_readiness_proven") or plan.get("target_attach_readiness_proven")),
+                "target_attach_candidate_selected": bool(spec and spec.target_id),
+                "target_attach_probe_status": probe.get("status"),
+                "target_attached": target_attached,
+                "target_detached": target_detached,
+                "target_still_attached_by_evidence": bool(target_attached and not target_detached),
+                "target_still_alive_proven": False,
+                "target_still_alive_proof_requires_cdp_probe": True,
+            },
+            "debugger_diagnostics": {
+                "debugger_domain_enabled_by_lifecycle_manager": False,
+                "live_callframe_recovered": callframe_recovered,
+                "live_callframe_id_present": bool(live_callframe_id),
+                "fresh_paused_event_after_attach": bool(recovery.get("fresh_paused_event_after_attach") or capture.get("paused_event_captured")),
+                "next_paused_event_captured": bool(capture.get("paused_event_captured")),
+                "continuation_ready_for_next_action": bool(checkpoint.get("continuation_ready_for_next_action")),
+                "continuation_ready_for_live_callframe_recovery": bool(checkpoint.get("live_callframe_recovery_ready")),
+            },
+            "continuation_diagnostics": {
+                "multi_step_workflow_ready": str(workflow.get("status") or "") in {"ready_for_review", "planned"},
+                "multi_step_iteration_executed": bool(execution.get("multi_step_iteration_executed")),
+                "automatic_multi_step_loop_supported": False,
+                "automatic_live_callframe_recovery_supported": False,
+                "automatic_wrapper_continuation_supported": False,
+                "next_manual_checkpoint_required": True,
+            },
+            "readiness": {
+                "can_review_next_action": ready,
+                "can_review_live_callframe_recovery": bool(checkpoint.get("live_callframe_recovery_ready") or capture.get("live_callframe_recovery_ready")),
+                "requires_manual_review": True,
+                "requires_fresh_evidence_before_action": True,
+            },
+            "next_action": cls._next_action(status=status, blockers=blockers, spec=spec),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "cdp_target_detached": False,
+            "cdp_target_probed": False,
+            "debugger_domain_enabled": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "live_callframe_recovered": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "automatic_multi_step_loop": False,
+            "automatic_wrapper_continuation": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "paused_session_lifecycle_request_missing": ("request", "No paused-session lifecycle review request was provided.", "request_paused_session_lifecycle_review"),
+            "pause_session_id_required": ("session", "A pause_session_id is required to correlate lifecycle evidence.", "provide_pause_session_id"),
+            "target_id_required": ("target", "A target_id or selected target evidence is required for cross-process lifecycle review.", "provide_target_attach_readiness_or_attach_probe"),
+            "paused_session_lifecycle_evidence_required": ("evidence", "At least one paused-session continuation artifact is required.", "provide_paused_session_continuation_evidence"),
+            "target_attach_readiness_not_ready": ("target", "Target attach readiness evidence is blocked or not proven.", "resolve_target_attach_readiness_blockers"),
+            "cross_process_execution_plan_not_ready": ("plan", "Cross-process execution plan evidence is blocked.", "resolve_cross_process_execution_plan_blockers"),
+            "attach_probe_failed": ("target", "Attach probe evidence failed or is unsupported.", "rerun_reviewed_attach_probe_or_refresh_target"),
+            "live_callframe_recovery_not_ready": ("debugger", "Live callFrame recovery evidence is blocked or failed.", "capture_fresh_paused_event_after_attach"),
+            "multi_step_execution_failed": ("debugger", "Multi-step one-iteration execution failed or is unsupported.", "review_multi_step_execution_failure"),
+            "live_callframe_recovery_or_checkpoint_required_for_live_action": ("debugger", "Live actions require recovered live callFrame evidence or a continuation checkpoint.", "recover_live_callframe_or_checkpoint_continuation"),
+        }
+        return [
+            {
+                "code": blocker,
+                "category": catalog.get(blocker, ("unknown", blocker, "review_paused_session_lifecycle"))[0],
+                "explanation": catalog.get(blocker, ("unknown", blocker, "review_paused_session_lifecycle"))[1],
+                "next_action": catalog.get(blocker, ("unknown", blocker, "review_paused_session_lifecycle"))[2],
+            }
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], spec: PausedSessionCrossProcessSessionLifecycleSpec | None) -> str:
+        if status == "ready_for_review":
+            return "review_paused_session_lifecycle_before_next_continuation_step"
+        if "target_attach_readiness_not_ready" in blockers or "target_id_required" in blockers:
+            return "produce_or_fix_target_attach_readiness"
+        if "cross_process_execution_plan_not_ready" in blockers:
+            return "resolve_cross_process_execution_plan_blockers"
+        if "attach_probe_failed" in blockers:
+            return "rerun_reviewed_attach_probe_or_refresh_target"
+        if "live_callframe_recovery_not_ready" in blockers or "live_callframe_recovery_or_checkpoint_required_for_live_action" in blockers:
+            return "recover_live_callframe_or_checkpoint_continuation"
+        if "paused_session_lifecycle_evidence_required" in blockers:
+            return "provide_paused_session_continuation_evidence"
+        if "pause_session_id_required" in blockers:
+            return "provide_pause_session_id"
+        return "resolve_paused_session_lifecycle_blockers"
+
+
+@dataclass(slots=True)
 class PausedSessionCrossProcessAttachProbeSpec:
     """Explicit reviewed CDP target attach probe after cross-process execution planning."""
 
