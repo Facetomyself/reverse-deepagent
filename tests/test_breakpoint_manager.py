@@ -7,6 +7,8 @@ from reverse_deepagent.browser.hooks import (
     BreakpointManager,
     BreakpointSpec,
     PausedSessionActionSpec,
+    PausedSessionCrossProcessExecutionPlanManager,
+    PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionLiveContinuationPreflightManager,
     PausedSessionLiveContinuationPreflightSpec,
     PausedSessionTargetAttachReadinessManager,
@@ -720,6 +722,70 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.readiness["target_correlation"]["url_match"])
         self.assertFalse(result.readiness["attachability"]["would_probe_cdp_target"])
         self.assertFalse(result.side_effect_policy["browser_resumed"])
+
+    def test_cross_process_execution_plan_uses_attach_readiness_without_side_effects(self) -> None:
+        spec = PausedSessionCrossProcessExecutionPlanSpec.from_context(
+            {
+                "paused_session_cross_process_execution_plan": True,
+                "paused_session_target_attach_readiness": {
+                    "readiness": {
+                        "status": "ready_for_attach_review",
+                        "source": "durable_snapshot",
+                        "pause_session_id": "plan-session-1",
+                        "requested_action": "evaluate",
+                        "target_attach_readiness_proven": True,
+                        "target_correlation": {
+                            "expected_url": "https://example.test/app.js",
+                            "candidate_count": 1,
+                            "selected_target": {"target_id": "target-1", "type": "page", "url": "https://example.test/app.js"},
+                        },
+                        "attachability": {
+                            "target_id_available": True,
+                            "target_type_supported": True,
+                            "requires_explicit_future_attach_step": True,
+                        },
+                        "callframe_recovery": {
+                            "stable_live_callframe_available": False,
+                            "selected_callframe_has_id": True,
+                            "requires_new_paused_event_after_attach": True,
+                        },
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionCrossProcessExecutionPlanManager().plan(spec)
+        plan = result.plan
+
+        self.assertEqual(result.status, "ready_for_executor_review")
+        self.assertTrue(plan["execution_plan_ready_for_review"])
+        self.assertFalse(plan["cross_process_execution_ready"])
+        self.assertFalse(plan["cross_process_executor_implemented"])
+        self.assertEqual(plan["next_action"], "implement_reviewed_cross_process_attach_probe_next")
+        self.assertEqual(plan["target_attach_readiness_summary"]["selected_target"]["target_id"], "target-1")
+        self.assertTrue(plan["review_gates"]["attach_probe_review_required"])
+        self.assertTrue(plan["review_gates"]["action_execution_review_required"])
+        self.assertTrue(plan["callframe_recovery_plan"]["requires_new_paused_event_after_attach"])
+        self.assertIn("cross_process_execution_executor_not_implemented", plan["capability_boundaries"])
+        self.assertFalse(result.side_effect_policy["would_attach_cdp_target"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["browser_resumed"])
+        self.assertFalse(result.side_effect_policy["debugger_stepped"])
+        self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_cross_process_execution_plan_blocks_without_attach_readiness(self) -> None:
+        result = PausedSessionCrossProcessExecutionPlanManager().plan(
+            PausedSessionCrossProcessExecutionPlanSpec.from_context(
+                {"paused_session_cross_process_execution_plan": True, "pause_session_id": "missing-readiness"}
+            )
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("target_attach_readiness_required", result.plan["blockers"])
+        self.assertEqual(result.plan["next_action"], "produce_paused_session_target_attach_readiness")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
 
     def test_missing_paused_session_reports_unavailable_preflight(self) -> None:
         BreakpointManager.clear_paused_sessions()

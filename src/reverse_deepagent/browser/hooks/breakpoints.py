@@ -868,6 +868,249 @@ class PausedSessionTargetAttachReadinessManager:
         return {}
 
 
+@dataclass(slots=True)
+class PausedSessionCrossProcessExecutionPlanSpec:
+    """Plan-only executor design review after target attach readiness proof."""
+
+    target_attach_readiness: dict[str, Any] = field(default_factory=dict)
+    requested_action: str = "inspect"
+    pause_session_id: str | None = None
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionCrossProcessExecutionPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_cross_process_execution_plan")
+            or context.get("pausedSessionCrossProcessExecutionPlan")
+            or context.get("paused-session-cross-process-execution-plan")
+            or context.get("cross_process_paused_session_execution_plan")
+            or context.get("crossProcessPausedSessionExecutionPlan")
+            or context.get("plan_cross_process_paused_session_execution")
+            or context.get("planCrossProcessPausedSessionExecution")
+        )
+        readiness_container = _first_dict(
+            context,
+            "paused_session_target_attach_readiness",
+            "pausedSessionTargetAttachReadiness",
+            "paused-session-target-attach-readiness",
+            "target_attach_readiness",
+            "targetAttachReadiness",
+        )
+        if isinstance(readiness_container.get("readiness"), dict):
+            readiness = dict(readiness_container["readiness"])
+        else:
+            readiness = readiness_container
+        if not requested and not readiness:
+            return None
+        action = str(
+            context.get(
+                "requested_action",
+                context.get("requestedAction", readiness.get("requested_action", "inspect")),
+            )
+            or "inspect"
+        ).strip().replace("-", "_").lower()
+        session_id = (
+            context.get("pause_session_id")
+            or context.get("pauseSessionId")
+            or readiness.get("pause_session_id")
+            or readiness.get("session_id")
+        )
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        return cls(
+            target_attach_readiness=readiness,
+            requested_action=action,
+            pause_session_id=str(session_id) if session_id else None,
+            reviewer=str(reviewer) if reviewer else None,
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionCrossProcessExecutionPlanResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionCrossProcessExecutionPlanManager:
+    """Build a read-only execution-plan descriptor after target attach readiness proof."""
+
+    LIVE_ACTIONS = PAUSED_SESSION_LIVE_ACTIONS
+
+    def plan(self, spec: PausedSessionCrossProcessExecutionPlanSpec | None) -> PausedSessionCrossProcessExecutionPlanResult:
+        policy = self._side_effect_policy()
+        blockers = self._blockers(spec)
+        status = "ready_for_executor_review" if not blockers else "blocked"
+        plan = self._plan_payload(spec, blockers=blockers)
+        return PausedSessionCrossProcessExecutionPlanResult(status=status, plan=plan, side_effect_policy=policy, reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionCrossProcessExecutionPlanSpec | None) -> list[str]:
+        blockers: list[str] = []
+        readiness = spec.target_attach_readiness if spec else {}
+        if not spec:
+            blockers.append("cross_process_execution_plan_request_missing")
+        if not readiness:
+            blockers.append("target_attach_readiness_required")
+        if readiness and readiness.get("status") == "blocked":
+            blockers.append("target_attach_readiness_blocked")
+        if readiness and not readiness.get("target_attach_readiness_proven"):
+            blockers.append("target_attach_readiness_not_proven")
+        if readiness and not _first_dict(readiness, "target_correlation").get("selected_target") and not _first_dict(readiness, "attachability").get("target_id_available"):
+            blockers.append("target_attach_candidate_not_selected")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _plan_payload(cls, spec: PausedSessionCrossProcessExecutionPlanSpec | None, *, blockers: list[str]) -> dict[str, Any]:
+        readiness = spec.target_attach_readiness if spec else {}
+        action = spec.requested_action if spec else "inspect"
+        target_correlation = _first_dict(readiness, "target_correlation")
+        attachability = _first_dict(readiness, "attachability")
+        callframe_recovery = _first_dict(readiness, "callframe_recovery")
+        paused_session_evidence = _first_dict(readiness, "paused_session_evidence")
+        target_attach_ready = bool(readiness.get("target_attach_readiness_proven")) and not any(
+            blocker in blockers
+            for blocker in (
+                "target_attach_readiness_required",
+                "target_attach_readiness_blocked",
+                "target_attach_readiness_not_proven",
+                "target_attach_candidate_not_selected",
+            )
+        )
+        action_is_live = action in cls.LIVE_ACTIONS
+        return {
+            "schema_version": "reverse-deepagent.paused-session-cross-process-execution-plan.v1",
+            "status": "ready_for_executor_review" if not blockers else "blocked",
+            "pause_session_id": spec.pause_session_id if spec else readiness.get("pause_session_id"),
+            "requested_action": action,
+            "reviewer": spec.reviewer if spec else None,
+            "target_attach_readiness_proven": bool(readiness.get("target_attach_readiness_proven")),
+            "target_attach_readiness_status": readiness.get("status"),
+            "execution_plan_ready_for_review": target_attach_ready,
+            "cross_process_execution_ready": False,
+            "cross_process_executor_implemented": False,
+            "cross_process_action_supported": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "capability_boundaries": [
+                "cross_process_execution_executor_not_implemented",
+                "future_attach_probe_requires_explicit_review",
+                "durable_callframe_id_not_reusable_for_live_actions",
+            ],
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(blockers),
+            "target_attach_readiness_summary": {
+                "source": readiness.get("source"),
+                "expected_url": target_correlation.get("expected_url"),
+                "candidate_count": target_correlation.get("candidate_count", 0),
+                "selected_target": target_correlation.get("selected_target") if isinstance(target_correlation.get("selected_target"), dict) else {},
+                "target_id_available": bool(attachability.get("target_id_available")),
+                "target_type_supported": bool(attachability.get("target_type_supported")),
+                "requires_explicit_future_attach_step": bool(attachability.get("requires_explicit_future_attach_step", True)),
+            },
+            "callframe_recovery_plan": {
+                "stable_live_callframe_available": bool(callframe_recovery.get("stable_live_callframe_available")),
+                "durable_callframe_id_reusable": False,
+                "requires_new_paused_event_after_attach": bool(callframe_recovery.get("requires_new_paused_event_after_attach", True)),
+                "selected_callframe_has_id": bool(callframe_recovery.get("selected_callframe_has_id")),
+            },
+            "planned_stages": cls._planned_stages(action=action, action_is_live=action_is_live),
+            "review_gates": {
+                "target_attach_readiness_review_required": True,
+                "attach_probe_review_required": True,
+                "live_callframe_recovery_review_required": action_is_live,
+                "action_execution_review_required": action_is_live,
+                "automatic_approval": False,
+            },
+            "paused_session_evidence": paused_session_evidence,
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "would_attach_cdp_target": False,
+            "would_probe_cdp_target": False,
+            "cdp_command_sent": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _planned_stages(*, action: str, action_is_live: bool) -> list[dict[str, Any]]:
+        stages = [
+            {
+                "stage": "review_target_attach_readiness",
+                "status": "planned",
+                "side_effects": False,
+                "description": "Reviewer confirms paused-session evidence and CDP target correlation.",
+            },
+            {
+                "stage": "future_reviewed_attach_probe",
+                "status": "blocked_until_executor_exists",
+                "side_effects": False,
+                "description": "Future executor may attach the correlated CDP target only after explicit review approval.",
+            },
+            {
+                "stage": "future_live_callframe_recovery",
+                "status": "required" if action_is_live else "not_required_for_inspect",
+                "side_effects": False,
+                "description": "Future executor must capture a new live paused event after attach; durable callFrameId is not reusable.",
+            },
+        ]
+        if action_is_live:
+            stages.append(
+                {
+                    "stage": f"future_reviewed_{action}_execution",
+                    "status": "blocked_until_executor_exists",
+                    "side_effects": False,
+                    "description": "Future executor may run exactly one reviewed paused-session action after live callframe recovery.",
+                }
+            )
+        return stages
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "cross_process_execution_plan_request_missing": ("request", "No cross-process execution plan request was provided.", "request_cross_process_execution_plan"),
+            "target_attach_readiness_required": ("readiness", "A paused-session target attach readiness artifact is required before planning executor follow-through.", "produce_paused_session_target_attach_readiness"),
+            "target_attach_readiness_blocked": ("readiness", "The supplied target attach readiness artifact is blocked.", "resolve_target_attach_readiness_blockers"),
+            "target_attach_readiness_not_proven": ("readiness", "Target attach readiness has not been proven.", "collect_target_candidates_and_reassess_readiness"),
+            "target_attach_candidate_not_selected": ("cdp_target", "No selected target / target id is available for future attach.", "refresh_target_candidates_before_executor_review"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_execution_plan"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_execution_plan"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_cross_process_execution_plan"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(blockers: list[str]) -> str:
+        if "target_attach_readiness_required" in blockers:
+            return "produce_paused_session_target_attach_readiness"
+        if any(blocker.startswith("target_attach_readiness") or blocker == "target_attach_candidate_not_selected" for blocker in blockers):
+            return "resolve_target_attach_readiness_blockers"
+        return "implement_reviewed_cross_process_attach_probe_next"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 

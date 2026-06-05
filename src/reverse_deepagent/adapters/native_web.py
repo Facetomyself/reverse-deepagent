@@ -124,6 +124,8 @@ from reverse_deepagent.browser.hooks import (
     PageMutationAuditManager,
     PageMutationAuditSpec,
     PausedSessionActionSpec,
+    PausedSessionCrossProcessExecutionPlanManager,
+    PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionLiveContinuationPreflightManager,
     PausedSessionLiveContinuationPreflightSpec,
     PausedSessionTargetAttachReadinessManager,
@@ -1130,6 +1132,69 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_cross_process_execution_plan_request(protection_name, context):
+            spec = PausedSessionCrossProcessExecutionPlanSpec.from_context(context)
+            result = PausedSessionCrossProcessExecutionPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            target_summary = plan.get("target_attach_readiness_summary") if isinstance(plan.get("target_attach_readiness_summary"), dict) else {}
+            callframe_plan = plan.get("callframe_recovery_plan") if isinstance(plan.get("callframe_recovery_plan"), dict) else {}
+            review_gates = plan.get("review_gates") if isinstance(plan.get("review_gates"), dict) else {}
+            verification = [
+                f"paused_session_cross_process_execution_plan_status={result.status}",
+                f"paused_session_cross_process_execution_plan_reason={result.reason or ''}",
+                f"paused_session_cross_process_execution_plan_requested_action={plan.get('requested_action')}",
+                f"paused_session_cross_process_execution_plan_ready_for_review={plan.get('execution_plan_ready_for_review', False)}",
+                f"paused_session_cross_process_execution_ready={plan.get('cross_process_execution_ready', False)}",
+                f"paused_session_cross_process_executor_implemented={plan.get('cross_process_executor_implemented', False)}",
+                f"paused_session_cross_process_action_supported={plan.get('cross_process_action_supported', False)}",
+                f"paused_session_cross_process_target_attach_readiness_proven={plan.get('target_attach_readiness_proven', False)}",
+                f"paused_session_cross_process_target_id_available={target_summary.get('target_id_available', False)}",
+                f"paused_session_cross_process_target_type_supported={target_summary.get('target_type_supported', False)}",
+                f"paused_session_cross_process_requires_new_paused_event_after_attach={callframe_plan.get('requires_new_paused_event_after_attach', True)}",
+                f"paused_session_cross_process_attach_probe_review_required={review_gates.get('attach_probe_review_required', True)}",
+                f"paused_session_cross_process_action_execution_review_required={review_gates.get('action_execution_review_required', False)}",
+                f"paused_session_cross_process_blockers={','.join(str(item) for item in blockers)}",
+                f"paused_session_cross_process_would_attach_cdp_target={policy.get('would_attach_cdp_target', False)}",
+                f"paused_session_cross_process_would_probe_cdp_target={policy.get('would_probe_cdp_target', False)}",
+                f"paused_session_cross_process_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_cross_process_browser_resumed={policy.get('browser_resumed', False)}",
+                f"paused_session_cross_process_debugger_stepped={policy.get('debugger_stepped', False)}",
+                f"paused_session_cross_process_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_cross_process_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_cross_process_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-cross-process-execution-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only cross-process paused-session execution plan.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "pause_session_id": plan.get("pause_session_id"),
+                        "requested_action": plan.get("requested_action"),
+                        "execution_plan_ready_for_review": plan.get("execution_plan_ready_for_review", False),
+                        "cross_process_execution_ready": plan.get("cross_process_execution_ready", False),
+                        "cross_process_executor_implemented": plan.get("cross_process_executor_implemented", False),
+                        "blockers": blockers,
+                        "target_attach_readiness_summary": target_summary,
+                        "callframe_recovery_plan": callframe_plan,
+                        "review_gates": review_gates,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["plan_paused_session_cross_process_execution"],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_executor_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "inspect_cross_process_execution_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_executor_review" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_target_attach_readiness_request(protection_name, context):
             spec = PausedSessionTargetAttachReadinessSpec.from_context(context)
@@ -4927,6 +4992,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_cross_process_execution_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_live_continuation_preflight_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_target_attach_readiness_request(protection_name, context):
@@ -4949,6 +5016,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_cross_process_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-cross-process-execution-plan",
+            "pause-session-cross-process-execution-plan",
+            "debugger-paused-session-cross-process-execution-plan",
+            "cross-process-paused-session-execution-plan",
+            "plan-cross-process-paused-session-execution",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_cross_process_execution_plan",
+                "pausedSessionCrossProcessExecutionPlan",
+                "paused-session-cross-process-execution-plan",
+                "cross_process_paused_session_execution_plan",
+                "crossProcessPausedSessionExecutionPlan",
+                "plan_cross_process_paused_session_execution",
+                "planCrossProcessPausedSessionExecution",
             )
         )
 

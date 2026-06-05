@@ -245,6 +245,73 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(result["summary"]["target_attach_readiness"]["target_attach_readiness_proven"])
         self.assertFalse(result["review_required_items"][0]["attach_readiness_diagnostics"]["url_match"])
 
+    def test_review_debugger_artifacts_warns_for_cross_process_execution_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_execution_plan": {
+                "status": "ready_for_executor_review",
+                "plan": {
+                    "status": "ready_for_executor_review",
+                    "pause_session_id": "cross-plan-1",
+                    "requested_action": "evaluate",
+                    "execution_plan_ready_for_review": True,
+                    "cross_process_execution_ready": False,
+                    "cross_process_executor_implemented": False,
+                    "cross_process_action_supported": False,
+                    "target_attach_readiness_proven": True,
+                    "blockers": [],
+                    "target_attach_readiness_summary": {
+                        "expected_url": "https://example.test/app.js",
+                        "candidate_count": 1,
+                        "selected_target": {"target_id": "target-1", "type": "page"},
+                        "target_id_available": True,
+                    },
+                    "callframe_recovery_plan": {
+                        "requires_new_paused_event_after_attach": True,
+                    },
+                    "review_gates": {
+                        "attach_probe_review_required": True,
+                        "action_execution_review_required": True,
+                    },
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_execution_plan_ready_but_executor_not_implemented", result["warnings"])
+        self.assertEqual(result["next_action"], "implement_reviewed_cross_process_attach_probe_next")
+        plan = result["summary"]["cross_process_execution_plan"]
+        self.assertTrue(plan["execution_plan_ready_for_review"])
+        self.assertFalse(plan["cross_process_execution_ready"])
+        self.assertFalse(plan["cross_process_executor_implemented"])
+        self.assertTrue(plan["target_id_available"])
+        self.assertTrue(plan["requires_new_paused_event_after_attach"])
+        self.assertTrue(result["review_required_items"][0]["cross_process_execution_plan_diagnostics"]["execution_plan_ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_execution_plan_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_execution_plan": {
+                "plan": {
+                    "status": "blocked",
+                    "execution_plan_ready_for_review": False,
+                    "cross_process_execution_ready": False,
+                    "cross_process_executor_implemented": False,
+                    "blockers": ["target_attach_readiness_required"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_execution_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_cross_process_execution_plan_blockers")
+        self.assertFalse(result["summary"]["cross_process_execution_plan"]["execution_plan_ready_for_review"])
+
     def test_review_debugger_artifacts_warns_when_no_artifacts_are_present(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         result = tool("{}")

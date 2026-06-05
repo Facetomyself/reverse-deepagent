@@ -5195,6 +5195,68 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertFalse(follow_up.artifacts[0].metadata["callframe_recovery"]["durable_callframe_id_reusable"])
             self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_native_web_runtime_plans_cross_process_paused_execution_without_cdp_action(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        follow_up = runtime.apply_minimal_protection(
+            "paused-session-cross-process-execution-plan",
+            {
+                "paused_session_cross_process_execution_plan": True,
+                "paused_session_target_attach_readiness": {
+                    "readiness": {
+                        "status": "ready_for_attach_review",
+                        "source": "durable_snapshot",
+                        "pause_session_id": "native-cross-plan",
+                        "requested_action": "evaluate",
+                        "target_attach_readiness_proven": True,
+                        "target_correlation": {
+                            "expected_url": "https://example.test/app.js",
+                            "candidate_count": 1,
+                            "selected_target": {
+                                "target_id": "target-native-plan-1",
+                                "type": "page",
+                                "url": "https://example.test/app.js",
+                            },
+                        },
+                        "attachability": {
+                            "target_id_available": True,
+                            "target_type_supported": True,
+                            "requires_explicit_future_attach_step": True,
+                        },
+                        "callframe_recovery": {
+                            "stable_live_callframe_available": False,
+                            "selected_callframe_has_id": True,
+                            "requires_new_paused_event_after_attach": True,
+                        },
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(follow_up.status.value, "success")
+        self.assertEqual(follow_up.applied_actions, ["plan_paused_session_cross_process_execution"])
+        self.assertEqual(follow_up.next_action, "implement_reviewed_cross_process_attach_probe_next")
+        self.assertIn("paused_session_cross_process_execution_plan_status=ready_for_executor_review", follow_up.verification)
+        self.assertIn("paused_session_cross_process_execution_plan_ready_for_review=True", follow_up.verification)
+        self.assertIn("paused_session_cross_process_execution_ready=False", follow_up.verification)
+        self.assertIn("paused_session_cross_process_executor_implemented=False", follow_up.verification)
+        self.assertIn("paused_session_cross_process_would_attach_cdp_target=False", follow_up.verification)
+        self.assertIn("paused_session_cross_process_cdp_command_sent=False", follow_up.verification)
+        self.assertIn("paused_session_cross_process_calls_mcp=False", follow_up.verification)
+        self.assertIn("paused_session_cross_process_mobile_runtime_used=False", follow_up.verification)
+        self.assertEqual(follow_up.artifacts[0].path, "virtual://workspace/paused-session-cross-process-execution-plan.json")
+        self.assertTrue(follow_up.artifacts[0].metadata["execution_plan_ready_for_review"])
+        self.assertFalse(follow_up.artifacts[0].metadata["cross_process_execution_ready"])
+        self.assertFalse(follow_up.artifacts[0].metadata["cross_process_executor_implemented"])
+        self.assertEqual(
+            follow_up.artifacts[0].metadata["target_attach_readiness_summary"]["selected_target"]["target_id"],
+            "target-native-plan-1",
+        )
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_native_web_runtime_reports_missing_paused_session_preflight(self) -> None:
         BreakpointManager.clear_paused_sessions()
         provider = FakeProvider()

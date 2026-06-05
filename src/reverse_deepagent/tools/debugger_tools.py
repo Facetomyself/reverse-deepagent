@@ -56,6 +56,14 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "target_attach_readiness",
             "targetAttachReadiness",
         )
+        cross_process_execution_plan = _object_alias(
+            payload,
+            "paused_session_cross_process_execution_plan",
+            "paused-session-cross-process-execution-plan",
+            "pausedSessionCrossProcessExecutionPlan",
+            "cross_process_execution_plan",
+            "crossProcessExecutionPlan",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -79,8 +87,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         target_correlation = readiness.get("target_correlation") if isinstance(readiness.get("target_correlation"), dict) else {}
         attachability = readiness.get("attachability") if isinstance(readiness.get("attachability"), dict) else {}
         callframe_recovery = readiness.get("callframe_recovery") if isinstance(readiness.get("callframe_recovery"), dict) else {}
+        execution_plan = _first_object(cross_process_execution_plan.get("plan"), cross_process_execution_plan)
+        execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
+        execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
+        execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -101,6 +113,10 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             blockers.append("paused_session_target_attach_readiness_blocked")
         if readiness.get("target_attach_readiness_proven") and not readiness.get("cross_process_execution_ready"):
             warnings.append("target_attach_ready_but_cross_process_execution_not_implemented")
+        if execution_plan.get("status") == "blocked":
+            blockers.append("paused_session_cross_process_execution_plan_blocked")
+        if execution_plan.get("execution_plan_ready_for_review") and not execution_plan.get("cross_process_executor_implemented"):
+            warnings.append("cross_process_execution_plan_ready_but_executor_not_implemented")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -176,10 +192,25 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "stable_live_callframe_available": _boolish(callframe_recovery.get("stable_live_callframe_available")),
                     "requires_new_paused_event_after_attach": _boolish(callframe_recovery.get("requires_new_paused_event_after_attach")),
                 },
+                "cross_process_execution_plan": {
+                    "status": _string(execution_plan.get("status") or "unknown"),
+                    "pause_session_id": _string(execution_plan.get("pause_session_id")),
+                    "requested_action": _string(execution_plan.get("requested_action") or "unknown"),
+                    "execution_plan_ready_for_review": _boolish(execution_plan.get("execution_plan_ready_for_review")),
+                    "cross_process_execution_ready": _boolish(execution_plan.get("cross_process_execution_ready")),
+                    "cross_process_executor_implemented": _boolish(execution_plan.get("cross_process_executor_implemented")),
+                    "cross_process_action_supported": _boolish(execution_plan.get("cross_process_action_supported")),
+                    "target_attach_readiness_proven": _boolish(execution_plan.get("target_attach_readiness_proven")),
+                    "target_id_available": _boolish(execution_plan_target.get("target_id_available")),
+                    "requires_new_paused_event_after_attach": _boolish(execution_plan_callframe.get("requires_new_paused_event_after_attach")),
+                    "attach_probe_review_required": _boolish(execution_plan_gates.get("attach_probe_review_required")),
+                    "action_execution_review_required": _boolish(execution_plan_gates.get("action_execution_review_required")),
+                    "blockers": execution_plan.get("blockers") if isinstance(execution_plan.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -327,12 +358,16 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "reproduce_pause_in_current_process_before_live_action"
     if "paused_session_target_attach_readiness_blocked" in blockers:
         return "collect_target_candidates_or_match_paused_url_before_attach_review"
+    if "paused_session_cross_process_execution_plan_blocked" in blockers:
+        return "resolve_cross_process_execution_plan_blockers"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
         return "collect_debugger_pause_artifacts_before_review"
     if "target_attach_ready_but_cross_process_execution_not_implemented" in warnings:
         return "review_target_attach_plan_before_cross_process_continuation_executor"
+    if "cross_process_execution_plan_ready_but_executor_not_implemented" in warnings:
+        return "implement_reviewed_cross_process_attach_probe_next"
     if requested_action in _LIVE_ACTIONS and not live_available:
         return "attach_live_paused_session_or_limit_to_inspect_only_review"
     if "paused_session_has_no_callframes" in warnings:
@@ -349,12 +384,14 @@ def _review_required_items(
     warnings: list[str],
     preflight: dict[str, Any],
     readiness: dict[str, Any],
+    execution_plan: dict[str, Any],
     session: dict[str, Any],
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     diagnostics = _preflight_diagnostics_for_review(preflight)
     attach_diagnostics = _attach_readiness_diagnostics_for_review(readiness)
+    execution_plan_diagnostics = _cross_process_execution_plan_diagnostics_for_review(execution_plan)
     for code in blockers:
         items.append(
             {
@@ -365,6 +402,7 @@ def _review_required_items(
                 "reason": _string(preflight.get("reason") or preflight.get("blocked_reason") or session.get("reason") or paused.get("reason")),
                 "diagnostics": diagnostics,
                 "attach_readiness_diagnostics": attach_diagnostics,
+                "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
             }
         )
     for code in warnings:
@@ -373,6 +411,7 @@ def _review_required_items(
             "paused_session_unavailable",
             "paused_session_has_no_callframes",
             "target_attach_ready_but_cross_process_execution_not_implemented",
+            "cross_process_execution_plan_ready_but_executor_not_implemented",
         }:
             items.append(
                 {
@@ -383,6 +422,7 @@ def _review_required_items(
                     "reason": _string(preflight.get("reason") or preflight.get("blocked_reason") or paused.get("reason")),
                     "diagnostics": diagnostics,
                     "attach_readiness_diagnostics": attach_diagnostics,
+                    "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
                 }
             )
     return items
@@ -418,4 +458,21 @@ def _attach_readiness_diagnostics_for_review(readiness: dict[str, Any]) -> dict[
         "would_attach_cdp_target": _boolish(attachability.get("would_attach_cdp_target")),
         "stable_live_callframe_available": _boolish(callframe_recovery.get("stable_live_callframe_available")),
         "requires_new_paused_event_after_attach": _boolish(callframe_recovery.get("requires_new_paused_event_after_attach")),
+    }
+
+
+def _cross_process_execution_plan_diagnostics_for_review(plan: dict[str, Any]) -> dict[str, Any]:
+    target = plan.get("target_attach_readiness_summary") if isinstance(plan.get("target_attach_readiness_summary"), dict) else {}
+    callframe = plan.get("callframe_recovery_plan") if isinstance(plan.get("callframe_recovery_plan"), dict) else {}
+    gates = plan.get("review_gates") if isinstance(plan.get("review_gates"), dict) else {}
+    return {
+        "execution_plan_ready_for_review": _boolish(plan.get("execution_plan_ready_for_review")),
+        "cross_process_execution_ready": _boolish(plan.get("cross_process_execution_ready")),
+        "cross_process_executor_implemented": _boolish(plan.get("cross_process_executor_implemented")),
+        "cross_process_action_supported": _boolish(plan.get("cross_process_action_supported")),
+        "target_attach_readiness_proven": _boolish(plan.get("target_attach_readiness_proven")),
+        "target_id_available": _boolish(target.get("target_id_available")),
+        "requires_new_paused_event_after_attach": _boolish(callframe.get("requires_new_paused_event_after_attach")),
+        "attach_probe_review_required": _boolish(gates.get("attach_probe_review_required")),
+        "action_execution_review_required": _boolish(gates.get("action_execution_review_required")),
     }
