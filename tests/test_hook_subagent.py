@@ -601,6 +601,76 @@ class HookSubagentTests(unittest.TestCase):
         self.assertTrue(result["side_effect_policy"]["read_only"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_continuation_next_iteration_execution_review(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_continuation_next_iteration_execution": {
+                "status": "review_required",
+                "execution": {
+                    "status": "review_required",
+                    "wrapper_next_iteration_executed": False,
+                    "paused_event_captured": False,
+                    "next_action": "approve_closure_wrapper_next_iteration_execution",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_continuation_next_iteration_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_closure_wrapper_next_iteration_execution")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_execution_status"], "review_required")
+        self.assertFalse(result["summary"]["closure_wrapper_continuation_next_iteration_execution_executed"])
+        self.assertFalse(result["summary"]["closure_wrapper_continuation_next_iteration_execution_paused_event_captured"])
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_continuation_next_iteration_execution_status"], "review_required")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
+    def test_review_hook_artifacts_warns_for_executed_closure_wrapper_next_iteration_followup(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_continuation_next_iteration_execution": {
+                "status": "executed",
+                "execution": {
+                    "status": "executed",
+                    "wrapper_next_iteration_executed": True,
+                    "paused_event_captured": True,
+                    "next_action": "harvest_wrapper_events_and_checkpoint_next_iteration",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_continuation_next_iteration_execution_requires_event_harvest_and_checkpoint", result["warnings"])
+        self.assertEqual(result["next_action"], "harvest_wrapper_events_and_checkpoint_next_iteration")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_execution_status"], "executed")
+        self.assertTrue(result["summary"]["closure_wrapper_continuation_next_iteration_execution_executed"])
+        self.assertTrue(result["summary"]["closure_wrapper_continuation_next_iteration_execution_paused_event_captured"])
+
+    def test_review_hook_artifacts_blocks_closure_wrapper_continuation_next_iteration_execution(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_continuation_next_iteration_execution": {
+                "status": "blocked",
+                "execution": {
+                    "status": "blocked",
+                    "blockers": ["live_callframe_recovery_required"],
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("closure_wrapper_continuation_next_iteration_execution_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_closure_wrapper_continuation_next_iteration_execution_blockers")
+        self.assertEqual(result["summary"]["closure_wrapper_continuation_next_iteration_execution_status"], "blocked")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
+
     def test_review_hook_artifacts_warns_for_async_chunk_traversal_graph(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
