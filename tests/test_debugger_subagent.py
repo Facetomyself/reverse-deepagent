@@ -447,6 +447,88 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(plan["automatic_capture_supported"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_warns_for_pre_action_orchestration_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_pre_action_subscribe_and_action": {
+                "orchestration": {
+                    "status": "ready_for_review",
+                    "method": "Debugger.stepOver",
+                    "pre_action_event_subscribed": False,
+                    "action_sent_after_subscription": False,
+                    "paused_event_captured": False,
+                    "captured_event_count": 0,
+                    "callframe_count": 0,
+                    "live_callframe_recovery_ready": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("pre_action_subscribe_and_action_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_pre_action_subscribe_and_action")
+        orchestration = result["summary"]["pre_action_subscribe_and_action"]
+        self.assertEqual(orchestration["status"], "ready_for_review")
+        self.assertFalse(orchestration["paused_event_captured"])
+
+    def test_review_debugger_artifacts_warns_for_captured_pre_action_orchestration(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_pre_action_subscribe_and_action": {
+                "orchestration": {
+                    "status": "captured",
+                    "method": "Debugger.stepOver",
+                    "pre_action_event_subscribed": True,
+                    "action_sent_after_subscription": True,
+                    "live_action_executed": True,
+                    "paused_event_captured": True,
+                    "captured_event_count": 1,
+                    "callframe_count": 1,
+                    "live_callframe_recovery_ready": True,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("pre_action_subscribe_and_action_captured_checkpoint_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_cross_process_continuation")
+        orchestration = result["summary"]["pre_action_subscribe_and_action"]
+        self.assertTrue(orchestration["pre_action_event_subscribed"])
+        self.assertTrue(orchestration["action_sent_after_subscription"])
+        self.assertTrue(orchestration["paused_event_captured"])
+        self.assertEqual(orchestration["callframe_count"], 1)
+
+    def test_review_debugger_artifacts_blocks_pre_action_orchestration_timeout(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_pre_action_subscribe_and_action": {
+                "orchestration": {
+                    "status": "timed_out",
+                    "method": "Debugger.stepOver",
+                    "pre_action_event_subscribed": True,
+                    "action_sent_after_subscription": True,
+                    "live_action_executed": True,
+                    "paused_event_captured": False,
+                    "captured_event_count": 0,
+                    "callframe_count": 0,
+                    "live_callframe_recovery_ready": False,
+                    "blockers": ["next_paused_event_capture_timed_out"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_pre_action_subscribe_and_action_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_pre_action_subscribe_and_action_blockers")
+
     def test_review_debugger_artifacts_warns_for_next_paused_event_capture_execution_review(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

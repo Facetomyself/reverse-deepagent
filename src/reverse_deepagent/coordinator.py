@@ -989,6 +989,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_paused_session_cross_process_one_action_execution": "audit",
     "workspace_paused_session_next_paused_event_capture_plan": "triage",
     "workspace_paused_session_next_paused_event_capture_execution": "audit",
+    "workspace_paused_session_pre_action_subscribe_and_action": "audit",
     "workspace_paused_session_cross_process_continuation_checkpoint": "audit",
     "workspace_closure_functions": "trace",
     "workspace_closure_function_candidates": "triage",
@@ -1818,6 +1819,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["paused-session-next-paused-event-capture-plan.json"] = evidence.details
         elif evidence.source == "paused_session_next_paused_event_capture_execution":
             payloads["paused-session-next-paused-event-capture-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_pre_action_subscribe_and_action":
+            payloads["paused-session-pre-action-subscribe-and-action.json"] = evidence.details
         elif evidence.source == "paused_session_cross_process_continuation_checkpoint":
             payloads["paused-session-cross-process-continuation-checkpoint.json"] = evidence.details
         elif evidence.source == "closure_functions":

@@ -90,6 +90,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "cross_process_one_action",
             "crossProcessOneAction",
         )
+        pre_action_subscribe_and_action = _object_alias(
+            payload,
+            "paused_session_pre_action_subscribe_and_action",
+            "paused-session-pre-action-subscribe-and-action",
+            "pausedSessionPreActionSubscribeAndAction",
+            "pre_action_subscribe_and_action",
+            "preActionSubscribeAndAction",
+            "subscribe_and_action_orchestration",
+            "subscribeAndActionOrchestration",
+        )
         next_paused_event_capture_plan = _object_alias(
             payload,
             "paused_session_next_paused_event_capture_plan",
@@ -143,6 +153,7 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         attach_probe = _first_object(cross_process_attach_probe.get("probe"), cross_process_attach_probe)
         callframe_recovery_artifact = _first_object(live_callframe_recovery.get("recovery"), live_callframe_recovery)
         one_action_execution = _first_object(cross_process_one_action.get("execution"), cross_process_one_action)
+        pre_action_orchestration = _first_object(pre_action_subscribe_and_action.get("orchestration"), pre_action_subscribe_and_action)
         next_capture_plan = _first_object(next_paused_event_capture_plan.get("plan"), next_paused_event_capture_plan)
         next_capture_execution = _first_object(next_paused_event_capture_execution.get("execution"), next_paused_event_capture_execution)
         continuation_checkpoint = _first_object(cross_process_continuation_checkpoint.get("checkpoint"), cross_process_continuation_checkpoint)
@@ -150,7 +161,7 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -201,8 +212,20 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         if one_action_status == "executed":
             warnings.append("cross_process_one_action_executed_review_result")
             method = _string(one_action_execution.get("method"))
-            if method in {"Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"} and not next_capture_plan:
+            if method in {"Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"} and not next_capture_plan and not pre_action_orchestration:
                 warnings.append("cross_process_one_action_next_paused_event_capture_plan_not_observed")
+        pre_action_status = _string(pre_action_orchestration.get("status"))
+        if pre_action_status in {"blocked", "failed", "timed_out"}:
+            blockers.append("paused_session_pre_action_subscribe_and_action_blocked")
+        if pre_action_status == "ready_for_review":
+            warnings.append("pre_action_subscribe_and_action_requires_review")
+        if pre_action_status == "review_required":
+            warnings.append("pre_action_subscribe_and_action_review_required")
+        if pre_action_status == "captured":
+            if not continuation_checkpoint:
+                warnings.append("pre_action_subscribe_and_action_captured_checkpoint_not_observed")
+            else:
+                warnings.append("pre_action_subscribe_and_action_captured_review_result")
         next_capture_status = _string(next_capture_plan.get("status"))
         if next_capture_status == "blocked":
             blockers.append("paused_session_next_paused_event_capture_plan_blocked")
@@ -369,6 +392,20 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "cdp_methods": one_action_execution.get("cdp_methods") if isinstance(one_action_execution.get("cdp_methods"), list) else [],
                     "blockers": one_action_execution.get("blockers") if isinstance(one_action_execution.get("blockers"), list) else [],
                 },
+                "pre_action_subscribe_and_action": {
+                    "status": _string(pre_action_orchestration.get("status") or "unknown"),
+                    "requested_action": _string(pre_action_orchestration.get("requested_action") or "unknown"),
+                    "method": _string(pre_action_orchestration.get("method")),
+                    "pre_action_event_subscribed": _boolish(pre_action_orchestration.get("pre_action_event_subscribed")),
+                    "action_sent_after_subscription": _boolish(pre_action_orchestration.get("action_sent_after_subscription")),
+                    "live_action_executed": _boolish(pre_action_orchestration.get("live_action_executed")),
+                    "paused_event_captured": _boolish(pre_action_orchestration.get("paused_event_captured")),
+                    "captured_event_count": pre_action_orchestration.get("captured_event_count", 0),
+                    "callframe_count": pre_action_orchestration.get("callframe_count", 0),
+                    "live_callframe_recovery_ready": _boolish(pre_action_orchestration.get("live_callframe_recovery_ready")),
+                    "next_action": _string(pre_action_orchestration.get("next_action")),
+                    "blockers": pre_action_orchestration.get("blockers") if isinstance(pre_action_orchestration.get("blockers"), list) else [],
+                },
                 "next_paused_event_capture_plan": {
                     "status": _string(next_capture_plan.get("status") or "unknown"),
                     "plan_ready_for_review": _boolish(next_capture_plan.get("plan_ready_for_review")),
@@ -405,7 +442,7 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, one_action_execution, next_capture_execution, continuation_checkpoint, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, one_action_execution, pre_action_orchestration, next_capture_execution, continuation_checkpoint, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -569,6 +606,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_next_paused_event_capture_plan_blockers"
     if "paused_session_next_paused_event_capture_execution_blocked" in blockers:
         return "inspect_next_paused_event_capture_execution_blockers"
+    if "paused_session_pre_action_subscribe_and_action_blocked" in blockers:
+        return "inspect_pre_action_subscribe_and_action_blockers"
     if "paused_session_cross_process_continuation_checkpoint_blocked" in blockers:
         return "inspect_continuation_checkpoint_blockers"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
@@ -587,6 +626,12 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "approve_cross_process_one_action_execution"
     if "cross_process_one_action_next_paused_event_capture_plan_not_observed" in warnings:
         return "plan_next_paused_event_capture"
+    if "pre_action_subscribe_and_action_requires_review" in warnings or "pre_action_subscribe_and_action_review_required" in warnings:
+        return "approve_pre_action_subscribe_and_action"
+    if "pre_action_subscribe_and_action_captured_checkpoint_not_observed" in warnings:
+        return "checkpoint_cross_process_continuation"
+    if "pre_action_subscribe_and_action_captured_review_result" in warnings:
+        return "review_pre_action_orchestration_result"
     if "next_paused_event_capture_plan_requires_review" in warnings:
         return "review_next_paused_event_capture_plan"
     if "next_paused_event_capture_execution_requires_review" in warnings or "next_paused_event_capture_execution_review_required" in warnings:
@@ -625,6 +670,7 @@ def _review_required_items(
     attach_probe: dict[str, Any],
     live_callframe_recovery: dict[str, Any],
     one_action_execution: dict[str, Any],
+    pre_action_orchestration: dict[str, Any],
     next_capture_execution: dict[str, Any],
     continuation_checkpoint: dict[str, Any],
     session: dict[str, Any],
@@ -637,6 +683,7 @@ def _review_required_items(
     attach_probe_diagnostics = _cross_process_attach_probe_diagnostics_for_review(attach_probe)
     live_callframe_recovery_diagnostics = _live_callframe_recovery_diagnostics_for_review(live_callframe_recovery)
     one_action_diagnostics = _cross_process_one_action_diagnostics_for_review(one_action_execution)
+    pre_action_diagnostics = _pre_action_subscribe_and_action_diagnostics_for_review(pre_action_orchestration)
     next_capture_diagnostics = _next_paused_event_capture_execution_diagnostics_for_review(next_capture_execution)
     continuation_checkpoint_diagnostics = _continuation_checkpoint_diagnostics_for_review(continuation_checkpoint)
     for code in blockers:
@@ -653,6 +700,7 @@ def _review_required_items(
                 "cross_process_attach_probe_diagnostics": attach_probe_diagnostics,
                 "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
                 "cross_process_one_action_diagnostics": one_action_diagnostics,
+                "pre_action_subscribe_and_action_diagnostics": pre_action_diagnostics,
                 "next_paused_event_capture_execution_diagnostics": next_capture_diagnostics,
                 "continuation_checkpoint_diagnostics": continuation_checkpoint_diagnostics,
             }
@@ -672,6 +720,10 @@ def _review_required_items(
             "cross_process_one_action_review_required",
             "cross_process_one_action_executed_review_result",
             "cross_process_one_action_next_paused_event_capture_plan_not_observed",
+            "pre_action_subscribe_and_action_requires_review",
+            "pre_action_subscribe_and_action_review_required",
+            "pre_action_subscribe_and_action_captured_checkpoint_not_observed",
+            "pre_action_subscribe_and_action_captured_review_result",
             "next_paused_event_capture_plan_requires_review",
             "next_paused_event_capture_execution_requires_review",
             "next_paused_event_capture_execution_review_required",
@@ -807,6 +859,24 @@ def _cross_process_one_action_diagnostics_for_review(execution: dict[str, Any]) 
         "blockers": execution.get("blockers") if isinstance(execution.get("blockers"), list) else [],
     }
 
+
+
+def _pre_action_subscribe_and_action_diagnostics_for_review(orchestration: dict[str, Any]) -> dict[str, Any]:
+    if not orchestration:
+        return {}
+    return {
+        "status": _string(orchestration.get("status") or "unknown"),
+        "method": _string(orchestration.get("method")),
+        "pre_action_event_subscribed": _boolish(orchestration.get("pre_action_event_subscribed")),
+        "action_sent_after_subscription": _boolish(orchestration.get("action_sent_after_subscription")),
+        "live_action_executed": _boolish(orchestration.get("live_action_executed")),
+        "paused_event_captured": _boolish(orchestration.get("paused_event_captured")),
+        "captured_event_count": orchestration.get("captured_event_count", 0),
+        "callframe_count": orchestration.get("callframe_count", 0),
+        "live_callframe_recovery_ready": _boolish(orchestration.get("live_callframe_recovery_ready")),
+        "next_action": _string(orchestration.get("next_action")),
+        "blockers": orchestration.get("blockers") if isinstance(orchestration.get("blockers"), list) else [],
+    }
 
 
 def _continuation_checkpoint_diagnostics_for_review(checkpoint: dict[str, Any]) -> dict[str, Any]:

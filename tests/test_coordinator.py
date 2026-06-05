@@ -233,6 +233,22 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session pre-action subscribe and action",
+                    kind=EvidenceKind.CALLSTACK,
+                    source="paused_session_pre_action_subscribe_and_action",
+                    details={
+                        "status": "captured",
+                        "orchestration": {
+                            "pre_action_event_subscribed": True,
+                            "action_sent_after_subscription": True,
+                            "paused_event_captured": True,
+                            "callframe_count": 1,
+                            "live_callframe_recovery_ready": True,
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native paused-session next paused event capture plan",
                     kind=EvidenceKind.CALLSTACK,
                     source="paused_session_next_paused_event_capture_plan",
@@ -679,6 +695,9 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-live-callframe-recovery.json"]["recovery"]["live_action_executed"])
         self.assertTrue(payloads["paused-session-cross-process-one-action-execution.json"]["execution"]["live_action_executed"])
         self.assertTrue(payloads["paused-session-cross-process-one-action-execution.json"]["execution"]["callframe_evaluated"])
+        self.assertTrue(payloads["paused-session-pre-action-subscribe-and-action.json"]["orchestration"]["pre_action_event_subscribed"])
+        self.assertTrue(payloads["paused-session-pre-action-subscribe-and-action.json"]["orchestration"]["action_sent_after_subscription"])
+        self.assertTrue(payloads["paused-session-pre-action-subscribe-and-action.json"]["orchestration"]["paused_event_captured"])
         self.assertTrue(payloads["paused-session-next-paused-event-capture-plan.json"]["plan"]["requires_next_paused_event_capture"])
         self.assertFalse(payloads["paused-session-next-paused-event-capture-plan.json"]["plan"]["automatic_capture_supported"])
         self.assertTrue(payloads["paused-session-next-paused-event-capture-execution.json"]["execution"]["paused_event_captured"])
@@ -800,6 +819,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_one_action_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_next_paused_event_capture_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_next_paused_event_capture_execution"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_pre_action_subscribe_and_action"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_cross_process_continuation_checkpoint"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")

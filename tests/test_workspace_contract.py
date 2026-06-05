@@ -146,6 +146,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/debugger/paused-session-next-paused-event-capture-execution.json",
         )
         self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-pre-action-subscribe-and-action.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-pre-action-subscribe-and-action.json"].future_path,
+            "/workspace/debugger/paused-session-pre-action-subscribe-and-action.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-pre-action-subscribe-and-action.json"].category, "audit")
         self.assertEqual(routes["workspace/paused-session-cross-process-continuation-checkpoint.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(
             routes["workspace/paused-session-cross-process-continuation-checkpoint.json"].future_path,

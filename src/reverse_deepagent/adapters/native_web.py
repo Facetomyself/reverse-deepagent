@@ -132,6 +132,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessOneActionSpec,
     PausedSessionCrossProcessContinuationCheckpointManager,
     PausedSessionCrossProcessContinuationCheckpointSpec,
+    PausedSessionPreActionSubscribeAndActionManager,
+    PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
     PausedSessionNextPausedEventCaptureExecutionSpec,
     PausedSessionNextPausedEventCapturePlanManager,
@@ -1144,6 +1146,68 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_pre_action_subscribe_and_action_request(protection_name, context):
+            spec = PausedSessionPreActionSubscribeAndActionSpec.from_context(context)
+            result = PausedSessionPreActionSubscribeAndActionManager().execute(page, spec)
+            orchestration = result.orchestration if isinstance(result.orchestration, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = orchestration.get("blockers") if isinstance(orchestration.get("blockers"), list) else []
+            verification = [
+                f"paused_session_pre_action_subscribe_and_action_status={result.status}",
+                f"paused_session_pre_action_subscribe_and_action_reason={result.reason or ''}",
+                f"paused_session_pre_action_subscribe_and_action_requested_action={orchestration.get('requested_action')}",
+                f"paused_session_pre_action_subscribe_and_action_method={orchestration.get('method')}",
+                f"paused_session_pre_action_subscribe_and_action_execute_requested={orchestration.get('execute_orchestration_requested', False)}",
+                f"paused_session_pre_action_subscribe_and_action_review_approved={orchestration.get('review_approved', False)}",
+                f"paused_session_pre_action_subscribe_and_action_pre_subscribed={orchestration.get('pre_action_event_subscribed', False)}",
+                f"paused_session_pre_action_subscribe_and_action_action_after_subscription={orchestration.get('action_sent_after_subscription', False)}",
+                f"paused_session_pre_action_subscribe_and_action_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_pre_action_subscribe_and_action_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_pre_action_subscribe_and_action_callframe_count={orchestration.get('callframe_count', 0)}",
+                f"paused_session_pre_action_subscribe_and_action_live_callframe_recovery_ready={orchestration.get('live_callframe_recovery_ready', False)}",
+                f"paused_session_pre_action_subscribe_and_action_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_pre_action_subscribe_and_action_browser_resumed={policy.get('browser_resumed', False)}",
+                f"paused_session_pre_action_subscribe_and_action_debugger_stepped={policy.get('debugger_stepped', False)}",
+                f"paused_session_pre_action_subscribe_and_action_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_pre_action_subscribe_and_action_multi_step_continuation={policy.get('multi_step_continuation', False)}",
+                f"paused_session_pre_action_subscribe_and_action_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_pre_action_subscribe_and_action_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_pre_action_subscribe_and_action_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"paused_session_pre_action_subscribe_and_action_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-pre-action-subscribe-and-action.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated pre-action Debugger.paused subscription plus one cross-process action orchestration.",
+                    metadata={
+                        "status": result.status,
+                        "orchestration_status": orchestration.get("status"),
+                        "pause_session_id": orchestration.get("pause_session_id"),
+                        "target_id": orchestration.get("target_id"),
+                        "requested_action": orchestration.get("requested_action"),
+                        "method": orchestration.get("method"),
+                        "pre_action_event_subscribed": orchestration.get("pre_action_event_subscribed", False),
+                        "action_sent_after_subscription": orchestration.get("action_sent_after_subscription", False),
+                        "paused_event_captured": orchestration.get("paused_event_captured", False),
+                        "callframe_count": orchestration.get("callframe_count", 0),
+                        "live_callframe_recovery_ready": orchestration.get("live_callframe_recovery_ready", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["pre_action_subscribe_and_action"] if orchestration.get("pre_action_event_subscribed") or orchestration.get("live_action_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "captured" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=orchestration.get("next_action") or "inspect_pre_action_subscribe_and_action_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "captured" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
             spec = PausedSessionCrossProcessContinuationCheckpointSpec.from_context(context)
@@ -5366,6 +5430,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_pre_action_subscribe_and_action_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
@@ -5402,6 +5468,34 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_pre_action_subscribe_and_action_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-pre-action-subscribe-and-action",
+            "pause-session-pre-action-subscribe-and-action",
+            "debugger-paused-session-pre-action-subscribe-and-action",
+            "cross-process-pre-action-subscribe-and-action",
+            "pre-action-subscribe-and-action",
+            "subscribe-and-action-orchestration",
+            "pre-subscribe-cross-process-one-action",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_pre_action_subscribe_and_action",
+                "pausedSessionPreActionSubscribeAndAction",
+                "paused-session-pre-action-subscribe-and-action",
+                "pre_action_subscribe_and_action",
+                "preActionSubscribeAndAction",
+                "subscribe_and_action_orchestration",
+                "subscribeAndActionOrchestration",
+                "pre_subscribe_cross_process_one_action",
+                "preSubscribeCrossProcessOneAction",
             )
         )
 

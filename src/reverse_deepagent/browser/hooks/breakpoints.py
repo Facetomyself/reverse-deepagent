@@ -2627,6 +2627,409 @@ class PausedSessionNextPausedEventCaptureExecutionManager:
 
 
 @dataclass(slots=True)
+class PausedSessionPreActionSubscribeAndActionSpec:
+    """Pre-subscribe to Debugger.paused, execute one reviewed action, and capture at most one pause."""
+
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    cross_process_attach_probe: dict[str, Any] = field(default_factory=dict)
+    execute_orchestration: bool = False
+    review_approved: bool = False
+    requested_action: str = "step_over"
+    expression: str | None = None
+    callframe_evaluation_policy: str = "read_only"
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    live_callframe_id: str | None = None
+    timeout_ms: int = 5000
+    observed_paused_event: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+    require_matching_session_id: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionPreActionSubscribeAndActionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_pre_action_subscribe_and_action")
+            or context.get("pausedSessionPreActionSubscribeAndAction")
+            or context.get("paused-session-pre-action-subscribe-and-action")
+            or context.get("pre_action_subscribe_and_action")
+            or context.get("preActionSubscribeAndAction")
+            or context.get("subscribe_and_action_orchestration")
+            or context.get("subscribeAndActionOrchestration")
+            or context.get("pre_subscribe_cross_process_one_action")
+            or context.get("preSubscribeCrossProcessOneAction")
+        )
+        recovery_container = _first_dict(
+            context,
+            "paused_session_live_callframe_recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "paused-session-live-callframe-recovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+            "cross_process_live_callframe_recovery",
+            "crossProcessLiveCallframeRecovery",
+        )
+        recovery = dict(recovery_container.get("recovery")) if isinstance(recovery_container.get("recovery"), dict) else recovery_container
+        attach_container = _first_dict(
+            context,
+            "paused_session_cross_process_attach_probe",
+            "pausedSessionCrossProcessAttachProbe",
+            "paused-session-cross-process-attach-probe",
+            "cross_process_attach_probe",
+            "crossProcessAttachProbe",
+        )
+        attach_probe = dict(attach_container.get("probe")) if isinstance(attach_container.get("probe"), dict) else attach_container
+        if not requested and not recovery:
+            return None
+        action = str(
+            context.get(
+                "requested_action",
+                context.get("requestedAction", context.get("action", recovery.get("requested_action", "step_over"))),
+            )
+            or "step_over"
+        ).strip().replace("-", "_").lower()
+        timeout_raw = context.get("timeout_ms", context.get("timeoutMs", 5000))
+        try:
+            timeout_ms = int(timeout_raw)
+        except (TypeError, ValueError):
+            timeout_ms = 5000
+        event = _first_dict(
+            context,
+            "observed_paused_event",
+            "observedPausedEvent",
+            "debugger_paused_event",
+            "debuggerPausedEvent",
+            "paused_event",
+            "pausedEvent",
+        )
+        execute_raw = context.get(
+            "execute_pre_action_subscribe_and_action",
+            context.get("executePreActionSubscribeAndAction", context.get("execute_orchestration", context.get("executeOrchestration", False))),
+        )
+        approved_raw = context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))
+        match_raw = context.get("require_matching_session_id", context.get("requireMatchingSessionId", True))
+        expression = context.get("expression") or context.get("callframe_expression") or context.get("callFrameExpression")
+        policy = str(context.get("callframe_evaluation_policy", context.get("callFrameEvaluationPolicy", "read_only")) or "read_only").strip().replace("-", "_").lower()
+        attached_session_id = (
+            context.get("attached_session_id")
+            or context.get("attachedSessionId")
+            or recovery.get("attached_session_id")
+            or attach_probe.get("attached_session_id")
+        )
+        live_callframe_id = context.get("live_callframe_id") or context.get("liveCallframeId") or context.get("callFrameId") or recovery.get("live_callframe_id")
+        pause_session_id = (
+            context.get("pause_session_id")
+            or context.get("pauseSessionId")
+            or recovery.get("pause_session_id")
+            or attach_probe.get("pause_session_id")
+        )
+        target_id = context.get("target_id") or context.get("targetId") or recovery.get("target_id") or attach_probe.get("target_id")
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId")
+        return cls(
+            live_callframe_recovery=recovery,
+            cross_process_attach_probe=attach_probe,
+            execute_orchestration=bool(execute_raw),
+            review_approved=bool(approved_raw),
+            requested_action=action,
+            expression=str(expression) if expression is not None else None,
+            callframe_evaluation_policy=policy,
+            pause_session_id=str(pause_session_id) if pause_session_id else None,
+            target_id=str(target_id).strip() if target_id else None,
+            attached_session_id=str(attached_session_id).strip() if attached_session_id else None,
+            live_callframe_id=str(live_callframe_id).strip() if live_callframe_id else None,
+            timeout_ms=max(10, timeout_ms),
+            observed_paused_event=event,
+            reviewer=str(reviewer) if reviewer else None,
+            require_matching_session_id=bool(match_raw),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionPreActionSubscribeAndActionResult:
+    status: str
+    orchestration: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "orchestration": self.orchestration,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionPreActionSubscribeAndActionManager:
+    """Review-gated pre-subscribe + one-action + one paused-event capture orchestration."""
+
+    CAPTURE_METHODS = PausedSessionNextPausedEventCaptureExecutionManager.CAPTURE_METHODS
+
+    def execute(self, page: BrowserPage | None, spec: PausedSessionPreActionSubscribeAndActionSpec | None) -> PausedSessionPreActionSubscribeAndActionResult:
+        blockers = self._blockers(spec)
+        if blockers:
+            payload = self._payload(spec, status="blocked", blockers=blockers)
+            return PausedSessionPreActionSubscribeAndActionResult(status="blocked", orchestration=payload, side_effect_policy=self._side_effect_policy(False, False, False, action=spec.requested_action if spec else ""), reason=blockers[0])
+        if spec and not spec.execute_orchestration:
+            payload = self._payload(spec, status="ready_for_review", blockers=[])
+            return PausedSessionPreActionSubscribeAndActionResult(status="ready_for_review", orchestration=payload, side_effect_policy=self._side_effect_policy(False, False, False, action=spec.requested_action))
+        if spec and not spec.review_approved:
+            payload = self._payload(spec, status="review_required", blockers=["review_approval_required"])
+            return PausedSessionPreActionSubscribeAndActionResult(status="review_required", orchestration=payload, side_effect_policy=self._side_effect_policy(False, False, False, action=spec.requested_action), reason="review_approval_required")
+        if page is None:
+            payload = self._payload(spec, status="blocked", blockers=["browser_page_required"])
+            return PausedSessionPreActionSubscribeAndActionResult(status="blocked", orchestration=payload, side_effect_policy=self._side_effect_policy(False, False, False, action=spec.requested_action if spec else ""), reason="browser_page_required")
+        session = page.cdp_session()
+        if session is None:
+            payload = self._payload(spec, status="blocked", blockers=["cdp_session_required"])
+            return PausedSessionPreActionSubscribeAndActionResult(status="blocked", orchestration=payload, side_effect_policy=self._side_effect_policy(False, False, False, action=spec.requested_action if spec else ""), reason="cdp_session_required")
+        on = getattr(session, "on", None)
+        if not callable(on):
+            payload = self._payload(spec, status="blocked", blockers=["cdp_event_subscription_unavailable"])
+            return PausedSessionPreActionSubscribeAndActionResult(status="blocked", orchestration=payload, side_effect_policy=self._side_effect_policy(False, False, False, action=spec.requested_action if spec else ""), reason="cdp_event_subscription_unavailable")
+
+        assert spec is not None
+        captured_events: list[dict[str, Any]] = []
+        ignored_events: list[dict[str, Any]] = []
+        subscription_error: str | None = None
+
+        def handle_paused(params: Any) -> None:
+            normalized, event_session_id = PausedSessionNextPausedEventCaptureExecutionManager._normalize_debugger_paused_event(params)
+            if spec.require_matching_session_id and event_session_id and spec.attached_session_id and event_session_id != spec.attached_session_id:
+                ignored_events.append({"session_id": event_session_id, "reason": "session_id_mismatch"})
+                return
+            normalized["event_session_id"] = event_session_id
+            captured_events.append(normalized)
+
+        try:
+            on("Debugger.paused", handle_paused)
+        except Exception as exc:
+            subscription_error = str(exc)
+        if subscription_error:
+            payload = self._payload(spec, status="failed", blockers=["debugger_paused_subscription_failed"], error=subscription_error)
+            return PausedSessionPreActionSubscribeAndActionResult(status="failed", orchestration=payload, side_effect_policy=self._side_effect_policy(False, False, False, action=spec.requested_action), reason="debugger_paused_subscription_failed", error=subscription_error)
+
+        method = PausedSessionCrossProcessOneActionManager._method_for_action(spec.requested_action)
+        params = PausedSessionCrossProcessOneActionManager._params_for_action(
+            PausedSessionCrossProcessOneActionSpec(
+                live_callframe_recovery=spec.live_callframe_recovery,
+                cross_process_attach_probe=spec.cross_process_attach_probe,
+                execute_action=True,
+                review_approved=True,
+                requested_action=spec.requested_action,
+                expression=spec.expression,
+                callframe_evaluation_policy=spec.callframe_evaluation_policy,
+                pause_session_id=spec.pause_session_id,
+                target_id=spec.target_id,
+                attached_session_id=spec.attached_session_id,
+                live_callframe_id=spec.live_callframe_id,
+                reviewer=spec.reviewer,
+            ),
+            method=method,
+        )
+        error: str | None = None
+        action_result: Any = {}
+        try:
+            action_result = session.send(method, params)
+        except Exception as exc:
+            error = str(exc)
+
+        if spec.observed_paused_event:
+            handle_paused(spec.observed_paused_event)
+        if error is None:
+            PausedSessionNextPausedEventCaptureExecutionManager._wait_for_capture(page, captured_events, timeout_ms=spec.timeout_ms)
+        if error is not None:
+            status = "failed"
+            blockers_after = ["cross_process_action_failed"]
+        elif captured_events:
+            status = "captured"
+            blockers_after = []
+        else:
+            status = "timed_out"
+            blockers_after = ["next_paused_event_capture_timed_out"]
+        payload = self._payload(
+            spec,
+            status=status,
+            blockers=blockers_after,
+            cdp_methods=[method],
+            cdp_params=params,
+            action_result=action_result,
+            captured_events=captured_events,
+            ignored_events=ignored_events,
+            error=error,
+        )
+        policy = self._side_effect_policy(True, True, bool(captured_events), action=spec.requested_action, evaluation_sent=method == "Debugger.evaluateOnCallFrame")
+        return PausedSessionPreActionSubscribeAndActionResult(status=status, orchestration=payload, side_effect_policy=policy, reason=blockers_after[0] if blockers_after else None, error=error)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionPreActionSubscribeAndActionSpec | None) -> list[str]:
+        if spec is None:
+            return ["pre_action_subscribe_and_action_request_missing"]
+        blockers: list[str] = []
+        recovery = spec.live_callframe_recovery
+        if not recovery:
+            blockers.append("live_callframe_recovery_required")
+        elif recovery.get("status") == "blocked" or not recovery.get("live_callframe_recovered"):
+            blockers.append("live_callframe_recovery_blocked")
+        if recovery.get("target_detached"):
+            blockers.append("attached_session_retained_required")
+        if not spec.attached_session_id:
+            blockers.append("attached_session_id_required")
+        if not spec.live_callframe_id:
+            blockers.append("live_callframe_id_required")
+        method = PausedSessionCrossProcessOneActionManager._method_for_action(spec.requested_action)
+        if not method:
+            blockers.append("unsupported_cross_process_action")
+        if method not in cls.CAPTURE_METHODS:
+            blockers.append("unsupported_pre_action_capture_method")
+        if method == "Debugger.evaluateOnCallFrame":
+            blockers.append("evaluate_action_does_not_require_pre_action_capture")
+        if spec.requested_action in {"evaluate", "evaluate_on_callframe"}:
+            if not spec.expression:
+                blockers.append("callframe_expression_required")
+            decision = PausedSessionCrossProcessOneActionManager._evaluation_policy_decision(spec.expression or "", spec.callframe_evaluation_policy)
+            if decision["blocked"]:
+                blockers.append("blocked_by_callframe_evaluation_policy")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: PausedSessionPreActionSubscribeAndActionSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        cdp_methods: list[str] | None = None,
+        cdp_params: dict[str, Any] | None = None,
+        action_result: Any = None,
+        captured_events: list[dict[str, Any]] | None = None,
+        ignored_events: list[dict[str, Any]] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        recovery = spec.live_callframe_recovery if spec else {}
+        method = PausedSessionCrossProcessOneActionManager._method_for_action(spec.requested_action if spec else "")
+        events = captured_events or []
+        ignored = ignored_events or []
+        first_event = events[0] if events else {}
+        callframes = first_event.get("callFrames") if isinstance(first_event.get("callFrames"), list) else []
+        selected_callframe = callframes[0] if callframes and isinstance(callframes[0], dict) else {}
+        cdp_sent = bool(cdp_methods)
+        event_subscribed = bool(cdp_methods) and status in {"captured", "timed_out", "failed"}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-pre-action-subscribe-and-action.v1",
+            "status": status,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "reviewer": spec.reviewer if spec else None,
+            "target_id": spec.target_id if spec else None,
+            "attached_session_id_present": bool(spec and spec.attached_session_id),
+            "live_callframe_id_present": bool(spec and spec.live_callframe_id),
+            "live_callframe_recovery_status": recovery.get("status"),
+            "live_callframe_recovered": bool(recovery.get("live_callframe_recovered")),
+            "requested_action": spec.requested_action if spec else None,
+            "method": method or None,
+            "timeout_ms": spec.timeout_ms if spec else 5000,
+            "execute_orchestration_requested": bool(spec and spec.execute_orchestration),
+            "review_approved": bool(spec and spec.review_approved),
+            "pre_action_event_subscribed": event_subscribed,
+            "action_sent_after_subscription": cdp_sent and event_subscribed,
+            "live_action_executed": cdp_sent and error is None,
+            "cross_process_action_executed": cdp_sent and error is None,
+            "debugger_event_subscribed": event_subscribed,
+            "paused_event_captured": bool(events),
+            "captured_event_count": len(events),
+            "ignored_event_count": len(ignored),
+            "ignored_events": ignored,
+            "captured_event": first_event,
+            "captured_event_summary": PausedSessionNextPausedEventCaptureExecutionManager._event_summary(first_event),
+            "callframes": callframes,
+            "callframe_count": len(callframes),
+            "selected_callframe": selected_callframe,
+            "live_callframe_recovery_ready": bool(selected_callframe.get("callFrameId")),
+            "fresh_paused_event_after_action": bool(events),
+            "cdp_methods": cdp_methods or [],
+            "cdp_params_summary": PausedSessionCrossProcessOneActionManager._params_summary(cdp_params or {}),
+            "action_result_summary": PausedSessionCrossProcessOneActionManager._result_summary(action_result),
+            "browser_resumed": cdp_sent and method == "Debugger.resume" and error is None,
+            "debugger_stepped": cdp_sent and method in {"Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"} and error is None,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers, captured=bool(events)),
+            "side_effect_policy": cls._side_effect_policy(cdp_sent, event_subscribed, bool(events), action=spec.requested_action if spec else ""),
+            "error": error,
+        }
+
+    @staticmethod
+    def _side_effect_policy(cdp_sent: bool, event_subscribed: bool, paused_event_captured: bool, *, action: str = "", evaluation_sent: bool = False) -> dict[str, Any]:
+        method = PausedSessionCrossProcessOneActionManager._method_for_action(action)
+        return {
+            "read_only": not cdp_sent and not event_subscribed,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": cdp_sent,
+            "debugger_event_subscribed": event_subscribed,
+            "paused_event_captured": paused_event_captured,
+            "browser_resumed": cdp_sent and method == "Debugger.resume",
+            "debugger_stepped": cdp_sent and method in {"Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"},
+            "callframe_evaluated": bool(evaluation_sent),
+            "runtime_mutated": False,
+            "live_action_executed": cdp_sent,
+            "cross_process_action_executed": cdp_sent,
+            "orchestrated_pre_action_subscription": event_subscribed and cdp_sent,
+            "bounded_one_action_only": True,
+            "multi_step_continuation": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "pre_action_subscribe_and_action_request_missing": ("request", "No pre-action subscribe-and-action request was provided.", "request_pre_action_subscribe_and_action"),
+            "live_callframe_recovery_required": ("live_callframe", "A read-only live callFrame recovery artifact is required before orchestration.", "recover_live_callframe_after_attach"),
+            "live_callframe_recovery_blocked": ("live_callframe", "The supplied live callFrame recovery artifact is blocked or did not recover a live callFrame.", "resolve_live_callframe_recovery_blockers"),
+            "attached_session_retained_required": ("cdp_session", "A retained attached session is required so the subscription can observe the next pause.", "rerun_attach_probe_without_detach"),
+            "attached_session_id_required": ("cdp_session", "An attached CDP session id is required for flattened action orchestration.", "provide_attached_session_id"),
+            "live_callframe_id_required": ("debugger", "A fresh live callFrameId is required before sending the reviewed action.", "recover_live_callframe_after_attach"),
+            "unsupported_cross_process_action": ("action", "Only resume, step_over, step_into, and step_out are supported by this orchestration baseline.", "select_supported_cross_process_action"),
+            "unsupported_pre_action_capture_method": ("action", "Only resume and step methods can be orchestrated with next paused-event capture.", "select_step_or_resume_action"),
+            "evaluate_action_does_not_require_pre_action_capture": ("action", "Evaluate-on-callframe does not require a pre-action paused-event capture orchestration.", "review_evaluation_result"),
+            "callframe_expression_required": ("action", "A callframe expression is required for evaluate actions.", "provide_callframe_expression"),
+            "blocked_by_callframe_evaluation_policy": ("review", "The requested expression is blocked by the callframe evaluation policy.", "review_or_lower_expression_risk"),
+            "review_approval_required": ("review", "Pre-action subscribe-and-action orchestration requires explicit review approval.", "approve_pre_action_subscribe_and_action"),
+            "browser_page_required": ("runtime", "A BrowserPage with CDP access is required for orchestration.", "provide_browser_page_for_orchestration"),
+            "cdp_session_required": ("runtime", "The active page does not expose a CDP session.", "use_cdp_capable_browser_provider"),
+            "cdp_event_subscription_unavailable": ("runtime", "The active CDP session does not expose event subscription.", "use_cdp_event_capable_browser_provider"),
+            "debugger_paused_subscription_failed": ("cdp", "Subscribing to Debugger.paused failed before action execution.", "inspect_debugger_paused_subscription_error"),
+            "cross_process_action_failed": ("cdp", "The reviewed action failed after pre-subscription.", "inspect_pre_action_orchestration_action_error"),
+            "next_paused_event_capture_timed_out": ("runtime", "The reviewed action ran after pre-subscription but no matching Debugger.paused event was captured.", "review_or_rerun_pre_action_orchestration"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_pre_action_subscribe_and_action"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_pre_action_subscribe_and_action"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_pre_action_subscribe_and_action"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], captured: bool) -> str:
+        if "review_approval_required" in blockers:
+            return "approve_pre_action_subscribe_and_action"
+        if captured:
+            return "checkpoint_cross_process_continuation"
+        if status == "ready_for_review":
+            return "approve_pre_action_subscribe_and_action"
+        if status == "timed_out":
+            return "review_or_rerun_pre_action_orchestration"
+        if any(item in blockers for item in ("live_callframe_recovery_required", "live_callframe_recovery_blocked", "live_callframe_id_required")):
+            return "recover_live_callframe_after_attach"
+        return "inspect_pre_action_subscribe_and_action_blockers"
+
+
+@dataclass(slots=True)
 class PausedSessionCrossProcessContinuationCheckpointSpec:
     """Review-only checkpoint after next paused-event capture execution."""
 

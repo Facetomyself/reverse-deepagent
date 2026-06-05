@@ -5353,6 +5353,72 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_next_paused_event_capture_execution_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_pre_action_subscribe_and_action_from_native_runtime_captures_event(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-pre-action-subscribe-and-action",
+            {
+                "paused_session_pre_action_subscribe_and_action": True,
+                "execute_pre_action_subscribe_and_action": True,
+                "review_approved": True,
+                "requested_action": "step_over",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "native-pre-action-1",
+                        "target_id": "target-native-pre-action-1",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "native-live-cf-pre-action-1",
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "native-live-cf-pre-action-1",
+                "timeout_ms": 10,
+                "observed_paused_event": {
+                    "sessionId": "attached-session-1",
+                    "params": {
+                        "reason": "step",
+                        "callFrames": [
+                            {
+                                "callFrameId": "native-live-cf-pre-action-2",
+                                "functionName": "buildSign",
+                                "location": {"scriptId": "script-1", "lineNumber": 7, "columnNumber": 0},
+                                "url": "https://example.test/assets/app.js",
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["pre_action_subscribe_and_action"])
+        self.assertEqual(result.next_action, "checkpoint_cross_process_continuation")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-pre-action-subscribe-and-action.json")
+        self.assertTrue(result.artifacts[0].metadata["pre_action_event_subscribed"])
+        self.assertTrue(result.artifacts[0].metadata["action_sent_after_subscription"])
+        self.assertTrue(result.artifacts[0].metadata["paused_event_captured"])
+        self.assertEqual(result.artifacts[0].metadata["callframe_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["live_callframe_recovery_ready"])
+        self.assertIn("paused_session_pre_action_subscribe_and_action_status=captured", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_pre_subscribed=True", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_action_after_subscription=True", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_event_subscribed=True", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_paused_event_captured=True", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_cdp_command_sent=True", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_debugger_stepped=True", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_callframe_evaluated=False", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_multi_step_continuation=False", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_pre_action_subscribe_and_action_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count + 1)
+        self.assertEqual(page._cdp_session.calls[-1][0], "Debugger.stepOver")
+
     def test_paused_session_cross_process_continuation_checkpoint_from_native_runtime_is_read_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

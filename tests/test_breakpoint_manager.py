@@ -15,6 +15,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessOneActionSpec,
     PausedSessionCrossProcessContinuationCheckpointManager,
     PausedSessionCrossProcessContinuationCheckpointSpec,
+    PausedSessionPreActionSubscribeAndActionManager,
+    PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
     PausedSessionNextPausedEventCaptureExecutionSpec,
     PausedSessionNextPausedEventCapturePlanManager,
@@ -1144,6 +1146,115 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertTrue(result.side_effect_policy["paused_event_captured"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_pre_action_subscribe_and_action_subscribes_before_step_and_captures_pause(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_step=True)
+        page = FakeBreakpointPage(session)
+        spec = PausedSessionPreActionSubscribeAndActionSpec.from_context(
+            {
+                "paused_session_pre_action_subscribe_and_action": True,
+                "execute_pre_action_subscribe_and_action": True,
+                "review_approved": True,
+                "requested_action": "step_over",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "pause-pre-action-1",
+                        "target_id": "target-pre-action-1",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "cf-live-1",
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "cf-live-1",
+                "timeout_ms": 10,
+            }
+        )
+
+        result = PausedSessionPreActionSubscribeAndActionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "captured")
+        self.assertIn("Debugger.paused", session.handlers)
+        self.assertEqual(session.calls[-1][0], "Debugger.stepOver")
+        orchestration = result.orchestration
+        self.assertTrue(orchestration["pre_action_event_subscribed"])
+        self.assertTrue(orchestration["action_sent_after_subscription"])
+        self.assertTrue(orchestration["paused_event_captured"])
+        self.assertEqual(orchestration["callframe_count"], 1)
+        self.assertTrue(orchestration["live_callframe_recovery_ready"])
+        self.assertEqual(orchestration["next_action"], "checkpoint_cross_process_continuation")
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertTrue(result.side_effect_policy["paused_event_captured"])
+        self.assertTrue(result.side_effect_policy["debugger_stepped"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_pre_action_subscribe_and_action_subscription_failure_is_not_marked_subscribed(self) -> None:
+        class FailingSubscriptionSession(RecordingCDPSession):
+            def on(self, event_name, handler):
+                raise RuntimeError("subscription disabled")
+
+        session = FailingSubscriptionSession()
+        page = FakeBreakpointPage(session)
+        spec = PausedSessionPreActionSubscribeAndActionSpec.from_context(
+            {
+                "paused_session_pre_action_subscribe_and_action": True,
+                "execute_pre_action_subscribe_and_action": True,
+                "review_approved": True,
+                "requested_action": "step_over",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "cf-live-1",
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "cf-live-1",
+            }
+        )
+
+        result = PausedSessionPreActionSubscribeAndActionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.reason, "debugger_paused_subscription_failed")
+        self.assertFalse(result.orchestration["pre_action_event_subscribed"])
+        self.assertFalse(result.orchestration["action_sent_after_subscription"])
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_pre_action_subscribe_and_action_requires_review_approval(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_step=True)
+        page = FakeBreakpointPage(session)
+        spec = PausedSessionPreActionSubscribeAndActionSpec.from_context(
+            {
+                "paused_session_pre_action_subscribe_and_action": True,
+                "execute_pre_action_subscribe_and_action": True,
+                "requested_action": "step_over",
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "cf-live-1",
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "cf-live-1",
+            }
+        )
+
+        result = PausedSessionPreActionSubscribeAndActionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "review_required")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
 
     def test_next_paused_event_capture_execution_requires_review_approval(self) -> None:
         spec = PausedSessionNextPausedEventCaptureExecutionSpec.from_context(
