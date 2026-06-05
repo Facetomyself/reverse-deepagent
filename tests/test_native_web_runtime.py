@@ -4278,6 +4278,49 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
         self.assertFalse(result.artifacts[0].metadata["callframe_evaluated"])
 
+    def test_native_web_runtime_proves_closure_wrapper_assignment_safety_without_browser_session(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        plan = {
+            "status": "ready_for_review",
+            "wrapper_strategy": "log-only-call-through",
+            "runtime_mutated": False,
+            "wrapper_installed": False,
+            "selected_candidate": {
+                "function_name": "buildSign",
+                "candidate_id": "closure:native-cf-1:buildSign",
+                "hook_kind": "closure-scope",
+                "hook_supported": False,
+                "callframe_index": 0,
+                "callFrameId": "native-cf-1",
+                "evidence_expression": "typeof buildSign",
+            },
+            "replacement_feasibility": {
+                "lexical_binding_proven": True,
+                "reviewed_executor_available": True,
+                "reviewed_executor_scope": "same-process-retained-paused-session",
+                "restore_plan_available_after_execution": True,
+            },
+        }
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-assignment-safety",
+            {
+                "closure_wrapper_replacement_plan": plan,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, ["prove_closure_wrapper_assignment_safety"])
+        self.assertIn("closure_wrapper_assignment_safety_status=ready_for_review", result.verification)
+        self.assertIn("closure_wrapper_assignment_safety_proven=True", result.verification)
+        self.assertIn("closure_wrapper_assignment_safety_runtime_mutated=False", result.verification)
+        self.assertIn("closure_wrapper_assignment_safety_cdp_command_sent=False", result.verification)
+        self.assertIn("closure_wrapper_assignment_safety_callframe_evaluated=False", result.verification)
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-assignment-safety.json")
+        self.assertTrue(result.artifacts[0].metadata["assignment_safety_proven"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
+
     def test_native_web_runtime_executes_reviewed_closure_wrapper_replacement(self) -> None:
         BreakpointManager.clear_paused_sessions()
         provider = FakeProvider()
@@ -4312,23 +4355,45 @@ class NativeWebRuntimeTests(unittest.TestCase):
             },
         )
         self.assertEqual(plan.status.value, "partial")
+        replacement_plan_payload = {
+            "status": "ready_for_review",
+            "wrapper_strategy": "log-only-call-through",
+            "runtime_mutated": False,
+            "wrapper_installed": False,
+            "selected_candidate": {
+                "function_name": "buildSign",
+                "candidate_id": "closure:native-cf-1:buildSign",
+                "hook_kind": "closure-scope",
+                "hook_supported": False,
+                "callframe_index": 0,
+                "callFrameId": "native-cf-1",
+                "evidence_expression": "typeof buildSign",
+            },
+            "replacement_feasibility": {
+                "lexical_binding_proven": True,
+                "reviewed_executor_available": True,
+                "reviewed_executor_scope": "same-process-retained-paused-session",
+                "restore_plan_available_after_execution": True,
+            },
+        }
+        assignment_safety = runtime.apply_minimal_protection(
+            "closure-wrapper-assignment-safety",
+            {
+                "closure_wrapper_replacement_plan": replacement_plan_payload,
+            },
+        )
+        self.assertEqual(assignment_safety.status.value, "partial")
 
         result = runtime.apply_minimal_protection(
             "closure-wrapper-replacement-execution",
             {
-                "closure_wrapper_replacement_plan": {
-                    "status": "ready_for_review",
+                "closure_wrapper_replacement_plan": replacement_plan_payload,
+                "closure_wrapper_assignment_safety": {
+                    "assignment_safety_proven": True,
+                    "safe_to_request_reviewed_execution": True,
+                    "function_name": "buildSign",
+                    "callFrameId": "native-cf-1",
                     "wrapper_strategy": "log-only-call-through",
-                    "selected_candidate": {
-                        "function_name": "buildSign",
-                        "candidate_id": "closure:native-cf-1:buildSign",
-                        "hook_kind": "closure-scope",
-                        "hook_supported": False,
-                        "callframe_index": 0,
-                        "callFrameId": "native-cf-1",
-                        "evidence_expression": "typeof buildSign",
-                    },
-                    "replacement_feasibility": {"lexical_binding_proven": True},
                 },
                 "pause_session_id": "native-closure-exec",
                 "execute_closure_wrapper_replacement": True,
@@ -4339,6 +4404,7 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.status.value, "success")
         self.assertEqual(result.applied_actions, ["execute_reviewed_closure_wrapper_replacement"])
         self.assertIn("closure_wrapper_replacement_execution_status=applied", result.verification)
+        self.assertIn("closure_wrapper_replacement_execution_assignment_safety_proven=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_review_approved=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_wrapper_installed=True", result.verification)
         self.assertIn("closure_wrapper_replacement_execution_runtime_mutated=True", result.verification)

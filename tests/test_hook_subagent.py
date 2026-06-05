@@ -105,6 +105,48 @@ class HookSubagentTests(unittest.TestCase):
         self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
         self.assertFalse(result["side_effect_policy"]["runtime_mutated"])
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_assignment_safety(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_replacement_plan": {
+                "status": "ready_for_review",
+                "plan": {"status": "ready_for_review", "wrapper_installed": False},
+            },
+            "closure_wrapper_assignment_safety": {
+                "status": "ready_for_review",
+                "assignment_safety": {
+                    "status": "ready_for_review",
+                    "assignment_safety_proven": True,
+                    "next_action": "approve_reviewed_closure_wrapper_replacement_execution_with_assignment_safety_proof",
+                },
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertNotIn("closure_wrapper_replacement_plan_requires_review", result["warnings"])
+        self.assertIn("closure_wrapper_assignment_safety_requires_execution_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_reviewed_closure_wrapper_replacement_execution_with_assignment_safety_proof")
+        self.assertEqual(result["summary"]["closure_wrapper_assignment_safety_status"], "ready_for_review")
+        self.assertTrue(result["summary"]["closure_wrapper_assignment_safety_proven"])
+        self.assertTrue(result["review_required_items"][0]["closure_wrapper_assignment_safety_proven"])
+
+    def test_review_hook_artifacts_blocks_failed_closure_wrapper_assignment_safety(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_assignment_safety": {
+                "status": "blocked",
+                "assignment_safety": {"assignment_safety_proven": False},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("closure_wrapper_assignment_safety_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_closure_wrapper_assignment_safety_blockers")
+
     def test_review_hook_artifacts_warns_for_closure_wrapper_replacement_execution_restore(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

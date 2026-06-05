@@ -524,6 +524,230 @@ class ClosureWrapperReplacementPlanManager:
 
 
 @dataclass(slots=True)
+class ClosureWrapperAssignmentSafetySpec:
+    """Review-only assignment safety proof for a closure wrapper replacement plan.
+
+    The manager validates that one selected closure-scope candidate, the planned
+    assignment target, and the narrow `log-only-call-through` wrapper strategy
+    are internally consistent before a reviewed executor may run. It deliberately
+    does not evaluate JavaScript or prove runtime mutability; runtime assignment
+    can still fail and remains covered by the existing reviewed executor mutation
+    audit.
+    """
+
+    plan: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    candidate_id: str | None = None
+    function_name: str | None = None
+    callframe_id: str | None = None
+    wrapper_strategy: str = "log-only-call-through"
+    reviewer_note: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperAssignmentSafetySpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("prove_closure_wrapper_assignment_safety")
+            or context.get("proveClosureWrapperAssignmentSafety")
+            or context.get("closure_wrapper_assignment_safety_proof_request")
+            or context.get("closureWrapperAssignmentSafetyProofRequest")
+        )
+        raw_plan = (
+            context.get("closure_wrapper_replacement_plan")
+            or context.get("closureWrapperReplacementPlan")
+            or context.get("closure-wrapper-replacement-plan")
+            or context.get("plan")
+        )
+        plan = ClosureWrapperReplacementExecutionSpec._coerce_plan(raw_plan)
+        raw_candidate = context.get("candidate") or context.get("selected_candidate") or context.get("selectedCandidate")
+        selected_candidate = dict(raw_candidate) if isinstance(raw_candidate, dict) else ClosureWrapperReplacementExecutionSpec._selected_candidate(plan)
+        if not requested and not plan and not selected_candidate:
+            return None
+        wrapper_strategy = str(
+            context.get(
+                "wrapper_strategy",
+                context.get("wrapperStrategy", plan.get("wrapper_strategy", "log-only-call-through")),
+            )
+            or "log-only-call-through"
+        )
+        return cls(
+            plan=plan,
+            selected_candidate=selected_candidate,
+            candidate_id=_string_or_none(context.get("candidate_id", context.get("candidateId", selected_candidate.get("candidate_id")))),
+            function_name=_string_or_none(
+                context.get("function_name", context.get("functionName", selected_candidate.get("function_name", selected_candidate.get("name"))))
+            ),
+            callframe_id=_string_or_none(
+                context.get(
+                    "callframe_id",
+                    context.get("callFrameId", selected_candidate.get("callFrameId", selected_candidate.get("callframe_id"))),
+                )
+            ),
+            wrapper_strategy=wrapper_strategy,
+            reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
+        )
+
+
+@dataclass(slots=True)
+class ClosureWrapperAssignmentSafetyResult:
+    status: str
+    assignment_safety: dict[str, Any] = field(default_factory=dict)
+    selected_candidate: dict[str, Any] = field(default_factory=dict)
+    checks: list[dict[str, Any]] = field(default_factory=list)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-assignment-safety.v1",
+            "status": self.status,
+            "selected_candidate": self.selected_candidate,
+            "assignment_safety": self.assignment_safety,
+            "checks": self.checks,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class ClosureWrapperAssignmentSafetyManager:
+    """Prove static safety gates for one reviewed closure wrapper assignment."""
+
+    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+
+    def prove(self, spec: ClosureWrapperAssignmentSafetySpec | None) -> ClosureWrapperAssignmentSafetyResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return self._result(
+                status="unsupported",
+                reason="missing_closure_wrapper_assignment_safety_spec",
+                spec=None,
+                checks=[],
+                policy=policy,
+            )
+        candidate = self._selected_candidate(spec)
+        checks = self._checks(spec, candidate)
+        failed_required = [item for item in checks if item.get("required") and not item.get("passed")]
+        status = "ready_for_review" if not failed_required else "blocked"
+        reason = None if status == "ready_for_review" else str(failed_required[0].get("check") or "assignment_safety_check_failed")
+        return self._result(status=status, reason=reason, spec=spec, checks=checks, policy=policy, selected_candidate=candidate)
+
+    @staticmethod
+    def _selected_candidate(spec: ClosureWrapperAssignmentSafetySpec) -> dict[str, Any]:
+        if spec.selected_candidate:
+            return dict(spec.selected_candidate)
+        return ClosureWrapperReplacementExecutionSpec._selected_candidate(spec.plan)
+
+    def _checks(self, spec: ClosureWrapperAssignmentSafetySpec, candidate: dict[str, Any]) -> list[dict[str, Any]]:
+        function_name = str(spec.function_name or candidate.get("function_name") or candidate.get("name") or "")
+        callframe_id = str(spec.callframe_id or candidate.get("callFrameId") or candidate.get("callframe_id") or "")
+        candidate_id = str(spec.candidate_id or candidate.get("candidate_id") or "")
+        evidence_expression = str(candidate.get("evidence_expression") or "")
+        feasibility = spec.plan.get("replacement_feasibility") if isinstance(spec.plan.get("replacement_feasibility"), dict) else {}
+        return [
+            self._check("plan_ready_for_review", str(spec.plan.get("status") or "") == "ready_for_review", required=True, evidence=spec.plan.get("status")),
+            self._check("candidate_is_closure_scope", str(candidate.get("hook_kind") or "") == "closure-scope", required=True, evidence=candidate.get("hook_kind")),
+            self._check("candidate_id_matches_selection", bool(candidate_id) and candidate_id == str(candidate.get("candidate_id") or ""), required=True, evidence=candidate_id),
+            self._check("function_name_safe_identifier", bool(JS_IDENTIFIER_RE.fullmatch(function_name)), required=True, evidence=function_name),
+            self._check("stable_callframe_id_present", bool(callframe_id), required=True, evidence=callframe_id),
+            self._check(
+                "lexical_binding_typeof_evidence_matches",
+                bool(function_name and evidence_expression == f"typeof {function_name}" and feasibility.get("lexical_binding_proven") is not False),
+                required=True,
+                evidence=evidence_expression,
+            ),
+            self._check(
+                "wrapper_strategy_supported",
+                spec.wrapper_strategy in self.SUPPORTED_STRATEGIES,
+                required=True,
+                evidence=spec.wrapper_strategy,
+            ),
+            self._check("plan_is_read_only", spec.plan.get("runtime_mutated") is False and spec.plan.get("wrapper_installed") is False, required=True, evidence={"runtime_mutated": spec.plan.get("runtime_mutated"), "wrapper_installed": spec.plan.get("wrapper_installed")}),
+            self._check("reviewed_executor_available", feasibility.get("reviewed_executor_available") is True, required=True, evidence=feasibility.get("reviewed_executor_available")),
+            self._check("same_process_retained_pause_required", feasibility.get("reviewed_executor_scope") == "same-process-retained-paused-session", required=True, evidence=feasibility.get("reviewed_executor_scope")),
+            self._check("restore_plan_available_after_execution", feasibility.get("restore_plan_available_after_execution") is True, required=True, evidence=feasibility.get("restore_plan_available_after_execution")),
+            self._check("runtime_mutability_probe_not_executed", True, required=False, evidence="review-only-static-proof"),
+        ]
+
+    @staticmethod
+    def _check(check: str, passed: bool, *, required: bool, evidence: Any) -> dict[str, Any]:
+        return {"check": check, "passed": bool(passed), "required": bool(required), "evidence": evidence}
+
+    def _result(
+        self,
+        *,
+        status: str,
+        reason: str | None,
+        spec: ClosureWrapperAssignmentSafetySpec | None,
+        checks: list[dict[str, Any]],
+        policy: dict[str, Any],
+        selected_candidate: dict[str, Any] | None = None,
+    ) -> ClosureWrapperAssignmentSafetyResult:
+        candidate = selected_candidate if isinstance(selected_candidate, dict) else {}
+        function_name = str((spec.function_name if spec else None) or candidate.get("function_name") or candidate.get("name") or "")
+        callframe_id = str((spec.callframe_id if spec else None) or candidate.get("callFrameId") or candidate.get("callframe_id") or "")
+        passed_required = all(item.get("passed") for item in checks if item.get("required"))
+        assignment_safety = {
+            "schema_version": "reverse-deepagent.closure-wrapper-assignment-safety.v1",
+            "status": status,
+            "reason": reason,
+            "proof_kind": "static-reviewed-assignment-safety",
+            "proof_scope": "single-closure-candidate-same-process-reviewed-wrapper-assignment",
+            "assignment_safety_proven": status == "ready_for_review" and passed_required,
+            "safe_to_request_reviewed_execution": status == "ready_for_review" and passed_required,
+            "runtime_mutability_proven": False,
+            "runtime_mutability_probe_executed": False,
+            "requires_review": True,
+            "wrapper_installed": False,
+            "runtime_mutated": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "function_name": function_name,
+            "callFrameId": callframe_id,
+            "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "selected_candidate": candidate,
+            "check_count": len(checks),
+            "passed_required_check_count": sum(1 for item in checks if item.get("required") and item.get("passed")),
+            "failed_required_checks": [str(item.get("check")) for item in checks if item.get("required") and not item.get("passed")],
+            "reviewer_note": spec.reviewer_note if spec else None,
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": policy,
+        }
+        return ClosureWrapperAssignmentSafetyResult(
+            status=status,
+            assignment_safety=assignment_safety,
+            selected_candidate=candidate,
+            checks=checks,
+            side_effect_policy=policy,
+            reason=reason,
+        )
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "ready_for_review":
+            return "approve_reviewed_closure_wrapper_replacement_execution_with_assignment_safety_proof"
+        if reason == "plan_ready_for_review":
+            return "prepare_ready_closure_wrapper_replacement_plan_before_assignment_safety"
+        if reason == "lexical_binding_typeof_evidence_matches":
+            return "rerun_closure_scope_discovery_before_assignment_safety"
+        return "resolve_closure_wrapper_assignment_safety_blockers"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "plan_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "wrapper_installed": False,
+            "runtime_mutated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class ClosureWrapperReplacementExecutionSpec:
     """Explicit reviewed execution request for a closure wrapper replacement plan.
 
@@ -541,6 +765,7 @@ class ClosureWrapperReplacementExecutionSpec:
     candidate_id: str | None = None
     function_name: str | None = None
     wrapper_strategy: str = "log-only-call-through"
+    assignment_safety_proof: dict[str, Any] = field(default_factory=dict)
     review_approved: bool = False
     execute: bool = False
     reviewer_note: str | None = None
@@ -576,6 +801,13 @@ class ClosureWrapperReplacementExecutionSpec:
             )
             or "log-only-call-through"
         )
+        assignment_safety_proof = cls._coerce_assignment_safety_proof(
+            context.get("closure_wrapper_assignment_safety")
+            or context.get("closureWrapperAssignmentSafety")
+            or context.get("closure-wrapper-assignment-safety")
+            or context.get("assignment_safety_proof")
+            or context.get("assignmentSafetyProof")
+        )
         return cls(
             plan=plan,
             pause_session_id=_string_or_none(
@@ -599,6 +831,7 @@ class ClosureWrapperReplacementExecutionSpec:
                 context.get("function_name", context.get("functionName", selected_candidate.get("function_name", selected_candidate.get("name"))))
             ),
             wrapper_strategy=strategy,
+            assignment_safety_proof=assignment_safety_proof,
             review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
             execute=bool(context.get("execute_closure_wrapper_replacement", context.get("executeClosureWrapperReplacement", requested))),
             reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
@@ -616,6 +849,14 @@ class ClosureWrapperReplacementExecutionSpec:
     def _selected_candidate(plan: dict[str, Any]) -> dict[str, Any]:
         candidate = plan.get("selected_candidate")
         return dict(candidate) if isinstance(candidate, dict) else {}
+
+    @staticmethod
+    def _coerce_assignment_safety_proof(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        if isinstance(value.get("assignment_safety"), dict):
+            return dict(value["assignment_safety"])
+        return dict(value)
 
 
 @dataclass(slots=True)
@@ -765,7 +1006,28 @@ class ClosureWrapperReplacementExecutionManager:
         feasibility = spec.plan.get("replacement_feasibility") if isinstance(spec.plan.get("replacement_feasibility"), dict) else {}
         if feasibility.get("lexical_binding_proven") is False:
             return "lexical_binding_not_proven"
+        if not cls._assignment_safety_proven(spec, candidate):
+            return "closure_wrapper_assignment_safety_proof_required"
         return None
+
+    @staticmethod
+    def _assignment_safety_proven(spec: ClosureWrapperReplacementExecutionSpec, candidate: dict[str, Any]) -> bool:
+        proof = spec.assignment_safety_proof if isinstance(spec.assignment_safety_proof, dict) else {}
+        if not proof:
+            return False
+        if proof.get("assignment_safety_proven") is not True:
+            return False
+        if proof.get("safe_to_request_reviewed_execution") is not True:
+            return False
+        function_name = str(spec.function_name or candidate.get("function_name") or candidate.get("name") or "")
+        if function_name and str(proof.get("function_name") or proof.get("functionName") or "") != function_name:
+            return False
+        expected_callframe_id = str(spec.expected_callframe_id or candidate.get("callFrameId") or candidate.get("callframe_id") or "")
+        if expected_callframe_id and str(proof.get("callFrameId") or proof.get("callframe_id") or "") != expected_callframe_id:
+            return False
+        if str(proof.get("wrapper_strategy") or spec.wrapper_strategy) != spec.wrapper_strategy:
+            return False
+        return True
 
     @staticmethod
     def _post_execution_reason(spec: ClosureWrapperReplacementExecutionSpec, evaluation: dict[str, Any]) -> str | None:
@@ -924,6 +1186,8 @@ class ClosureWrapperReplacementExecutionManager:
             return "reproduce_pause_and_preserve_same_process_session"
         if reason in {"missing_closure_wrapper_replacement_plan", "closure_wrapper_replacement_plan_not_ready"}:
             return "prepare_ready_closure_wrapper_replacement_plan_before_execution"
+        if reason == "closure_wrapper_assignment_safety_proof_required":
+            return "prove_closure_wrapper_assignment_safety_before_execution"
         return "resolve_closure_wrapper_replacement_execution_blockers"
 
     @staticmethod

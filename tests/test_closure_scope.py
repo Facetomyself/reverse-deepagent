@@ -4,6 +4,8 @@ from reverse_deepagent.browser.hooks import (
     BreakpointManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperAssignmentSafetyManager,
+    ClosureWrapperAssignmentSafetySpec,
     ClosureWrapperEventHarvestManager,
     ClosureWrapperEventHarvestSpec,
     ClosureWrapperRestoreExecutionManager,
@@ -222,6 +224,71 @@ class ClosureWrapperReplacementPlanManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["runtime_mutated"])
 
 
+class ClosureWrapperAssignmentSafetyManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_plan() -> dict:
+        return ClosureWrapperReplacementPlanManager().plan(
+            ClosureWrapperReplacementPlanSpec.from_context(
+                {
+                    "closure_function_candidates": [
+                        {
+                            "function_name": "buildSign",
+                            "candidate_id": "closure:cf-closure-1:buildSign",
+                            "hook_kind": "closure-scope",
+                            "hook_supported": False,
+                            "callframe_index": 0,
+                            "callFrameId": "cf-closure-1",
+                            "evidence_expression": "typeof buildSign",
+                        }
+                    ],
+                    "candidate_id": "closure:cf-closure-1:buildSign",
+                }
+            )
+        ).plan
+
+    def test_proves_review_only_assignment_safety_from_replacement_plan(self) -> None:
+        spec = ClosureWrapperAssignmentSafetySpec.from_context(
+            {
+                "prove_closure_wrapper_assignment_safety": True,
+                "closure_wrapper_replacement_plan": self._ready_plan(),
+            }
+        )
+
+        result = ClosureWrapperAssignmentSafetyManager().prove(spec)
+        payload = result.to_dict()
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(payload["schema_version"], "reverse-deepagent.closure-wrapper-assignment-safety.v1")
+        self.assertTrue(payload["assignment_safety"]["assignment_safety_proven"])
+        self.assertTrue(payload["assignment_safety"]["safe_to_request_reviewed_execution"])
+        self.assertFalse(payload["assignment_safety"]["runtime_mutability_proven"])
+        self.assertFalse(payload["assignment_safety"]["runtime_mutability_probe_executed"])
+        self.assertFalse(payload["assignment_safety"]["runtime_mutated"])
+        self.assertFalse(payload["assignment_safety"]["cdp_command_sent"])
+        self.assertFalse(payload["assignment_safety"]["callframe_evaluated"])
+        self.assertEqual(payload["assignment_safety"]["function_name"], "buildSign")
+        self.assertEqual(payload["assignment_safety"]["callFrameId"], "cf-closure-1")
+        self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(payload["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_blocks_assignment_safety_when_lexical_evidence_is_missing(self) -> None:
+        plan = self._ready_plan()
+        plan["selected_candidate"] = dict(plan["selected_candidate"], evidence_expression="typeof otherName")
+        spec = ClosureWrapperAssignmentSafetySpec.from_context(
+            {
+                "prove_closure_wrapper_assignment_safety": True,
+                "closure_wrapper_replacement_plan": plan,
+            }
+        )
+
+        result = ClosureWrapperAssignmentSafetyManager().prove(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "lexical_binding_typeof_evidence_matches")
+        self.assertFalse(result.assignment_safety["assignment_safety_proven"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+
+
 class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
     def setUp(self) -> None:
         BreakpointManager.clear_paused_sessions()
@@ -250,6 +317,17 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
         result = ClosureWrapperReplacementPlanManager().plan(plan_spec)
         return result.plan
 
+    @staticmethod
+    def _assignment_safety(plan: dict) -> dict:
+        return ClosureWrapperAssignmentSafetyManager().prove(
+            ClosureWrapperAssignmentSafetySpec.from_context(
+                {
+                    "prove_closure_wrapper_assignment_safety": True,
+                    "closure_wrapper_replacement_plan": plan,
+                }
+            )
+        ).assignment_safety
+
     def _preserve_pause(self, session_id: str = "closure-exec-session") -> tuple[ClosureScopeCDPSession, ClosureScopePage]:
         session = ClosureScopeCDPSession()
         page = ClosureScopePage(session)
@@ -274,6 +352,7 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
             {
                 "closure_wrapper_replacement_execution": True,
                 "closure_wrapper_replacement_plan": self._ready_plan(),
+                "closure_wrapper_assignment_safety": self._assignment_safety(self._ready_plan()),
                 "pause_session_id": "closure-exec-session",
                 "execute_closure_wrapper_replacement": True,
                 "review_approved": False,
@@ -290,10 +369,12 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
 
     def test_executes_reviewed_wrapper_replacement_from_retained_pause(self) -> None:
         session, page = self._preserve_pause()
+        plan = self._ready_plan()
         spec = ClosureWrapperReplacementExecutionSpec.from_context(
             {
                 "closure_wrapper_replacement_execution": True,
-                "closure_wrapper_replacement_plan": self._ready_plan(),
+                "closure_wrapper_replacement_plan": plan,
+                "closure_wrapper_assignment_safety": self._assignment_safety(plan),
                 "pause_session_id": "closure-exec-session",
                 "execute_closure_wrapper_replacement": True,
                 "review_approved": True,
@@ -317,6 +398,26 @@ class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
         self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
         self.assertIn("buildSign =", eval_calls[-1]["expression"])
         self.assertIn("__reverseDeepAgentClosureWrappers", eval_calls[-1]["expression"])
+
+    def test_blocks_execution_without_assignment_safety_proof(self) -> None:
+        session, page = self._preserve_pause()
+        spec = ClosureWrapperReplacementExecutionSpec.from_context(
+            {
+                "closure_wrapper_replacement_execution": True,
+                "closure_wrapper_replacement_plan": self._ready_plan(),
+                "pause_session_id": "closure-exec-session",
+                "execute_closure_wrapper_replacement": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "closure_wrapper_assignment_safety_proof_required")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+        self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), 1)
 
 
 class ClosureWrapperRestoreExecutionManagerTests(unittest.TestCase):
@@ -355,6 +456,14 @@ class ClosureWrapperRestoreExecutionManagerTests(unittest.TestCase):
                 {
                     "closure_wrapper_replacement_execution": True,
                     "closure_wrapper_replacement_plan": plan.plan,
+                    "closure_wrapper_assignment_safety": ClosureWrapperAssignmentSafetyManager().prove(
+                        ClosureWrapperAssignmentSafetySpec.from_context(
+                            {
+                                "prove_closure_wrapper_assignment_safety": True,
+                                "closure_wrapper_replacement_plan": plan.plan,
+                            }
+                        )
+                    ).assignment_safety,
                     "pause_session_id": "closure-restore-session",
                     "execute_closure_wrapper_replacement": True,
                     "review_approved": True,

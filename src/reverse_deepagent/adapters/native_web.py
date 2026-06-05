@@ -93,6 +93,8 @@ from reverse_deepagent.browser.hooks import (
     BrowserHookManager,
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoverySpec,
+    ClosureWrapperAssignmentSafetyManager,
+    ClosureWrapperAssignmentSafetySpec,
     ClosureWrapperEventHarvestManager,
     ClosureWrapperEventHarvestSpec,
     ClosureWrapperRestoreExecutionManager,
@@ -328,6 +330,49 @@ class NativeWebRuntime(WebReverseRuntime):
 
     def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
         context = context or {}
+        if self._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            spec = ClosureWrapperAssignmentSafetySpec.from_context(context)
+            result = ClosureWrapperAssignmentSafetyManager().prove(spec)
+            safety = result.assignment_safety if isinstance(result.assignment_safety, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"closure_wrapper_assignment_safety_status={result.status}",
+                f"closure_wrapper_assignment_safety_proven={safety.get('assignment_safety_proven', False)}",
+                f"closure_wrapper_assignment_safety_safe_to_execute={safety.get('safe_to_request_reviewed_execution', False)}",
+                f"closure_wrapper_assignment_safety_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_assignment_safety_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_assignment_safety_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_assignment_safety_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-assignment-safety.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only closure wrapper assignment safety proof.",
+                    metadata={
+                        "status": result.status,
+                        "assignment_safety_proven": safety.get("assignment_safety_proven", False),
+                        "safe_to_request_reviewed_execution": safety.get("safe_to_request_reviewed_execution", False),
+                        "plan_only": True,
+                        "requires_review": True,
+                        "wrapper_installed": False,
+                        "runtime_mutated": False,
+                        "cdp_command_sent": False,
+                        "callframe_evaluated": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["prove_closure_wrapper_assignment_safety"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=safety.get("next_action") or "resolve_closure_wrapper_assignment_safety_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
         if self._is_closure_wrapper_replacement_plan_request(protection_name, context):
             spec = ClosureWrapperReplacementPlanSpec.from_context(context)
             result = ClosureWrapperReplacementPlanManager().plan(spec)
@@ -1213,6 +1258,7 @@ class NativeWebRuntime(WebReverseRuntime):
             verification = [
                 f"closure_wrapper_replacement_execution_status={result.status}",
                 f"closure_wrapper_replacement_execution_reason={result.reason or ''}",
+                f"closure_wrapper_replacement_execution_assignment_safety_proven={bool((spec.assignment_safety_proof if spec else {}).get('assignment_safety_proven'))}",
                 f"closure_wrapper_replacement_execution_review_approved={policy.get('review_approved', False)}",
                 f"closure_wrapper_replacement_execution_execute_requested={policy.get('execute_requested', False)}",
                 f"closure_wrapper_replacement_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
@@ -4717,6 +4763,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_scope_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
@@ -4749,6 +4797,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_replacement_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
@@ -4778,6 +4828,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_replacement_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
@@ -4805,6 +4857,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_restore_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
             return False
         if normalized in {
@@ -4830,6 +4884,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_event_harvest_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            return False
         if normalized in {
             "closure-wrapper-events",
             "closure-wrapper-event-harvest",
@@ -4847,6 +4903,27 @@ class NativeWebRuntime(WebReverseRuntime):
                 "closureWrapperEventHarvest",
                 "harvest_closure_wrapper_events",
                 "harvestClosureWrapperEvents",
+            )
+        )
+
+    @staticmethod
+    def _is_closure_wrapper_assignment_safety_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "closure-wrapper-assignment-safety",
+            "closure-wrapper-assignment-safety-proof",
+            "prove-closure-wrapper-assignment-safety",
+            "review-closure-wrapper-assignment-safety",
+            "closure-function-wrapper-assignment-safety",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "prove_closure_wrapper_assignment_safety",
+                "proveClosureWrapperAssignmentSafety",
+                "closure_wrapper_assignment_safety_proof_request",
+                "closureWrapperAssignmentSafetyProofRequest",
             )
         )
 
@@ -6135,6 +6212,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):

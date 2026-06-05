@@ -45,6 +45,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "closure_wrapper_preflight",
             "closureWrapperPreflight",
         )
+        closure_wrapper_assignment_safety = _object_alias(
+            payload,
+            "closure_wrapper_assignment_safety",
+            "closure-wrapper-assignment-safety",
+            "closureWrapperAssignmentSafety",
+            "closure_wrapper_assignment_safety_proof",
+            "closureWrapperAssignmentSafetyProof",
+        )
         closure_wrapper_replacement_execution = _object_alias(
             payload,
             "closure_wrapper_replacement_execution",
@@ -274,6 +282,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 generic_timeline,
                 source_logpoints,
                 closure_wrapper_replacement_plan,
+                closure_wrapper_assignment_safety,
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
                 closure_wrapper_events,
@@ -322,6 +331,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("async_chunk_load_plan_blocked")
         if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_replacement_plan_blocked")
+        if _status(closure_wrapper_assignment_safety) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("closure_wrapper_assignment_safety_blocked")
         if _status(closure_wrapper_replacement_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_replacement_execution_blocked")
         if _status(closure_wrapper_restore_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -627,11 +638,15 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         if candidate_count and installed_function_count + installed_module_count == 0:
             warnings.append("candidates_without_installed_hooks")
         closure_wrapper_plan_status = _nested_status(closure_wrapper_replacement_plan, "plan")
+        closure_wrapper_assignment_safety_status = _status(closure_wrapper_assignment_safety) or _nested_status(closure_wrapper_assignment_safety, "assignment_safety")
+        closure_wrapper_assignment_safety_proven = bool(_nested_get(closure_wrapper_assignment_safety, "assignment_safety", "assignment_safety_proven") or closure_wrapper_assignment_safety.get("assignment_safety_proven"))
         if closure_wrapper_replacement_plan and (
             _status(closure_wrapper_replacement_plan) == "ready_for_review"
             or closure_wrapper_plan_status == "ready_for_review"
-        ):
+        ) and not closure_wrapper_assignment_safety_proven:
             warnings.append("closure_wrapper_replacement_plan_requires_review")
+        if closure_wrapper_assignment_safety and closure_wrapper_assignment_safety_status == "ready_for_review":
+            warnings.append("closure_wrapper_assignment_safety_requires_execution_review")
         closure_wrapper_execution_status = _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution")
         if closure_wrapper_execution_status == "applied":
             warnings.append("closure_wrapper_replacement_execution_restore_review_required")
@@ -659,6 +674,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "candidate_count": candidate_count,
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or closure_wrapper_plan_status,
                 "closure_wrapper_replacement_plan_next_action": _nested_get(closure_wrapper_replacement_plan, "plan", "next_action") or closure_wrapper_replacement_plan.get("next_action"),
+                "closure_wrapper_assignment_safety_status": closure_wrapper_assignment_safety_status,
+                "closure_wrapper_assignment_safety_proven": closure_wrapper_assignment_safety_proven,
+                "closure_wrapper_assignment_safety_next_action": _nested_get(closure_wrapper_assignment_safety, "assignment_safety", "next_action") or closure_wrapper_assignment_safety.get("next_action"),
                 "closure_wrapper_replacement_execution_status": closure_wrapper_execution_status,
                 "closure_wrapper_replacement_execution_next_action": _nested_get(closure_wrapper_replacement_execution, "execution", "next_action") or closure_wrapper_replacement_execution.get("next_action"),
                 "closure_wrapper_replacement_execution_runtime_mutated": bool(_nested_get(closure_wrapper_replacement_execution, "execution", "runtime_mutated") or closure_wrapper_replacement_execution.get("runtime_mutated")),
@@ -805,6 +823,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_hooks,
                 source_logpoints,
                 closure_wrapper_replacement_plan,
+                closure_wrapper_assignment_safety,
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
                 closure_wrapper_events,
@@ -987,6 +1006,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "inspect_hook_failure_and_adjust_target_paths"
     if "closure_wrapper_replacement_plan_blocked" in blockers:
         return "resolve_closure_wrapper_replacement_plan_blockers"
+    if "closure_wrapper_assignment_safety_blocked" in blockers:
+        return "resolve_closure_wrapper_assignment_safety_blockers"
     if "closure_wrapper_replacement_execution_blocked" in blockers:
         return "resolve_closure_wrapper_replacement_execution_blockers"
     if "closure_wrapper_restore_execution_blocked" in blockers:
@@ -1071,6 +1092,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_module_federation_get_init_plan"
     if "closure_wrapper_replacement_plan_requires_review" in warnings:
         return "review_closure_wrapper_replacement_plan_before_execution"
+    if "closure_wrapper_assignment_safety_requires_execution_review" in warnings:
+        return "approve_reviewed_closure_wrapper_replacement_execution_with_assignment_safety_proof"
     if "closure_wrapper_replacement_execution_restore_review_required" in warnings:
         return "review_closure_wrapper_restore_plan_or_invoke_target_flow"
     if "closure_wrapper_restore_execution_result_review_required" in warnings:
@@ -1177,6 +1200,7 @@ def _review_required_items(
     module_hooks: dict[str, Any],
     source_logpoints: dict[str, Any],
     closure_wrapper_replacement_plan: dict[str, Any],
+    closure_wrapper_assignment_safety: dict[str, Any],
     closure_wrapper_replacement_execution: dict[str, Any],
     closure_wrapper_restore_execution: dict[str, Any],
     closure_wrapper_events: dict[str, Any],
@@ -1227,6 +1251,8 @@ def _review_required_items(
                 "module_hook_status": _status(module_hooks),
                 "source_logpoint_status": _status(source_logpoints),
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or _nested_status(closure_wrapper_replacement_plan, "plan"),
+                "closure_wrapper_assignment_safety_status": _status(closure_wrapper_assignment_safety) or _nested_status(closure_wrapper_assignment_safety, "assignment_safety"),
+                "closure_wrapper_assignment_safety_proven": bool(_nested_get(closure_wrapper_assignment_safety, "assignment_safety", "assignment_safety_proven") or closure_wrapper_assignment_safety.get("assignment_safety_proven")),
                 "closure_wrapper_replacement_execution_status": _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution"),
                 "closure_wrapper_restore_execution_status": _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution"),
                 "closure_wrapper_event_count": _intish(closure_wrapper_events.get("event_count") or closure_wrapper_events.get("eventCount") or _nested_get(closure_wrapper_events, "snapshot", "eventCount")),

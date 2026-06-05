@@ -321,6 +321,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_closure_functions", "workspace/closure-functions.json", "/workspace/debugger/", "closure-functions.json", "trace", ("debugger", "hook", "review")),
         ("workspace_closure_function_candidates", "workspace/closure-function-candidates.json", "/workspace/hooks/", "closure-function-candidates.json", "triage", ("debugger", "hook", "review")),
         ("workspace_closure_wrapper_replacement_plan", "workspace/closure-wrapper-replacement-plan.json", "/workspace/hooks/", "closure-wrapper-replacement-plan.json", "triage", ("debugger", "hook", "review")),
+        ("workspace_closure_wrapper_assignment_safety", "workspace/closure-wrapper-assignment-safety.json", "/workspace/hooks/", "closure-wrapper-assignment-safety.json", "triage", ("debugger", "hook", "review")),
         ("workspace_closure_wrapper_replacement_execution", "workspace/closure-wrapper-replacement-execution.json", "/workspace/hooks/", "closure-wrapper-replacement-execution.json", "audit", ("debugger", "hook", "review")),
         ("workspace_closure_wrapper_restore_plan", "workspace/closure-wrapper-restore-plan.json", "/workspace/hooks/", "closure-wrapper-restore-plan.json", "audit", ("debugger", "hook", "review")),
         ("workspace_closure_wrapper_restore_execution", "workspace/closure-wrapper-restore-execution.json", "/workspace/hooks/", "closure-wrapper-restore-execution.json", "audit", ("debugger", "hook", "review")),
