@@ -5256,6 +5256,46 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["one_action_executor_ready_for_review"])
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+
+    def test_paused_session_next_paused_event_capture_plan_from_native_runtime_is_read_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-next-paused-event-capture-plan",
+            {
+                "paused_session_next_paused_event_capture_plan": True,
+                "paused_session_cross_process_one_action_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "pause_session_id": "native-next-pause",
+                        "requested_action": "step_over",
+                        "method": "Debugger.stepOver",
+                        "target_id": "target-native-next-pause",
+                        "attached_session_id": "attached-session-1",
+                        "live_action_executed": True,
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_next_paused_event_capture_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-next-paused-event-capture-plan.json")
+        self.assertTrue(result.artifacts[0].metadata["requires_next_paused_event_capture"])
+        self.assertTrue(result.artifacts[0].metadata["plan_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_capture_supported"])
+        self.assertIn("paused_session_next_paused_event_capture_plan_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_plan_event_subscribed=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_plan_paused_event_captured=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_plan_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_cross_process_one_action_from_native_runtime_executes_once(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

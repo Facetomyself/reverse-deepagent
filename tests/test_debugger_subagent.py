@@ -397,6 +397,56 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertEqual(result["review_required_items"][0]["live_callframe_recovery_diagnostics"]["status"], "blocked")
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+
+    def test_review_debugger_artifacts_warns_when_one_action_needs_next_paused_event_capture_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_one_action_execution": {
+                "execution": {
+                    "status": "executed",
+                    "requested_action": "step_over",
+                    "method": "Debugger.stepOver",
+                    "live_action_executed": True,
+                    "debugger_stepped": True,
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_one_action_next_paused_event_capture_plan_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "plan_next_paused_event_capture")
+        self.assertEqual(result["summary"]["next_paused_event_capture_plan"]["status"], "unknown")
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_next_paused_event_capture_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_next_paused_event_capture_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "method": "Debugger.stepOver",
+                    "requires_next_paused_event_capture": True,
+                    "plan_ready_for_review": True,
+                    "automatic_capture_supported": False,
+                    "capture_window": "after_step_until_next_debugger_paused",
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("next_paused_event_capture_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_next_paused_event_capture_plan")
+        plan = result["summary"]["next_paused_event_capture_plan"]
+        self.assertTrue(plan["plan_ready_for_review"])
+        self.assertTrue(plan["requires_next_paused_event_capture"])
+        self.assertFalse(plan["automatic_capture_supported"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_warns_for_cross_process_one_action_execution_result(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

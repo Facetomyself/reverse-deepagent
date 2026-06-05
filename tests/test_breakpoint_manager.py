@@ -13,6 +13,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionCrossProcessOneActionManager,
     PausedSessionCrossProcessOneActionSpec,
+    PausedSessionNextPausedEventCapturePlanManager,
+    PausedSessionNextPausedEventCapturePlanSpec,
     PausedSessionLiveCallframeRecoveryManager,
     PausedSessionLiveCallframeRecoverySpec,
     PausedSessionLiveContinuationPreflightManager,
@@ -1034,6 +1036,61 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.reason, "review_approval_required")
         self.assertEqual(result.execution["next_action"], "approve_cross_process_one_action_execution")
         self.assertEqual(session.calls, [])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+
+    def test_next_paused_event_capture_plan_is_review_only_after_step_action(self) -> None:
+        spec = PausedSessionNextPausedEventCapturePlanSpec.from_context(
+            {
+                "paused_session_next_paused_event_capture_plan": True,
+                "paused_session_cross_process_one_action_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "pause_session_id": "pause-next-1",
+                        "requested_action": "step_over",
+                        "method": "Debugger.stepOver",
+                        "target_id": "target-1",
+                        "attached_session_id": "attached-session-1",
+                        "live_action_executed": True,
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionNextPausedEventCapturePlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertTrue(result.plan["requires_next_paused_event_capture"])
+        self.assertEqual(result.plan["capture_window"], "after_step_until_next_debugger_paused")
+        self.assertFalse(result.plan["automatic_capture_supported"])
+        self.assertEqual(result.plan["next_action"], "review_next_paused_event_capture_plan")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["paused_event_captured"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_next_paused_event_capture_plan_not_required_for_evaluate(self) -> None:
+        spec = PausedSessionNextPausedEventCapturePlanSpec.from_context(
+            {
+                "paused_session_next_paused_event_capture_plan": True,
+                "paused_session_cross_process_one_action_execution": {
+                    "execution": {
+                        "status": "executed",
+                        "requested_action": "evaluate",
+                        "method": "Debugger.evaluateOnCallFrame",
+                        "attached_session_id": "attached-session-1",
+                        "live_action_executed": True,
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionNextPausedEventCapturePlanManager().plan(spec)
+
+        self.assertEqual(result.status, "not_required")
+        self.assertFalse(result.plan["requires_next_paused_event_capture"])
+        self.assertEqual(result.plan["next_action"], "review_one_action_result")
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
 
     def test_cross_process_one_action_blocks_detached_attach_probe_session(self) -> None:

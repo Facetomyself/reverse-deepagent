@@ -2084,6 +2084,223 @@ class PausedSessionCrossProcessOneActionManager:
         return "inspect_cross_process_one_action_blockers"
 
 
+@dataclass(slots=True)
+class PausedSessionNextPausedEventCapturePlanSpec:
+    """Plan how to capture the next Debugger.paused event after a reviewed one-action execution."""
+
+    cross_process_one_action_execution: dict[str, Any] = field(default_factory=dict)
+    requested_action: str | None = None
+    method: str | None = None
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    reviewer: str | None = None
+    timeout_ms: int = 5000
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionNextPausedEventCapturePlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_next_paused_event_capture_plan")
+            or context.get("pausedSessionNextPausedEventCapturePlan")
+            or context.get("paused-session-next-paused-event-capture-plan")
+            or context.get("next_paused_event_capture_plan")
+            or context.get("nextPausedEventCapturePlan")
+            or context.get("plan_next_paused_event_capture")
+            or context.get("planNextPausedEventCapture")
+        )
+        one_action_container = _first_dict(
+            context,
+            "paused_session_cross_process_one_action_execution",
+            "paused-session-cross-process-one-action-execution",
+            "pausedSessionCrossProcessOneActionExecution",
+            "cross_process_one_action_execution",
+            "crossProcessOneActionExecution",
+            "cross_process_one_action",
+            "crossProcessOneAction",
+        )
+        execution = dict(one_action_container.get("execution")) if isinstance(one_action_container.get("execution"), dict) else one_action_container
+        if not requested and not execution:
+            return None
+        timeout_raw = context.get("timeout_ms", context.get("timeoutMs", execution.get("timeout_ms", 5000)))
+        try:
+            timeout_ms = int(timeout_raw)
+        except (TypeError, ValueError):
+            timeout_ms = 5000
+        return cls(
+            cross_process_one_action_execution=execution,
+            requested_action=str(context.get("requested_action") or context.get("requestedAction") or execution.get("requested_action") or "").strip().replace("-", "_").lower() or None,
+            method=str(context.get("method") or execution.get("method") or "").strip() or None,
+            pause_session_id=str(context.get("pause_session_id") or context.get("pauseSessionId") or execution.get("pause_session_id") or "").strip() or None,
+            target_id=str(context.get("target_id") or context.get("targetId") or execution.get("target_id") or "").strip() or None,
+            attached_session_id=str(context.get("attached_session_id") or context.get("attachedSessionId") or execution.get("attached_session_id") or "").strip() or None,
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip() or None,
+            timeout_ms=max(100, timeout_ms),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionNextPausedEventCapturePlanResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "plan": self.plan,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class PausedSessionNextPausedEventCapturePlanManager:
+    """Review-only plan for the next paused-event capture step after one live action."""
+
+    STEP_METHODS = {"Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"}
+
+    def plan(self, spec: PausedSessionNextPausedEventCapturePlanSpec | None) -> PausedSessionNextPausedEventCapturePlanResult:
+        blockers = self._blockers(spec)
+        plan = self._payload(spec, blockers=blockers)
+        status = plan["status"]
+        return PausedSessionNextPausedEventCapturePlanResult(status=status, plan=plan, side_effect_policy=self._side_effect_policy(), reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionNextPausedEventCapturePlanSpec | None) -> list[str]:
+        if spec is None:
+            return ["next_paused_event_capture_plan_request_missing"]
+        blockers: list[str] = []
+        execution = spec.cross_process_one_action_execution
+        if not execution:
+            blockers.append("cross_process_one_action_execution_required")
+        elif execution.get("status") != "executed" or not execution.get("live_action_executed"):
+            blockers.append("cross_process_one_action_not_executed")
+        method = spec.method or str(execution.get("method") or "")
+        if not method:
+            blockers.append("debugger_action_method_required")
+        if method == "Debugger.evaluateOnCallFrame":
+            blockers.append("next_paused_event_not_required_for_evaluate")
+        if method == "Debugger.resume" and not spec.attached_session_id:
+            blockers.append("attached_session_id_required_for_resume_capture")
+        if method in cls.STEP_METHODS and not spec.attached_session_id:
+            blockers.append("attached_session_id_required_for_step_capture")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionNextPausedEventCapturePlanSpec | None, *, blockers: list[str]) -> dict[str, Any]:
+        execution = spec.cross_process_one_action_execution if spec else {}
+        method = spec.method or str(execution.get("method") or "") if spec else ""
+        requested_action = spec.requested_action or str(execution.get("requested_action") or "") if spec else None
+        requires_capture = method in cls.STEP_METHODS or method == "Debugger.resume"
+        not_required = "next_paused_event_not_required_for_evaluate" in blockers
+        effective_blockers = [item for item in blockers if item != "next_paused_event_not_required_for_evaluate"]
+        status = "not_required" if not_required and not effective_blockers else "ready_for_review" if requires_capture and not blockers else "blocked" if blockers else "ready_for_review"
+        capture_window = "after_step_until_next_debugger_paused" if method in cls.STEP_METHODS else "after_resume_until_next_debugger_paused_or_timeout" if method == "Debugger.resume" else "not_required_for_evaluate"
+        return {
+            "schema_version": "reverse-deepagent.paused-session-next-paused-event-capture-plan.v1",
+            "status": status,
+            "pause_session_id": spec.pause_session_id if spec else execution.get("pause_session_id"),
+            "requested_action": requested_action,
+            "method": method or None,
+            "reviewer": spec.reviewer if spec else None,
+            "target_id": spec.target_id if spec else execution.get("target_id"),
+            "attached_session_id_present": bool(spec and spec.attached_session_id),
+            "timeout_ms": spec.timeout_ms if spec else 5000,
+            "requires_next_paused_event_capture": requires_capture,
+            "capture_window": capture_window,
+            "automatic_capture_supported": False,
+            "plan_ready_for_review": status == "ready_for_review",
+            "one_action_execution_status": execution.get("status"),
+            "one_action_live_action_executed": bool(execution.get("live_action_executed")),
+            "planned_steps": cls._planned_steps(method=method, timeout_ms=spec.timeout_ms if spec else 5000, requires_capture=requires_capture),
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _planned_steps(*, method: str, timeout_ms: int, requires_capture: bool) -> list[dict[str, Any]]:
+        if not requires_capture:
+            return [
+                {
+                    "step": "review_one_action_result",
+                    "status": "not_required_for_evaluate" if method == "Debugger.evaluateOnCallFrame" else "review_only",
+                    "side_effects": False,
+                    "description": "No automatic next Debugger.paused capture is required for this one-action method.",
+                }
+            ]
+        return [
+            {
+                "step": "pre_subscribe_debugger_paused",
+                "status": "future_review_gate_required",
+                "side_effects": False,
+                "description": "Future executor must register Debugger.paused handling before issuing the next reviewed live action.",
+            },
+            {
+                "step": "capture_next_debugger_paused",
+                "status": "future_review_gate_required",
+                "side_effects": False,
+                "timeout_ms": timeout_ms,
+                "description": "Future executor may wait for one next Debugger.paused event and then stop without looping.",
+            },
+            {
+                "step": "recover_live_callframe_from_next_pause",
+                "status": "future_review_gate_required",
+                "side_effects": False,
+                "description": "Future recovery should feed the observed callFrames into the existing live callFrame recovery proof.",
+            },
+        ]
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "next_paused_event_capture_plan_request_missing": ("request", "No next paused-event capture plan request was provided.", "request_next_paused_event_capture_plan"),
+            "cross_process_one_action_execution_required": ("one_action", "A cross-process one-action execution artifact is required before planning the next paused-event capture.", "execute_or_provide_cross_process_one_action_result"),
+            "cross_process_one_action_not_executed": ("one_action", "The supplied one-action artifact has not executed a live action.", "review_or_execute_cross_process_one_action"),
+            "debugger_action_method_required": ("action", "The one-action method is missing.", "provide_one_action_method"),
+            "next_paused_event_not_required_for_evaluate": ("action", "Evaluate-on-callframe does not itself require capturing a next paused event.", "review_evaluation_result"),
+            "attached_session_id_required_for_resume_capture": ("cdp_session", "A retained attached session id is required before planning resume-event capture.", "retain_attached_session_before_resume_capture"),
+            "attached_session_id_required_for_step_capture": ("cdp_session", "A retained attached session id is required before planning step-event capture.", "retain_attached_session_before_step_capture"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_next_paused_event_capture_plan"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_next_paused_event_capture_plan"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_next_paused_event_capture_plan"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if status == "ready_for_review":
+            return "review_next_paused_event_capture_plan"
+        if status == "not_required":
+            return "review_one_action_result"
+        if "cross_process_one_action_execution_required" in blockers or "cross_process_one_action_not_executed" in blockers:
+            return "execute_or_review_cross_process_one_action_first"
+        if any(item.startswith("attached_session_id_required") for item in blockers):
+            return "rerun_attach_probe_with_retained_session_before_capture_plan"
+        return "inspect_next_paused_event_capture_plan_blockers"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 

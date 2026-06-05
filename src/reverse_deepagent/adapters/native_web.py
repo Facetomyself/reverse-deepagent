@@ -130,6 +130,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionCrossProcessOneActionManager,
     PausedSessionCrossProcessOneActionSpec,
+    PausedSessionNextPausedEventCapturePlanManager,
+    PausedSessionNextPausedEventCapturePlanSpec,
     PausedSessionLiveCallframeRecoveryManager,
     PausedSessionLiveCallframeRecoverySpec,
     PausedSessionLiveContinuationPreflightManager,
@@ -1138,6 +1140,56 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_next_paused_event_capture_plan_request(protection_name, context):
+            spec = PausedSessionNextPausedEventCapturePlanSpec.from_context(context)
+            result = PausedSessionNextPausedEventCapturePlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            verification = [
+                f"paused_session_next_paused_event_capture_plan_status={result.status}",
+                f"paused_session_next_paused_event_capture_plan_reason={result.reason or ''}",
+                f"paused_session_next_paused_event_capture_plan_requested_action={plan.get('requested_action')}",
+                f"paused_session_next_paused_event_capture_plan_method={plan.get('method')}",
+                f"paused_session_next_paused_event_capture_plan_requires_capture={plan.get('requires_next_paused_event_capture', False)}",
+                f"paused_session_next_paused_event_capture_plan_ready_for_review={plan.get('plan_ready_for_review', False)}",
+                f"paused_session_next_paused_event_capture_plan_automatic_capture_supported={plan.get('automatic_capture_supported', False)}",
+                f"paused_session_next_paused_event_capture_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_next_paused_event_capture_plan_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_next_paused_event_capture_plan_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_next_paused_event_capture_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_next_paused_event_capture_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_next_paused_event_capture_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-next-paused-event-capture-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only next Debugger.paused event capture plan after one-action execution.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "pause_session_id": plan.get("pause_session_id"),
+                        "requested_action": plan.get("requested_action"),
+                        "method": plan.get("method"),
+                        "requires_next_paused_event_capture": plan.get("requires_next_paused_event_capture", False),
+                        "plan_ready_for_review": plan.get("plan_ready_for_review", False),
+                        "automatic_capture_supported": plan.get("automatic_capture_supported", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status in {"ready_for_review", "not_required"} else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "inspect_next_paused_event_capture_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "not_required"} else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_cross_process_one_action_request(protection_name, context):
             spec = PausedSessionCrossProcessOneActionSpec.from_context(context)
@@ -5204,6 +5256,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_next_paused_event_capture_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_one_action_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_live_callframe_recovery_request(protection_name, context):
@@ -5234,6 +5288,32 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_next_paused_event_capture_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-next-paused-event-capture-plan",
+            "pause-session-next-paused-event-capture-plan",
+            "debugger-paused-session-next-paused-event-capture-plan",
+            "cross-process-next-paused-event-capture-plan",
+            "next-paused-event-capture-plan",
+            "plan-next-paused-event-capture",
+            "review-next-paused-event-capture-plan",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_next_paused_event_capture_plan",
+                "pausedSessionNextPausedEventCapturePlan",
+                "paused-session-next-paused-event-capture-plan",
+                "next_paused_event_capture_plan",
+                "nextPausedEventCapturePlan",
+                "plan_next_paused_event_capture",
+                "planNextPausedEventCapture",
             )
         )
 
