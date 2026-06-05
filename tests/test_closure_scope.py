@@ -8,6 +8,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperAssignmentSafetySpec,
     ClosureWrapperEventHarvestManager,
     ClosureWrapperEventHarvestSpec,
+    ClosureWrapperRuntimeMutabilityPreflightManager,
+    ClosureWrapperRuntimeMutabilityPreflightSpec,
     ClosureWrapperRestoreExecutionManager,
     ClosureWrapperRestoreExecutionSpec,
     ClosureWrapperReplacementExecutionManager,
@@ -286,6 +288,61 @@ class ClosureWrapperAssignmentSafetyManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.reason, "lexical_binding_typeof_evidence_matches")
         self.assertFalse(result.assignment_safety["assignment_safety_proven"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+
+
+class ClosureWrapperRuntimeMutabilityPreflightManagerTests(unittest.TestCase):
+    @staticmethod
+    def _assignment_safety() -> dict:
+        plan = ClosureWrapperAssignmentSafetyManagerTests._ready_plan()
+        return ClosureWrapperAssignmentSafetyManager().prove(
+            ClosureWrapperAssignmentSafetySpec.from_context(
+                {
+                    "prove_closure_wrapper_assignment_safety": True,
+                    "closure_wrapper_replacement_plan": plan,
+                }
+            )
+        ).assignment_safety
+
+    def test_preflights_runtime_mutability_probe_without_side_effects(self) -> None:
+        spec = ClosureWrapperRuntimeMutabilityPreflightSpec.from_context(
+            {
+                "closure_wrapper_runtime_mutability_preflight": True,
+                "closure_wrapper_assignment_safety": self._assignment_safety(),
+                "pause_session_id": "closure-mutability-session",
+            }
+        )
+
+        result = ClosureWrapperRuntimeMutabilityPreflightManager().preflight(spec)
+        payload = result.to_dict()
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(payload["schema_version"], "reverse-deepagent.closure-wrapper-runtime-mutability-preflight.v1")
+        self.assertTrue(payload["preflight"]["runtime_mutability_probe_ready_for_review"])
+        self.assertFalse(payload["preflight"]["runtime_mutability_proven"])
+        self.assertFalse(payload["preflight"]["runtime_mutability_probe_executed"])
+        self.assertFalse(payload["preflight"]["runtime_mutated"])
+        self.assertFalse(payload["preflight"]["cdp_command_sent"])
+        self.assertFalse(payload["preflight"]["callframe_evaluated"])
+        self.assertEqual(payload["preflight"]["function_name"], "buildSign")
+        self.assertEqual(payload["preflight"]["expected_callframe_id"], "cf-closure-1")
+        self.assertTrue(payload["preflight"]["probe_plan"]["requires_allow_side_effects_evaluation"])
+        self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(payload["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_blocks_runtime_mutability_preflight_without_retained_pause(self) -> None:
+        spec = ClosureWrapperRuntimeMutabilityPreflightSpec.from_context(
+            {
+                "closure_wrapper_runtime_mutability_preflight": True,
+                "closure_wrapper_assignment_safety": self._assignment_safety(),
+            }
+        )
+
+        result = ClosureWrapperRuntimeMutabilityPreflightManager().preflight(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "same_process_pause_session_provided")
+        self.assertFalse(result.preflight["runtime_mutability_probe_ready_for_review"])
         self.assertFalse(result.side_effect_policy["runtime_mutated"])
 
 

@@ -97,6 +97,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperAssignmentSafetySpec,
     ClosureWrapperEventHarvestManager,
     ClosureWrapperEventHarvestSpec,
+    ClosureWrapperRuntimeMutabilityPreflightManager,
+    ClosureWrapperRuntimeMutabilityPreflightSpec,
     ClosureWrapperRestoreExecutionManager,
     ClosureWrapperRestoreExecutionSpec,
     ClosureWrapperReplacementExecutionManager,
@@ -330,6 +332,49 @@ class NativeWebRuntime(WebReverseRuntime):
 
     def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
         context = context or {}
+        if self._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            spec = ClosureWrapperRuntimeMutabilityPreflightSpec.from_context(context)
+            result = ClosureWrapperRuntimeMutabilityPreflightManager().preflight(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"closure_wrapper_runtime_mutability_preflight_status={result.status}",
+                f"closure_wrapper_runtime_mutability_probe_ready_for_review={preflight.get('runtime_mutability_probe_ready_for_review', False)}",
+                f"closure_wrapper_runtime_mutability_proven={preflight.get('runtime_mutability_proven', False)}",
+                f"closure_wrapper_runtime_mutability_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_runtime_mutability_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_runtime_mutability_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_runtime_mutability_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-runtime-mutability-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only closure wrapper runtime mutability preflight.",
+                    metadata={
+                        "status": result.status,
+                        "runtime_mutability_probe_ready_for_review": preflight.get("runtime_mutability_probe_ready_for_review", False),
+                        "runtime_mutability_proven": False,
+                        "plan_only": True,
+                        "requires_review": True,
+                        "wrapper_installed": False,
+                        "runtime_mutated": False,
+                        "cdp_command_sent": False,
+                        "callframe_evaluated": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["preflight_closure_wrapper_runtime_mutability"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "resolve_closure_wrapper_runtime_mutability_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
         if self._is_closure_wrapper_assignment_safety_request(protection_name, context):
             spec = ClosureWrapperAssignmentSafetySpec.from_context(context)
             result = ClosureWrapperAssignmentSafetyManager().prove(spec)
@@ -4763,6 +4808,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_scope_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
@@ -4797,6 +4844,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_replacement_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
@@ -4828,6 +4877,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_replacement_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
@@ -4857,6 +4908,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_restore_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
@@ -4884,6 +4937,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_event_harvest_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
             return False
         if normalized in {
@@ -4909,6 +4964,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_closure_wrapper_assignment_safety_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            return False
         if normalized in {
             "closure-wrapper-assignment-safety",
             "closure-wrapper-assignment-safety-proof",
@@ -4924,6 +4981,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "proveClosureWrapperAssignmentSafety",
                 "closure_wrapper_assignment_safety_proof_request",
                 "closureWrapperAssignmentSafetyProofRequest",
+            )
+        )
+
+    @staticmethod
+    def _is_closure_wrapper_runtime_mutability_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "closure-wrapper-runtime-mutability-preflight",
+            "closure-wrapper-mutability-preflight",
+            "preflight-closure-wrapper-runtime-mutability",
+            "review-closure-wrapper-runtime-mutability",
+            "closure-function-wrapper-runtime-mutability-preflight",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "closure_wrapper_runtime_mutability_preflight",
+                "closureWrapperRuntimeMutabilityPreflight",
+                "preflight_closure_wrapper_runtime_mutability",
+                "preflightClosureWrapperRuntimeMutability",
+                "closure_wrapper_mutability_preflight",
+                "closureWrapperMutabilityPreflight",
             )
         )
 
@@ -6212,6 +6292,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):

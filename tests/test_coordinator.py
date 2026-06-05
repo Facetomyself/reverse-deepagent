@@ -175,6 +175,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native closure wrapper runtime mutability preflight",
+                    kind=EvidenceKind.HOOK,
+                    source="closure_wrapper_runtime_mutability_preflight",
+                    details={"status": "ready_for_review", "preflight": {"runtime_mutability_probe_ready_for_review": True}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native closure wrapper replacement execution",
                     kind=EvidenceKind.HOOK,
                     source="closure_wrapper_replacement_execution",
@@ -532,6 +539,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
+        self.assertTrue(payloads["closure-wrapper-runtime-mutability-preflight.json"]["preflight"]["runtime_mutability_probe_ready_for_review"])
         self.assertEqual(payloads["closure-wrapper-replacement-execution.json"]["status"], "applied")
         self.assertTrue(payloads["closure-wrapper-replacement-execution.json"]["execution"]["wrapper_installed"])
         self.assertEqual(payloads["closure-wrapper-restore-plan.json"]["status"], "ready_for_review")
@@ -638,6 +646,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_assignment_safety"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_runtime_mutability_preflight"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_plan"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_execution"), "audit")

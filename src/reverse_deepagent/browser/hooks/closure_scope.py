@@ -748,6 +748,215 @@ class ClosureWrapperAssignmentSafetyManager:
 
 
 @dataclass(slots=True)
+class ClosureWrapperRuntimeMutabilityPreflightSpec:
+    """Review-only preflight for a future closure assignment mutability probe.
+
+    This is the checkpoint after static assignment safety and before any future
+    side-effecting runtime mutability probe. It prepares reviewable probe intent
+    for a retained same-process pause, but it does not evaluate JavaScript,
+    assign bindings, install wrappers, or mutate runtime state.
+    """
+
+    assignment_safety: dict[str, Any] = field(default_factory=dict)
+    pause_session_id: str | None = None
+    callframe_index: int = 0
+    expected_callframe_id: str | None = None
+    function_name: str | None = None
+    wrapper_strategy: str = "log-only-call-through"
+    reviewer_note: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperRuntimeMutabilityPreflightSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_runtime_mutability_preflight")
+            or context.get("closureWrapperRuntimeMutabilityPreflight")
+            or context.get("preflight_closure_wrapper_runtime_mutability")
+            or context.get("preflightClosureWrapperRuntimeMutability")
+            or context.get("closure_wrapper_mutability_preflight")
+            or context.get("closureWrapperMutabilityPreflight")
+        )
+        raw_safety = (
+            context.get("closure_wrapper_assignment_safety")
+            or context.get("closureWrapperAssignmentSafety")
+            or context.get("closure-wrapper-assignment-safety")
+            or context.get("assignment_safety")
+            or context.get("assignmentSafety")
+        )
+        assignment_safety = ClosureWrapperReplacementExecutionSpec._coerce_assignment_safety_proof(raw_safety)
+        if not requested and not assignment_safety:
+            return None
+        callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex", assignment_safety.get("callframe_index", 0)))
+        return cls(
+            assignment_safety=assignment_safety,
+            pause_session_id=_string_or_none(
+                context.get(
+                    "pause_session_id",
+                    context.get("pauseSessionId", context.get("debugger_session_id", context.get("debuggerSessionId"))),
+                )
+            ),
+            callframe_index=int(callframe_index_raw or 0),
+            expected_callframe_id=_string_or_none(
+                context.get(
+                    "expected_callframe_id",
+                    context.get("expectedCallFrameId", context.get("callframe_id", context.get("callFrameId", assignment_safety.get("callFrameId")))),
+                )
+            ),
+            function_name=_string_or_none(context.get("function_name", context.get("functionName", assignment_safety.get("function_name")))),
+            wrapper_strategy=str(context.get("wrapper_strategy", context.get("wrapperStrategy", assignment_safety.get("wrapper_strategy", "log-only-call-through"))) or "log-only-call-through"),
+            reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
+        )
+
+
+@dataclass(slots=True)
+class ClosureWrapperRuntimeMutabilityPreflightResult:
+    status: str
+    preflight: dict[str, Any] = field(default_factory=dict)
+    assignment_safety: dict[str, Any] = field(default_factory=dict)
+    checks: list[dict[str, Any]] = field(default_factory=list)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-preflight.v1",
+            "status": self.status,
+            "preflight": self.preflight,
+            "assignment_safety": self.assignment_safety,
+            "checks": self.checks,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class ClosureWrapperRuntimeMutabilityPreflightManager:
+    """Prepare a review checkpoint for a future runtime assignment mutability probe."""
+
+    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+
+    def preflight(self, spec: ClosureWrapperRuntimeMutabilityPreflightSpec | None) -> ClosureWrapperRuntimeMutabilityPreflightResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return self._result(
+                status="unsupported",
+                reason="missing_closure_wrapper_runtime_mutability_preflight_spec",
+                spec=None,
+                checks=[],
+                policy=policy,
+            )
+        checks = self._checks(spec)
+        failed_required = [item for item in checks if item.get("required") and not item.get("passed")]
+        status = "ready_for_review" if not failed_required else "blocked"
+        reason = None if status == "ready_for_review" else str(failed_required[0].get("check") or "runtime_mutability_preflight_check_failed")
+        return self._result(status=status, reason=reason, spec=spec, checks=checks, policy=policy)
+
+    def _checks(self, spec: ClosureWrapperRuntimeMutabilityPreflightSpec) -> list[dict[str, Any]]:
+        proof = spec.assignment_safety if isinstance(spec.assignment_safety, dict) else {}
+        function_name = str(spec.function_name or proof.get("function_name") or "")
+        callframe_id = str(spec.expected_callframe_id or proof.get("callFrameId") or proof.get("callframe_id") or "")
+        return [
+            self._check("assignment_safety_proven", proof.get("assignment_safety_proven") is True, required=True, evidence=proof.get("assignment_safety_proven")),
+            self._check("safe_to_request_reviewed_execution", proof.get("safe_to_request_reviewed_execution") is True, required=True, evidence=proof.get("safe_to_request_reviewed_execution")),
+            self._check("function_name_safe_identifier", bool(JS_IDENTIFIER_RE.fullmatch(function_name)), required=True, evidence=function_name),
+            self._check("stable_callframe_id_present", bool(callframe_id), required=True, evidence=callframe_id),
+            self._check("same_process_pause_session_provided", bool(spec.pause_session_id), required=True, evidence=spec.pause_session_id),
+            self._check("wrapper_strategy_supported", spec.wrapper_strategy in self.SUPPORTED_STRATEGIES, required=True, evidence=spec.wrapper_strategy),
+            self._check("runtime_mutability_not_already_claimed", proof.get("runtime_mutability_proven") is not True, required=False, evidence=proof.get("runtime_mutability_proven")),
+            self._check("runtime_probe_not_executed", True, required=False, evidence="preflight-only"),
+        ]
+
+    @staticmethod
+    def _check(check: str, passed: bool, *, required: bool, evidence: Any) -> dict[str, Any]:
+        return {"check": check, "passed": bool(passed), "required": bool(required), "evidence": evidence}
+
+    def _result(
+        self,
+        *,
+        status: str,
+        reason: str | None,
+        spec: ClosureWrapperRuntimeMutabilityPreflightSpec | None,
+        checks: list[dict[str, Any]],
+        policy: dict[str, Any],
+    ) -> ClosureWrapperRuntimeMutabilityPreflightResult:
+        proof = spec.assignment_safety if spec and isinstance(spec.assignment_safety, dict) else {}
+        function_name = str((spec.function_name if spec else None) or proof.get("function_name") or "")
+        callframe_id = str((spec.expected_callframe_id if spec else None) or proof.get("callFrameId") or proof.get("callframe_id") or "")
+        passed_required = all(item.get("passed") for item in checks if item.get("required"))
+        preflight = {
+            "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-preflight.v1",
+            "status": status,
+            "reason": reason,
+            "preflight_kind": "review-only-runtime-assignment-mutability-probe-plan",
+            "runtime_mutability_probe_ready_for_review": status == "ready_for_review" and passed_required,
+            "runtime_mutability_proven": False,
+            "runtime_mutability_probe_executed": False,
+            "requires_review": True,
+            "wrapper_installed": False,
+            "runtime_mutated": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "callframe_index": spec.callframe_index if spec else 0,
+            "expected_callframe_id": callframe_id,
+            "function_name": function_name,
+            "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "probe_plan": {
+                "probe_kind": "reviewed-same-process-callframe-assignment-mutability",
+                "requires_same_process_retained_pause": True,
+                "requires_allow_side_effects_evaluation": True,
+                "would_send_cdp_command": True,
+                "would_mutate_runtime_temporarily": True,
+                "default_execute_now": False,
+                "review_steps": [
+                    "confirm_same_process_pause_session_is_still_live",
+                    "review_assignment_safety_proof",
+                    "approve_runtime_mutability_probe_payload",
+                    "run_future_probe_with_mutation_audit_and_restore_guard",
+                ],
+            },
+            "check_count": len(checks),
+            "passed_required_check_count": sum(1 for item in checks if item.get("required") and item.get("passed")),
+            "failed_required_checks": [str(item.get("check")) for item in checks if item.get("required") and not item.get("passed")],
+            "reviewer_note": spec.reviewer_note if spec else None,
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": policy,
+        }
+        return ClosureWrapperRuntimeMutabilityPreflightResult(
+            status=status,
+            preflight=preflight,
+            assignment_safety=proof,
+            checks=checks,
+            side_effect_policy=policy,
+            reason=reason,
+        )
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "ready_for_review":
+            return "review_closure_wrapper_runtime_mutability_probe_before_execution"
+        if reason == "assignment_safety_proven":
+            return "prove_closure_wrapper_assignment_safety_before_mutability_preflight"
+        if reason == "same_process_pause_session_provided":
+            return "reproduce_pause_and_preserve_same_process_session"
+        return "resolve_closure_wrapper_runtime_mutability_preflight_blockers"
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "plan_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "wrapper_installed": False,
+            "runtime_mutated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class ClosureWrapperReplacementExecutionSpec:
     """Explicit reviewed execution request for a closure wrapper replacement plan.
 

@@ -4321,6 +4321,40 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["assignment_safety_proven"])
         self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
 
+    def test_native_web_runtime_preflights_closure_wrapper_runtime_mutability_without_browser_session(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        assignment_safety = {
+            "status": "ready_for_review",
+            "assignment_safety_proven": True,
+            "safe_to_request_reviewed_execution": True,
+            "runtime_mutability_proven": False,
+            "function_name": "buildSign",
+            "callFrameId": "native-cf-1",
+            "wrapper_strategy": "log-only-call-through",
+        }
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-runtime-mutability-preflight",
+            {
+                "closure_wrapper_assignment_safety": assignment_safety,
+                "pause_session_id": "native-closure-exec",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, ["preflight_closure_wrapper_runtime_mutability"])
+        self.assertIn("closure_wrapper_runtime_mutability_preflight_status=ready_for_review", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_probe_ready_for_review=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_proven=False", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_runtime_mutated=False", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_cdp_command_sent=False", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_callframe_evaluated=False", result.verification)
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-runtime-mutability-preflight.json")
+        self.assertTrue(result.artifacts[0].metadata["runtime_mutability_probe_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_mutability_proven"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
+
     def test_native_web_runtime_executes_reviewed_closure_wrapper_replacement(self) -> None:
         BreakpointManager.clear_paused_sessions()
         provider = FakeProvider()

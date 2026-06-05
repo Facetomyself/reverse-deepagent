@@ -147,6 +147,43 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("closure_wrapper_assignment_safety_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "resolve_closure_wrapper_assignment_safety_blockers")
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_runtime_mutability_preflight(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_runtime_mutability_preflight": {
+                "status": "ready_for_review",
+                "preflight": {
+                    "status": "ready_for_review",
+                    "runtime_mutability_probe_ready_for_review": True,
+                    "next_action": "review_closure_wrapper_runtime_mutability_probe_before_execution",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_runtime_mutability_preflight_requires_probe_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_closure_wrapper_runtime_mutability_probe_before_execution")
+        self.assertEqual(result["summary"]["closure_wrapper_runtime_mutability_preflight_status"], "ready_for_review")
+        self.assertTrue(result["summary"]["closure_wrapper_runtime_mutability_probe_ready_for_review"])
+        self.assertTrue(result["review_required_items"][0]["closure_wrapper_runtime_mutability_probe_ready_for_review"])
+
+    def test_review_hook_artifacts_blocks_failed_closure_wrapper_runtime_mutability_preflight(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_runtime_mutability_preflight": {
+                "status": "blocked",
+                "preflight": {"runtime_mutability_probe_ready_for_review": False},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("closure_wrapper_runtime_mutability_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_closure_wrapper_runtime_mutability_preflight_blockers")
+
     def test_review_hook_artifacts_warns_for_closure_wrapper_replacement_execution_restore(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
