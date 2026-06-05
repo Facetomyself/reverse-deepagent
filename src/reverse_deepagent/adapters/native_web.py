@@ -132,6 +132,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessOneActionSpec,
     PausedSessionCrossProcessContinuationCheckpointManager,
     PausedSessionCrossProcessContinuationCheckpointSpec,
+    PausedSessionMultiStepContinuationWorkflowManager,
+    PausedSessionMultiStepContinuationWorkflowSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1146,6 +1148,56 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_multi_step_continuation_workflow_request(protection_name, context):
+            spec = PausedSessionMultiStepContinuationWorkflowSpec.from_context(context)
+            result = PausedSessionMultiStepContinuationWorkflowManager().plan(spec)
+            workflow = result.workflow if isinstance(result.workflow, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = workflow.get("blockers") if isinstance(workflow.get("blockers"), list) else []
+            verification = [
+                f"paused_session_multi_step_continuation_workflow_status={result.status}",
+                f"paused_session_multi_step_continuation_workflow_reason={result.reason or ''}",
+                f"paused_session_multi_step_continuation_workflow_source_checkpoint_status={workflow.get('source_checkpoint_status')}",
+                f"paused_session_multi_step_continuation_workflow_step_count={workflow.get('planned_step_count', 0)}",
+                f"paused_session_multi_step_continuation_workflow_execute_at_most_one_action_per_review={workflow.get('execute_at_most_one_action_per_review', False)}",
+                f"paused_session_multi_step_continuation_workflow_manual_checkpoint_required={workflow.get('manual_checkpoint_required_after_each_step', False)}",
+                f"paused_session_multi_step_continuation_workflow_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_multi_step_continuation_workflow_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_multi_step_continuation_workflow_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_multi_step_continuation_workflow_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_multi_step_continuation_workflow_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_multi_step_continuation_workflow_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_multi_step_continuation_workflow_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-multi-step-continuation-workflow.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only multi-step paused-session continuation workflow / journal plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_status": workflow.get("status"),
+                        "workflow_id": workflow.get("workflow_id"),
+                        "pause_session_id": workflow.get("pause_session_id"),
+                        "target_id": workflow.get("target_id"),
+                        "planned_step_count": workflow.get("planned_step_count", 0),
+                        "manual_checkpoint_required_after_each_step": workflow.get("manual_checkpoint_required_after_each_step", False),
+                        "execute_at_most_one_action_per_review": workflow.get("execute_at_most_one_action_per_review", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=workflow.get("next_action") or "inspect_multi_step_continuation_workflow_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_pre_action_subscribe_and_action_request(protection_name, context):
             spec = PausedSessionPreActionSubscribeAndActionSpec.from_context(context)
@@ -5430,6 +5482,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_multi_step_continuation_workflow_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_pre_action_subscribe_and_action_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
@@ -5468,6 +5522,34 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_multi_step_continuation_workflow_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-multi-step-continuation-workflow",
+            "pause-session-multi-step-continuation-workflow",
+            "debugger-paused-session-multi-step-continuation-workflow",
+            "multi-step-paused-session-continuation",
+            "cross-process-multi-step-continuation",
+            "paused-session-continuation-workflow",
+            "plan-paused-session-continuation-workflow",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_multi_step_continuation_workflow",
+                "pausedSessionMultiStepContinuationWorkflow",
+                "paused-session-multi-step-continuation-workflow",
+                "multi_step_paused_session_continuation",
+                "multiStepPausedSessionContinuation",
+                "paused_session_continuation_workflow",
+                "pausedSessionContinuationWorkflow",
+                "cross_process_multi_step_continuation",
+                "crossProcessMultiStepContinuation",
             )
         )
 

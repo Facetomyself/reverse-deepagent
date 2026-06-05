@@ -504,6 +504,54 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertTrue(orchestration["paused_event_captured"])
         self.assertEqual(orchestration["callframe_count"], 1)
 
+    def test_review_debugger_artifacts_warns_for_multi_step_continuation_workflow_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_workflow": {
+                "workflow": {
+                    "status": "ready_for_review",
+                    "workflow_id": "workflow-review-1",
+                    "planned_step_count": 2,
+                    "max_planned_steps": 2,
+                    "execute_at_most_one_action_per_review": True,
+                    "manual_checkpoint_required_after_each_step": True,
+                    "automatic_loop": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_continuation_workflow_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_multi_step_continuation_workflow")
+        workflow = result["summary"]["multi_step_continuation_workflow"]
+        self.assertEqual(workflow["status"], "ready_for_review")
+        self.assertEqual(workflow["planned_step_count"], 2)
+        self.assertTrue(workflow["execute_at_most_one_action_per_review"])
+        self.assertFalse(workflow["automatic_loop"])
+        self.assertTrue(result["review_required_items"][0]["multi_step_continuation_workflow_diagnostics"]["manual_checkpoint_required_after_each_step"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_multi_step_continuation_workflow(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_workflow": {
+                "workflow": {
+                    "status": "blocked",
+                    "planned_step_count": 0,
+                    "blockers": ["planned_actions_required"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_multi_step_continuation_workflow_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_multi_step_continuation_workflow_blockers")
+
     def test_review_debugger_artifacts_blocks_pre_action_orchestration_timeout(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {
@@ -628,7 +676,7 @@ class DebuggerSubagentTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "warn")
         self.assertIn("cross_process_continuation_checkpoint_ready_for_next_action_review", result["warnings"])
-        self.assertEqual(result["next_action"], "plan_next_cross_process_one_action")
+        self.assertEqual(result["next_action"], "plan_multi_step_continuation_workflow")
         checkpoint = result["summary"]["cross_process_continuation_checkpoint"]
         self.assertTrue(checkpoint["continuation_ready_for_next_action"])
 

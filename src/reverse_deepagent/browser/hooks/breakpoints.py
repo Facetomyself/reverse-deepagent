@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import tempfile
@@ -3260,6 +3261,279 @@ class PausedSessionCrossProcessContinuationCheckpointManager:
         if not action_executed:
             return "plan_next_cross_process_one_action"
         return "plan_next_paused_event_capture"
+
+
+@dataclass(slots=True)
+class PausedSessionMultiStepContinuationWorkflowSpec:
+    """Review-only multi-step paused-session continuation workflow / journal plan."""
+
+    continuation_checkpoint: dict[str, Any] = field(default_factory=dict)
+    planned_actions: list[dict[str, Any]] = field(default_factory=list)
+    previous_journal: dict[str, Any] = field(default_factory=dict)
+    workflow_id: str | None = None
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    max_planned_steps: int = 3
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionMultiStepContinuationWorkflowSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_multi_step_continuation_workflow")
+            or context.get("pausedSessionMultiStepContinuationWorkflow")
+            or context.get("paused-session-multi-step-continuation-workflow")
+            or context.get("multi_step_paused_session_continuation")
+            or context.get("multiStepPausedSessionContinuation")
+            or context.get("paused_session_continuation_workflow")
+            or context.get("pausedSessionContinuationWorkflow")
+            or context.get("cross_process_multi_step_continuation")
+            or context.get("crossProcessMultiStepContinuation")
+        )
+        checkpoint_container = _first_dict(
+            context,
+            "paused_session_cross_process_continuation_checkpoint",
+            "pausedSessionCrossProcessContinuationCheckpoint",
+            "paused-session-cross-process-continuation-checkpoint",
+            "cross_process_continuation_checkpoint",
+            "crossProcessContinuationCheckpoint",
+            "continuation_checkpoint",
+            "continuationCheckpoint",
+        )
+        checkpoint = dict(checkpoint_container.get("checkpoint")) if isinstance(checkpoint_container.get("checkpoint"), dict) else checkpoint_container
+        raw_actions = (
+            context.get("planned_actions")
+            or context.get("plannedActions")
+            or context.get("requested_actions")
+            or context.get("requestedActions")
+            or context.get("action_sequence")
+            or context.get("actionSequence")
+            or []
+        )
+        actions: list[dict[str, Any]] = []
+        if isinstance(raw_actions, list):
+            for item in raw_actions:
+                if isinstance(item, dict):
+                    actions.append(dict(item))
+                elif isinstance(item, str) and item.strip():
+                    actions.append({"requested_action": item.strip()})
+        elif isinstance(raw_actions, str) and raw_actions.strip():
+            actions.append({"requested_action": raw_actions.strip()})
+        journal_container = _first_dict(
+            context,
+            "paused_session_multi_step_continuation_workflow",
+            "pausedSessionMultiStepContinuationWorkflow",
+            "paused-session-multi-step-continuation-workflow",
+            "previous_journal",
+            "previousJournal",
+            "continuation_journal",
+            "continuationJournal",
+        )
+        journal = dict(journal_container.get("workflow")) if isinstance(journal_container.get("workflow"), dict) else journal_container
+        if not requested and not checkpoint and not actions:
+            return None
+        max_raw = context.get("max_planned_steps", context.get("maxPlannedSteps", len(actions) or 3))
+        try:
+            max_steps = int(max_raw)
+        except (TypeError, ValueError):
+            max_steps = 3
+        return cls(
+            continuation_checkpoint=checkpoint,
+            planned_actions=actions,
+            previous_journal=journal,
+            workflow_id=str(context.get("workflow_id") or context.get("workflowId") or journal.get("workflow_id") or "").strip() or None,
+            pause_session_id=str(context.get("pause_session_id") or context.get("pauseSessionId") or checkpoint.get("pause_session_id") or "").strip() or None,
+            target_id=str(context.get("target_id") or context.get("targetId") or checkpoint.get("target_id") or "").strip() or None,
+            attached_session_id=str(context.get("attached_session_id") or context.get("attachedSessionId") or checkpoint.get("attached_session_id") or "").strip() or None,
+            max_planned_steps=max(1, min(max_steps, 10)),
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip() or None,
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionMultiStepContinuationWorkflowResult:
+    status: str
+    workflow: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "workflow": self.workflow,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class PausedSessionMultiStepContinuationWorkflowManager:
+    """Read-only workflow / journal plan for bounded multi-step continuation."""
+
+    SUPPORTED_ACTIONS = {"resume", "step_over", "step_into", "step_out", "evaluate", "Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut", "Debugger.evaluateOnCallFrame"}
+
+    def plan(self, spec: PausedSessionMultiStepContinuationWorkflowSpec | None) -> PausedSessionMultiStepContinuationWorkflowResult:
+        blockers = self._blockers(spec)
+        workflow = self._payload(spec, blockers=blockers)
+        return PausedSessionMultiStepContinuationWorkflowResult(status=workflow["status"], workflow=workflow, side_effect_policy=self._side_effect_policy(), reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionMultiStepContinuationWorkflowSpec | None) -> list[str]:
+        if spec is None:
+            return ["multi_step_workflow_request_missing"]
+        blockers: list[str] = []
+        checkpoint = spec.continuation_checkpoint
+        if not checkpoint:
+            blockers.append("continuation_checkpoint_required")
+        elif checkpoint.get("status") == "blocked":
+            blockers.append("continuation_checkpoint_blocked")
+        elif not (checkpoint.get("continuation_ready_for_next_action") or checkpoint.get("live_callframe_recovered")):
+            blockers.append("next_action_checkpoint_not_ready")
+        if not spec.planned_actions:
+            blockers.append("planned_actions_required")
+        if len(spec.planned_actions) > spec.max_planned_steps:
+            blockers.append("planned_actions_exceed_review_budget")
+        for action in spec.planned_actions[: spec.max_planned_steps]:
+            normalized = cls._normalize_action(action)
+            if normalized["method"] not in {"Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut", "Debugger.evaluateOnCallFrame"}:
+                blockers.append("unsupported_planned_action")
+            if normalized["method"] == "Debugger.evaluateOnCallFrame" and not normalized.get("expression"):
+                blockers.append("evaluate_expression_required")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionMultiStepContinuationWorkflowSpec | None, *, blockers: list[str]) -> dict[str, Any]:
+        checkpoint = spec.continuation_checkpoint if spec else {}
+        planned_steps = cls._planned_steps(spec) if spec else []
+        duplicate_fingerprints = cls._duplicate_fingerprints(planned_steps, spec.previous_journal if spec else {})
+        status = "blocked" if blockers else "ready_for_review"
+        return {
+            "schema_version": "reverse-deepagent.paused-session-multi-step-continuation-workflow.v1",
+            "status": status,
+            "workflow_id": spec.workflow_id if spec and spec.workflow_id else "paused-session-continuation-workflow",
+            "pause_session_id": spec.pause_session_id if spec else checkpoint.get("pause_session_id"),
+            "target_id": spec.target_id if spec else checkpoint.get("target_id"),
+            "attached_session_id_present": bool(spec and spec.attached_session_id),
+            "reviewer": spec.reviewer if spec else None,
+            "source_checkpoint_status": checkpoint.get("status"),
+            "source_checkpoint_ready_for_next_action": bool(checkpoint.get("continuation_ready_for_next_action") or checkpoint.get("live_callframe_recovered")),
+            "max_planned_steps": spec.max_planned_steps if spec else 0,
+            "planned_step_count": len(planned_steps),
+            "planned_steps": planned_steps,
+            "journal_append_plan": cls._journal_append_plan(planned_steps, duplicate_fingerprints),
+            "duplicate_fingerprints": duplicate_fingerprints,
+            "manual_checkpoint_required_after_each_step": True,
+            "execute_at_most_one_action_per_review": True,
+            "bounded_workflow_only": True,
+            "automatic_loop": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": "approve_multi_step_continuation_workflow" if not blockers else "inspect_multi_step_continuation_workflow_blockers",
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @classmethod
+    def _planned_steps(cls, spec: PausedSessionMultiStepContinuationWorkflowSpec) -> list[dict[str, Any]]:
+        steps: list[dict[str, Any]] = []
+        for index, action in enumerate(spec.planned_actions[: spec.max_planned_steps], start=1):
+            normalized = cls._normalize_action(action)
+            fingerprint = f"{index}:{normalized['method']}:{normalized.get('expression_digest') or ''}"
+            steps.append({
+                "step_index": index,
+                "kind": "reviewed_debugger_action",
+                "requested_action": normalized["requested_action"],
+                "method": normalized["method"],
+                "expression_present": bool(normalized.get("expression")),
+                "expression_digest": normalized.get("expression_digest"),
+                "requires_review_approval": True,
+                "requires_fresh_live_callframe": True,
+                "requires_retained_attached_session": True,
+                "expected_executor_artifact": "workspace/paused-session-pre-action-subscribe-and-action.json" if normalized["method"] != "Debugger.evaluateOnCallFrame" else "workspace/paused-session-cross-process-one-action-execution.json",
+                "expected_followup_checkpoint": "workspace/paused-session-cross-process-continuation-checkpoint.json",
+                "stops_after_step": True,
+                "fingerprint": fingerprint,
+            })
+        return steps
+
+    @staticmethod
+    def _normalize_action(action: dict[str, Any]) -> dict[str, Any]:
+        requested = str(action.get("requested_action") or action.get("action") or action.get("method") or "").strip()
+        mapping = {
+            "resume": "Debugger.resume",
+            "step_over": "Debugger.stepOver",
+            "stepOver": "Debugger.stepOver",
+            "step_into": "Debugger.stepInto",
+            "stepInto": "Debugger.stepInto",
+            "step_out": "Debugger.stepOut",
+            "stepOut": "Debugger.stepOut",
+            "evaluate": "Debugger.evaluateOnCallFrame",
+            "evaluate_on_callframe": "Debugger.evaluateOnCallFrame",
+            "evaluateOnCallFrame": "Debugger.evaluateOnCallFrame",
+        }
+        method = mapping.get(requested, requested)
+        expression = str(action.get("expression") or action.get("callframe_expression") or action.get("callframeExpression") or "").strip()
+        return {
+            "requested_action": requested or method,
+            "method": method,
+            "expression": expression,
+            "expression_digest": hashlib.sha256(expression.encode("utf-8")).hexdigest()[:16] if expression else None,
+        }
+
+    @staticmethod
+    def _duplicate_fingerprints(planned_steps: list[dict[str, Any]], previous_journal: dict[str, Any]) -> list[str]:
+        entries = previous_journal.get("journal_entries") if isinstance(previous_journal.get("journal_entries"), list) else previous_journal.get("entries") if isinstance(previous_journal.get("entries"), list) else []
+        seen = {str(item.get("fingerprint")) for item in entries if isinstance(item, dict) and item.get("fingerprint")}
+        return [step["fingerprint"] for step in planned_steps if step.get("fingerprint") in seen]
+
+    @staticmethod
+    def _journal_append_plan(planned_steps: list[dict[str, Any]], duplicate_fingerprints: list[str]) -> dict[str, Any]:
+        return {
+            "append_only": True,
+            "writes_journal": False,
+            "journal_artifact": "workspace/paused-session-multi-step-continuation-workflow.json",
+            "planned_entry_count": len(planned_steps),
+            "duplicate_guard_enabled": True,
+            "duplicate_fingerprints": duplicate_fingerprints,
+            "manual_append_after_reviewed_step": True,
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "multi_step_continuation_executed": False,
+            "workflow_plan_only": True,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "multi_step_workflow_request_missing": ("request", "No multi-step continuation workflow request was provided.", "request_multi_step_continuation_workflow"),
+            "continuation_checkpoint_required": ("checkpoint", "A ready continuation checkpoint is required before planning a multi-step workflow.", "create_continuation_checkpoint"),
+            "continuation_checkpoint_blocked": ("checkpoint", "The supplied continuation checkpoint is blocked.", "resolve_continuation_checkpoint_blockers"),
+            "next_action_checkpoint_not_ready": ("checkpoint", "The checkpoint is not ready for the next reviewed action.", "recover_live_callframe_before_planning_actions"),
+            "planned_actions_required": ("workflow", "At least one planned debugger action is required.", "provide_planned_actions"),
+            "planned_actions_exceed_review_budget": ("review", "The requested actions exceed the bounded review budget.", "reduce_planned_actions_or_raise_review_budget"),
+            "unsupported_planned_action": ("action", "Only resume, step, and evaluate-on-callframe actions can be planned.", "select_supported_debugger_action"),
+            "evaluate_expression_required": ("action", "Evaluate-on-callframe planning requires an expression.", "provide_evaluate_expression"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_multi_step_continuation_workflow"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_multi_step_continuation_workflow"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_multi_step_continuation_workflow"))[2]}
+            for blocker in blockers
+        ]
 
 
 class PausedSessionLiveContinuationPreflightManager:

@@ -15,6 +15,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessOneActionSpec,
     PausedSessionCrossProcessContinuationCheckpointManager,
     PausedSessionCrossProcessContinuationCheckpointSpec,
+    PausedSessionMultiStepContinuationWorkflowManager,
+    PausedSessionMultiStepContinuationWorkflowSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1225,6 +1227,60 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.orchestration["action_sent_after_subscription"])
         self.assertEqual(session.calls, [])
         self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_multi_step_continuation_workflow_plans_review_only_steps(self) -> None:
+        spec = PausedSessionMultiStepContinuationWorkflowSpec.from_context(
+            {
+                "paused_session_multi_step_continuation_workflow": True,
+                "workflow_id": "workflow-1",
+                "max_planned_steps": 2,
+                "planned_actions": ["step_over", {"requested_action": "evaluate", "expression": "window.__sign"}],
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "pause-workflow-1",
+                        "target_id": "target-workflow-1",
+                        "continuation_ready_for_next_action": True,
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-workflow-1",
+            }
+        )
+
+        result = PausedSessionMultiStepContinuationWorkflowManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        workflow = result.workflow
+        self.assertEqual(workflow["schema_version"], "reverse-deepagent.paused-session-multi-step-continuation-workflow.v1")
+        self.assertEqual(workflow["planned_step_count"], 2)
+        self.assertEqual(workflow["planned_steps"][0]["method"], "Debugger.stepOver")
+        self.assertEqual(workflow["planned_steps"][0]["expected_executor_artifact"], "workspace/paused-session-pre-action-subscribe-and-action.json")
+        self.assertEqual(workflow["planned_steps"][1]["method"], "Debugger.evaluateOnCallFrame")
+        self.assertEqual(workflow["planned_steps"][1]["expected_executor_artifact"], "workspace/paused-session-cross-process-one-action-execution.json")
+        self.assertTrue(workflow["manual_checkpoint_required_after_each_step"])
+        self.assertTrue(workflow["execute_at_most_one_action_per_review"])
+        self.assertFalse(workflow["automatic_loop"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["multi_step_continuation_executed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_multi_step_continuation_workflow_blocks_without_ready_checkpoint(self) -> None:
+        spec = PausedSessionMultiStepContinuationWorkflowSpec.from_context(
+            {
+                "paused_session_multi_step_continuation_workflow": True,
+                "planned_actions": ["step_over"],
+                "paused_session_cross_process_continuation_checkpoint": {"checkpoint": {"status": "ready_for_live_callframe_recovery"}},
+            }
+        )
+
+        result = PausedSessionMultiStepContinuationWorkflowManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("next_action_checkpoint_not_ready", result.workflow["blockers"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
 
     def test_pre_action_subscribe_and_action_requires_review_approval(self) -> None:

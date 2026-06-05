@@ -5419,6 +5419,48 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(len(page._cdp_session.calls), call_count + 1)
         self.assertEqual(page._cdp_session.calls[-1][0], "Debugger.stepOver")
 
+    def test_paused_session_multi_step_continuation_workflow_from_native_runtime_is_review_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-multi-step-continuation-workflow",
+            {
+                "paused_session_multi_step_continuation_workflow": True,
+                "workflow_id": "native-workflow-1",
+                "max_planned_steps": 2,
+                "planned_actions": ["step_over", "step_out"],
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "native-workflow-pause-1",
+                        "target_id": "native-workflow-target-1",
+                        "continuation_ready_for_next_action": True,
+                        "live_callframe_recovered": True,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "approve_multi_step_continuation_workflow")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-multi-step-continuation-workflow.json")
+        self.assertEqual(result.artifacts[0].metadata["planned_step_count"], 2)
+        self.assertTrue(result.artifacts[0].metadata["manual_checkpoint_required_after_each_step"])
+        self.assertTrue(result.artifacts[0].metadata["execute_at_most_one_action_per_review"])
+        self.assertIn("paused_session_multi_step_continuation_workflow_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_multi_step_continuation_workflow_step_count=2", result.verification)
+        self.assertIn("paused_session_multi_step_continuation_workflow_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_multi_step_continuation_workflow_event_subscribed=False", result.verification)
+        self.assertIn("paused_session_multi_step_continuation_workflow_multi_step_executed=False", result.verification)
+        self.assertIn("paused_session_multi_step_continuation_workflow_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_multi_step_continuation_workflow_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_cross_process_continuation_checkpoint_from_native_runtime_is_read_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
