@@ -13,6 +13,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessExecutionPlanSpec,
     PausedSessionCrossProcessOneActionManager,
     PausedSessionCrossProcessOneActionSpec,
+    PausedSessionNextPausedEventCaptureExecutionManager,
+    PausedSessionNextPausedEventCaptureExecutionSpec,
     PausedSessionNextPausedEventCapturePlanManager,
     PausedSessionNextPausedEventCapturePlanSpec,
     PausedSessionLiveCallframeRecoveryManager,
@@ -1092,6 +1094,74 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.plan["requires_next_paused_event_capture"])
         self.assertEqual(result.plan["next_action"], "review_one_action_result")
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_next_paused_event_capture_execution_captures_one_event_after_review(self) -> None:
+        spec = PausedSessionNextPausedEventCaptureExecutionSpec.from_context(
+            {
+                "paused_session_next_paused_event_capture_execution": True,
+                "execute_next_paused_event_capture": True,
+                "review_approved": True,
+                "paused_session_next_paused_event_capture_plan": {
+                    "status": "ready_for_review",
+                    "plan_ready_for_review": True,
+                    "requires_next_paused_event_capture": True,
+                    "method": "Debugger.stepOver",
+                    "pause_session_id": "pause-1",
+                    "target_id": "target-1",
+                    "attached_session_id": "attached-session-1",
+                    "timeout_ms": 10,
+                },
+                "observed_paused_event": {
+                    "sessionId": "attached-session-1",
+                    "params": {
+                        "reason": "step",
+                        "callFrames": [
+                            {
+                                "callFrameId": "live-cf-2",
+                                "functionName": "buildSign",
+                                "location": {"scriptId": "script-1", "lineNumber": 5, "columnNumber": 1},
+                                "url": "https://example.test/app.js",
+                            }
+                        ],
+                    },
+                },
+            }
+        )
+        session = RecordingCDPSession()
+        result = PausedSessionNextPausedEventCaptureExecutionManager().capture(FakeBreakpointPage(session), spec)
+
+        self.assertEqual(result.status, "captured")
+        self.assertEqual(result.execution["schema_version"], "reverse-deepagent.paused-session-next-paused-event-capture-execution.v1")
+        self.assertTrue(result.execution["paused_event_captured"])
+        self.assertEqual(result.execution["callframe_count"], 1)
+        self.assertTrue(result.execution["live_callframe_recovery_ready"])
+        self.assertEqual(result.execution["next_action"], "recover_live_callframe_from_captured_pause")
+        self.assertIn("Debugger.paused", session.handlers)
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertTrue(result.side_effect_policy["paused_event_captured"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_next_paused_event_capture_execution_requires_review_approval(self) -> None:
+        spec = PausedSessionNextPausedEventCaptureExecutionSpec.from_context(
+            {
+                "paused_session_next_paused_event_capture_execution": True,
+                "execute_next_paused_event_capture": True,
+                "paused_session_next_paused_event_capture_plan": {
+                    "status": "ready_for_review",
+                    "plan_ready_for_review": True,
+                    "requires_next_paused_event_capture": True,
+                    "method": "Debugger.resume",
+                    "attached_session_id": "attached-session-1",
+                },
+            }
+        )
+        result = PausedSessionNextPausedEventCaptureExecutionManager().capture(FakeBreakpointPage(RecordingCDPSession()), spec)
+
+        self.assertEqual(result.status, "review_required")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
 
     def test_cross_process_one_action_blocks_detached_attach_probe_session(self) -> None:
         spec = PausedSessionCrossProcessOneActionSpec.from_context(

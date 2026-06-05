@@ -2301,6 +2301,331 @@ class PausedSessionNextPausedEventCapturePlanManager:
         return "inspect_next_paused_event_capture_plan_blockers"
 
 
+@dataclass(slots=True)
+class PausedSessionNextPausedEventCaptureExecutionSpec:
+    """Capture at most one next Debugger.paused event after a reviewed one-action execution."""
+
+    next_paused_event_capture_plan: dict[str, Any] = field(default_factory=dict)
+    execute_capture: bool = False
+    review_approved: bool = False
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    method: str | None = None
+    timeout_ms: int = 5000
+    observed_paused_event: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+    require_matching_session_id: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionNextPausedEventCaptureExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_next_paused_event_capture_execution")
+            or context.get("pausedSessionNextPausedEventCaptureExecution")
+            or context.get("paused-session-next-paused-event-capture-execution")
+            or context.get("next_paused_event_capture_execution")
+            or context.get("nextPausedEventCaptureExecution")
+            or context.get("execute_next_paused_event_capture")
+            or context.get("executeNextPausedEventCapture")
+        )
+        plan_container = _first_dict(
+            context,
+            "paused_session_next_paused_event_capture_plan",
+            "pausedSessionNextPausedEventCapturePlan",
+            "paused-session-next-paused-event-capture-plan",
+            "next_paused_event_capture_plan",
+            "nextPausedEventCapturePlan",
+        )
+        plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        if not requested and not plan:
+            return None
+        timeout_raw = context.get("timeout_ms", context.get("timeoutMs", plan.get("timeout_ms", 5000)))
+        try:
+            timeout_ms = int(timeout_raw)
+        except (TypeError, ValueError):
+            timeout_ms = 5000
+        event = _first_dict(
+            context,
+            "observed_paused_event",
+            "observedPausedEvent",
+            "debugger_paused_event",
+            "debuggerPausedEvent",
+            "paused_event",
+            "pausedEvent",
+        )
+        execute_raw = context.get("execute_next_paused_event_capture", context.get("executeNextPausedEventCapture", context.get("execute_capture", context.get("executeCapture", False))))
+        approved_raw = context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))
+        match_raw = context.get("require_matching_session_id", context.get("requireMatchingSessionId", True))
+        return cls(
+            next_paused_event_capture_plan=plan,
+            execute_capture=bool(execute_raw),
+            review_approved=bool(approved_raw),
+            pause_session_id=str(context.get("pause_session_id") or context.get("pauseSessionId") or plan.get("pause_session_id") or "").strip() or None,
+            target_id=str(context.get("target_id") or context.get("targetId") or plan.get("target_id") or "").strip() or None,
+            attached_session_id=str(context.get("attached_session_id") or context.get("attachedSessionId") or plan.get("attached_session_id") or "").strip() or None,
+            method=str(context.get("method") or plan.get("method") or "").strip() or None,
+            timeout_ms=max(10, timeout_ms),
+            observed_paused_event=event,
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip() or None,
+            require_matching_session_id=bool(match_raw),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionNextPausedEventCaptureExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionNextPausedEventCaptureExecutionManager:
+    """Review-gated single-event capture after a next paused-event capture plan."""
+
+    CAPTURE_METHODS = {"Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut"}
+
+    def capture(self, page: BrowserPage | None, spec: PausedSessionNextPausedEventCaptureExecutionSpec | None) -> PausedSessionNextPausedEventCaptureExecutionResult:
+        blockers = self._blockers(spec)
+        if blockers:
+            payload = self._payload(spec, status="blocked", blockers=blockers)
+            return PausedSessionNextPausedEventCaptureExecutionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy(False, False), reason=blockers[0])
+        if spec and not spec.execute_capture:
+            payload = self._payload(spec, status="ready_for_review", blockers=[])
+            return PausedSessionNextPausedEventCaptureExecutionResult(status="ready_for_review", execution=payload, side_effect_policy=self._side_effect_policy(False, False))
+        if spec and not spec.review_approved:
+            payload = self._payload(spec, status="review_required", blockers=["review_approval_required"])
+            return PausedSessionNextPausedEventCaptureExecutionResult(status="review_required", execution=payload, side_effect_policy=self._side_effect_policy(False, False), reason="review_approval_required")
+        if page is None:
+            payload = self._payload(spec, status="blocked", blockers=["browser_page_required"])
+            return PausedSessionNextPausedEventCaptureExecutionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy(False, False), reason="browser_page_required")
+        session = page.cdp_session()
+        if session is None:
+            payload = self._payload(spec, status="blocked", blockers=["cdp_session_required"])
+            return PausedSessionNextPausedEventCaptureExecutionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy(False, False), reason="cdp_session_required")
+        on = getattr(session, "on", None)
+        if not callable(on):
+            payload = self._payload(spec, status="blocked", blockers=["cdp_event_subscription_unavailable"])
+            return PausedSessionNextPausedEventCaptureExecutionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy(False, False), reason="cdp_event_subscription_unavailable")
+
+        assert spec is not None
+        captured_events: list[dict[str, Any]] = []
+        ignored_events: list[dict[str, Any]] = []
+        subscription_error: str | None = None
+
+        def handle_paused(params: Any) -> None:
+            normalized, event_session_id = self._normalize_debugger_paused_event(params)
+            if spec.require_matching_session_id and event_session_id and spec.attached_session_id and event_session_id != spec.attached_session_id:
+                ignored_events.append({"session_id": event_session_id, "reason": "session_id_mismatch"})
+                return
+            normalized["event_session_id"] = event_session_id
+            captured_events.append(normalized)
+
+        try:
+            on("Debugger.paused", handle_paused)
+        except Exception as exc:
+            subscription_error = str(exc)
+        if subscription_error:
+            payload = self._payload(spec, status="failed", blockers=["debugger_paused_subscription_failed"], error=subscription_error)
+            return PausedSessionNextPausedEventCaptureExecutionResult(status="failed", execution=payload, side_effect_policy=self._side_effect_policy(False, False), reason="debugger_paused_subscription_failed", error=subscription_error)
+
+        if spec.observed_paused_event:
+            handle_paused(spec.observed_paused_event)
+        self._wait_for_capture(page, captured_events, timeout_ms=spec.timeout_ms)
+        status = "captured" if captured_events else "timed_out"
+        blockers_after = [] if captured_events else ["next_paused_event_capture_timed_out"]
+        payload = self._payload(
+            spec,
+            status=status,
+            blockers=blockers_after,
+            captured_events=captured_events,
+            ignored_events=ignored_events,
+        )
+        policy = self._side_effect_policy(True, bool(captured_events))
+        return PausedSessionNextPausedEventCaptureExecutionResult(status=status, execution=payload, side_effect_policy=policy, reason=blockers_after[0] if blockers_after else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionNextPausedEventCaptureExecutionSpec | None) -> list[str]:
+        if spec is None:
+            return ["next_paused_event_capture_execution_request_missing"]
+        blockers: list[str] = []
+        plan = spec.next_paused_event_capture_plan
+        if not plan:
+            blockers.append("next_paused_event_capture_plan_required")
+        elif plan.get("status") != "ready_for_review" or not plan.get("plan_ready_for_review"):
+            blockers.append("next_paused_event_capture_plan_not_ready")
+        if plan and not plan.get("requires_next_paused_event_capture"):
+            blockers.append("next_paused_event_capture_not_required")
+        method = spec.method or str(plan.get("method") or "")
+        if method not in cls.CAPTURE_METHODS:
+            blockers.append("unsupported_next_paused_event_capture_method")
+        if not spec.attached_session_id:
+            blockers.append("attached_session_id_required_for_event_capture")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: PausedSessionNextPausedEventCaptureExecutionSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        captured_events: list[dict[str, Any]] | None = None,
+        ignored_events: list[dict[str, Any]] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        plan = spec.next_paused_event_capture_plan if spec else {}
+        events = captured_events or []
+        ignored = ignored_events or []
+        first_event = events[0] if events else {}
+        callframes = first_event.get("callFrames") if isinstance(first_event.get("callFrames"), list) else []
+        selected_callframe = callframes[0] if callframes and isinstance(callframes[0], dict) else {}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-next-paused-event-capture-execution.v1",
+            "status": status,
+            "pause_session_id": spec.pause_session_id if spec else plan.get("pause_session_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "target_id": spec.target_id if spec else plan.get("target_id"),
+            "attached_session_id_present": bool(spec and spec.attached_session_id),
+            "method": spec.method if spec else plan.get("method"),
+            "timeout_ms": spec.timeout_ms if spec else plan.get("timeout_ms", 5000),
+            "execute_capture_requested": bool(spec and spec.execute_capture),
+            "review_approved": bool(spec and spec.review_approved),
+            "plan_status": plan.get("status"),
+            "plan_ready_for_review": bool(plan.get("plan_ready_for_review")),
+            "requires_next_paused_event_capture": bool(plan.get("requires_next_paused_event_capture")),
+            "debugger_event_subscribed": status in {"captured", "timed_out"},
+            "paused_event_captured": bool(events),
+            "captured_event_count": len(events),
+            "ignored_event_count": len(ignored),
+            "ignored_events": ignored,
+            "captured_event": first_event,
+            "captured_event_summary": cls._event_summary(first_event),
+            "callframes": callframes,
+            "callframe_count": len(callframes),
+            "selected_callframe": selected_callframe,
+            "live_callframe_recovery_ready": bool(selected_callframe.get("callFrameId")),
+            "fresh_paused_event_after_capture": bool(events),
+            "cdp_command_sent": False,
+            "debugger_domain_enabled": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers, captured=bool(events)),
+            "side_effect_policy": cls._side_effect_policy(status in {"captured", "timed_out"}, bool(events)),
+            "error": error,
+        }
+
+    @staticmethod
+    def _normalize_debugger_paused_event(params: Any) -> tuple[dict[str, Any], str | None]:
+        event_session_id: str | None = None
+        payload = params
+        if isinstance(params, dict):
+            event_session_id = str(params.get("sessionId") or "").strip() or None
+            if isinstance(params.get("params"), dict):
+                payload = params["params"]
+        normalized = BreakpointManager._normalize_paused(payload)
+        return normalized, event_session_id
+
+    @staticmethod
+    def _wait_for_capture(page: BrowserPage, captured_events: list[dict[str, Any]], *, timeout_ms: int) -> None:
+        if captured_events or timeout_ms <= 0:
+            return
+        raw_page = getattr(page, "raw_page", None)
+        wait_for_timeout = getattr(raw_page, "wait_for_timeout", None)
+        if callable(wait_for_timeout):
+            wait_for_timeout(timeout_ms)
+            return
+        deadline = time.monotonic() + (timeout_ms / 1000)
+        while not captured_events and time.monotonic() < deadline:
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+
+    @staticmethod
+    def _event_summary(event: dict[str, Any]) -> dict[str, Any]:
+        if not event:
+            return {}
+        frames = event.get("callFrames") if isinstance(event.get("callFrames"), list) else []
+        top = frames[0] if frames and isinstance(frames[0], dict) else {}
+        return {
+            "reason": event.get("reason"),
+            "hitBreakpoints": event.get("hitBreakpoints", []),
+            "event_session_id": event.get("event_session_id"),
+            "callframe_count": len(frames),
+            "top_function": top.get("functionName"),
+            "top_url": top.get("url"),
+            "top_location": top.get("location"),
+            "top_callframe_id_present": bool(top.get("callFrameId")),
+        }
+
+    @staticmethod
+    def _side_effect_policy(event_subscribed: bool, paused_event_captured: bool) -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": False,
+            "debugger_event_subscribed": event_subscribed,
+            "paused_event_captured": paused_event_captured,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "next_paused_event_capture_execution_request_missing": ("request", "No next paused-event capture execution request was provided.", "request_next_paused_event_capture_execution"),
+            "next_paused_event_capture_plan_required": ("plan", "A ready next paused-event capture plan is required before execution.", "plan_next_paused_event_capture"),
+            "next_paused_event_capture_plan_not_ready": ("plan", "The supplied next paused-event capture plan is not ready for review-gated execution.", "review_next_paused_event_capture_plan"),
+            "next_paused_event_capture_not_required": ("action", "The supplied one-action method does not require a next paused-event capture.", "review_one_action_result"),
+            "unsupported_next_paused_event_capture_method": ("action", "Only resume and step one-action methods can capture a next Debugger.paused event.", "select_supported_step_or_resume_action"),
+            "attached_session_id_required_for_event_capture": ("cdp_session", "A retained attached session id is required before event capture execution.", "rerun_attach_probe_with_retained_session"),
+            "review_approval_required": ("review", "Capturing the next paused event requires explicit review approval.", "approve_next_paused_event_capture_execution"),
+            "browser_page_required": ("runtime", "A BrowserPage with CDP event subscription support is required.", "provide_browser_page_for_event_capture"),
+            "cdp_session_required": ("runtime", "The active page does not expose a CDP session.", "use_cdp_capable_browser_provider"),
+            "cdp_event_subscription_unavailable": ("runtime", "The active CDP session does not expose event subscription.", "use_cdp_event_capable_browser_provider"),
+            "debugger_paused_subscription_failed": ("cdp", "Subscribing to Debugger.paused failed.", "inspect_debugger_paused_subscription_error"),
+            "next_paused_event_capture_timed_out": ("runtime", "No matching Debugger.paused event was captured within the bounded wait window.", "rerun_capture_with_presubscription_or_reproduce_pause"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_next_paused_event_capture_execution"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_next_paused_event_capture_execution"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_next_paused_event_capture_execution"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], captured: bool) -> str:
+        if "review_approval_required" in blockers:
+            return "approve_next_paused_event_capture_execution"
+        if captured:
+            return "recover_live_callframe_from_captured_pause"
+        if status == "ready_for_review":
+            return "approve_next_paused_event_capture_execution"
+        if status == "timed_out":
+            return "rerun_capture_with_presubscription_or_reproduce_pause"
+        if any(item in blockers for item in ("next_paused_event_capture_plan_required", "next_paused_event_capture_plan_not_ready")):
+            return "plan_or_review_next_paused_event_capture_first"
+        return "inspect_next_paused_event_capture_execution_blockers"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 

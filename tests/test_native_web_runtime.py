@@ -5296,6 +5296,63 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_next_paused_event_capture_plan_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_next_paused_event_capture_execution_from_native_runtime_captures_event(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-next-paused-event-capture-execution",
+            {
+                "paused_session_next_paused_event_capture_execution": True,
+                "execute_next_paused_event_capture": True,
+                "review_approved": True,
+                "paused_session_next_paused_event_capture_plan": {
+                    "status": "ready_for_review",
+                    "plan_ready_for_review": True,
+                    "requires_next_paused_event_capture": True,
+                    "method": "Debugger.stepOver",
+                    "pause_session_id": "native-next-capture",
+                    "target_id": "target-native-next-capture",
+                    "attached_session_id": "attached-session-1",
+                    "timeout_ms": 10,
+                },
+                "observed_paused_event": {
+                    "sessionId": "attached-session-1",
+                    "params": {
+                        "reason": "step",
+                        "callFrames": [
+                            {
+                                "callFrameId": "native-live-cf-2",
+                                "functionName": "buildSign",
+                                "location": {"scriptId": "script-1", "lineNumber": 6, "columnNumber": 0},
+                                "url": "https://example.test/assets/app.js",
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["capture_next_paused_event"])
+        self.assertEqual(result.next_action, "recover_live_callframe_from_captured_pause")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-next-paused-event-capture-execution.json")
+        self.assertTrue(result.artifacts[0].metadata["paused_event_captured"])
+        self.assertEqual(result.artifacts[0].metadata["callframe_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["live_callframe_recovery_ready"])
+        self.assertIn("paused_session_next_paused_event_capture_execution_status=captured", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_event_subscribed=True", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_paused_event_captured=True", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_browser_resumed=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_debugger_stepped=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_callframe_evaluated=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_next_paused_event_capture_execution_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_cross_process_one_action_from_native_runtime_executes_once(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

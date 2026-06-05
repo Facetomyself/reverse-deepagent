@@ -134,6 +134,18 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/debugger/paused-session-cross-process-one-action-execution.json",
         )
         self.assertEqual(routes["workspace/paused-session-cross-process-one-action-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-next-paused-event-capture-plan.json"].future_path,
+            "/workspace/debugger/paused-session-next-paused-event-capture-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-execution.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-next-paused-event-capture-execution.json"].future_path,
+            "/workspace/debugger/paused-session-next-paused-event-capture-execution.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-execution.json"].category, "audit")
         self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(
             routes["workspace/recursive-continuation-readiness.json"].future_path,
