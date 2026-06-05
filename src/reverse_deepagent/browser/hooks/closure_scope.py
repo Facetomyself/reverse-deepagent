@@ -956,6 +956,385 @@ class ClosureWrapperRuntimeMutabilityPreflightManager:
         }
 
 
+
+@dataclass(slots=True)
+class ClosureWrapperRuntimeMutabilityResultSpec:
+    """Explicit reviewed execution request for a temporary closure assignment probe.
+
+    This consumes the review-only runtime mutability preflight, then performs one
+    same-process retained-callframe evaluation that temporarily assigns the
+    selected lexical binding to a probe wrapper and immediately restores the
+    original value. It proves only assignment mutability for the current retained
+    pause; it does not install a durable wrapper or invoke the target function.
+    """
+
+    preflight: dict[str, Any] = field(default_factory=dict)
+    pause_session_id: str | None = None
+    callframe_index: int = 0
+    expected_callframe_id: str | None = None
+    function_name: str | None = None
+    wrapper_strategy: str = "log-only-call-through"
+    review_approved: bool = False
+    execute: bool = False
+    reviewer_note: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ClosureWrapperRuntimeMutabilityResultSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("closure_wrapper_runtime_mutability_result")
+            or context.get("closureWrapperRuntimeMutabilityResult")
+            or context.get("execute_closure_wrapper_runtime_mutability_probe")
+            or context.get("executeClosureWrapperRuntimeMutabilityProbe")
+            or context.get("closure_wrapper_mutability_result")
+            or context.get("closureWrapperMutabilityResult")
+        )
+        raw_preflight = (
+            context.get("closure_wrapper_runtime_mutability_preflight")
+            or context.get("closureWrapperRuntimeMutabilityPreflight")
+            or context.get("closure-wrapper-runtime-mutability-preflight")
+            or context.get("runtime_mutability_preflight")
+            or context.get("runtimeMutabilityPreflight")
+            or context.get("preflight")
+        )
+        preflight = cls._coerce_preflight(raw_preflight)
+        if not requested and not preflight:
+            return None
+        callframe_index_raw = context.get("callframe_index", context.get("callFrameIndex", preflight.get("callframe_index", 0)))
+        return cls(
+            preflight=preflight,
+            pause_session_id=_string_or_none(
+                context.get(
+                    "pause_session_id",
+                    context.get("pauseSessionId", context.get("debugger_session_id", context.get("debuggerSessionId", preflight.get("pause_session_id")))),
+                )
+            ),
+            callframe_index=int(callframe_index_raw or 0),
+            expected_callframe_id=_string_or_none(
+                context.get(
+                    "expected_callframe_id",
+                    context.get("expectedCallFrameId", context.get("callframe_id", context.get("callFrameId", preflight.get("expected_callframe_id")))),
+                )
+            ),
+            function_name=_string_or_none(context.get("function_name", context.get("functionName", preflight.get("function_name")))),
+            wrapper_strategy=str(context.get("wrapper_strategy", context.get("wrapperStrategy", preflight.get("wrapper_strategy", "log-only-call-through"))) or "log-only-call-through"),
+            review_approved=bool(context.get("review_approved", context.get("reviewApproved", False))),
+            execute=bool(context.get("execute_closure_wrapper_runtime_mutability_probe", context.get("executeClosureWrapperRuntimeMutabilityProbe", requested))),
+            reviewer_note=_string_or_none(context.get("reviewer_note", context.get("reviewerNote"))),
+        )
+
+    @staticmethod
+    def _coerce_preflight(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        if isinstance(value.get("preflight"), dict):
+            return dict(value["preflight"])
+        return dict(value)
+
+
+@dataclass(slots=True)
+class ClosureWrapperRuntimeMutabilityResult:
+    status: str
+    result: dict[str, Any] = field(default_factory=dict)
+    callframe_evaluations: list[dict[str, Any]] = field(default_factory=list)
+    mutation_audit: list[dict[str, Any]] = field(default_factory=list)
+    continuation_preflight: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-result.v1",
+            "status": self.status,
+            "result": self.result,
+            "callframe_evaluations": self.callframe_evaluations,
+            "mutation_audit": self.mutation_audit,
+            "continuation_preflight": self.continuation_preflight,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ClosureWrapperRuntimeMutabilityResultManager:
+    """Run one reviewed temporary assignment mutability probe from a retained pause."""
+
+    SUPPORTED_STRATEGIES = {"log-only-call-through"}
+
+    def execute(self, page: BrowserPage, spec: ClosureWrapperRuntimeMutabilityResultSpec | None) -> ClosureWrapperRuntimeMutabilityResult:
+        if spec is None:
+            return self._blocked("unsupported", "missing_closure_wrapper_runtime_mutability_result_spec", spec=None)
+        reason = self._blocker(spec)
+        if reason:
+            return self._blocked("blocked", reason, spec=spec)
+        function_name = str(spec.function_name or spec.preflight.get("function_name") or "")
+        marker = self._marker(spec, function_name)
+        expression = self._probe_expression(function_name=function_name, marker=marker)
+        action_spec = PausedSessionActionSpec(
+            pause_session_id=str(spec.pause_session_id),
+            action="evaluate",
+            callframe_evaluations=[expression],
+            callframe_index=spec.callframe_index,
+            callframe_evaluation_policy="allow_side_effects",
+            debugger_actions=[],
+        )
+        breakpoint_result = BreakpointManager().run_paused_session_action(page, action_spec)
+        evaluation = breakpoint_result.callframe_evaluations[0] if breakpoint_result.callframe_evaluations else {}
+        post_reason = self._post_execution_reason(spec, evaluation)
+        status = "proven" if breakpoint_result.status == "success" and post_reason is None else "failed"
+        side_effect_policy = self._side_effect_policy(
+            spec=spec,
+            cdp_command_sent=bool(breakpoint_result.callframe_evaluations),
+            callframe_evaluated=bool(breakpoint_result.callframe_evaluations),
+            runtime_mutated=bool(breakpoint_result.callframe_evaluations),
+            wrapper_installed=False,
+            temporary_assignment_attempted=bool(breakpoint_result.callframe_evaluations),
+            original_restored=status == "proven",
+        )
+        payload = self._result_payload(
+            spec=spec,
+            function_name=function_name,
+            marker=marker,
+            expression=expression,
+            evaluation=evaluation,
+            status=status,
+            reason=post_reason or breakpoint_result.reason,
+            side_effect_policy=side_effect_policy,
+        )
+        return ClosureWrapperRuntimeMutabilityResult(
+            status=status,
+            result=payload,
+            callframe_evaluations=list(breakpoint_result.callframe_evaluations),
+            mutation_audit=list(breakpoint_result.mutation_audit),
+            continuation_preflight=dict(breakpoint_result.continuation_preflight),
+            side_effect_policy=side_effect_policy,
+            reason=post_reason or breakpoint_result.reason,
+            error=breakpoint_result.error,
+        )
+
+    def _blocked(self, status: str, reason: str, *, spec: ClosureWrapperRuntimeMutabilityResultSpec | None) -> ClosureWrapperRuntimeMutabilityResult:
+        side_effect_policy = self._side_effect_policy(
+            spec=spec,
+            cdp_command_sent=False,
+            callframe_evaluated=False,
+            runtime_mutated=False,
+            wrapper_installed=False,
+            temporary_assignment_attempted=False,
+            original_restored=False,
+        )
+        payload = {
+            "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-result.v1",
+            "status": status,
+            "reason": reason,
+            "result_id": "closure-wrapper-runtime-mutability-result",
+            "requires_review": True,
+            "review_approved": bool(spec.review_approved) if spec else False,
+            "execute_requested": bool(spec.execute) if spec else False,
+            "preflight": dict(spec.preflight) if spec else {},
+            "function_name": spec.function_name if spec else None,
+            "wrapper_strategy": spec.wrapper_strategy if spec else None,
+            "runtime_mutability_proven": False,
+            "runtime_mutability_probe_executed": False,
+            "temporary_assignment_attempted": False,
+            "temporary_assignment_confirmed": False,
+            "original_restored": False,
+            "wrapper_installed": False,
+            "runtime_mutated": False,
+            "cdp_command_sent": False,
+            "callframe_evaluated": False,
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": side_effect_policy,
+        }
+        return ClosureWrapperRuntimeMutabilityResult(status=status, result=payload, side_effect_policy=side_effect_policy, reason=reason)
+
+    @classmethod
+    def _blocker(cls, spec: ClosureWrapperRuntimeMutabilityResultSpec) -> str | None:
+        if not spec.preflight:
+            return "missing_closure_wrapper_runtime_mutability_preflight"
+        if str(spec.preflight.get("status") or "") != "ready_for_review":
+            return "closure_wrapper_runtime_mutability_preflight_not_ready"
+        if spec.preflight.get("runtime_mutability_probe_ready_for_review") is not True:
+            return "runtime_mutability_probe_not_ready_for_review"
+        if not spec.execute:
+            return "execute_closure_wrapper_runtime_mutability_probe_flag_required"
+        if not spec.review_approved:
+            return "review_approval_required"
+        if not spec.pause_session_id:
+            return "pause_session_id_required"
+        if spec.wrapper_strategy not in cls.SUPPORTED_STRATEGIES:
+            return "unsupported_wrapper_strategy"
+        function_name = str(spec.function_name or spec.preflight.get("function_name") or "")
+        if not JS_IDENTIFIER_RE.fullmatch(function_name):
+            return "missing_or_unsafe_closure_function_name"
+        expected_callframe_id = str(spec.expected_callframe_id or spec.preflight.get("expected_callframe_id") or "")
+        if not expected_callframe_id:
+            return "callframe_id_not_stable"
+        if spec.preflight.get("wrapper_installed") is True:
+            return "wrapper_already_installed"
+        return None
+
+    @staticmethod
+    def _post_execution_reason(spec: ClosureWrapperRuntimeMutabilityResultSpec, evaluation: dict[str, Any]) -> str | None:
+        if not evaluation:
+            return "missing_callframe_evaluation_result"
+        if not evaluation.get("ok"):
+            return str(evaluation.get("error") or "callframe_evaluation_failed")
+        expected_callframe_id = str(spec.expected_callframe_id or spec.preflight.get("expected_callframe_id") or "")
+        observed_callframe_id = str(evaluation.get("callFrameId") or "")
+        if expected_callframe_id and observed_callframe_id and expected_callframe_id != observed_callframe_id:
+            return "callframe_id_mismatch"
+        value = evaluation.get("value")
+        if isinstance(value, dict):
+            if value.get("ok") is False:
+                return str(value.get("reason") or "runtime_mutability_probe_result_not_ok")
+            if value.get("temporaryAssignmentConfirmed") is not True:
+                return "temporary_assignment_not_confirmed"
+            if value.get("originalRestored") is not True:
+                return "original_restore_not_confirmed"
+            if value.get("runtimeMutabilityProven") is not True:
+                return "runtime_mutability_not_proven"
+        return None
+
+    @staticmethod
+    def _marker(spec: ClosureWrapperRuntimeMutabilityResultSpec, function_name: str) -> str:
+        raw = str(spec.preflight.get("expected_callframe_id") or spec.pause_session_id or function_name)
+        safe = re.sub(r"[^A-Za-z0-9_.:-]+", "_", raw).strip("._:") or function_name
+        return f"reverse-deepagent:closure-mutability-probe:{safe}:{function_name}"
+
+    @staticmethod
+    def _probe_expression(*, function_name: str, marker: str) -> str:
+        function_literal = json.dumps(function_name)
+        marker_literal = json.dumps(marker)
+        return f"""(() => {{
+  const __rdgName = {function_literal};
+  const __rdgMarker = {marker_literal};
+  const __rdgPrevious = {function_name};
+  const __rdgProbeRecord = {{ marker: __rdgMarker, functionName: __rdgName, attempted: true }};
+  const __rdgRoot = globalThis.__reverseDeepAgentClosureMutabilityProbes || (globalThis.__reverseDeepAgentClosureMutabilityProbes = {{ probes: [] }});
+  if (typeof __rdgPrevious !== "function") {{
+    __rdgProbeRecord.ok = false;
+    __rdgProbeRecord.reason = "target_not_function";
+    __rdgProbeRecord.previousType = typeof __rdgPrevious;
+    __rdgRoot.probes.push(__rdgProbeRecord);
+    return __rdgProbeRecord;
+  }}
+  const __rdgProbe = function(...args) {{ return __rdgPrevious.apply(this, args); }};
+  let __rdgAssigned = false;
+  let __rdgRestored = false;
+  try {{
+    {function_name} = __rdgProbe;
+    __rdgAssigned = {function_name} === __rdgProbe;
+  }} finally {{
+    {function_name} = __rdgPrevious;
+    __rdgRestored = {function_name} === __rdgPrevious;
+  }}
+  __rdgProbeRecord.ok = __rdgAssigned && __rdgRestored;
+  __rdgProbeRecord.runtimeMutabilityProven = __rdgAssigned && __rdgRestored;
+  __rdgProbeRecord.temporaryAssignmentConfirmed = __rdgAssigned;
+  __rdgProbeRecord.originalRestored = __rdgRestored;
+  __rdgProbeRecord.wrapperInstalled = false;
+  __rdgProbeRecord.previousType = typeof __rdgPrevious;
+  __rdgRoot.probes.push(__rdgProbeRecord);
+  return __rdgProbeRecord;
+}})()"""
+
+    def _result_payload(
+        self,
+        *,
+        spec: ClosureWrapperRuntimeMutabilityResultSpec,
+        function_name: str,
+        marker: str,
+        expression: str,
+        evaluation: dict[str, Any],
+        status: str,
+        reason: str | None,
+        side_effect_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        value = evaluation.get("value") if isinstance(evaluation, dict) else None
+        value_payload = value if isinstance(value, dict) else {}
+        temporary_assignment_confirmed = bool(value_payload.get("temporaryAssignmentConfirmed")) if value_payload else status == "proven"
+        original_restored = bool(value_payload.get("originalRestored")) if value_payload else status == "proven"
+        return {
+            "schema_version": "reverse-deepagent.closure-wrapper-runtime-mutability-result.v1",
+            "status": status,
+            "reason": reason,
+            "result_id": "closure-wrapper-runtime-mutability-result",
+            "requires_review": True,
+            "review_approved": spec.review_approved,
+            "execute_requested": spec.execute,
+            "preflight": dict(spec.preflight),
+            "pause_session_id": spec.pause_session_id,
+            "callframe_index": spec.callframe_index,
+            "expected_callframe_id": spec.expected_callframe_id or spec.preflight.get("expected_callframe_id"),
+            "observed_callframe_id": evaluation.get("callFrameId") if isinstance(evaluation, dict) else None,
+            "function_name": function_name,
+            "marker": marker,
+            "wrapper_strategy": spec.wrapper_strategy,
+            "runtime_mutability_proven": status == "proven",
+            "runtime_mutability_probe_executed": bool(evaluation),
+            "temporary_assignment_attempted": bool(evaluation),
+            "temporary_assignment_confirmed": temporary_assignment_confirmed,
+            "original_restored": original_restored,
+            "wrapper_installed": False,
+            "runtime_mutated": bool(evaluation),
+            "cdp_command_sent": bool(evaluation),
+            "callframe_evaluated": bool(evaluation),
+            "probe_expression": expression,
+            "evaluation_summary": {
+                "ok": evaluation.get("ok") if isinstance(evaluation, dict) else None,
+                "valueType": evaluation.get("valueType") if isinstance(evaluation, dict) else None,
+                "side_effect_risk": evaluation.get("side_effect_risk") if isinstance(evaluation, dict) else None,
+                "policy": evaluation.get("policy") if isinstance(evaluation, dict) else None,
+                "throw_on_side_effect": evaluation.get("throw_on_side_effect") if isinstance(evaluation, dict) else None,
+                "blocked": evaluation.get("blocked", False) if isinstance(evaluation, dict) else False,
+                "error": evaluation.get("error") if isinstance(evaluation, dict) else None,
+            },
+            "next_action": self._next_action(status, reason),
+            "side_effect_policy": side_effect_policy,
+        }
+
+    @staticmethod
+    def _next_action(status: str, reason: str | None) -> str:
+        if status == "proven":
+            return "review_runtime_mutability_result_then_optionally_execute_closure_wrapper_replacement"
+        if reason == "review_approval_required":
+            return "approve_closure_wrapper_runtime_mutability_probe_before_retry"
+        if reason == "pause_session_id_required":
+            return "reproduce_pause_and_preserve_same_process_session"
+        if reason in {"missing_closure_wrapper_runtime_mutability_preflight", "closure_wrapper_runtime_mutability_preflight_not_ready"}:
+            return "prepare_ready_closure_wrapper_runtime_mutability_preflight_before_probe"
+        return "resolve_closure_wrapper_runtime_mutability_result_blockers"
+
+    @staticmethod
+    def _side_effect_policy(
+        *,
+        spec: ClosureWrapperRuntimeMutabilityResultSpec | None,
+        cdp_command_sent: bool,
+        callframe_evaluated: bool,
+        runtime_mutated: bool,
+        wrapper_installed: bool,
+        temporary_assignment_attempted: bool,
+        original_restored: bool,
+    ) -> dict[str, Any]:
+        return {
+            "read_only": False,
+            "plan_only": False,
+            "requires_review": True,
+            "review_approved": bool(spec.review_approved) if spec else False,
+            "execute_requested": bool(spec.execute) if spec else False,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": cdp_command_sent,
+            "callframe_evaluated": callframe_evaluated,
+            "temporary_assignment_attempted": temporary_assignment_attempted,
+            "original_restored": original_restored,
+            "wrapper_installed": wrapper_installed,
+            "runtime_mutated": runtime_mutated,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
 @dataclass(slots=True)
 class ClosureWrapperReplacementExecutionSpec:
     """Explicit reviewed execution request for a closure wrapper replacement plan.

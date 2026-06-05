@@ -182,6 +182,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native closure wrapper runtime mutability result",
+                    kind=EvidenceKind.HOOK,
+                    source="closure_wrapper_runtime_mutability_result",
+                    details={"status": "proven", "result": {"runtime_mutability_proven": True, "original_restored": True}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native closure wrapper replacement execution",
                     kind=EvidenceKind.HOOK,
                     source="closure_wrapper_replacement_execution",
@@ -647,6 +654,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_assignment_safety"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_runtime_mutability_preflight"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_runtime_mutability_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_plan"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_restore_execution"), "audit")

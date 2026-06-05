@@ -10,6 +10,8 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperEventHarvestSpec,
     ClosureWrapperRuntimeMutabilityPreflightManager,
     ClosureWrapperRuntimeMutabilityPreflightSpec,
+    ClosureWrapperRuntimeMutabilityResultManager,
+    ClosureWrapperRuntimeMutabilityResultSpec,
     ClosureWrapperRestoreExecutionManager,
     ClosureWrapperRestoreExecutionSpec,
     ClosureWrapperReplacementExecutionManager,
@@ -59,6 +61,21 @@ class ClosureScopeCDPSession:
                 return {"result": {"type": "string", "value": "function", "description": "function"}}
             if expression == "typeof nonce":
                 return {"result": {"type": "string", "value": "string", "description": "string"}}
+            if isinstance(expression, str) and "__reverseDeepAgentClosureMutabilityProbes" in expression:
+                return {
+                    "result": {
+                        "type": "object",
+                        "value": {
+                            "ok": True,
+                            "functionName": "buildSign",
+                            "runtimeMutabilityProven": True,
+                            "temporaryAssignmentConfirmed": True,
+                            "originalRestored": True,
+                            "wrapperInstalled": False,
+                        },
+                        "description": "Object",
+                    }
+                }
             if isinstance(expression, str) and "__rdgOriginal" in expression and "__reverseDeepAgentClosureWrappers" in expression:
                 return {
                     "result": {
@@ -345,6 +362,99 @@ class ClosureWrapperRuntimeMutabilityPreflightManagerTests(unittest.TestCase):
         self.assertFalse(result.preflight["runtime_mutability_probe_ready_for_review"])
         self.assertFalse(result.side_effect_policy["runtime_mutated"])
 
+
+
+
+class ClosureWrapperRuntimeMutabilityResultManagerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    def tearDown(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+
+    @staticmethod
+    def _preflight() -> dict:
+        return ClosureWrapperRuntimeMutabilityPreflightManager().preflight(
+            ClosureWrapperRuntimeMutabilityPreflightSpec.from_context(
+                {
+                    "closure_wrapper_runtime_mutability_preflight": True,
+                    "closure_wrapper_assignment_safety": ClosureWrapperRuntimeMutabilityPreflightManagerTests._assignment_safety(),
+                    "pause_session_id": "closure-mutability-result-session",
+                }
+            )
+        ).preflight
+
+    def _preserve_pause(self, session_id: str = "closure-mutability-result-session") -> tuple[ClosureScopeCDPSession, ClosureScopePage]:
+        session = ClosureScopeCDPSession()
+        page = ClosureScopePage(session)
+        spec = ClosureScopeDiscoverySpec.from_context(
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 12,
+                "closure_function_names": ["buildSign"],
+                "trigger_expression": "debugger; 'scheduled'",
+                "preserve_pause_state": True,
+                "pause_session_id": session_id,
+            }
+        )
+        result = ClosureScopeDiscoveryManager().discover(page, spec)
+        self.assertEqual(result.status, "success")
+        self.assertIn(session_id, BreakpointManager._paused_sessions)
+        return session, page
+
+    def test_blocks_without_review_approval_or_cdp_side_effects(self) -> None:
+        session, page = self._preserve_pause()
+        before = sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame")
+        spec = ClosureWrapperRuntimeMutabilityResultSpec.from_context(
+            {
+                "closure_wrapper_runtime_mutability_result": True,
+                "closure_wrapper_runtime_mutability_preflight": self._preflight(),
+                "pause_session_id": "closure-mutability-result-session",
+                "execute_closure_wrapper_runtime_mutability_probe": True,
+            }
+        )
+
+        result = ClosureWrapperRuntimeMutabilityResultManager().execute(page, spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "review_approval_required")
+        self.assertEqual(sum(1 for method, _params in session.calls if method == "Debugger.evaluateOnCallFrame"), before)
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_mutated"])
+        self.assertFalse(result.result["runtime_mutability_proven"])
+
+    def test_executes_reviewed_runtime_mutability_probe_and_restores_original(self) -> None:
+        session, page = self._preserve_pause()
+        spec = ClosureWrapperRuntimeMutabilityResultSpec.from_context(
+            {
+                "closure_wrapper_runtime_mutability_result": True,
+                "closure_wrapper_runtime_mutability_preflight": self._preflight(),
+                "pause_session_id": "closure-mutability-result-session",
+                "execute_closure_wrapper_runtime_mutability_probe": True,
+                "review_approved": True,
+            }
+        )
+
+        result = ClosureWrapperRuntimeMutabilityResultManager().execute(page, spec)
+
+        self.assertEqual(result.status, "proven")
+        self.assertEqual(result.result["schema_version"], "reverse-deepagent.closure-wrapper-runtime-mutability-result.v1")
+        self.assertTrue(result.result["runtime_mutability_proven"])
+        self.assertTrue(result.result["runtime_mutability_probe_executed"])
+        self.assertTrue(result.result["temporary_assignment_confirmed"])
+        self.assertTrue(result.result["original_restored"])
+        self.assertFalse(result.result["wrapper_installed"])
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["callframe_evaluated"])
+        self.assertTrue(result.side_effect_policy["runtime_mutated"])
+        self.assertFalse(result.side_effect_policy["wrapper_installed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        eval_calls = [params for method, params in session.calls if method == "Debugger.evaluateOnCallFrame"]
+        self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
+        self.assertIn("__reverseDeepAgentClosureMutabilityProbes", eval_calls[-1]["expression"])
+        self.assertIn("buildSign = __rdgProbe", eval_calls[-1]["expression"])
+        self.assertIn("buildSign = __rdgPrevious", eval_calls[-1]["expression"])
 
 class ClosureWrapperReplacementExecutionManagerTests(unittest.TestCase):
     def setUp(self) -> None:

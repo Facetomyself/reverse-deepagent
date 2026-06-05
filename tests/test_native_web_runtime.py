@@ -81,6 +81,21 @@ class FakeCDPSession:
                 return {"result": {"type": "string", "value": "function", "description": "function"}}
             if expression == "this && typeof this":
                 return {"result": {"type": "string", "value": "object", "description": "object"}}
+            if "__reverseDeepAgentClosureMutabilityProbes" in expression:
+                return {
+                    "result": {
+                        "type": "object",
+                        "value": {
+                            "ok": True,
+                            "functionName": "buildSign",
+                            "runtimeMutabilityProven": True,
+                            "temporaryAssignmentConfirmed": True,
+                            "originalRestored": True,
+                            "wrapperInstalled": False,
+                        },
+                        "description": "Object",
+                    }
+                }
             if "__rdgOriginal" in expression and "__reverseDeepAgentClosureWrappers" in expression:
                 return {
                     "result": {
@@ -4354,6 +4369,65 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["runtime_mutability_probe_ready_for_review"])
         self.assertFalse(result.artifacts[0].metadata["runtime_mutability_proven"])
         self.assertFalse(result.artifacts[0].metadata["runtime_mutated"])
+
+    def test_native_web_runtime_executes_reviewed_closure_wrapper_runtime_mutability_probe(self) -> None:
+        BreakpointManager.clear_paused_sessions()
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        discovery = runtime.apply_minimal_protection(
+            "closure-function-discovery",
+            {
+                "url_pattern": ".*app\\.js$",
+                "line_number": 4,
+                "closure_function_names": ["buildSign"],
+                "trigger_expression": "debugger; 'scheduled'",
+                "preserve_pause_state": True,
+                "pause_session_id": "native-closure-mutability-result",
+            },
+        )
+        self.assertEqual(discovery.status.value, "success")
+        preflight = {
+            "status": "ready_for_review",
+            "runtime_mutability_probe_ready_for_review": True,
+            "runtime_mutability_proven": False,
+            "runtime_mutability_probe_executed": False,
+            "function_name": "buildSign",
+            "expected_callframe_id": "native-cf-1",
+            "pause_session_id": "native-closure-mutability-result",
+            "wrapper_strategy": "log-only-call-through",
+            "wrapper_installed": False,
+        }
+
+        result = runtime.apply_minimal_protection(
+            "closure-wrapper-runtime-mutability-result",
+            {
+                "closure_wrapper_runtime_mutability_preflight": preflight,
+                "pause_session_id": "native-closure-mutability-result",
+                "execute_closure_wrapper_runtime_mutability_probe": True,
+                "review_approved": True,
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_reviewed_closure_wrapper_runtime_mutability_probe"])
+        self.assertIn("closure_wrapper_runtime_mutability_result_status=proven", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_review_approved=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_proven=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_probe_executed=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_original_restored=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_wrapper_installed=False", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_runtime_mutated=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_cdp_command_sent=True", result.verification)
+        self.assertIn("closure_wrapper_runtime_mutability_callframe_evaluated=True", result.verification)
+        self.assertEqual(result.next_action, "review_runtime_mutability_result_then_optionally_execute_closure_wrapper_replacement")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/closure-wrapper-runtime-mutability-result.json")
+        self.assertTrue(result.artifacts[0].metadata["runtime_mutability_proven"])
+        self.assertTrue(result.artifacts[0].metadata["original_restored"])
+        self.assertFalse(result.artifacts[0].metadata["wrapper_installed"])
+        page = provider.session.context.pages[0]
+        eval_calls = [params for method, params in page._cdp_session.calls if method == "Debugger.evaluateOnCallFrame"]
+        self.assertFalse(eval_calls[-1]["throwOnSideEffect"])
+        self.assertIn("__reverseDeepAgentClosureMutabilityProbes", eval_calls[-1]["expression"])
 
     def test_native_web_runtime_executes_reviewed_closure_wrapper_replacement(self) -> None:
         BreakpointManager.clear_paused_sessions()

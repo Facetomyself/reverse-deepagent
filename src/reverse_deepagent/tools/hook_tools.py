@@ -61,6 +61,17 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "closure_wrapper_mutability_preflight",
             "closureWrapperMutabilityPreflight",
         )
+        closure_wrapper_runtime_mutability_result = _object_alias(
+            payload,
+            "closure_wrapper_runtime_mutability_result",
+            "closure-wrapper-runtime-mutability-result",
+            "closureWrapperRuntimeMutabilityResult",
+            "closure_wrapper_runtime_mutability_probe_result",
+            "closure-wrapper-runtime-mutability-probe-result",
+            "closureWrapperRuntimeMutabilityProbeResult",
+            "closure_wrapper_mutability_result",
+            "closureWrapperMutabilityResult",
+        )
         closure_wrapper_replacement_execution = _object_alias(
             payload,
             "closure_wrapper_replacement_execution",
@@ -292,6 +303,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 closure_wrapper_replacement_plan,
                 closure_wrapper_assignment_safety,
                 closure_wrapper_runtime_mutability_preflight,
+                closure_wrapper_runtime_mutability_result,
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
                 closure_wrapper_events,
@@ -344,6 +356,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("closure_wrapper_assignment_safety_blocked")
         if _status(closure_wrapper_runtime_mutability_preflight) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_runtime_mutability_preflight_blocked")
+        if _status(closure_wrapper_runtime_mutability_result) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("closure_wrapper_runtime_mutability_result_blocked")
         if _status(closure_wrapper_replacement_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_replacement_execution_blocked")
         if _status(closure_wrapper_restore_execution) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -659,8 +673,11 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         if closure_wrapper_assignment_safety and closure_wrapper_assignment_safety_status == "ready_for_review":
             warnings.append("closure_wrapper_assignment_safety_requires_execution_review")
         closure_wrapper_runtime_mutability_preflight_status = _status(closure_wrapper_runtime_mutability_preflight) or _nested_status(closure_wrapper_runtime_mutability_preflight, "preflight")
-        if closure_wrapper_runtime_mutability_preflight and closure_wrapper_runtime_mutability_preflight_status == "ready_for_review":
+        if closure_wrapper_runtime_mutability_preflight and closure_wrapper_runtime_mutability_preflight_status == "ready_for_review" and not closure_wrapper_runtime_mutability_result:
             warnings.append("closure_wrapper_runtime_mutability_preflight_requires_probe_review")
+        closure_wrapper_runtime_mutability_result_status = _status(closure_wrapper_runtime_mutability_result) or _nested_status(closure_wrapper_runtime_mutability_result, "result")
+        if closure_wrapper_runtime_mutability_result_status == "proven":
+            warnings.append("closure_wrapper_runtime_mutability_result_requires_replacement_review")
         closure_wrapper_execution_status = _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution")
         if closure_wrapper_execution_status == "applied":
             warnings.append("closure_wrapper_replacement_execution_restore_review_required")
@@ -694,6 +711,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "closure_wrapper_runtime_mutability_preflight_status": closure_wrapper_runtime_mutability_preflight_status,
                 "closure_wrapper_runtime_mutability_probe_ready_for_review": bool(_nested_get(closure_wrapper_runtime_mutability_preflight, "preflight", "runtime_mutability_probe_ready_for_review") or closure_wrapper_runtime_mutability_preflight.get("runtime_mutability_probe_ready_for_review")),
                 "closure_wrapper_runtime_mutability_preflight_next_action": _nested_get(closure_wrapper_runtime_mutability_preflight, "preflight", "next_action") or closure_wrapper_runtime_mutability_preflight.get("next_action"),
+                "closure_wrapper_runtime_mutability_result_status": closure_wrapper_runtime_mutability_result_status,
+                "closure_wrapper_runtime_mutability_result_proven": bool(_nested_get(closure_wrapper_runtime_mutability_result, "result", "runtime_mutability_proven") or closure_wrapper_runtime_mutability_result.get("runtime_mutability_proven")),
+                "closure_wrapper_runtime_mutability_result_original_restored": bool(_nested_get(closure_wrapper_runtime_mutability_result, "result", "original_restored") or closure_wrapper_runtime_mutability_result.get("original_restored")),
+                "closure_wrapper_runtime_mutability_result_next_action": _nested_get(closure_wrapper_runtime_mutability_result, "result", "next_action") or closure_wrapper_runtime_mutability_result.get("next_action"),
                 "closure_wrapper_replacement_execution_status": closure_wrapper_execution_status,
                 "closure_wrapper_replacement_execution_next_action": _nested_get(closure_wrapper_replacement_execution, "execution", "next_action") or closure_wrapper_replacement_execution.get("next_action"),
                 "closure_wrapper_replacement_execution_runtime_mutated": bool(_nested_get(closure_wrapper_replacement_execution, "execution", "runtime_mutated") or closure_wrapper_replacement_execution.get("runtime_mutated")),
@@ -842,6 +863,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 closure_wrapper_replacement_plan,
                 closure_wrapper_assignment_safety,
                 closure_wrapper_runtime_mutability_preflight,
+                closure_wrapper_runtime_mutability_result,
                 closure_wrapper_replacement_execution,
                 closure_wrapper_restore_execution,
                 closure_wrapper_events,
@@ -1028,6 +1050,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "resolve_closure_wrapper_assignment_safety_blockers"
     if "closure_wrapper_runtime_mutability_preflight_blocked" in blockers:
         return "resolve_closure_wrapper_runtime_mutability_preflight_blockers"
+    if "closure_wrapper_runtime_mutability_result_blocked" in blockers:
+        return "resolve_closure_wrapper_runtime_mutability_result_blockers"
     if "closure_wrapper_replacement_execution_blocked" in blockers:
         return "resolve_closure_wrapper_replacement_execution_blockers"
     if "closure_wrapper_restore_execution_blocked" in blockers:
@@ -1116,6 +1140,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "approve_reviewed_closure_wrapper_replacement_execution_with_assignment_safety_proof"
     if "closure_wrapper_runtime_mutability_preflight_requires_probe_review" in warnings:
         return "review_closure_wrapper_runtime_mutability_probe_before_execution"
+    if "closure_wrapper_runtime_mutability_result_requires_replacement_review" in warnings:
+        return "review_runtime_mutability_result_then_optionally_execute_closure_wrapper_replacement"
     if "closure_wrapper_replacement_execution_restore_review_required" in warnings:
         return "review_closure_wrapper_restore_plan_or_invoke_target_flow"
     if "closure_wrapper_restore_execution_result_review_required" in warnings:
@@ -1224,6 +1250,7 @@ def _review_required_items(
     closure_wrapper_replacement_plan: dict[str, Any],
     closure_wrapper_assignment_safety: dict[str, Any],
     closure_wrapper_runtime_mutability_preflight: dict[str, Any],
+    closure_wrapper_runtime_mutability_result: dict[str, Any],
     closure_wrapper_replacement_execution: dict[str, Any],
     closure_wrapper_restore_execution: dict[str, Any],
     closure_wrapper_events: dict[str, Any],
@@ -1278,6 +1305,9 @@ def _review_required_items(
                 "closure_wrapper_assignment_safety_proven": bool(_nested_get(closure_wrapper_assignment_safety, "assignment_safety", "assignment_safety_proven") or closure_wrapper_assignment_safety.get("assignment_safety_proven")),
                 "closure_wrapper_runtime_mutability_preflight_status": _status(closure_wrapper_runtime_mutability_preflight) or _nested_status(closure_wrapper_runtime_mutability_preflight, "preflight"),
                 "closure_wrapper_runtime_mutability_probe_ready_for_review": bool(_nested_get(closure_wrapper_runtime_mutability_preflight, "preflight", "runtime_mutability_probe_ready_for_review") or closure_wrapper_runtime_mutability_preflight.get("runtime_mutability_probe_ready_for_review")),
+                "closure_wrapper_runtime_mutability_result_status": _status(closure_wrapper_runtime_mutability_result) or _nested_status(closure_wrapper_runtime_mutability_result, "result"),
+                "closure_wrapper_runtime_mutability_result_proven": bool(_nested_get(closure_wrapper_runtime_mutability_result, "result", "runtime_mutability_proven") or closure_wrapper_runtime_mutability_result.get("runtime_mutability_proven")),
+                "closure_wrapper_runtime_mutability_result_original_restored": bool(_nested_get(closure_wrapper_runtime_mutability_result, "result", "original_restored") or closure_wrapper_runtime_mutability_result.get("original_restored")),
                 "closure_wrapper_replacement_execution_status": _status(closure_wrapper_replacement_execution) or _nested_status(closure_wrapper_replacement_execution, "execution"),
                 "closure_wrapper_restore_execution_status": _status(closure_wrapper_restore_execution) or _nested_status(closure_wrapper_restore_execution, "execution"),
                 "closure_wrapper_event_count": _intish(closure_wrapper_events.get("event_count") or closure_wrapper_events.get("eventCount") or _nested_get(closure_wrapper_events, "snapshot", "eventCount")),

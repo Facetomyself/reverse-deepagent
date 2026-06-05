@@ -986,6 +986,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_closure_wrapper_replacement_plan": "triage",
     "workspace_closure_wrapper_assignment_safety": "triage",
     "workspace_closure_wrapper_runtime_mutability_preflight": "triage",
+    "workspace_closure_wrapper_runtime_mutability_result": "audit",
     "workspace_closure_wrapper_replacement_execution": "audit",
     "workspace_closure_wrapper_restore_plan": "audit",
     "workspace_closure_wrapper_restore_execution": "audit",
@@ -1802,6 +1803,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["closure-wrapper-assignment-safety.json"] = evidence.details
         elif evidence.source == "closure_wrapper_runtime_mutability_preflight":
             payloads["closure-wrapper-runtime-mutability-preflight.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_runtime_mutability_result":
+            payloads["closure-wrapper-runtime-mutability-result.json"] = evidence.details
         elif evidence.source == "closure_wrapper_replacement_execution":
             payloads["closure-wrapper-replacement-execution.json"] = evidence.details
         elif evidence.source == "closure_wrapper_restore_plan":

@@ -184,6 +184,45 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("closure_wrapper_runtime_mutability_preflight_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "resolve_closure_wrapper_runtime_mutability_preflight_blockers")
 
+    def test_review_hook_artifacts_warns_for_closure_wrapper_runtime_mutability_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_runtime_mutability_result": {
+                "status": "proven",
+                "result": {
+                    "status": "proven",
+                    "runtime_mutability_proven": True,
+                    "original_restored": True,
+                    "next_action": "review_runtime_mutability_result_then_optionally_execute_closure_wrapper_replacement",
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("closure_wrapper_runtime_mutability_result_requires_replacement_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_runtime_mutability_result_then_optionally_execute_closure_wrapper_replacement")
+        self.assertEqual(result["summary"]["closure_wrapper_runtime_mutability_result_status"], "proven")
+        self.assertTrue(result["summary"]["closure_wrapper_runtime_mutability_result_proven"])
+        self.assertTrue(result["summary"]["closure_wrapper_runtime_mutability_result_original_restored"])
+        self.assertEqual(result["review_required_items"][0]["closure_wrapper_runtime_mutability_result_status"], "proven")
+
+    def test_review_hook_artifacts_blocks_failed_closure_wrapper_runtime_mutability_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "closure_wrapper_runtime_mutability_result": {
+                "status": "failed",
+                "result": {"runtime_mutability_proven": False},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("closure_wrapper_runtime_mutability_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_closure_wrapper_runtime_mutability_result_blockers")
+
     def test_review_hook_artifacts_warns_for_closure_wrapper_replacement_execution_restore(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
