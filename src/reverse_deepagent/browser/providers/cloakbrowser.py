@@ -82,6 +82,7 @@ class CloakBrowserProvider:
                 "proxy_policy": "provider-level-redacted",
                 "extension_policy": "launch-or-persistent-context",
                 "humanize_policy": "supported",
+                "stealth_policy": "cloakbrowser-managed-fingerprint-hardening",
                 "session_recovery": "connect-over-cdp-or-persistent-context",
                 "intended_use": "optional-stealth-browser-provider",
                 "side_effect_boundary": "describe-and-metadata-matrix-are-side-effect-free; availability-and-launch-are-explicit",

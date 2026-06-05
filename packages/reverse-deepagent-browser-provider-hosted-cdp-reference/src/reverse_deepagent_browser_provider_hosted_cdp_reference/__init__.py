@@ -254,6 +254,8 @@ def hosted_cdp_reference_browser_provider_capabilities(
             "proxy_policy": "external-service-owned-redacted",
             "extension_policy": "external-service-owned",
             "humanize_policy": "provider-specific-not-declared",
+            "allocation_lifecycle_policy": "explicit-start-allocates-and-stop-releases-owned-session",
+            "endpoint_security_policy": "caller-owned-or-reference-allocated-redacted-cdp-endpoint",
             "session_recovery": "session-id-reattach-or-endpoint-connect",
             "intended_use": "reference-implementation-for-hosted-cdp-provider-packages",
             "side_effect_boundary": "metadata-listing-does-not-allocate; start-and-connect-are-explicit; stop-releases-owned-allocation",

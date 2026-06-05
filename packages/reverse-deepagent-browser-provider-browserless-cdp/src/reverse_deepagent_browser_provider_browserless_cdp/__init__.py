@@ -356,6 +356,8 @@ def browserless_cdp_browser_provider_capabilities(
             "proxy_policy": "browserless-account-or-session-owned-not-core-configured",
             "extension_policy": "browserless-account-or-session-owned-not-core-configured",
             "humanize_policy": "not-supported-by-this-provider-wrapper",
+            "account_boundary_policy": "browserless-account-controls-secrets-and-session-policy",
+            "endpoint_security_policy": "caller-supplied-redacted-browserless-endpoint",
             "session_recovery": "explicit-endpoint-or-reconnect-url",
             "intended_use": "browserless-hosted-cdp-provider-package",
             "side_effect_boundary": "metadata-listing-does-not-probe-browserless; connect-and-smoke-require-explicit-reviewed-endpoint",

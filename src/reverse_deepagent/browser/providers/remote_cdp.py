@@ -234,6 +234,7 @@ class RemoteCDPProvider:
                 "extension_policy": "external-browser-owned",
                 "humanize_policy": "not-supported",
                 "session_recovery": "connect-existing-endpoint",
+                "endpoint_security_policy": "caller-owned-debug-endpoint-with-redacted-url",
                 "intended_use": "attach-to-existing-debug-browser",
                 "side_effect_boundary": "describe-and-metadata-matrix-are-side-effect-free; endpoint-probe-and-connect-are-explicit",
             },

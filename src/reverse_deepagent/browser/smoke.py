@@ -8,7 +8,7 @@ from reverse_deepagent.browser.base import BrowserProvider
 
 BROWSER_SMOKE_MATRIX_VERSION = "2026-05-31.lifecycle-baseline"
 BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION = "2026-05-31.metadata-compatibility-v1"
-BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-01.production-readiness-v3"
+BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION = "2026-06-05.production-readiness-v4"
 DEFAULT_BROWSER_PROVIDER_MATRIX: tuple[str, ...] = (
     "playwright-chromium",
     "cloakbrowser",
@@ -95,6 +95,7 @@ class BrowserProviderProductionReadinessRule:
     transports: tuple[str, ...] = field(default_factory=tuple)
     requires_all: tuple[str, ...] = field(default_factory=tuple)
     metadata_equals: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    required_metadata_keys: tuple[str, ...] = field(default_factory=tuple)
 
     def applies_to(self, capabilities: dict[str, Any]) -> bool:
         provider_id = str(capabilities.get("provider_id") or "")
@@ -105,8 +106,13 @@ class BrowserProviderProductionReadinessRule:
             return False
         return True
 
+    def missing_metadata_keys(self, profile: dict[str, Any]) -> list[str]:
+        return [key for key in self.required_metadata_keys if not str(profile.get(key) or "").strip()]
+
     def satisfied_by(self, capabilities: dict[str, Any], profile: dict[str, Any]) -> bool:
         if self.requires_all and not all(_capability_enabled(capabilities, key) for key in self.requires_all):
+            return False
+        if self.missing_metadata_keys(profile):
             return False
         for key, expected_value in self.metadata_equals:
             if str(profile.get(key) or "") != expected_value:
@@ -122,6 +128,7 @@ class BrowserProviderProductionReadinessRule:
             "transports": list(self.transports),
             "requires_all": list(self.requires_all),
             "metadata_equals": {key: value for key, value in self.metadata_equals},
+            "required_metadata_keys": list(self.required_metadata_keys),
         }
 
 
@@ -170,6 +177,7 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             ("profile_lifecycle", "external-browser-owned"),
             ("session_recovery", "connect-existing-endpoint"),
         ),
+        required_metadata_keys=("endpoint_security_policy",),
         message=(
             "remote-cdp should declare attach-only CDP lifecycle support and explicit endpoint-probe "
             "metadata without implying browser ownership or launch control"
@@ -206,6 +214,7 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             ("profile_lifecycle", "persistent-context-supported"),
             ("session_recovery", "connect-over-cdp-or-persistent-context"),
         ),
+        required_metadata_keys=("stealth_policy",),
         message=(
             "cloakbrowser should keep production lifecycle metadata aligned with its launch, persistent-context, "
             "connect, stealth, humanize, proxy, and CDP capability contract"
@@ -221,6 +230,7 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             ("health_check_mode", "explicit-reference-allocation-and-cdp-contract-smoke"),
             ("session_recovery", "session-id-reattach-or-endpoint-connect"),
         ),
+        required_metadata_keys=("allocation_lifecycle_policy", "endpoint_security_policy"),
         message=(
             "hosted-cdp-reference should declare launch/connect/CDP lifecycle support and the reviewed "
             "allocation/attach/release readiness metadata used by production provider packages"
@@ -248,6 +258,7 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             ("profile_lifecycle", "browserless-session-owned"),
             ("session_recovery", "explicit-endpoint-or-reconnect-url"),
         ),
+        required_metadata_keys=("account_boundary_policy", "endpoint_security_policy"),
         message=(
             "browserless-cdp should declare a reviewed hosted-CDP connect contract, Browserless-owned "
             "session lifecycle metadata, and explicit endpoint smoke requirements without probing endpoints "
@@ -663,8 +674,11 @@ def browser_provider_production_readiness(capabilities: dict[str, Any]) -> dict[
     missing_metadata: list[str] = []
     warnings: list[str] = []
 
-    def add_check(check_id: str, status: str, message: str, *, required_key: str | None = None) -> None:
-        checks.append({"check_id": check_id, "status": status, "message": message})
+    def add_check(check_id: str, status: str, message: str, *, required_key: str | None = None, extra: dict[str, Any] | None = None) -> None:
+        check = {"check_id": check_id, "status": status, "message": message}
+        if extra:
+            check.update(extra)
+        checks.append(check)
         if status == "missing" and required_key:
             missing_metadata.append(required_key)
         if status == "warn":
@@ -754,7 +768,18 @@ def browser_provider_production_readiness(capabilities: dict[str, Any]) -> dict[
 
     provider_specific_rules = _evaluate_provider_specific_readiness_rules(capabilities, profile)
     for rule_result in provider_specific_rules:
-        add_check(rule_result["check_id"], rule_result["status"], rule_result["message"])
+        add_check(
+            rule_result["check_id"],
+            rule_result["status"],
+            rule_result["message"],
+            extra={
+                "missing_metadata_keys": list(rule_result.get("missing_metadata_keys", [])),
+                "rule_id": rule_result.get("rule_id"),
+                "severity": rule_result.get("severity"),
+            },
+        )
+        if rule_result["status"] == "missing":
+            missing_metadata.extend(str(key) for key in rule_result.get("missing_metadata_keys", []))
 
     unique_missing = sorted(set(missing_metadata))
     unique_warnings = sorted(set(warnings))
@@ -793,8 +818,9 @@ def _evaluate_provider_specific_readiness_rules(capabilities: dict[str, Any], pr
     for rule in BROWSER_PROVIDER_PRODUCTION_READINESS_RULES:
         if not rule.applies_to(capabilities):
             continue
+        missing_keys = rule.missing_metadata_keys(profile)
         passed = rule.satisfied_by(capabilities, profile)
-        status = "pass" if passed else "missing" if rule.severity == "error" else "warn"
+        status = "pass" if passed else "missing" if missing_keys or rule.severity == "error" else "warn"
         results.append(
             {
                 "check_id": f"provider_specific:{rule.rule_id}",
@@ -802,6 +828,7 @@ def _evaluate_provider_specific_readiness_rules(capabilities: dict[str, Any], pr
                 "message": rule.message if not passed else f"{rule.rule_id} provider-specific readiness rule passed",
                 "rule_id": rule.rule_id,
                 "severity": rule.severity,
+                "missing_metadata_keys": missing_keys,
             }
         )
     return results

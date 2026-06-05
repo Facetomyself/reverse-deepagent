@@ -154,6 +154,10 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertEqual(browserless_rule["transports"], ["browserless-cdp"])
         self.assertIn("supports_runtime_eval", browserless_rule["requires_all"])
         self.assertEqual(browserless_rule["metadata_equals"]["health_check_mode"], "explicit-browserless-cdp-contract-smoke")
+        self.assertIn("endpoint_security_policy", remote_rule["required_metadata_keys"])
+        self.assertIn("stealth_policy", cloak_rule["required_metadata_keys"])
+        self.assertIn("allocation_lifecycle_policy", hosted_rule["required_metadata_keys"])
+        self.assertIn("account_boundary_policy", browserless_rule["required_metadata_keys"])
 
     def test_builtin_provider_specific_readiness_rules_pass_without_runtime_side_effects(self) -> None:
         providers = [
@@ -191,6 +195,8 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
                     "readiness_tier": "review-required",
                     "health_check_mode": "explicit-endpoint-probe-after-vendor-session-allocation",
                     "profile_lifecycle": "external-service-session-owned",
+                    "allocation_lifecycle_policy": "explicit-start-allocates-and-stop-releases-owned-session",
+                    "endpoint_security_policy": "caller-owned-or-reference-allocated-redacted-cdp-endpoint",
                     "session_recovery": "connect-existing-endpoint",
                     "intended_use": "reference-implementation-for-hosted-cdp-provider-packages",
                     "side_effect_boundary": "metadata-only-by-default",
@@ -202,6 +208,52 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertIn("provider_specific:hosted_cdp_reference_lifecycle_declared", readiness["warnings"])
         checks = {item["check_id"]: item for item in readiness["checks"]}
         self.assertEqual(checks["provider_specific:hosted_cdp_reference_lifecycle_declared"]["status"], "warn")
+
+    def test_provider_specific_required_metadata_marks_incomplete(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="cloakbrowser",
+                display_name="CloakBrowser",
+                transport="cloakbrowser-playwright",
+                supports_launch=True,
+                supports_connect=True,
+                supports_persistent_context=True,
+                supports_cdp=True,
+                supports_playwright_api=True,
+                supports_proxy=True,
+                supports_stealth=True,
+                supports_humanize=True,
+                supports_extensions=True,
+                supports_mobile_emulation=True,
+                supports_network_events=True,
+                supports_response_body=True,
+                supports_request_initiator=True,
+                supports_script_source=True,
+                supports_websocket_frames=True,
+                supports_breakpoints=True,
+                supports_runtime_eval=True,
+                managed_browser=True,
+                production_readiness={
+                    "readiness_tier": "production-ready",
+                    "health_check_mode": "optional-sdk-or-connect-endpoint",
+                    "profile_lifecycle": "persistent-context-supported",
+                    "proxy_policy": "provider-level-redacted",
+                    "extension_policy": "launch-or-persistent-context",
+                    "humanize_policy": "supported",
+                    "session_recovery": "connect-over-cdp-or-persistent-context",
+                    "intended_use": "optional-stealth-browser-provider",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["status"], "metadata-incomplete")
+        self.assertIn("stealth_policy", readiness["missing_metadata"])
+        checks = {item["check_id"]: item for item in readiness["checks"]}
+        provider_check = checks["provider_specific:cloakbrowser_production_lifecycle_declared"]
+        self.assertEqual(provider_check["status"], "missing")
+        self.assertEqual(provider_check["missing_metadata_keys"], ["stealth_policy"])
+        self.assertFalse(readiness["side_effect_policy"]["starts_browser"])
 
     def test_registration_metadata_matrix_does_not_call_provider_factory(self) -> None:
         metadata = [
