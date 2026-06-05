@@ -128,6 +128,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessAttachProbeSpec,
     PausedSessionCrossProcessExecutionPlanManager,
     PausedSessionCrossProcessExecutionPlanSpec,
+    PausedSessionLiveCallframeRecoveryManager,
+    PausedSessionLiveCallframeRecoverySpec,
     PausedSessionLiveContinuationPreflightManager,
     PausedSessionLiveContinuationPreflightSpec,
     PausedSessionTargetAttachReadinessManager,
@@ -1134,6 +1136,68 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_live_callframe_recovery_request(protection_name, context):
+            spec = PausedSessionLiveCallframeRecoverySpec.from_context(context)
+            result = PausedSessionLiveCallframeRecoveryManager().recover(spec)
+            recovery = result.recovery if isinstance(result.recovery, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = recovery.get("blockers") if isinstance(recovery.get("blockers"), list) else []
+            selected = recovery.get("selected_callframe") if isinstance(recovery.get("selected_callframe"), dict) else {}
+            verification = [
+                f"paused_session_live_callframe_recovery_status={result.status}",
+                f"paused_session_live_callframe_recovery_reason={result.reason or ''}",
+                f"paused_session_live_callframe_recovery_target_id={recovery.get('target_id')}",
+                f"paused_session_live_callframe_recovery_requested_action={recovery.get('requested_action')}",
+                f"paused_session_live_callframe_recovery_attach_probe_status={recovery.get('attach_probe_status')}",
+                f"paused_session_live_callframe_recovery_target_attached={recovery.get('target_attached', False)}",
+                f"paused_session_live_callframe_recovery_fresh_paused_event_after_attach={recovery.get('fresh_paused_event_after_attach', False)}",
+                f"paused_session_live_callframe_recovery_callframe_count={recovery.get('callframe_count', 0)}",
+                f"paused_session_live_callframe_recovery_selected_callframe_has_id={recovery.get('selected_callframe_has_id', False)}",
+                f"paused_session_live_callframe_recovery_live_callframe_recovered={recovery.get('live_callframe_recovered', False)}",
+                f"paused_session_live_callframe_recovery_debugger_domain_enabled={recovery.get('debugger_domain_enabled', False)}",
+                f"paused_session_live_callframe_recovery_live_action_executed={recovery.get('live_action_executed', False)}",
+                f"paused_session_live_callframe_recovery_browser_resumed={recovery.get('browser_resumed', False)}",
+                f"paused_session_live_callframe_recovery_debugger_stepped={recovery.get('debugger_stepped', False)}",
+                f"paused_session_live_callframe_recovery_callframe_evaluated={recovery.get('callframe_evaluated', False)}",
+                f"paused_session_live_callframe_recovery_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_live_callframe_recovery_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_live_callframe_recovery_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_live_callframe_recovery_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-live-callframe-recovery.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only live callFrame recovery proof after cross-process attach probing.",
+                    metadata={
+                        "status": result.status,
+                        "recovery_status": recovery.get("status"),
+                        "pause_session_id": recovery.get("pause_session_id"),
+                        "requested_action": recovery.get("requested_action"),
+                        "target_id": recovery.get("target_id"),
+                        "attach_probe_status": recovery.get("attach_probe_status"),
+                        "target_attached": recovery.get("target_attached", False),
+                        "fresh_paused_event_after_attach": recovery.get("fresh_paused_event_after_attach", False),
+                        "callframe_count": recovery.get("callframe_count", 0),
+                        "selected_callframe": selected,
+                        "selected_callframe_has_id": recovery.get("selected_callframe_has_id", False),
+                        "live_callframe_recovered": recovery.get("live_callframe_recovered", False),
+                        "one_action_executor_ready_for_review": recovery.get("one_action_executor_ready_for_review", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "recovered" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=recovery.get("next_action") or "inspect_live_callframe_recovery_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "recovered" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_cross_process_attach_probe_request(protection_name, context):
             spec = PausedSessionCrossProcessAttachProbeSpec.from_context(context)
@@ -5075,6 +5139,8 @@ class NativeWebRuntime(WebReverseRuntime):
     @staticmethod
     def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_live_callframe_recovery_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_cross_process_attach_probe_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_cross_process_execution_plan_request(protection_name, context):
@@ -5101,6 +5167,31 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_live_callframe_recovery_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-live-callframe-recovery",
+            "pause-session-live-callframe-recovery",
+            "debugger-paused-session-live-callframe-recovery",
+            "cross-process-live-callframe-recovery",
+            "recover-live-callframe-after-attach",
+            "review-live-callframe-recovery",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_live_callframe_recovery",
+                "pausedSessionLiveCallframeRecovery",
+                "paused-session-live-callframe-recovery",
+                "cross_process_live_callframe_recovery",
+                "crossProcessLiveCallframeRecovery",
+                "recover_live_callframe_after_attach",
+                "recoverLiveCallframeAfterAttach",
             )
         )
 

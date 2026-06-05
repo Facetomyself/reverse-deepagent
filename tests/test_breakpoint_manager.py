@@ -11,6 +11,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionCrossProcessAttachProbeSpec,
     PausedSessionCrossProcessExecutionPlanManager,
     PausedSessionCrossProcessExecutionPlanSpec,
+    PausedSessionLiveCallframeRecoveryManager,
+    PausedSessionLiveCallframeRecoverySpec,
     PausedSessionLiveContinuationPreflightManager,
     PausedSessionLiveContinuationPreflightSpec,
     PausedSessionTargetAttachReadinessManager,
@@ -885,6 +887,84 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["live_action_executed"])
         self.assertFalse(result.probe["debugger_domain_enabled"])
         self.assertFalse(result.probe["live_callframe_recovered"])
+
+
+    def test_paused_session_live_callframe_recovery_recovers_fresh_callframe_without_side_effects(self) -> None:
+        spec = PausedSessionLiveCallframeRecoverySpec.from_context(
+            {
+                "paused_session_live_callframe_recovery": True,
+                "fresh_paused_event_after_attach": True,
+                "paused_session_cross_process_attach_probe": {
+                    "probe": {
+                        "status": "attached",
+                        "pause_session_id": "recover-1",
+                        "requested_action": "evaluate",
+                        "target_id": "target-recover-1",
+                        "target_attached": True,
+                        "attached_session_id": "attached-session-1",
+                        "target_detached": True,
+                    }
+                },
+                "debugger_paused": {
+                    "callFrames": [
+                        {
+                            "callFrameId": "live-cf-1",
+                            "functionName": "buildSign",
+                            "url": "https://example.test/app.js",
+                            "location": {"lineNumber": 3, "columnNumber": 2},
+                        }
+                    ]
+                },
+            }
+        )
+
+        result = PausedSessionLiveCallframeRecoveryManager().recover(spec)
+
+        self.assertEqual(result.status, "recovered")
+        self.assertTrue(result.recovery["live_callframe_recovered"])
+        self.assertEqual(result.recovery["live_callframe_id"], "live-cf-1")
+        self.assertEqual(result.recovery["next_action"], "plan_cross_process_one_action_executor")
+        self.assertTrue(result.recovery["one_action_executor_ready_for_review"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["callframe_evaluated"])
+        self.assertFalse(result.side_effect_policy["live_action_executed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_paused_session_live_callframe_recovery_blocks_without_fresh_paused_event(self) -> None:
+        spec = PausedSessionLiveCallframeRecoverySpec.from_context(
+            {
+                "paused_session_live_callframe_recovery": True,
+                "paused_session_cross_process_attach_probe": {
+                    "probe": {"status": "attached", "target_id": "target-recover-1", "target_attached": True}
+                },
+                "callframes": [{"callFrameId": "stale-cf-1", "functionName": "buildSign"}],
+            }
+        )
+
+        result = PausedSessionLiveCallframeRecoveryManager().recover(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("fresh_paused_event_after_attach_required", result.recovery["blockers"])
+        self.assertFalse(result.recovery["live_callframe_recovered"])
+        self.assertEqual(result.recovery["next_action"], "capture_new_paused_event_after_attach")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_paused_session_live_callframe_recovery_blocks_without_attach_probe(self) -> None:
+        spec = PausedSessionLiveCallframeRecoverySpec.from_context(
+            {
+                "paused_session_live_callframe_recovery": True,
+                "fresh_paused_event_after_attach": True,
+                "callframes": [{"callFrameId": "live-cf-1", "functionName": "buildSign"}],
+            }
+        )
+
+        result = PausedSessionLiveCallframeRecoveryManager().recover(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("cross_process_attach_probe_required", result.recovery["blockers"])
+        self.assertEqual(result.recovery["next_action"], "run_reviewed_cross_process_attach_probe")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
 
     def test_cross_process_execution_plan_blocks_without_attach_readiness(self) -> None:
         result = PausedSessionCrossProcessExecutionPlanManager().plan(

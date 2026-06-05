@@ -5200,6 +5200,62 @@ class NativeWebRuntimeTests(unittest.TestCase):
             self.assertEqual(len(page._cdp_session.calls), call_count)
 
 
+
+    def test_paused_session_live_callframe_recovery_from_native_runtime_is_read_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-live-callframe-recovery",
+            {
+                "paused_session_live_callframe_recovery": True,
+                "fresh_paused_event_after_attach": True,
+                "paused_session_cross_process_attach_probe": {
+                    "probe": {
+                        "status": "attached",
+                        "pause_session_id": "native-recover-1",
+                        "requested_action": "evaluate",
+                        "target_id": "target-native-recover-1",
+                        "target_attached": True,
+                        "attached_session_id": "attached-session-1",
+                        "target_detached": True,
+                    }
+                },
+                "debugger_paused": {
+                    "callFrames": [
+                        {
+                            "callFrameId": "native-live-cf-1",
+                            "functionName": "buildSign",
+                            "url": "https://example.test/assets/app.js",
+                            "location": {"lineNumber": 4, "columnNumber": 0},
+                        }
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-live-callframe-recovery.json")
+        self.assertIn("paused_session_live_callframe_recovery_status=recovered", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_target_attached=True", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_fresh_paused_event_after_attach=True", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_selected_callframe_has_id=True", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_live_callframe_recovered=True", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_debugger_domain_enabled=False", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_live_action_executed=False", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_browser_resumed=False", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_debugger_stepped=False", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_callframe_evaluated=False", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_live_callframe_recovery_mobile_runtime_used=False", result.verification)
+        self.assertTrue(result.artifacts[0].metadata["live_callframe_recovered"])
+        self.assertTrue(result.artifacts[0].metadata["one_action_executor_ready_for_review"])
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_cross_process_attach_probe_from_native_runtime_requires_review_and_attaches_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

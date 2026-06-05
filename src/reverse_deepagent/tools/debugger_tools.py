@@ -72,6 +72,14 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "cross_process_attach_probe",
             "crossProcessAttachProbe",
         )
+        live_callframe_recovery = _object_alias(
+            payload,
+            "paused_session_live_callframe_recovery",
+            "paused-session-live-callframe-recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -97,11 +105,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         callframe_recovery = readiness.get("callframe_recovery") if isinstance(readiness.get("callframe_recovery"), dict) else {}
         execution_plan = _first_object(cross_process_execution_plan.get("plan"), cross_process_execution_plan)
         attach_probe = _first_object(cross_process_attach_probe.get("probe"), cross_process_attach_probe)
+        callframe_recovery_artifact = _first_object(live_callframe_recovery.get("recovery"), live_callframe_recovery)
         execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_attach_probe, live_callframe_recovery)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -137,6 +146,11 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             warnings.append("cross_process_attach_probe_review_required")
         if attach_probe_status == "attached" and not _boolish(attach_probe.get("live_callframe_recovered")):
             warnings.append("attach_probe_ready_but_live_callframe_recovery_not_implemented")
+        recovery_status = _string(callframe_recovery_artifact.get("status"))
+        if recovery_status == "blocked":
+            blockers.append("paused_session_live_callframe_recovery_blocked")
+        if recovery_status == "recovered":
+            warnings.append("live_callframe_recovered_executor_not_implemented")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -244,10 +258,29 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "cdp_methods": attach_probe.get("cdp_methods") if isinstance(attach_probe.get("cdp_methods"), list) else [],
                     "blockers": attach_probe.get("blockers") if isinstance(attach_probe.get("blockers"), list) else [],
                 },
+                "live_callframe_recovery": {
+                    "status": _string(callframe_recovery_artifact.get("status") or "unknown"),
+                    "pause_session_id": _string(callframe_recovery_artifact.get("pause_session_id")),
+                    "requested_action": _string(callframe_recovery_artifact.get("requested_action") or "unknown"),
+                    "target_id": _string(callframe_recovery_artifact.get("target_id")),
+                    "attach_probe_status": _string(callframe_recovery_artifact.get("attach_probe_status") or "unknown"),
+                    "target_attached": _boolish(callframe_recovery_artifact.get("target_attached")),
+                    "fresh_paused_event_after_attach": _boolish(callframe_recovery_artifact.get("fresh_paused_event_after_attach")),
+                    "callframe_count": callframe_recovery_artifact.get("callframe_count", 0),
+                    "selected_callframe_has_id": _boolish(callframe_recovery_artifact.get("selected_callframe_has_id")),
+                    "live_callframe_recovered": _boolish(callframe_recovery_artifact.get("live_callframe_recovered")),
+                    "one_action_executor_ready_for_review": _boolish(callframe_recovery_artifact.get("one_action_executor_ready_for_review")),
+                    "debugger_domain_enabled": _boolish(callframe_recovery_artifact.get("debugger_domain_enabled")),
+                    "live_action_executed": _boolish(callframe_recovery_artifact.get("live_action_executed")),
+                    "browser_resumed": _boolish(callframe_recovery_artifact.get("browser_resumed")),
+                    "debugger_stepped": _boolish(callframe_recovery_artifact.get("debugger_stepped")),
+                    "callframe_evaluated": _boolish(callframe_recovery_artifact.get("callframe_evaluated")),
+                    "blockers": callframe_recovery_artifact.get("blockers") if isinstance(callframe_recovery_artifact.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, attach_probe, callframe_recovery_artifact, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -403,6 +436,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "resolve_cross_process_attach_probe_blockers"
     if "paused_session_cross_process_attach_probe_failed" in blockers:
         return "inspect_cross_process_attach_probe_error"
+    if "paused_session_live_callframe_recovery_blocked" in blockers:
+        return "capture_new_paused_event_after_attach"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
@@ -413,6 +448,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "approve_cross_process_attach_probe"
     if "cross_process_attach_probe_review_required" in warnings:
         return "approve_cross_process_attach_probe"
+    if "live_callframe_recovered_executor_not_implemented" in warnings:
+        return "plan_cross_process_one_action_executor"
     if "attach_probe_ready_but_live_callframe_recovery_not_implemented" in warnings:
         return "review_attach_probe_result_before_live_callframe_recovery"
     if "cross_process_execution_plan_ready_but_executor_not_implemented" in warnings:
@@ -435,6 +472,7 @@ def _review_required_items(
     readiness: dict[str, Any],
     execution_plan: dict[str, Any],
     attach_probe: dict[str, Any],
+    live_callframe_recovery: dict[str, Any],
     session: dict[str, Any],
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -443,6 +481,7 @@ def _review_required_items(
     attach_diagnostics = _attach_readiness_diagnostics_for_review(readiness)
     execution_plan_diagnostics = _cross_process_execution_plan_diagnostics_for_review(execution_plan)
     attach_probe_diagnostics = _cross_process_attach_probe_diagnostics_for_review(attach_probe)
+    live_callframe_recovery_diagnostics = _live_callframe_recovery_diagnostics_for_review(live_callframe_recovery)
     for code in blockers:
         items.append(
             {
@@ -455,6 +494,7 @@ def _review_required_items(
                 "attach_readiness_diagnostics": attach_diagnostics,
                 "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
                 "cross_process_attach_probe_diagnostics": attach_probe_diagnostics,
+                "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
             }
         )
     for code in warnings:
@@ -467,6 +507,7 @@ def _review_required_items(
             "cross_process_attach_probe_requires_review_approval",
             "cross_process_attach_probe_review_required",
             "attach_probe_ready_but_live_callframe_recovery_not_implemented",
+            "live_callframe_recovered_executor_not_implemented",
         }:
             items.append(
                 {
@@ -479,6 +520,7 @@ def _review_required_items(
                     "attach_readiness_diagnostics": attach_diagnostics,
                     "cross_process_execution_plan_diagnostics": execution_plan_diagnostics,
                     "cross_process_attach_probe_diagnostics": attach_probe_diagnostics,
+                    "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
                 }
             )
     return items
@@ -549,4 +591,24 @@ def _cross_process_attach_probe_diagnostics_for_review(probe: dict[str, Any]) ->
         "callframe_evaluated": _boolish(probe.get("callframe_evaluated")),
         "cdp_methods": probe.get("cdp_methods") if isinstance(probe.get("cdp_methods"), list) else [],
         "blockers": probe.get("blockers") if isinstance(probe.get("blockers"), list) else [],
+    }
+
+
+def _live_callframe_recovery_diagnostics_for_review(recovery: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": _string(recovery.get("status") or "unknown"),
+        "target_id": _string(recovery.get("target_id")),
+        "attach_probe_status": _string(recovery.get("attach_probe_status") or "unknown"),
+        "target_attached": _boolish(recovery.get("target_attached")),
+        "fresh_paused_event_after_attach": _boolish(recovery.get("fresh_paused_event_after_attach")),
+        "callframe_count": recovery.get("callframe_count", 0),
+        "selected_callframe_has_id": _boolish(recovery.get("selected_callframe_has_id")),
+        "live_callframe_recovered": _boolish(recovery.get("live_callframe_recovered")),
+        "one_action_executor_ready_for_review": _boolish(recovery.get("one_action_executor_ready_for_review")),
+        "debugger_domain_enabled": _boolish(recovery.get("debugger_domain_enabled")),
+        "live_action_executed": _boolish(recovery.get("live_action_executed")),
+        "browser_resumed": _boolish(recovery.get("browser_resumed")),
+        "debugger_stepped": _boolish(recovery.get("debugger_stepped")),
+        "callframe_evaluated": _boolish(recovery.get("callframe_evaluated")),
+        "blockers": recovery.get("blockers") if isinstance(recovery.get("blockers"), list) else [],
     }

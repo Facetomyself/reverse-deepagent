@@ -1420,6 +1420,299 @@ class PausedSessionCrossProcessAttachProbeManager:
         return "inspect_cross_process_attach_probe_blockers"
 
 
+@dataclass(slots=True)
+class PausedSessionLiveCallframeRecoverySpec:
+    """Read-only proof that a fresh live callFrame is available after attach probing."""
+
+    cross_process_attach_probe: dict[str, Any] = field(default_factory=dict)
+    cross_process_execution_plan: dict[str, Any] = field(default_factory=dict)
+    paused_event: dict[str, Any] = field(default_factory=dict)
+    debugger_session: dict[str, Any] = field(default_factory=dict)
+    callframes: list[dict[str, Any]] = field(default_factory=list)
+    pause_session_id: str | None = None
+    requested_action: str = "inspect"
+    target_id: str | None = None
+    callframe_index: int = 0
+    fresh_paused_event_after_attach: bool = False
+    require_fresh_paused_event: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionLiveCallframeRecoverySpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_live_callframe_recovery")
+            or context.get("pausedSessionLiveCallframeRecovery")
+            or context.get("paused-session-live-callframe-recovery")
+            or context.get("cross_process_live_callframe_recovery")
+            or context.get("crossProcessLiveCallframeRecovery")
+            or context.get("recover_live_callframe_after_attach")
+            or context.get("recoverLiveCallframeAfterAttach")
+        )
+        attach_container = _first_dict(
+            context,
+            "paused_session_cross_process_attach_probe",
+            "pausedSessionCrossProcessAttachProbe",
+            "paused-session-cross-process-attach-probe",
+            "cross_process_attach_probe",
+            "crossProcessAttachProbe",
+        )
+        attach_probe = dict(attach_container.get("probe")) if isinstance(attach_container.get("probe"), dict) else attach_container
+        plan_container = _first_dict(
+            context,
+            "paused_session_cross_process_execution_plan",
+            "pausedSessionCrossProcessExecutionPlan",
+            "paused-session-cross-process-execution-plan",
+            "cross_process_execution_plan",
+            "crossProcessExecutionPlan",
+        )
+        plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        paused = _first_dict(
+            context,
+            "debugger_paused",
+            "debuggerPaused",
+            "paused",
+            "paused_event",
+            "pausedEvent",
+            "debugger-paused",
+        )
+        session = _first_dict(context, "debugger_session", "debuggerSession", "debugger-session")
+        callframes = cls._callframes_from_context(context, paused=paused, session=session)
+        if not requested and not attach_probe and not callframes and not paused:
+            return None
+        action = str(
+            context.get(
+                "requested_action",
+                context.get("requestedAction", attach_probe.get("requested_action", plan.get("requested_action", "inspect"))),
+            )
+            or "inspect"
+        ).strip().replace("-", "_").lower()
+        target_id = context.get("target_id") or context.get("targetId") or attach_probe.get("target_id") or cls._target_id_from_plan(plan)
+        pause_session_id = (
+            context.get("pause_session_id")
+            or context.get("pauseSessionId")
+            or attach_probe.get("pause_session_id")
+            or plan.get("pause_session_id")
+            or session.get("pause_session_id")
+            or session.get("session_id")
+        )
+        fresh = bool(
+            context.get("fresh_paused_event_after_attach")
+            or context.get("freshPausedEventAfterAttach")
+            or context.get("paused_event_after_attach")
+            or context.get("pausedEventAfterAttach")
+            or paused.get("fresh_paused_event_after_attach")
+            or paused.get("paused_event_after_attach")
+            or paused.get("captured_after_attach")
+            or session.get("fresh_paused_event_after_attach")
+        )
+        require_raw = context.get("require_fresh_paused_event", context.get("requireFreshPausedEvent", True))
+        try:
+            callframe_index = int(context.get("callframe_index", context.get("callFrameIndex", 0)) or 0)
+        except (TypeError, ValueError):
+            callframe_index = 0
+        return cls(
+            cross_process_attach_probe=attach_probe,
+            cross_process_execution_plan=plan,
+            paused_event=paused,
+            debugger_session=session,
+            callframes=callframes,
+            pause_session_id=str(pause_session_id) if pause_session_id else None,
+            requested_action=action,
+            target_id=str(target_id).strip() if target_id else None,
+            callframe_index=max(0, callframe_index),
+            fresh_paused_event_after_attach=fresh,
+            require_fresh_paused_event=bool(require_raw),
+        )
+
+    @staticmethod
+    def _target_id_from_plan(plan: dict[str, Any]) -> str:
+        summary = plan.get("target_attach_readiness_summary") if isinstance(plan.get("target_attach_readiness_summary"), dict) else {}
+        selected = summary.get("selected_target") if isinstance(summary.get("selected_target"), dict) else {}
+        value = selected.get("target_id") or selected.get("targetId") or selected.get("id")
+        return str(value).strip() if value is not None else ""
+
+    @staticmethod
+    def _callframes_from_context(context: dict[str, Any], *, paused: dict[str, Any], session: dict[str, Any]) -> list[dict[str, Any]]:
+        candidates = (
+            context.get("callframes"),
+            context.get("callFrames"),
+            paused.get("callFrames"),
+            paused.get("callframes"),
+            session.get("callframes"),
+            session.get("callFrames"),
+        )
+        for value in candidates:
+            if isinstance(value, list):
+                return [dict(item) for item in value if isinstance(item, dict)]
+            if isinstance(value, dict):
+                nested = value.get("callFrames") or value.get("callframes") or value.get("items")
+                if isinstance(nested, list):
+                    return [dict(item) for item in nested if isinstance(item, dict)]
+        return []
+
+
+@dataclass(slots=True)
+class PausedSessionLiveCallframeRecoveryResult:
+    status: str
+    recovery: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "recovery": self.recovery,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class PausedSessionLiveCallframeRecoveryManager:
+    """Review provided paused/callframe evidence after attach probing without sending CDP commands."""
+
+    def recover(self, spec: PausedSessionLiveCallframeRecoverySpec | None) -> PausedSessionLiveCallframeRecoveryResult:
+        blockers = self._blockers(spec)
+        status = "recovered" if not blockers else "blocked"
+        payload = self._payload(spec, status=status, blockers=blockers)
+        return PausedSessionLiveCallframeRecoveryResult(
+            status=status,
+            recovery=payload,
+            side_effect_policy=self._side_effect_policy(),
+            reason=blockers[0] if blockers else None,
+        )
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionLiveCallframeRecoverySpec | None) -> list[str]:
+        if spec is None:
+            return ["live_callframe_recovery_request_missing"]
+        blockers: list[str] = []
+        probe = spec.cross_process_attach_probe
+        if not probe:
+            blockers.append("cross_process_attach_probe_required")
+        elif probe.get("status") != "attached" or not probe.get("target_attached"):
+            blockers.append("cross_process_target_not_attached")
+        if not spec.target_id:
+            blockers.append("target_id_required")
+        if not spec.callframes:
+            blockers.append("fresh_paused_callframes_required")
+        elif spec.callframe_index >= len(spec.callframes):
+            blockers.append("selected_callframe_index_out_of_range")
+        else:
+            selected = spec.callframes[spec.callframe_index]
+            if not cls._callframe_id(selected):
+                blockers.append("live_callframe_id_required")
+        if spec.require_fresh_paused_event and not spec.fresh_paused_event_after_attach:
+            blockers.append("fresh_paused_event_after_attach_required")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionLiveCallframeRecoverySpec | None, *, status: str, blockers: list[str]) -> dict[str, Any]:
+        selected = cls._selected_callframe(spec)
+        callframe_id = cls._callframe_id(selected)
+        probe = spec.cross_process_attach_probe if spec else {}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-live-callframe-recovery.v1",
+            "status": status,
+            "pause_session_id": spec.pause_session_id if spec else None,
+            "requested_action": spec.requested_action if spec else None,
+            "target_id": spec.target_id if spec else None,
+            "attach_probe_status": probe.get("status"),
+            "target_attached": bool(probe.get("target_attached")),
+            "attached_session_id": probe.get("attached_session_id"),
+            "target_detached": bool(probe.get("target_detached")),
+            "fresh_paused_event_after_attach": bool(spec and spec.fresh_paused_event_after_attach),
+            "require_fresh_paused_event": bool(spec.require_fresh_paused_event) if spec else True,
+            "callframe_count": len(spec.callframes) if spec else 0,
+            "selected_callframe_index": spec.callframe_index if spec else 0,
+            "selected_callframe": cls._callframe_summary(selected),
+            "selected_callframe_has_id": bool(callframe_id),
+            "live_callframe_id": callframe_id,
+            "live_callframe_recovered": status == "recovered",
+            "debugger_domain_enabled": False,
+            "live_action_executed": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "one_action_executor_ready_for_review": status == "recovered",
+            "cross_process_action_executed": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _selected_callframe(spec: PausedSessionLiveCallframeRecoverySpec | None) -> dict[str, Any]:
+        if not spec or not spec.callframes or spec.callframe_index >= len(spec.callframes):
+            return {}
+        return spec.callframes[spec.callframe_index]
+
+    @staticmethod
+    def _callframe_id(callframe: dict[str, Any]) -> str:
+        value = callframe.get("callFrameId") or callframe.get("callframe_id") or callframe.get("id")
+        return str(value).strip() if value is not None else ""
+
+    @classmethod
+    def _callframe_summary(cls, callframe: dict[str, Any]) -> dict[str, Any]:
+        if not callframe:
+            return {}
+        location = callframe.get("location") if isinstance(callframe.get("location"), dict) else {}
+        return {
+            "callFrameId": cls._callframe_id(callframe),
+            "functionName": str(callframe.get("functionName") or callframe.get("function_name") or callframe.get("name") or "anonymous"),
+            "url": str(callframe.get("url") or location.get("url") or ""),
+            "lineNumber": location.get("lineNumber", location.get("line_number")),
+            "columnNumber": location.get("columnNumber", location.get("column_number")),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "files_mutated": False,
+            "artifacts_written": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "cdp_target_detached": False,
+            "debugger_domain_enabled": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "live_action_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "live_callframe_recovery_request_missing": ("request", "No live callFrame recovery request was provided.", "request_live_callframe_recovery"),
+            "cross_process_attach_probe_required": ("attach_probe", "A reviewed cross-process attach probe artifact is required before callFrame recovery review.", "run_reviewed_cross_process_attach_probe"),
+            "cross_process_target_not_attached": ("attach_probe", "The attach probe did not prove a target attachment.", "rerun_or_review_cross_process_attach_probe"),
+            "target_id_required": ("cdp_target", "A target id is required to correlate the recovered callFrame to the attached target.", "provide_target_id_for_callframe_recovery"),
+            "fresh_paused_callframes_required": ("debugger", "Fresh paused callFrames after the attach probe are required.", "capture_new_paused_event_after_attach"),
+            "selected_callframe_index_out_of_range": ("debugger", "The selected callFrame index is not present in the provided paused event.", "select_available_live_callframe"),
+            "live_callframe_id_required": ("debugger", "The selected callFrame does not include a live callFrameId.", "capture_stable_live_callframe_id"),
+            "fresh_paused_event_after_attach_required": ("debugger", "The provided callFrames are not marked as a fresh paused event after attach.", "capture_new_paused_event_after_attach"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_live_callframe_recovery"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_live_callframe_recovery"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_live_callframe_recovery"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if status == "recovered":
+            return "plan_cross_process_one_action_executor"
+        if any(item in blockers for item in ("fresh_paused_callframes_required", "fresh_paused_event_after_attach_required", "live_callframe_id_required")):
+            return "capture_new_paused_event_after_attach"
+        if "cross_process_attach_probe_required" in blockers or "cross_process_target_not_attached" in blockers:
+            return "run_reviewed_cross_process_attach_probe"
+        return "inspect_live_callframe_recovery_blockers"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 
