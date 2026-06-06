@@ -1,6 +1,6 @@
 import unittest
 
-from reverse_deepagent.browser.source_maps import SourceMapFetchManager, SourceMapFetchSpec, SourceMapRemapper
+from reverse_deepagent.browser.source_maps import BundlerSymbolScopeManager, BundlerSymbolScopeSpec, SourceMapFetchManager, SourceMapFetchSpec, SourceMapRemapper
 
 
 BASE64_VLQ_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -100,6 +100,78 @@ class SourceMapFetchManagerTests(unittest.TestCase):
         self.assertEqual(result.result["indexed_section_results"][0]["sources_count"], 1)
         self.assertFalse(result.side_effect_policy["browser_cookies_sent"])
         self.assertFalse(result.result["payload_exported"])
+
+
+class BundlerSymbolScopeManagerTests(unittest.TestCase):
+    def test_bundler_symbol_scope_reviews_webpack_symbol_name_candidate_without_side_effects(self) -> None:
+        source_map = {
+            "version": 3,
+            "sourceRoot": "webpack://demo",
+            "sources": ["./src/sign.ts"],
+            "names": ["buildSign"],
+            "mappings": encode_vlq_segment([0, 0, 0, 0, 0]),
+        }
+        spec = BundlerSymbolScopeSpec.from_context(
+            {
+                "bundler_symbol_scope": True,
+                "script_url": "https://example.test/assets/app.js",
+                "script_source": "var __webpack_require__ = {};",
+                "source_map": source_map,
+                "symbol_name": "buildSign",
+                "original_source": "webpack://demo/src/sign.ts",
+                "original_line": 0,
+                "original_column": 0,
+            }
+        )
+
+        result = BundlerSymbolScopeManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.bundler-symbol-scope.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertEqual(descriptor["bundler_classification"]["bundler_kind"], "webpack")
+        self.assertTrue(descriptor["name_metadata"]["name_present"])
+        self.assertEqual(descriptor["name_metadata"]["mapping_name_match_count"], 1)
+        self.assertEqual(descriptor["scope_candidate_count"], 1)
+        candidate = descriptor["scope_candidates"][0]
+        self.assertEqual(candidate["symbol_name"], "buildSign")
+        self.assertEqual(candidate["generated_line_number"], 0)
+        self.assertEqual(candidate["generated_column_number"], 0)
+        self.assertTrue(descriptor["hook_readiness"]["source_logpoint_reviewable"])
+        self.assertFalse(descriptor["side_effect_policy"]["fetch_source_map"])
+        self.assertFalse(descriptor["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(descriptor["side_effect_policy"]["runtime_evaluated"])
+        self.assertFalse(descriptor["side_effect_policy"]["logpoint_installed"])
+        self.assertFalse(descriptor["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(descriptor["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_bundler_symbol_scope_blocks_missing_source_map_payload(self) -> None:
+        spec = BundlerSymbolScopeSpec.from_context({"bundler_symbol_scope": True, "symbol_name": "buildSign"})
+
+        result = BundlerSymbolScopeManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "missing_source_map_payload")
+        self.assertEqual(result.descriptor["next_action"], "provide_source_map_payload")
+        self.assertFalse(result.side_effect_policy["browser_started"])
+
+    def test_bundler_symbol_scope_treats_malformed_source_map_string_as_missing_payload(self) -> None:
+        spec = BundlerSymbolScopeSpec.from_context(
+            {
+                "bundler_symbol_scope": True,
+                "source_map": "{not-json",
+                "symbol_name": "buildSign",
+                "original_source": "./src/sign.ts",
+            }
+        )
+
+        result = BundlerSymbolScopeManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "missing_source_map_payload")
+        self.assertEqual(result.descriptor["blockers"], ["missing_source_map_payload"])
+        self.assertFalse(result.descriptor["side_effect_policy"]["fetch_source_map"])
 
 
 class SourceMapRemapperTests(unittest.TestCase):

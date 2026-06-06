@@ -340,6 +340,453 @@ class SourceMapFetchManager:
             raise ValueError("source map payload exceeds max_bytes")
         return payload
 
+
+@dataclass(slots=True)
+class BundlerSymbolScopeSpec:
+    """Review-only descriptor request for Source Map symbol scope hints.
+
+    The descriptor consumes caller-provided Source Map payloads and optional
+    runtime inventory hints.  It never fetches Source Maps, starts a browser,
+    evaluates JavaScript, installs logpoints, or calls MCP.  Its job is to turn
+    conservative Source Map / bundler metadata into reviewable hook and
+    source-logpoint readiness hints.
+    """
+
+    source_map: dict[str, Any] | None = None
+    source_map_fetch_result: dict[str, Any] = field(default_factory=dict)
+    script_url: str = ""
+    script_source: str = ""
+    original_source: str = ""
+    symbol_name: str = ""
+    original_line_number: int | None = None
+    original_column_number: int = 0
+    source_map_bias: str = "greatest_lower_bound"
+    module_candidates: list[dict[str, Any]] = field(default_factory=list)
+    script_inventory: list[dict[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "BundlerSymbolScopeSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "bundler_symbol_scope",
+                "bundlerSymbolScope",
+                "source_map_symbol_scope",
+                "sourceMapSymbolScope",
+                "review_bundler_symbol_scope",
+                "reviewBundlerSymbolScope",
+            )
+        )
+        source_map = cls._coerce_source_map(context.get("source_map", context.get("sourceMap")))
+        source_map_fetch_result = cls._coerce_dict(
+            context.get("source_map_fetch_result", context.get("sourceMapFetchResult", context.get("source-map-fetch-result")))
+        )
+        symbol_name = str(context.get("symbol_name", context.get("symbolName", context.get("function_name", context.get("functionName", "")))) or "")
+        original_source = str(context.get("original_source", context.get("originalSource", context.get("source", ""))) or "")
+        if not requested and source_map is None:
+            return None
+        original_line = context.get("original_line", context.get("originalLine", context.get("original_line_number", context.get("originalLineNumber"))))
+        original_column = context.get("original_column", context.get("originalColumn", context.get("original_column_number", context.get("originalColumnNumber", 0))))
+        line_base = int(context.get("original_line_base", context.get("originalLineBase", 0)) or 0)
+        column_base = int(context.get("original_column_base", context.get("originalColumnBase", 0)) or 0)
+        return cls(
+            source_map=source_map,
+            source_map_fetch_result=source_map_fetch_result,
+            script_url=str(context.get("script_url", context.get("scriptUrl", context.get("url", ""))) or ""),
+            script_source=str(context.get("script_source", context.get("scriptSource", context.get("bundle_source", context.get("bundleSource", "")))) or ""),
+            original_source=original_source,
+            symbol_name=symbol_name,
+            original_line_number=(int(original_line) - line_base) if original_line is not None else None,
+            original_column_number=int(original_column or 0) - column_base,
+            source_map_bias=str(context.get("source_map_bias", context.get("sourceMapBias", "greatest_lower_bound")) or "greatest_lower_bound"),
+            module_candidates=cls._coerce_dict_list(context.get("module_candidates", context.get("moduleCandidates", []))),
+            script_inventory=cls._coerce_dict_list(context.get("script_inventory", context.get("scriptInventory", []))),
+        )
+
+    @staticmethod
+    def _coerce_source_map(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return None
+            return parsed if isinstance(parsed, dict) else None
+        return None
+
+    @staticmethod
+    def _coerce_dict(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
+
+    @staticmethod
+    def _coerce_dict_list(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, str) and value.strip():
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                return []
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)]
+
+
+@dataclass(slots=True)
+class BundlerSymbolScopeResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class BundlerSymbolScopeManager:
+    """Build a review-only Source Map / bundler symbol-scope descriptor."""
+
+    def review(self, spec: BundlerSymbolScopeSpec | None) -> BundlerSymbolScopeResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return BundlerSymbolScopeResult(status="unsupported", reason="missing_bundler_symbol_scope_request", side_effect_policy=policy)
+        if not isinstance(spec.source_map, dict):
+            descriptor = self._base_descriptor(spec, status="blocked", reason="missing_source_map_payload")
+            return BundlerSymbolScopeResult(status="blocked", descriptor=descriptor, side_effect_policy=policy, reason="missing_source_map_payload")
+        try:
+            descriptor = self._descriptor(spec)
+            return BundlerSymbolScopeResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=policy)
+        except Exception as exc:
+            descriptor = self._base_descriptor(spec, status="failed", reason="descriptor_build_failed")
+            descriptor["error"] = str(exc)
+            return BundlerSymbolScopeResult(status="failed", descriptor=descriptor, side_effect_policy=policy, error=str(exc), reason="descriptor_build_failed")
+
+    def _descriptor(self, spec: BundlerSymbolScopeSpec) -> dict[str, Any]:
+        assert spec.source_map is not None
+        summary = self._source_map_summary(spec.source_map, spec.source_map_fetch_result)
+        classification = self._classify_bundler(spec)
+        source_match = self._source_match(spec)
+        source_location = self._source_location(spec)
+        name_metadata = self._name_metadata(spec)
+        scope_candidates = self._scope_candidates(spec, source_location)
+        blockers = self._blockers(spec, source_match, name_metadata, scope_candidates)
+        status = "blocked" if blockers and not scope_candidates else "ready_for_review"
+        return {
+            "schema_version": "reverse-deepagent.bundler-symbol-scope.v1",
+            "status": status,
+            "review_only": True,
+            "reason": blockers[0] if status == "blocked" else None,
+            "symbol_request": {
+                "symbol_name": spec.symbol_name,
+                "original_source": spec.original_source,
+                "original_line_number": spec.original_line_number,
+                "original_column_number": spec.original_column_number,
+                "source_map_bias": spec.source_map_bias,
+                "script_url": spec.script_url,
+                "script_url_redacted": _redact_url(spec.script_url) if spec.script_url else "",
+            },
+            "source_map_summary": summary,
+            "bundler_classification": classification,
+            "source_match": source_match,
+            "generated_location": source_location.to_dict() if source_location else {},
+            "name_metadata": name_metadata,
+            "scope_candidates": scope_candidates,
+            "scope_candidate_count": len(scope_candidates),
+            "hook_readiness": {
+                "source_logpoint_reviewable": bool(scope_candidates or source_location),
+                "source_logpoint_requires_review": bool(scope_candidates or source_location),
+                "function_hook_requires_runtime_candidate": True,
+                "module_hook_requires_module_candidate": True,
+                "automatic_logpoint_install_supported": False,
+                "automatic_function_hook_supported": False,
+                "automatic_module_hook_supported": False,
+            },
+            "blockers": blockers,
+            "next_action": "review_symbol_scope_before_source_logpoint_or_hook" if status == "ready_for_review" else "provide_source_map_symbol_and_original_source",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, spec: BundlerSymbolScopeSpec, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.bundler-symbol-scope.v1",
+            "status": status,
+            "review_only": True,
+            "reason": reason,
+            "symbol_request": {
+                "symbol_name": spec.symbol_name,
+                "original_source": spec.original_source,
+                "script_url": spec.script_url,
+                "script_url_redacted": _redact_url(spec.script_url) if spec.script_url else "",
+            },
+            "source_map_summary": self._source_map_summary(spec.source_map or {}, spec.source_map_fetch_result),
+            "bundler_classification": self._classify_bundler(spec),
+            "source_match": {"matched": False, "reason": reason},
+            "generated_location": {},
+            "name_metadata": {"requested_symbol": spec.symbol_name, "name_present": False, "mapping_name_match_count": 0},
+            "scope_candidates": [],
+            "scope_candidate_count": 0,
+            "hook_readiness": {
+                "source_logpoint_reviewable": False,
+                "source_logpoint_requires_review": False,
+                "function_hook_requires_runtime_candidate": True,
+                "module_hook_requires_module_candidate": True,
+                "automatic_logpoint_install_supported": False,
+                "automatic_function_hook_supported": False,
+                "automatic_module_hook_supported": False,
+            },
+            "blockers": [reason],
+            "next_action": "provide_source_map_payload",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    @classmethod
+    def _source_map_summary(cls, source_map: dict[str, Any], fetch_result: dict[str, Any]) -> dict[str, Any]:
+        sources = source_map.get("sources") if isinstance(source_map.get("sources"), list) else []
+        names = source_map.get("names") if isinstance(source_map.get("names"), list) else []
+        sections = source_map.get("sections") if isinstance(source_map.get("sections"), list) else []
+        return {
+            "version": source_map.get("version") or fetch_result.get("version"),
+            "sources_count": len(sources) or int(fetch_result.get("sources_count") or 0),
+            "names_count": len(names) or int(fetch_result.get("names_count") or 0),
+            "section_count": len(sections) or int(fetch_result.get("section_count") or 0),
+            "sourceRoot": source_map.get("sourceRoot") or "",
+            "indexed_section_depth": cls._indexed_depth(source_map),
+            "source_map_fetch_metadata_present": bool(fetch_result),
+            "source_map_payload_present": bool(source_map),
+        }
+
+    @classmethod
+    def _indexed_depth(cls, source_map: dict[str, Any]) -> int:
+        sections = source_map.get("sections")
+        if not isinstance(sections, list):
+            return 0
+        depths = [1]
+        for section in sections:
+            if isinstance(section, dict) and isinstance(section.get("map"), dict):
+                depths.append(1 + cls._indexed_depth(section["map"]))
+        return max(depths)
+
+    def _classify_bundler(self, spec: BundlerSymbolScopeSpec) -> dict[str, Any]:
+        signals: list[str] = []
+        haystacks = [spec.script_url, spec.script_source]
+        if isinstance(spec.source_map, dict):
+            haystacks.extend(str(item) for item in spec.source_map.get("sources", []) if item is not None)
+            haystacks.append(str(spec.source_map.get("sourceRoot") or ""))
+        for item in spec.script_inventory:
+            haystacks.extend(str(item.get(key) or "") for key in ("url", "source_url", "sourceUrl", "sourceRoot"))
+        joined = "\n".join(haystacks).lower()
+        candidates = [
+            ("webpack", ("webpack://", "__webpack_require__", "webpackchunk", "webpackjsonp", "webpackbootstrap")),
+            ("vite", ("/@vite/", "vite/client", "import.meta.hot", "__vite", "node_modules/.vite")),
+            ("rollup", ("rollup", "system.register", "__chunk", "generated by rollup")),
+            ("esbuild", ("esbuild", "__defprop", "__export", "__toesm", "__commonjs")),
+            ("parcel", ("parcelrequire", "parcel", "node_modules/.parcel-cache")),
+        ]
+        for bundler, needles in candidates:
+            matched = [needle for needle in needles if needle in joined]
+            if matched:
+                signals.extend(f"{bundler}:{needle}" for needle in matched[:4])
+                return {"bundler_kind": bundler, "confidence": "high" if len(matched) > 1 else "medium", "signals": signals}
+        return {"bundler_kind": "unknown", "confidence": "low", "signals": []}
+
+    def _source_match(self, spec: BundlerSymbolScopeSpec) -> dict[str, Any]:
+        if not spec.original_source or not isinstance(spec.source_map, dict):
+            return {"matched": False, "reason": "original_source_not_provided"}
+        match = self._find_source_match(spec.source_map, spec.original_source)
+        return match or {"matched": False, "requested_source": spec.original_source}
+
+    def _source_location(self, spec: BundlerSymbolScopeSpec) -> GeneratedLocation | None:
+        if not isinstance(spec.source_map, dict) or not spec.original_source or spec.original_line_number is None:
+            return None
+        return SourceMapRemapper.location_from_source_map(
+            spec.source_map,
+            original_source=spec.original_source,
+            original_line_number=spec.original_line_number,
+            original_column_number=spec.original_column_number,
+            bias=spec.source_map_bias,
+        )
+
+    def _name_metadata(self, spec: BundlerSymbolScopeSpec) -> dict[str, Any]:
+        names = self._names(spec.source_map or {})
+        requested = spec.symbol_name
+        name_indices = [index for index, item in enumerate(names) if item == requested] if requested else []
+        mapping_match_count = sum(1 for mapping in self._iter_scoped_mappings(spec.source_map or {}) if mapping.get("name") == requested) if requested else 0
+        return {
+            "requested_symbol": requested,
+            "names_count": len(names),
+            "name_present": bool(name_indices),
+            "name_indices": name_indices,
+            "name_index": name_indices[0] if name_indices else None,
+            "mapping_name_match_count": mapping_match_count,
+        }
+
+    def _scope_candidates(self, spec: BundlerSymbolScopeSpec, source_location: GeneratedLocation | None) -> list[dict[str, Any]]:
+        candidates: list[dict[str, Any]] = []
+        seen: set[tuple[Any, ...]] = set()
+        if source_location is not None:
+            entry = {
+                "kind": "source-map-original-location",
+                "symbol_name": spec.symbol_name,
+                "original_source": source_location.source or spec.original_source,
+                "original_line_number": source_location.original_line_number,
+                "original_column_number": source_location.original_column_number,
+                "generated_line_number": source_location.line_number,
+                "generated_column_number": source_location.column_number,
+                "strategy": source_location.strategy,
+                "metadata": source_location.metadata,
+            }
+            candidates.append(entry)
+            seen.add((entry["generated_line_number"], entry["generated_column_number"], entry["original_source"]))
+        if spec.symbol_name:
+            for mapping in self._iter_scoped_mappings(spec.source_map or {}):
+                if mapping.get("name") != spec.symbol_name:
+                    continue
+                resolved_source = str(mapping.get("source") or "")
+                if spec.original_source and not self._source_matches(resolved_source, spec.original_source):
+                    continue
+                entry = {
+                    "kind": "source-map-name",
+                    "symbol_name": spec.symbol_name,
+                    "original_source": resolved_source,
+                    "original_line_number": mapping.get("original_line_number"),
+                    "original_column_number": mapping.get("original_column_number"),
+                    "generated_line_number": mapping.get("generated_line_number"),
+                    "generated_column_number": mapping.get("generated_column_number"),
+                    "strategy": "source_map_name",
+                    "metadata": {
+                        "source_index": mapping.get("source_index"),
+                        "name_index": mapping.get("name_index"),
+                        "section_stack": mapping.get("section_stack", []),
+                        "indexed_section_depth": len(mapping.get("section_stack", [])) if isinstance(mapping.get("section_stack"), list) else 0,
+                    },
+                }
+                key = (entry["generated_line_number"], entry["generated_column_number"], entry["original_source"])
+                if key in seen:
+                    continue
+                candidates.append(entry)
+                seen.add(key)
+        return candidates[:20]
+
+    @staticmethod
+    def _blockers(spec: BundlerSymbolScopeSpec, source_match: dict[str, Any], name_metadata: dict[str, Any], scope_candidates: list[dict[str, Any]]) -> list[str]:
+        blockers: list[str] = []
+        if not spec.symbol_name and not spec.original_source:
+            blockers.append("missing_symbol_or_original_source")
+        if spec.original_source and not source_match.get("matched"):
+            blockers.append("original_source_not_found_in_source_map")
+        if spec.symbol_name and not name_metadata.get("name_present"):
+            blockers.append("symbol_name_not_present_in_source_map_names")
+        if (spec.symbol_name or spec.original_source) and not scope_candidates:
+            blockers.append("no_generated_scope_candidate")
+        return blockers
+
+    def _find_source_match(self, source_map: dict[str, Any], original_source: str) -> dict[str, Any] | None:
+        sources = source_map.get("sources") if isinstance(source_map.get("sources"), list) else []
+        if sources:
+            index, _resolved, match = SourceMapRemapper._find_source_index(sources, original_source=original_source, source_root=str(source_map.get("sourceRoot") or ""))
+            if index >= 0:
+                match = dict(match)
+                match["matched"] = True
+                match["source_index"] = index
+                return match
+        sections = source_map.get("sections")
+        if isinstance(sections, list):
+            for section_index, section in enumerate(sections):
+                if isinstance(section, dict) and isinstance(section.get("map"), dict):
+                    nested = self._find_source_match(section["map"], original_source)
+                    if nested:
+                        nested = dict(nested)
+                        nested["section_index"] = section_index
+                        return nested
+        return None
+
+    def _iter_scoped_mappings(
+        self,
+        source_map: dict[str, Any],
+        *,
+        base_line: int = 0,
+        base_column: int = 0,
+        section_stack: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        section_stack = section_stack or []
+        sections = source_map.get("sections")
+        if isinstance(sections, list):
+            collected: list[dict[str, Any]] = []
+            for index, section in enumerate(sections):
+                if not isinstance(section, dict) or not isinstance(section.get("map"), dict):
+                    continue
+                offset = section.get("offset") if isinstance(section.get("offset"), dict) else {}
+                offset_line = int(offset.get("line", 0) or 0)
+                offset_column = int(offset.get("column", 0) or 0)
+                entry = {"section_index": index, "offset_line": offset_line, "offset_column": offset_column}
+                collected.extend(
+                    self._iter_scoped_mappings(
+                        section["map"],
+                        base_line=base_line + offset_line,
+                        base_column=base_column + offset_column,
+                        section_stack=[*section_stack, entry],
+                    )
+                )
+            return collected
+        sources = source_map.get("sources") if isinstance(source_map.get("sources"), list) else []
+        names = self._names(source_map)
+        scoped: list[dict[str, Any]] = []
+        for mapping in SourceMapRemapper.iter_mappings(source_map):
+            item = dict(mapping)
+            generated_line = int(item.get("generated_line_number", 0)) + base_line
+            generated_column = int(item.get("generated_column_number", 0)) + (base_column if int(item.get("generated_line_number", 0)) == 0 else 0)
+            item["generated_line_number"] = generated_line
+            item["generated_column_number"] = generated_column
+            source_index = item.get("source_index")
+            if isinstance(source_index, int) and 0 <= source_index < len(sources):
+                item["source"] = SourceMapRemapper._join_source_root(str(source_map.get("sourceRoot") or ""), str(sources[source_index]))
+            name_index = item.get("name_index")
+            if isinstance(name_index, int) and 0 <= name_index < len(names):
+                item["name"] = names[name_index]
+            item["section_stack"] = list(section_stack)
+            scoped.append(item)
+        return scoped
+
+    @staticmethod
+    def _names(source_map: dict[str, Any]) -> list[str]:
+        names = source_map.get("names") if isinstance(source_map.get("names"), list) else []
+        return [str(item) for item in names]
+
+    @staticmethod
+    def _source_matches(candidate: str, requested: str) -> bool:
+        return bool(SourceMapRemapper._source_candidates(candidate).intersection(SourceMapRemapper._source_candidates(requested)))
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
 class SourceMapRemapper:
     """Small Source Map v3 and generated-bundle offset remapper.
 

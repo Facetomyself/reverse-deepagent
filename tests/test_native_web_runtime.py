@@ -5378,6 +5378,47 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/source-map-fetch-result.json")
         self.assertFalse(result.artifacts[1].metadata["fetch_attempted"])
 
+    def test_native_web_runtime_reviews_bundler_symbol_scope_without_runtime_side_effects(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "bundler-symbol-scope",
+            {
+                "source_map": {
+                    "version": 3,
+                    "sourceRoot": "webpack://demo",
+                    "sources": ["./src/sign.ts"],
+                    "names": ["buildSign"],
+                    "mappings": "AAAAA",
+                },
+                "script_url": "https://example.test/assets/app.js",
+                "script_source": "var __webpack_require__ = {};",
+                "symbol_name": "buildSign",
+                "original_source": "webpack://demo/src/sign.ts",
+                "original_line": 0,
+                "original_column": 0,
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_bundler_symbol_scope"])
+        self.assertIn("bundler_symbol_scope_status=ready_for_review", result.verification)
+        self.assertIn("bundler_symbol_scope_bundler=webpack", result.verification)
+        self.assertIn("bundler_symbol_scope_candidate_count=1", result.verification)
+        self.assertIn("bundler_symbol_scope_fetch_source_map=False", result.verification)
+        self.assertIn("bundler_symbol_scope_logpoint_installed=False", result.verification)
+        self.assertIn("bundler_symbol_scope_cdp_command_sent=False", result.verification)
+        self.assertIn("bundler_symbol_scope_calls_mcp=False", result.verification)
+        self.assertIn("bundler_symbol_scope_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_symbol_scope_before_source_logpoint_or_hook")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/bundler-symbol-scope.json")
+        self.assertEqual(result.artifacts[0].metadata["bundler_kind"], "webpack")
+        self.assertEqual(result.artifacts[0].metadata["symbol_name"], "buildSign")
+        self.assertEqual(result.artifacts[0].metadata["scope_candidate_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertFalse(result.artifacts[0].metadata["fetch_source_map"])
+        self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+
     def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

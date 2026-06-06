@@ -78,6 +78,38 @@ class HookSubagentTests(unittest.TestCase):
         self.assertFalse(result["summary"]["async_chunk_load_execution_attempted"])
         self.assertTrue(result["side_effect_policy"]["read_only"])
 
+    def test_review_hook_artifacts_warns_for_bundler_symbol_scope_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "bundler_symbol_scope": {
+                "status": "ready_for_review",
+                "scope_candidate_count": 1,
+                "next_action": "review_symbol_scope_before_source_logpoint_or_hook",
+                "hook_readiness": {"source_logpoint_reviewable": True, "automatic_logpoint_install_supported": False},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("bundler_symbol_scope_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_symbol_scope_before_source_logpoint_or_hook")
+        self.assertEqual(result["summary"]["bundler_symbol_scope_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["bundler_symbol_scope_candidate_count"], 1)
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["hook_installed"])
+        self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
+
+    def test_review_hook_artifacts_blocks_failed_bundler_symbol_scope_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"bundler_symbol_scope": {"status": "blocked", "reason": "missing_source_map_payload"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("bundler_symbol_scope_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_source_map_symbol_and_original_source")
+
     def test_review_hook_artifacts_warns_for_closure_wrapper_replacement_plan(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

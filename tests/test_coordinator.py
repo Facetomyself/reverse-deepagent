@@ -730,6 +730,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native bundler symbol scope",
+                    kind=EvidenceKind.NOTE,
+                    source="bundler_symbol_scope",
+                    details={"status": "ready_for_review", "scope_candidate_count": 1, "bundler_classification": {"bundler_kind": "webpack"}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map fetch result",
                     kind=EvidenceKind.DYNAMIC,
                     source="source_map_fetch_result",
@@ -937,6 +944,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["async-chunk-recursive-traversal-plan.json"]["status"], "ready_for_graph_rebuild")
         self.assertEqual(payloads["async-chunk-recursive-traversal-followup.json"]["status"], "next_loop_plan_ready")
         self.assertEqual(payloads["async-chunk-recursive-traversal-execution.json"]["status"], "next_loop_module_diff_ready")
+        self.assertEqual(payloads["bundler-symbol-scope.json"]["scope_candidate_count"], 1)
+        self.assertEqual(payloads["bundler-symbol-scope.json"]["bundler_classification"]["bundler_kind"], "webpack")
         self.assertEqual(payloads["source-map-fetch-plan.json"]["source_map_url_redacted"], "https://example.test/app.js.map")
         self.assertEqual(payloads["source-map-fetch-result.json"]["byte_count"], 128)
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
@@ -986,6 +995,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_async_chunk_load_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_fetch_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_fetch_result"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_bundler_symbol_scope"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_object_root_mutation_audit"), "trace")

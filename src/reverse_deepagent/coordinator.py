@@ -974,6 +974,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_async_chunk_load_result": "trace",
     "workspace_source_map_fetch_plan": "triage",
     "workspace_source_map_fetch_result": "trace",
+    "workspace_bundler_symbol_scope": "triage",
     "workspace_source_logpoints": "trace",
     "workspace_source_logpoint_timeline": "trace",
     "workspace_mutation_audit": "trace",
@@ -1885,6 +1886,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-map-fetch-plan.json"] = evidence.details
         elif evidence.source == "source_map_fetch_result":
             payloads["source-map-fetch-result.json"] = evidence.details
+        elif evidence.source == "bundler_symbol_scope":
+            payloads["bundler-symbol-scope.json"] = evidence.details
         elif evidence.source == "source_logpoints":
             payloads["source-logpoints.json"] = evidence.details
         elif evidence.source == "source_logpoint_timeline":

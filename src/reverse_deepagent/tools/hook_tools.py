@@ -351,6 +351,15 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             if "status" not in nested_readiness and recursive_continuation_readiness.get("status"):
                 nested_readiness["status"] = recursive_continuation_readiness.get("status")
             recursive_continuation_readiness = nested_readiness
+        bundler_symbol_scope = _object_alias(
+            payload,
+            "bundler_symbol_scope",
+            "bundler-symbol-scope",
+            "bundlerSymbolScope",
+            "source_map_symbol_scope",
+            "source-map-symbol-scope",
+            "sourceMapSymbolScope",
+        )
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -425,6 +434,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_recursive_continuation_journal,
                 module_federation_recursive_continuation_checkpoint,
                 recursive_continuation_readiness,
+                bundler_symbol_scope,
                 closure_wrapper_continuation_readiness,
                 closure_wrapper_continuation_execution_plan,
                 closure_wrapper_continuation_execution,
@@ -439,6 +449,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("hook_artifact_reports_failure")
         if _status(async_chunk_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("async_chunk_load_plan_blocked")
+        if _status(bundler_symbol_scope) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("bundler_symbol_scope_blocked")
         if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_replacement_plan_blocked")
         if _status(closure_wrapper_assignment_safety) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -793,6 +805,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             or async_chunk_recursive_traversal_execution_status in {"ready_for_review", "next_loop_execution_progressed", "next_loop_module_diff_ready", "next_loop_module_hook_recorded"}
         ):
             warnings.append("async_chunk_recursive_traversal_execution_requires_review")
+        if bundler_symbol_scope and _status(bundler_symbol_scope) == "ready_for_review":
+            warnings.append("bundler_symbol_scope_requires_review")
         if missing_count:
             warnings.append("hook_targets_missing")
         if installed_function_count + installed_module_count + source_logpoint_count > 0 and timeline_event_count == 0:
@@ -851,6 +865,9 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "installed_function_hook_count": installed_function_count,
                 "installed_module_hook_count": installed_module_count,
                 "source_logpoint_count": source_logpoint_count,
+                "bundler_symbol_scope_status": _status(bundler_symbol_scope),
+                "bundler_symbol_scope_candidate_count": _intish(bundler_symbol_scope.get("scope_candidate_count")),
+                "bundler_symbol_scope_next_action": bundler_symbol_scope.get("next_action"),
                 "missing_hook_target_count": missing_count,
                 "candidate_count": candidate_count,
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or closure_wrapper_plan_status,
@@ -1375,6 +1392,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "revise_async_chunk_traversal_graph_inputs"
     if "async_chunk_load_plan_blocked" in blockers:
         return "choose_supported_async_chunk_candidate"
+    if "bundler_symbol_scope_blocked" in blockers:
+        return "provide_source_map_symbol_and_original_source"
     if "async_chunk_load_failed" in blockers:
         return "inspect_async_chunk_load_failure"
     if "async_chunk_module_diff_blocked" in blockers:
@@ -1383,6 +1402,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "rerun_module_discovery_after_custom_loader_execution"
     if "module_federation_get_init_requires_review" in warnings:
         return "review_module_federation_get_init_plan"
+    if "bundler_symbol_scope_requires_review" in warnings:
+        return "review_symbol_scope_before_source_logpoint_or_hook"
     if "closure_wrapper_strategy_descriptor_plan_only_requires_review" in warnings:
         return "review_closure_wrapper_strategy_descriptor_before_execution"
     if "closure_wrapper_replacement_plan_requires_review" in warnings:

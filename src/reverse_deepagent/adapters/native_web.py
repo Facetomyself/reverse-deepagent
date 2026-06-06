@@ -169,7 +169,7 @@ from reverse_deepagent.browser.hooks import (
     SourceLogpointManager,
     SourceLogpointSpec,
 )
-from reverse_deepagent.browser.source_maps import SourceMapFetchManager, SourceMapFetchSpec
+from reverse_deepagent.browser.source_maps import BundlerSymbolScopeManager, BundlerSymbolScopeSpec, SourceMapFetchManager, SourceMapFetchSpec
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -2892,6 +2892,62 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_closure_function_candidates" if candidate_count else "provide_candidate_names_or_adjust_breakpoint",
                 confidence=ConfidenceLevel.MEDIUM if candidate_count else ConfidenceLevel.LOW,
+            )
+        if self._is_bundler_symbol_scope_request(protection_name, context):
+            spec = BundlerSymbolScopeSpec.from_context(context)
+            result = BundlerSymbolScopeManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            classification = descriptor.get("bundler_classification") if isinstance(descriptor.get("bundler_classification"), dict) else {}
+            request = descriptor.get("symbol_request") if isinstance(descriptor.get("symbol_request"), dict) else {}
+            verification = [
+                f"bundler_symbol_scope_status={result.status}",
+                f"bundler_symbol_scope_bundler={classification.get('bundler_kind', 'unknown')}",
+                f"bundler_symbol_scope_candidate_count={descriptor.get('scope_candidate_count', 0)}",
+                f"bundler_symbol_scope_symbol={request.get('symbol_name', '')}",
+                "bundler_symbol_scope_review_only=True",
+                "bundler_symbol_scope_fetch_source_map=False",
+                "bundler_symbol_scope_logpoint_installed=False",
+                "bundler_symbol_scope_cdp_command_sent=False",
+                "bundler_symbol_scope_calls_mcp=False",
+                "bundler_symbol_scope_mobile_runtime_used=False",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"bundler_symbol_scope_reason={result.reason}")
+            if result.error:
+                verification.append(f"bundler_symbol_scope_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/bundler-symbol-scope.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only bundler symbol scope descriptor.",
+                metadata={
+                    "status": result.status,
+                    "bundler_kind": classification.get("bundler_kind", "unknown"),
+                    "confidence": classification.get("confidence", "low"),
+                    "symbol_name": request.get("symbol_name", ""),
+                    "scope_candidate_count": descriptor.get("scope_candidate_count", 0),
+                    "review_only": True,
+                    "fetch_source_map": False,
+                    "logpoint_installed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = "review_symbol_scope_before_source_logpoint_or_hook"
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = "provide_source_map_symbol_and_original_source"
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_bundler_symbol_scope_descriptor"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["review_bundler_symbol_scope"] if result.status in {"ready_for_review", "blocked"} else [],
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
         if self._is_source_map_fetch_request(protection_name, context):
             spec = SourceMapFetchSpec.from_context(context)
@@ -7288,6 +7344,23 @@ class NativeWebRuntime(WebReverseRuntime):
                 "fetchSourceMap",
                 "fetch_indexed_section_urls",
                 "fetchIndexedSectionUrls",
+            )
+        )
+
+    @staticmethod
+    def _is_bundler_symbol_scope_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {"bundler-symbol-scope", "source-map-symbol-scope", "review-bundler-symbol-scope", "plan-source-symbol-scope"}:
+            return True
+        return any(
+            key in context
+            for key in (
+                "bundler_symbol_scope",
+                "bundlerSymbolScope",
+                "source_map_symbol_scope",
+                "sourceMapSymbolScope",
+                "review_bundler_symbol_scope",
+                "reviewBundlerSymbolScope",
             )
         )
 

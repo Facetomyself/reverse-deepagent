@@ -397,6 +397,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_async_chunk_load_result", "workspace/async-chunk-load-result.json", "/workspace/runtime/", "async-chunk-load-result.json", "trace", ("hook", "browser_runtime", "review")),
         ("workspace_source_map_fetch_plan", "workspace/source-map-fetch-plan.json", "/workspace/debugger/", "source-map-fetch-plan.json", "triage", ("debugger", "hook", "review")),
         ("workspace_source_map_fetch_result", "workspace/source-map-fetch-result.json", "/workspace/debugger/", "source-map-fetch-result.json", "trace", ("debugger", "hook", "review")),
+        ("workspace_bundler_symbol_scope", "workspace/bundler-symbol-scope.json", "/workspace/hooks/", "bundler-symbol-scope.json", "triage", ("hook", "debugger", "review")),
         ("workspace_source_logpoints", "workspace/source-logpoints.json", "/workspace/debugger/", "source-logpoints.json", "trace", ("debugger", "hook")),
         ("workspace_source_logpoint_timeline", "workspace/source-logpoint-timeline.json", "/workspace/timeline/", "source-logpoint-timeline.json", "trace", ("timeline", "debugger")),
         ("workspace_mutation_audit", "workspace/mutation-audit.json", "/workspace/debugger/", "mutation-audit.json", "trace", ("debugger", "review")),
