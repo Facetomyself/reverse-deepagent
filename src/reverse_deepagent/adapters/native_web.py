@@ -131,6 +131,8 @@ from reverse_deepagent.browser.hooks import (
     ModuleHookSpec,
     MutationObserverTimelineManager,
     MutationObserverTimelineSpec,
+    ObjectGraphDiffManager,
+    ObjectGraphDiffSpec,
     ObjectRootMutationAuditManager,
     ObjectRootMutationAuditSpec,
     PageMutationAuditManager,
@@ -526,6 +528,69 @@ class NativeWebRuntime(WebReverseRuntime):
                 status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
                 artifacts=artifact_paths,
                 next_action=plan.get("next_action") or "review_closure_wrapper_replacement_plan_before_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_object_graph_diff_request(protection_name, context):
+            spec = ObjectGraphDiffSpec.from_context(context)
+            result = ObjectGraphDiffManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            diff = descriptor.get("diff") if isinstance(descriptor.get("diff"), dict) else {}
+            risk = descriptor.get("risk_summary") if isinstance(descriptor.get("risk_summary"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            change_count = int(diff.get("change_count") or descriptor.get("change_count") or 0)
+            categories = diff.get("categories") if isinstance(diff.get("categories"), list) else []
+            verification = [
+                f"object_graph_diff_status={result.status}",
+                f"object_graph_diff_changed={bool(diff.get('changed', descriptor.get('changed', False)))}",
+                f"object_graph_diff_change_count={change_count}",
+                f"object_graph_diff_categories={categories}",
+                f"object_graph_diff_risk={risk.get('risk', 'low')}",
+                "object_graph_diff_review_only=True",
+                f"object_graph_diff_browser_started={policy.get('browser_started', False)}",
+                f"object_graph_diff_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"object_graph_diff_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"object_graph_diff_calls_mcp={policy.get('calls_mcp', False)}",
+                f"object_graph_diff_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"object_graph_diff_reason={result.reason}")
+            if result.error:
+                verification.append(f"object_graph_diff_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/object-graph-diff.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only object graph diff descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "changed": bool(diff.get("changed", descriptor.get("changed", False))),
+                        "change_count": change_count,
+                        "categories": categories,
+                        "risk": risk.get("risk", "low"),
+                        "review_only": True,
+                        "browser_started": False,
+                        "cdp_command_sent": False,
+                        "runtime_evaluated": False,
+                    },
+                )
+            ]
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_object_graph_diff_before_hook_or_replay"
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_before_and_after_object_graph_snapshots"
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_object_graph_diff_descriptor"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["review_object_graph_diff"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
         try:
@@ -6748,13 +6813,34 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_object_graph_diff_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "object-graph-diff",
+            "js-object-graph-diff",
+            "review-object-graph-diff",
+            "heap-object-graph-diff",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "object_graph_diff",
+                "objectGraphDiff",
+                "js_object_graph_diff",
+                "jsObjectGraphDiff",
+                "review_object_graph_diff",
+                "reviewObjectGraphDiff",
+            )
+        )
+
+    @staticmethod
     def _is_object_root_mutation_audit_request(protection_name: str, context: dict[str, Any]) -> bool:
         normalized = protection_name.strip().lower()
         if normalized in {
             "object-root-mutation-audit",
             "object-mutation-audit",
             "js-object-mutation-audit",
-            "object-graph-diff",
         }:
             return True
         return any(

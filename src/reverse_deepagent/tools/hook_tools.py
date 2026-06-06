@@ -360,6 +360,15 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "source-map-symbol-scope",
             "sourceMapSymbolScope",
         )
+        object_graph_diff = _object_alias(
+            payload,
+            "object_graph_diff",
+            "object-graph-diff",
+            "objectGraphDiff",
+            "js_object_graph_diff",
+            "js-object-graph-diff",
+            "jsObjectGraphDiff",
+        )
         module_candidates = _records_alias(payload, "module_candidates", "module-candidates", "moduleCandidates")
         function_candidates = _records_alias(payload, "function_candidates", "function-candidates", "functionCandidates")
 
@@ -435,6 +444,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 module_federation_recursive_continuation_checkpoint,
                 recursive_continuation_readiness,
                 bundler_symbol_scope,
+                object_graph_diff,
                 closure_wrapper_continuation_readiness,
                 closure_wrapper_continuation_execution_plan,
                 closure_wrapper_continuation_execution,
@@ -451,6 +461,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("async_chunk_load_plan_blocked")
         if _status(bundler_symbol_scope) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("bundler_symbol_scope_blocked")
+        if _status(object_graph_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("object_graph_diff_blocked")
         if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("closure_wrapper_replacement_plan_blocked")
         if _status(closure_wrapper_assignment_safety) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -807,6 +819,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("async_chunk_recursive_traversal_execution_requires_review")
         if bundler_symbol_scope and _status(bundler_symbol_scope) == "ready_for_review":
             warnings.append("bundler_symbol_scope_requires_review")
+        if object_graph_diff and _status(object_graph_diff) == "ready_for_review":
+            warnings.append("object_graph_diff_requires_review")
         if missing_count:
             warnings.append("hook_targets_missing")
         if installed_function_count + installed_module_count + source_logpoint_count > 0 and timeline_event_count == 0:
@@ -868,6 +882,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "bundler_symbol_scope_status": _status(bundler_symbol_scope),
                 "bundler_symbol_scope_candidate_count": _intish(bundler_symbol_scope.get("scope_candidate_count")),
                 "bundler_symbol_scope_next_action": bundler_symbol_scope.get("next_action"),
+                "object_graph_diff_status": _status(object_graph_diff),
+                "object_graph_diff_change_count": _intish(object_graph_diff.get("change_count") or _nested_get(object_graph_diff, "diff", "change_count")),
+                "object_graph_diff_risk": _nested_get(object_graph_diff, "risk_summary", "risk"),
+                "object_graph_diff_next_action": object_graph_diff.get("next_action"),
                 "missing_hook_target_count": missing_count,
                 "candidate_count": candidate_count,
                 "closure_wrapper_replacement_plan_status": _status(closure_wrapper_replacement_plan) or closure_wrapper_plan_status,
@@ -1394,6 +1412,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "choose_supported_async_chunk_candidate"
     if "bundler_symbol_scope_blocked" in blockers:
         return "provide_source_map_symbol_and_original_source"
+    if "object_graph_diff_blocked" in blockers:
+        return "provide_before_and_after_object_graph_snapshots"
     if "async_chunk_load_failed" in blockers:
         return "inspect_async_chunk_load_failure"
     if "async_chunk_module_diff_blocked" in blockers:
@@ -1404,6 +1424,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_module_federation_get_init_plan"
     if "bundler_symbol_scope_requires_review" in warnings:
         return "review_symbol_scope_before_source_logpoint_or_hook"
+    if "object_graph_diff_requires_review" in warnings:
+        return "review_object_graph_diff_before_hook_or_replay"
     if "closure_wrapper_strategy_descriptor_plan_only_requires_review" in warnings:
         return "review_closure_wrapper_strategy_descriptor_before_execution"
     if "closure_wrapper_replacement_plan_requires_review" in warnings:

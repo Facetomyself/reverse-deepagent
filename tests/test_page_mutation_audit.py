@@ -3,6 +3,8 @@ import unittest
 from reverse_deepagent.browser.hooks import (
     MutationObserverTimelineManager,
     MutationObserverTimelineSpec,
+    ObjectGraphDiffManager,
+    ObjectGraphDiffSpec,
     ObjectRootMutationAuditManager,
     ObjectRootMutationAuditSpec,
     PageMutationAuditManager,
@@ -323,6 +325,94 @@ class ObjectRootMutationAuditManagerTests(unittest.TestCase):
         self.assertIn("root_path_accessor_not_invoked", expression)
         self.assertNotIn('Function("return (" + config.rootPath', expression)
         self.assertIn("prototype_traversal: false", expression)
+
+
+class ObjectGraphDiffManagerTests(unittest.TestCase):
+    def test_reviews_object_root_snapshots_without_runtime_side_effects(self) -> None:
+        before = {
+            "root_path": "window.__appState",
+            "root": {
+                "path": "window.__appState",
+                "type": "object",
+                "children": {
+                    "token": {"path": "window.__appState.token", "type": "string", "preview": "before"},
+                    "count": {"path": "window.__appState.count", "type": "number", "value": 1},
+                },
+            },
+        }
+        after = {
+            "root_path": "window.__appState",
+            "root": {
+                "path": "window.__appState",
+                "type": "object",
+                "children": {
+                    "token": {"path": "window.__appState.token", "type": "string", "preview": "after"},
+                    "count": {"path": "window.__appState.count", "type": "number", "value": 2},
+                    "nonce": {"path": "window.__appState.nonce", "type": "string", "preview": "n1"},
+                },
+            },
+        }
+        spec = ObjectGraphDiffSpec.from_context(
+            {
+                "object_graph_diff": True,
+                "before_snapshot": before,
+                "after_snapshot": after,
+                "graph_roots": ["window.__appState"],
+            }
+        )
+
+        result = ObjectGraphDiffManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.object-graph-diff.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertEqual(descriptor["diff"]["diff_engine"], "object_root_snapshot")
+        self.assertTrue(descriptor["changed"])
+        self.assertEqual(descriptor["change_count"], 3)
+        self.assertIn("window.__appState.nonce", descriptor["diff"]["added_paths"])
+        redacted_changes = {item["path"]: item for item in descriptor["diff"]["changes"]}
+        self.assertEqual(redacted_changes["window.__appState.token"]["before"], "<redacted>")
+        self.assertEqual(redacted_changes["window.__appState.token"]["after"], "<redacted>")
+        self.assertTrue(redacted_changes["window.__appState.token"]["redacted"])
+        self.assertEqual(descriptor["risk_summary"]["risk"], "high")
+        self.assertIn("sensitive_like_path_changed", descriptor["risk_summary"]["reasons"])
+        self.assertFalse(descriptor["side_effect_policy"]["browser_started"])
+        self.assertFalse(descriptor["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(descriptor["side_effect_policy"]["runtime_evaluated"])
+        self.assertFalse(descriptor["side_effect_policy"]["calls_mcp"])
+
+    def test_reviews_generic_json_graph_and_redacts_sensitive_values(self) -> None:
+        spec = ObjectGraphDiffSpec.from_context(
+            {
+                "jsObjectGraphDiff": True,
+                "before": {"store": {"authToken": "before", "items": [1], "optional": None}},
+                "after": {"store": {"authToken": "after", "items": [1, 2], "optional": "set"}},
+                "includeValues": True,
+            }
+        )
+
+        result = ObjectGraphDiffManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        changes = {item["path"]: item for item in result.descriptor["diff"]["changes"]}
+        self.assertEqual(changes["graph.store.authToken"]["before"], "<redacted>")
+        self.assertEqual(changes["graph.store.authToken"]["after"], "<redacted>")
+        self.assertEqual(changes["graph.store.items"]["category"], "structure")
+        self.assertEqual(changes["graph.store.optional"]["category"], "type")
+        self.assertEqual(changes["graph.store.optional"]["before"], "null")
+        self.assertEqual(changes["graph.store.optional"]["after"], "string")
+        self.assertEqual(result.descriptor["risk_summary"]["risk"], "high")
+
+    def test_blocks_missing_before_or_after_snapshot_without_side_effects(self) -> None:
+        spec = ObjectGraphDiffSpec.from_context({"object_graph_diff": True, "before_snapshot": {"root": {"type": "object"}}})
+
+        result = ObjectGraphDiffManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "missing_before_or_after_snapshot")
+        self.assertEqual(result.descriptor["blockers"], ["missing_before_or_after_snapshot"])
+        self.assertFalse(result.side_effect_policy["browser_started"])
 
 
 class MutationObserverTimelineManagerTests(unittest.TestCase):

@@ -407,6 +407,9 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/bundler-symbol-scope.json"].category, "triage")
         self.assertEqual(routes["workspace/object-root-mutation-audit.json"].virtual_folder, "/workspace/browser/")
         self.assertEqual(routes["workspace/object-root-mutation-audit.json"].future_path, "/workspace/browser/object-root-mutation-audit.json")
+        self.assertEqual(routes["workspace/object-graph-diff.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/object-graph-diff.json"].future_path, "/workspace/browser/object-graph-diff.json")
+        self.assertEqual(routes["workspace/object-graph-diff.json"].category, "triage")
         self.assertEqual(routes["workspace/workspace-contract.json"].future_path, "/workspace/delivery/workspace-contract.json")
         self.assertTrue(all(item.migration_status == "indexed-only" for item in routes.values()))
 

@@ -673,6 +673,390 @@ class ObjectRootMutationAuditManager:
 
 
 @dataclass(slots=True)
+class ObjectGraphDiffSpec:
+    """Review-only JS object graph diff descriptor request.
+
+    The manager consumes caller-provided before/after graph snapshots and never
+    collects snapshots itself.  It is intentionally a descriptor layer beyond
+    scoped object-root mutation audit, not a full heap snapshot engine.
+    """
+
+    before_snapshot: dict[str, Any] = field(default_factory=dict)
+    after_snapshot: dict[str, Any] = field(default_factory=dict)
+    graph_roots: list[str] = field(default_factory=list)
+    max_depth: int = 4
+    max_changes: int = 120
+    max_preview_length: int = 240
+    include_values: bool = False
+    source: str = "caller_provided_snapshots"
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "ObjectGraphDiffSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "object_graph_diff",
+                "objectGraphDiff",
+                "js_object_graph_diff",
+                "jsObjectGraphDiff",
+                "review_object_graph_diff",
+                "reviewObjectGraphDiff",
+            )
+        )
+        before = cls._coerce_snapshot(
+            context.get(
+                "before_snapshot",
+                context.get("beforeSnapshot", context.get("before_graph", context.get("beforeGraph", context.get("before")))),
+            )
+        )
+        after = cls._coerce_snapshot(
+            context.get(
+                "after_snapshot",
+                context.get("afterSnapshot", context.get("after_graph", context.get("afterGraph", context.get("after")))),
+            )
+        )
+        if not requested and not before and not after:
+            return None
+        return cls(
+            before_snapshot=before,
+            after_snapshot=after,
+            graph_roots=cls._coerce_roots(context.get("graph_roots", context.get("graphRoots", context.get("root_paths", context.get("rootPaths"))))),
+            max_depth=max(0, int(context.get("max_depth", context.get("maxDepth", 4)) or 4)),
+            max_changes=max(1, int(context.get("max_changes", context.get("maxChanges", 120)) or 120)),
+            max_preview_length=max(1, int(context.get("max_preview_length", context.get("maxPreviewLength", 240)) or 240)),
+            include_values=bool(context.get("include_values", context.get("includeValues", False))),
+            source=str(context.get("snapshot_source", context.get("snapshotSource", "caller_provided_snapshots")) or "caller_provided_snapshots"),
+        )
+
+    @staticmethod
+    def _coerce_snapshot(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
+
+    @staticmethod
+    def _coerce_roots(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = [item.strip() for item in value.split(",")]
+        elif isinstance(value, list):
+            raw = [str(item).strip() for item in value if item is not None]
+        else:
+            raw = []
+        roots: list[str] = []
+        for item in raw:
+            if item and item not in roots:
+                roots.append(item)
+        return roots
+
+
+@dataclass(slots=True)
+class ObjectGraphDiffResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class ObjectGraphDiffManager:
+    """Review-only diff over caller-provided JS object graph snapshots."""
+
+    _SENSITIVE_RE = re.compile(r"token|secret|password|passwd|cookie|authorization|apikey|api_key|credential", re.IGNORECASE)
+    _MISSING = object()
+
+    def review(self, spec: ObjectGraphDiffSpec | None) -> ObjectGraphDiffResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return ObjectGraphDiffResult(status="unsupported", reason="missing_object_graph_diff_request", side_effect_policy=policy)
+        if not spec.before_snapshot or not spec.after_snapshot:
+            descriptor = self._base_descriptor(spec, status="blocked", reason="missing_before_or_after_snapshot")
+            return ObjectGraphDiffResult(status="blocked", descriptor=descriptor, side_effect_policy=policy, reason="missing_before_or_after_snapshot")
+        try:
+            descriptor = self._descriptor(spec)
+            return ObjectGraphDiffResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=policy)
+        except Exception as exc:
+            descriptor = self._base_descriptor(spec, status="failed", reason="object_graph_diff_failed")
+            descriptor["error"] = str(exc)
+            return ObjectGraphDiffResult(status="failed", descriptor=descriptor, side_effect_policy=policy, reason="object_graph_diff_failed", error=str(exc))
+
+    def _descriptor(self, spec: ObjectGraphDiffSpec) -> dict[str, Any]:
+        diff = self._diff_graphs(spec)
+        risk = self._risk_summary(diff)
+        return {
+            "schema_version": "reverse-deepagent.object-graph-diff.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "graph_request": {
+                "graph_roots": spec.graph_roots,
+                "snapshot_source": spec.source,
+                "max_depth": spec.max_depth,
+                "max_changes": spec.max_changes,
+                "include_values": spec.include_values,
+            },
+            "snapshot_summary": {
+                "before": self._snapshot_summary(spec.before_snapshot),
+                "after": self._snapshot_summary(spec.after_snapshot),
+            },
+            "diff": diff,
+            "changed": bool(diff.get("changed")),
+            "change_count": int(diff.get("change_count") or 0),
+            "risk_summary": risk,
+            "hook_readiness": {
+                "review_before_hook_or_replay": True,
+                "object_root_followup_candidates": self._object_root_candidates(diff),
+                "runtime_collection_required_for_full_heap": True,
+                "automatic_heap_snapshot_supported": False,
+                "automatic_runtime_hook_supported": False,
+            },
+            "blockers": [],
+            "next_action": "review_object_graph_diff_before_hook_or_replay" if diff.get("changed") else "provide_broader_before_after_graph_snapshots",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, spec: ObjectGraphDiffSpec, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.object-graph-diff.v1",
+            "status": status,
+            "review_only": True,
+            "reason": reason,
+            "graph_request": {
+                "graph_roots": spec.graph_roots,
+                "snapshot_source": spec.source,
+                "max_depth": spec.max_depth,
+                "max_changes": spec.max_changes,
+                "include_values": spec.include_values,
+            },
+            "snapshot_summary": {
+                "before": self._snapshot_summary(spec.before_snapshot),
+                "after": self._snapshot_summary(spec.after_snapshot),
+            },
+            "diff": {"changed": False, "change_count": 0, "categories": [], "changes": []},
+            "changed": False,
+            "change_count": 0,
+            "risk_summary": {"risk": "low", "reasons": []},
+            "hook_readiness": {
+                "review_before_hook_or_replay": False,
+                "object_root_followup_candidates": [],
+                "runtime_collection_required_for_full_heap": True,
+                "automatic_heap_snapshot_supported": False,
+                "automatic_runtime_hook_supported": False,
+            },
+            "blockers": [reason],
+            "next_action": "provide_before_and_after_object_graph_snapshots",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _diff_graphs(self, spec: ObjectGraphDiffSpec) -> dict[str, Any]:
+        before_root = spec.before_snapshot.get("root")
+        after_root = spec.after_snapshot.get("root")
+        if isinstance(before_root, dict) and isinstance(after_root, dict):
+            diff = ObjectRootMutationAuditManager._diff_snapshots(spec.before_snapshot, spec.after_snapshot)
+            return self._bounded_diff(diff, spec.max_changes)
+        changes: list[dict[str, Any]] = []
+        self._compare_json_values(changes, spec.before_snapshot, spec.after_snapshot, "graph", depth=0, spec=spec)
+        categories = sorted({item["category"] for item in changes})
+        return {
+            "diff_engine": "json_graph_snapshot",
+            "changed": bool(changes),
+            "change_count": len(changes),
+            "categories": categories,
+            "added_paths": [item["path"] for item in changes if item["category"] == "added"],
+            "removed_paths": [item["path"] for item in changes if item["category"] == "removed"],
+            "changed_paths": [item["path"] for item in changes if item["category"] in {"value", "structure"}],
+            "type_changed_paths": [item["path"] for item in changes if item["category"] == "type"],
+            "descriptor_changed_paths": [],
+            "truncated": any(bool(item.get("truncated")) for item in changes),
+            "cycles": False,
+            "changes": changes,
+        }
+
+    def _compare_json_values(self, changes: list[dict[str, Any]], before: Any, after: Any, path: str, *, depth: int, spec: ObjectGraphDiffSpec) -> None:
+        if len(changes) >= spec.max_changes:
+            return
+        if before is self._MISSING and after is self._MISSING:
+            return
+        if before is self._MISSING:
+            changes.append({"path": path, "category": "added", "after": self._preview(path, after, spec)})
+            return
+        if after is self._MISSING:
+            changes.append({"path": path, "category": "removed", "before": self._preview(path, before, spec)})
+            return
+        if before is None and after is None:
+            return
+        if depth > spec.max_depth:
+            if before != after:
+                changes.append({"path": path, "category": "structure", "truncated": True, "reason": "max_depth"})
+            return
+            return
+        before_type = self._json_type(before)
+        after_type = self._json_type(after)
+        if before_type != after_type:
+            changes.append({"path": path, "category": "type", "before": before_type, "after": after_type})
+            return
+        if isinstance(before, dict) and isinstance(after, dict):
+            for key in sorted(set(before) | set(after)):
+                self._compare_json_values(changes, before.get(key, self._MISSING), after.get(key, self._MISSING), f"{path}.{key}", depth=depth + 1, spec=spec)
+                if len(changes) >= spec.max_changes:
+                    return
+            return
+        if isinstance(before, list) and isinstance(after, list):
+            if len(before) != len(after):
+                changes.append({"path": path, "category": "structure", "field": "length", "before": len(before), "after": len(after)})
+            for index, (before_item, after_item) in enumerate(zip(before, after)):
+                self._compare_json_values(changes, before_item, after_item, f"{path}[{index}]", depth=depth + 1, spec=spec)
+                if len(changes) >= spec.max_changes:
+                    return
+            return
+        if before != after:
+            changes.append({"path": path, "category": "value", "before": self._preview(path, before, spec), "after": self._preview(path, after, spec)})
+
+    @staticmethod
+    def _json_type(value: Any) -> str:
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, (int, float)):
+            return "number"
+        if isinstance(value, str):
+            return "string"
+        if isinstance(value, list):
+            return "array"
+        if isinstance(value, dict):
+            return "object"
+        return type(value).__name__
+
+    def _preview(self, path: str, value: Any, spec: ObjectGraphDiffSpec) -> Any:
+        if value is self._MISSING:
+            return "<missing>"
+        if self._SENSITIVE_RE.search(path):
+            return "<redacted>"
+        if (spec.include_values and isinstance(value, (str, int, float, bool))) or value is None:
+            return value
+        text = str(value)
+        return text[: spec.max_preview_length]
+
+    def _bounded_diff(self, diff: dict[str, Any], max_changes: int) -> dict[str, Any]:
+        bounded = dict(diff)
+        changes = diff.get("changes") if isinstance(diff.get("changes"), list) else []
+        bounded["diff_engine"] = "object_root_snapshot"
+        bounded["changes"] = [self._redact_change(item) for item in changes[:max_changes] if isinstance(item, dict)]
+        bounded["change_count"] = len(bounded["changes"])
+        bounded["changed"] = bool(bounded["changes"])
+        bounded["truncated_changes"] = max(0, len(changes) - len(bounded["changes"]))
+        return bounded
+
+    def _redact_change(self, change: dict[str, Any]) -> dict[str, Any]:
+        redacted = dict(change)
+        path = str(redacted.get("path") or "")
+        if not self._SENSITIVE_RE.search(path):
+            return redacted
+        if "before" in redacted:
+            redacted["before"] = "<redacted>"
+        if "after" in redacted:
+            redacted["after"] = "<redacted>"
+        redacted["redacted"] = True
+        return redacted
+
+    def _risk_summary(self, diff: dict[str, Any]) -> dict[str, Any]:
+        categories = set(diff.get("categories") if isinstance(diff.get("categories"), list) else [])
+        paths = [str(item.get("path") or "") for item in diff.get("changes", []) if isinstance(item, dict)]
+        reasons: list[str] = []
+        if categories.intersection({"descriptor", "type", "removed"}):
+            reasons.append("shape_or_descriptor_changed")
+        if any(self._SENSITIVE_RE.search(path) for path in paths):
+            reasons.append("sensitive_like_path_changed")
+        if diff.get("truncated") or diff.get("truncated_changes"):
+            reasons.append("diff_truncated")
+        risk = "high" if "sensitive_like_path_changed" in reasons else "medium" if reasons else "low"
+        return {"risk": risk, "reasons": reasons, "category_count": len(categories)}
+
+    @staticmethod
+    def _object_root_candidates(diff: dict[str, Any]) -> list[str]:
+        candidates: list[str] = []
+        for key in ("added_paths", "removed_paths", "changed_paths", "type_changed_paths", "descriptor_changed_paths"):
+            values = diff.get(key) if isinstance(diff.get(key), list) else []
+            for path in values:
+                text = str(path)
+                parts = text.split(".")
+                if len(parts) >= 2:
+                    candidate = ".".join(parts[:2])
+                    if candidate not in candidates:
+                        candidates.append(candidate)
+                if len(candidates) >= 10:
+                    return candidates
+        return candidates
+
+    @classmethod
+    def _snapshot_summary(cls, snapshot: dict[str, Any]) -> dict[str, Any]:
+        root = snapshot.get("root") if isinstance(snapshot.get("root"), dict) else None
+        return {
+            "present": bool(snapshot),
+            "format": "object_root_snapshot" if root else "json_graph_snapshot" if snapshot else "missing",
+            "root_path": snapshot.get("root_path") or (root.get("path") if root else ""),
+            "top_level_keys": sorted(str(key) for key in snapshot.keys())[:40],
+            "node_count_estimate": cls._count_nodes(root if root else snapshot, limit=1000),
+        }
+
+    @classmethod
+    def _count_nodes(cls, value: Any, *, limit: int) -> int:
+        if limit <= 0:
+            return 0
+        if isinstance(value, dict):
+            children = value.get("children") if isinstance(value.get("children"), dict) else value
+            count = 1
+            for child in children.values():
+                count += cls._count_nodes(child, limit=limit - count)
+                if count >= limit:
+                    return limit
+            return count
+        if isinstance(value, list):
+            count = 1
+            for child in value:
+                count += cls._count_nodes(child, limit=limit - count)
+                if count >= limit:
+                    return limit
+            return count
+        return 1
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "snapshots_collected_by_manager": False,
+            "files_mutated": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "runtime_evaluated": False,
+            "trigger_executed": False,
+            "getter_invocation": False,
+            "prototype_traversal": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "full_heap_snapshot": False,
+        }
+
+
+@dataclass(slots=True)
 class MutationObserverTimelineSpec:
     """Explicit MutationObserver timeline request around a trigger expression."""
 

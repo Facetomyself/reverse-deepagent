@@ -5308,6 +5308,38 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["categories"], ["added", "descriptor", "removed", "value"])
         self.assertFalse(result.artifacts[0].metadata["getter_invocation"])
 
+    def test_native_web_runtime_reviews_object_graph_diff_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "object-graph-diff",
+            {
+                "before_snapshot": {"store": {"authToken": "before", "count": 1}},
+                "after_snapshot": {"store": {"authToken": "after", "count": 2}},
+                "include_values": True,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_object_graph_diff"])
+        self.assertIn("object_graph_diff_status=ready_for_review", result.verification)
+        self.assertIn("object_graph_diff_changed=True", result.verification)
+        self.assertIn("object_graph_diff_change_count=2", result.verification)
+        self.assertIn("object_graph_diff_review_only=True", result.verification)
+        self.assertIn("object_graph_diff_browser_started=False", result.verification)
+        self.assertIn("object_graph_diff_cdp_command_sent=False", result.verification)
+        self.assertIn("object_graph_diff_runtime_evaluated=False", result.verification)
+        self.assertIn("object_graph_diff_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_object_graph_diff_before_hook_or_replay")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/object-graph-diff.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["changed"])
+        self.assertEqual(result.artifacts[0].metadata["change_count"], 2)
+        self.assertEqual(result.artifacts[0].metadata["risk"], "high")
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
     def test_native_web_runtime_apply_minimal_protection_audits_page_mutation(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

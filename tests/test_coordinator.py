@@ -751,6 +751,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native object graph diff",
+                    kind=EvidenceKind.NOTE,
+                    source="object_graph_diff",
+                    details={"status": "ready_for_review", "change_count": 2, "risk_summary": {"risk": "high"}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native custom loader traversal workflow execution",
                     kind=EvidenceKind.HOOK,
                     source="custom_loader_traversal_workflow_execution",
@@ -950,6 +957,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["source-map-fetch-result.json"]["byte_count"], 128)
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
         self.assertEqual(payloads["object-root-mutation-audit.json"]["change_count"], 4)
+        self.assertEqual(payloads["object-graph-diff.json"]["change_count"], 2)
+        self.assertEqual(payloads["object-graph-diff.json"]["risk_summary"]["risk"], "high")
         self.assertEqual(payloads["source-logpoints.json"]["count"], 1)
         self.assertEqual(payloads["source-logpoint-timeline.json"]["event_count"], 1)
         self.assertEqual(payloads["stitched-flow.json"]["flows"][0]["stitched_flow_id"], "stitched-flow-1")
@@ -999,6 +1008,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_object_root_mutation_audit"), "trace")
+        self.assertEqual(_artifact_category_from_key("workspace_object_graph_diff"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
