@@ -142,6 +142,38 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("source_map_lookup_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "provide_source_map_payload_and_lookup_position")
 
+    def test_review_hook_artifacts_warns_for_source_map_source_content_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_source_content": {
+                "status": "ready_for_review",
+                "source_content_available": True,
+                "content_summary": {"sha256": "abc123", "preview_exported": False, "raw_content_exported": False},
+                "next_action": "review_source_content_availability_before_debugger_or_rebuild",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_source_content_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_content_availability_before_debugger_or_rebuild")
+        self.assertEqual(result["summary"]["source_map_source_content_status"], "ready_for_review")
+        self.assertTrue(result["summary"]["source_map_source_content_available"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["hook_installed"])
+        self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_source_content_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_source_content": {"status": "blocked", "reason": "source_content_missing"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_source_content_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_source_map_with_sources_content")
+
     def test_review_hook_artifacts_warns_for_object_graph_diff_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {

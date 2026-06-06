@@ -178,6 +178,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFetchSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
+    SourceMapSourceContentManager,
+    SourceMapSourceContentSpec,
 )
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
@@ -654,6 +656,76 @@ class NativeWebRuntime(WebReverseRuntime):
             else:
                 status = ExecutionStatus.FAILED
                 next_action = "inspect_source_map_lookup_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_source_content_request(protection_name, context):
+            spec = SourceMapSourceContentSpec.from_context(context)
+            result = SourceMapSourceContentManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            request = descriptor.get("source_request") if isinstance(descriptor.get("source_request"), dict) else {}
+            content_summary = descriptor.get("content_summary") if isinstance(descriptor.get("content_summary"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_source_content_status={result.status}",
+                f"source_map_source_content_available={descriptor.get('source_content_available', False)}",
+                f"source_map_source_content_original_source={request.get('original_source', '')}",
+                f"source_map_source_content_source_index={request.get('source_index')}",
+                f"source_map_source_content_sha256={content_summary.get('sha256', '')}",
+                "source_map_source_content_review_only=True",
+                f"source_map_source_content_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_source_content_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_source_content_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_source_content_browser_started={policy.get('browser_started', False)}",
+                f"source_map_source_content_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_source_content_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_source_content_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_source_content_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_source_content_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_source_content_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-source-content.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map sourcesContent availability descriptor.",
+                metadata={
+                    "status": result.status,
+                    "source_content_available": bool(descriptor.get("source_content_available", False)),
+                    "original_source": request.get("original_source", ""),
+                    "source_index": request.get("source_index"),
+                    "sha256": content_summary.get("sha256", ""),
+                    "review_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_content_availability_before_debugger_or_rebuild"
+                actions = ["review_source_map_source_content"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_with_sources_content"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_source_content_descriptor"
                 actions = []
             return ProtectionResult(
                 protection_name=protection_name,
@@ -7525,6 +7597,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapConsumer",
                 "source_map_generated_lookup",
                 "sourceMapGeneratedLookup",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_source_content_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-source-content",
+            "source-map-sources-content",
+            "source-map-content",
+            "source-map-source",
+            "review-source-map-source-content",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_source_content",
+                "sourceMapSourceContent",
+                "source_map_sources_content",
+                "sourceMapSourcesContent",
+                "review_source_map_source_content",
+                "reviewSourceMapSourceContent",
             )
         )
 

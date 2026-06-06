@@ -564,6 +564,282 @@ class SourceMapLookupManager:
 
 
 @dataclass(slots=True)
+class SourceMapSourceContentSpec:
+    """Review-only Source Map ``sourcesContent`` availability request."""
+
+    source_map: dict[str, Any] | None = None
+    original_source: str = ""
+    source_index: int | None = None
+    include_preview_requested: bool = False
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "SourceMapSourceContentSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "source_map_source_content",
+                "sourceMapSourceContent",
+                "source_map_sources_content",
+                "sourceMapSourcesContent",
+                "review_source_map_source_content",
+                "reviewSourceMapSourceContent",
+            )
+        )
+        source_map = cls._coerce_source_map(context.get("source_map", context.get("sourceMap")))
+        if not requested and source_map is None:
+            return None
+        raw_source_index = context.get("source_index", context.get("sourceIndex", context.get("source_map_source_index", context.get("sourceMapSourceIndex"))))
+        return cls(
+            source_map=source_map,
+            original_source=str(context.get("original_source", context.get("originalSource", context.get("source", ""))) or ""),
+            source_index=int(raw_source_index) if raw_source_index is not None else None,
+            include_preview_requested=bool(context.get("include_source_preview", context.get("includeSourcePreview", False))),
+        )
+
+    @staticmethod
+    def _coerce_source_map(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return None
+            return parsed if isinstance(parsed, dict) else None
+        return None
+
+
+@dataclass(slots=True)
+class SourceMapSourceContentResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class SourceMapSourceContentManager:
+    """Build a secret-safe review descriptor for Source Map sourcesContent."""
+
+    def review(self, spec: SourceMapSourceContentSpec | None) -> SourceMapSourceContentResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return SourceMapSourceContentResult(status="unsupported", reason="missing_source_map_source_content_request", side_effect_policy=policy)
+        if not isinstance(spec.source_map, dict):
+            descriptor = self._base_descriptor(spec, status="blocked", reason="missing_source_map_payload")
+            return SourceMapSourceContentResult(status="blocked", descriptor=descriptor, side_effect_policy=policy, reason="missing_source_map_payload")
+        try:
+            descriptor = self._descriptor(spec)
+            return SourceMapSourceContentResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=policy)
+        except Exception as exc:
+            descriptor = self._base_descriptor(spec, status="failed", reason="source_map_source_content_review_failed")
+            descriptor["error"] = str(exc)
+            return SourceMapSourceContentResult(status="failed", descriptor=descriptor, side_effect_policy=policy, reason="source_map_source_content_review_failed", error=str(exc))
+
+    def _descriptor(self, spec: SourceMapSourceContentSpec) -> dict[str, Any]:
+        assert spec.source_map is not None
+        entries = self._source_entries(spec.source_map)
+        entry = self._select_entry(entries, spec)
+        blockers = self._blockers(spec, entry)
+        content = entry.get("content") if entry else None
+        content_available = isinstance(content, str)
+        if entry and not content_available:
+            blockers.append("source_content_missing")
+        status = "blocked" if blockers else "ready_for_review"
+        return {
+            "schema_version": "reverse-deepagent.source-map-source-content.v1",
+            "status": status,
+            "review_only": True,
+            "source_request": self._source_request(spec),
+            "source_map_summary": self._source_map_summary(spec.source_map, entries),
+            "source_match": self._source_match_payload(entry, spec),
+            "content_summary": self._content_summary(content if isinstance(content, str) else None, spec),
+            "source_content_available": content_available,
+            "blockers": blockers,
+            "next_action": "review_source_content_availability_before_debugger_or_rebuild" if content_available else "provide_source_map_with_sources_content",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, spec: SourceMapSourceContentSpec, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-source-content.v1",
+            "status": status,
+            "review_only": True,
+            "reason": reason,
+            "source_request": self._source_request(spec),
+            "source_map_summary": self._source_map_summary(spec.source_map or {}, []),
+            "source_match": {"matched": False, "reason": reason},
+            "content_summary": self._content_summary(None, spec),
+            "source_content_available": False,
+            "blockers": [reason],
+            "next_action": "provide_source_map_with_sources_content",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _source_request(spec: SourceMapSourceContentSpec) -> dict[str, Any]:
+        return {
+            "original_source": spec.original_source,
+            "source_index": spec.source_index,
+            "include_preview_requested": spec.include_preview_requested,
+            "raw_source_content_exported": False,
+        }
+
+    @classmethod
+    def _source_map_summary(cls, source_map: dict[str, Any], entries: list[dict[str, Any]]) -> dict[str, Any]:
+        sources = source_map.get("sources") if isinstance(source_map.get("sources"), list) else []
+        names = source_map.get("names") if isinstance(source_map.get("names"), list) else []
+        sections = source_map.get("sections") if isinstance(source_map.get("sections"), list) else []
+        available_count = sum(1 for entry in entries if isinstance(entry.get("content"), str))
+        return {
+            "version": source_map.get("version"),
+            "sources_count": len(sources),
+            "names_count": len(names),
+            "section_count": len(sections),
+            "flattened_source_count": len(entries),
+            "sources_content_available_count": available_count,
+            "sources_content_missing_count": max(0, len(entries) - available_count),
+            "sourceRoot": source_map.get("sourceRoot") or "",
+            "indexed_section_depth": BundlerSymbolScopeManager._indexed_depth(source_map),
+            "source_map_payload_present": bool(source_map),
+        }
+
+    @staticmethod
+    def _content_summary(content: str | None, spec: SourceMapSourceContentSpec) -> dict[str, Any]:
+        if content is None:
+            return {
+                "available": False,
+                "char_count": 0,
+                "byte_count": 0,
+                "line_count": 0,
+                "sha256": "",
+                "preview_requested": spec.include_preview_requested,
+                "preview_exported": False,
+                "raw_content_exported": False,
+            }
+        encoded = content.encode("utf-8")
+        return {
+            "available": True,
+            "char_count": len(content),
+            "byte_count": len(encoded),
+            "line_count": content.count("\n") + 1 if content else 0,
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "preview_requested": spec.include_preview_requested,
+            "preview_exported": False,
+            "raw_content_exported": False,
+        }
+
+    @classmethod
+    def _source_match_payload(cls, entry: dict[str, Any] | None, spec: SourceMapSourceContentSpec) -> dict[str, Any]:
+        if not entry:
+            return {"matched": False, "requested_source": spec.original_source, "requested_source_index": spec.source_index}
+        payload = {key: value for key, value in entry.items() if key != "content"}
+        payload.update({"matched": True, "requested_source": spec.original_source, "requested_source_index": spec.source_index})
+        return payload
+
+    @classmethod
+    def _blockers(cls, spec: SourceMapSourceContentSpec, entry: dict[str, Any] | None) -> list[str]:
+        blockers: list[str] = []
+        if spec.source_index is None and not spec.original_source:
+            blockers.append("missing_source_selector")
+        if (spec.source_index is not None or spec.original_source) and entry is None:
+            blockers.append("source_not_found_in_source_map")
+        return blockers
+
+    @classmethod
+    def _select_entry(cls, entries: list[dict[str, Any]], spec: SourceMapSourceContentSpec) -> dict[str, Any] | None:
+        if spec.source_index is not None:
+            for entry in entries:
+                if entry.get("flattened_source_index") == spec.source_index:
+                    return entry
+        if spec.original_source:
+            for entry in entries:
+                if cls._source_matches(str(entry.get("source", "")), spec.original_source) or cls._source_matches(
+                    str(entry.get("resolved_source", "")), spec.original_source
+                ):
+                    return entry
+        return None
+
+    @staticmethod
+    def _source_matches(candidate: str, requested: str) -> bool:
+        return bool(SourceMapRemapper._source_candidates(candidate).intersection(SourceMapRemapper._source_candidates(requested)))
+
+    @classmethod
+    def _source_entries(
+        cls,
+        source_map: dict[str, Any],
+        *,
+        section_stack: list[dict[str, Any]] | None = None,
+        flattened_start: int = 0,
+    ) -> list[dict[str, Any]]:
+        section_stack = section_stack or []
+        sections = source_map.get("sections")
+        if isinstance(sections, list):
+            collected: list[dict[str, Any]] = []
+            next_index = flattened_start
+            for section_index, section in enumerate(sections):
+                if not isinstance(section, dict) or not isinstance(section.get("map"), dict):
+                    continue
+                offset = section.get("offset") if isinstance(section.get("offset"), dict) else {}
+                section_entry = {
+                    "section_index": section_index,
+                    "offset_line": int(offset.get("line", 0) or 0),
+                    "offset_column": int(offset.get("column", 0) or 0),
+                }
+                nested = cls._source_entries(section["map"], section_stack=[*section_stack, section_entry], flattened_start=next_index)
+                collected.extend(nested)
+                next_index += len(nested)
+            return collected
+        sources = source_map.get("sources") if isinstance(source_map.get("sources"), list) else []
+        sources_content = source_map.get("sourcesContent") if isinstance(source_map.get("sourcesContent"), list) else []
+        source_root = str(source_map.get("sourceRoot") or "")
+        entries: list[dict[str, Any]] = []
+        for index, source in enumerate(sources):
+            content = sources_content[index] if index < len(sources_content) else None
+            entries.append(
+                {
+                    "flattened_source_index": flattened_start + index,
+                    "source_index": index,
+                    "source": str(source),
+                    "resolved_source": SourceMapRemapper._join_source_root(source_root, str(source)),
+                    "sourceRoot": source_root,
+                    "section_stack": list(section_stack),
+                    "indexed_section_depth": len(section_stack),
+                    "content": content if isinstance(content, str) else None,
+                }
+            )
+        return entries
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class BundlerSymbolScopeSpec:
     """Review-only descriptor request for Source Map symbol scope hints.
 

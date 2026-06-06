@@ -5491,6 +5491,51 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["review_only"])
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
 
+    def test_native_web_runtime_reviews_source_map_source_content_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-source-content",
+            {
+                "source_map": {
+                    "version": 3,
+                    "sourceRoot": "webpack://demo",
+                    "sources": ["./src/sign.ts"],
+                    "sourcesContent": ["export function buildSign(){ return 'x'; }\n"],
+                    "names": ["buildSign"],
+                    "mappings": "AAAAA",
+                },
+                "original_source": "webpack://demo/src/sign.ts",
+                "include_source_preview": True,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_source_content"])
+        self.assertIn("source_map_source_content_status=ready_for_review", result.verification)
+        self.assertIn("source_map_source_content_available=True", result.verification)
+        self.assertIn("source_map_source_content_original_source=webpack://demo/src/sign.ts", result.verification)
+        self.assertIn("source_map_source_content_review_only=True", result.verification)
+        self.assertIn("source_map_source_content_raw_exported=False", result.verification)
+        self.assertIn("source_map_source_content_preview_exported=False", result.verification)
+        self.assertIn("source_map_source_content_fetch_source_map=False", result.verification)
+        self.assertIn("source_map_source_content_browser_started=False", result.verification)
+        self.assertIn("source_map_source_content_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_source_content_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_source_content_calls_mcp=False", result.verification)
+        self.assertIn("source_map_source_content_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_content_availability_before_debugger_or_rebuild")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-source-content.json")
+        self.assertTrue(result.artifacts[0].metadata["source_content_available"])
+        self.assertEqual(result.artifacts[0].metadata["original_source"], "webpack://demo/src/sign.ts")
+        self.assertTrue(result.artifacts[0].metadata["sha256"])
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertFalse(result.artifacts[0].metadata["raw_source_content_exported"])
+        self.assertFalse(result.artifacts[0].metadata["preview_exported"])
+        self.assertFalse(result.artifacts[0].metadata["fetch_source_map"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
     def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

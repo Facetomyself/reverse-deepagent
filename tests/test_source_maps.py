@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 
 from reverse_deepagent.browser.source_maps import (
@@ -7,6 +8,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFetchSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
+    SourceMapSourceContentManager,
+    SourceMapSourceContentSpec,
     SourceMapRemapper,
 )
 
@@ -313,6 +316,132 @@ class SourceMapLookupManagerTests(unittest.TestCase):
         self.assertEqual(location["column_number"], 0)
         self.assertEqual(location["source"], "src/sign.ts")
         self.assertEqual(location["strategy"], "source_map_exact")
+
+
+class SourceMapSourceContentManagerTests(unittest.TestCase):
+    def test_source_map_source_content_reviews_flat_sources_content_without_exporting_raw_source(self) -> None:
+        content = "export function buildSign(){ return 'x'; }\n"
+        source_map = {
+            "version": 3,
+            "sourceRoot": "webpack://demo",
+            "sources": ["./src/sign.ts"],
+            "sourcesContent": [content],
+            "names": ["buildSign"],
+            "mappings": "AAAAA",
+        }
+        spec = SourceMapSourceContentSpec.from_context(
+            {
+                "source_map_source_content": True,
+                "source_map": source_map,
+                "original_source": "webpack://demo/src/sign.ts",
+                "include_source_preview": True,
+            }
+        )
+
+        result = SourceMapSourceContentManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-source-content.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["source_content_available"])
+        self.assertEqual(descriptor["source_request"]["original_source"], "webpack://demo/src/sign.ts")
+        self.assertFalse(descriptor["source_request"]["raw_source_content_exported"])
+        self.assertTrue(descriptor["source_match"]["matched"])
+        self.assertEqual(descriptor["source_match"]["resolved_source"], "webpack://demo/./src/sign.ts")
+        self.assertNotIn("content", descriptor["source_match"])
+        summary = descriptor["content_summary"]
+        self.assertTrue(summary["available"])
+        self.assertEqual(summary["char_count"], len(content))
+        self.assertEqual(summary["byte_count"], len(content.encode("utf-8")))
+        self.assertEqual(summary["sha256"], hashlib.sha256(content.encode("utf-8")).hexdigest())
+        self.assertTrue(summary["preview_requested"])
+        self.assertFalse(summary["preview_exported"])
+        self.assertFalse(summary["raw_content_exported"])
+        self.assertFalse(descriptor["side_effect_policy"]["raw_source_content_exported"])
+        self.assertFalse(descriptor["side_effect_policy"]["preview_exported"])
+        self.assertFalse(descriptor["side_effect_policy"]["fetch_source_map"])
+        self.assertFalse(descriptor["side_effect_policy"]["browser_started"])
+        self.assertFalse(descriptor["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(descriptor["side_effect_policy"]["runtime_evaluated"])
+        self.assertFalse(descriptor["side_effect_policy"]["logpoint_installed"])
+        self.assertFalse(descriptor["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(descriptor["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_source_map_source_content_reviews_indexed_section_sources_content(self) -> None:
+        source_map = {
+            "version": 3,
+            "sections": [
+                {
+                    "offset": {"line": 2, "column": 4},
+                    "map": {
+                        "version": 3,
+                        "sources": ["src/sign.ts"],
+                        "sourcesContent": ["function sign() { return 1; }"],
+                        "names": ["sign"],
+                        "mappings": "AAAA",
+                    },
+                }
+            ],
+        }
+        spec = SourceMapSourceContentSpec.from_context(
+            {
+                "source_map_source_content": True,
+                "source_map": source_map,
+                "source_index": 0,
+            }
+        )
+
+        result = SourceMapSourceContentManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        match = result.descriptor["source_match"]
+        self.assertTrue(match["matched"])
+        self.assertEqual(match["source"], "src/sign.ts")
+        self.assertEqual(match["indexed_section_depth"], 1)
+        self.assertEqual(match["section_stack"][0]["section_index"], 0)
+        self.assertEqual(result.descriptor["source_map_summary"]["indexed_section_depth"], 1)
+        self.assertTrue(result.descriptor["source_content_available"])
+
+    def test_source_map_source_content_blocks_missing_sources_content(self) -> None:
+        spec = SourceMapSourceContentSpec.from_context(
+            {
+                "source_map_source_content": True,
+                "source_map": {"version": 3, "sources": ["src/sign.ts"], "names": [], "mappings": "AAAA"},
+                "original_source": "src/sign.ts",
+            }
+        )
+
+        result = SourceMapSourceContentManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_content_missing", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["source_content_available"])
+        self.assertEqual(result.descriptor["next_action"], "provide_source_map_with_sources_content")
+
+    def test_source_map_source_content_blocks_missing_source_selector(self) -> None:
+        spec = SourceMapSourceContentSpec.from_context(
+            {
+                "source_map_source_content": True,
+                "source_map": {"version": 3, "sources": ["src/sign.ts"], "sourcesContent": ["x"], "mappings": "AAAA"},
+            }
+        )
+
+        result = SourceMapSourceContentManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("missing_source_selector", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["source_content_available"])
+
+    def test_source_map_source_content_blocks_missing_source_map_payload(self) -> None:
+        spec = SourceMapSourceContentSpec.from_context({"source_map_source_content": True, "original_source": "src/sign.ts"})
+
+        result = SourceMapSourceContentManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "missing_source_map_payload")
+        self.assertEqual(result.descriptor["blockers"], ["missing_source_map_payload"])
+        self.assertFalse(result.side_effect_policy["browser_started"])
 
 
 class SourceMapRemapperTests(unittest.TestCase):
