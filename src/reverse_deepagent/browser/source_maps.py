@@ -342,6 +342,228 @@ class SourceMapFetchManager:
 
 
 @dataclass(slots=True)
+class SourceMapLookupSpec:
+    """Review-only Source Map consumer lookup request.
+
+    The lookup consumes a caller-provided Source Map payload.  It can map
+    original source positions to generated bundle positions, or generated
+    bundle positions back to original source positions.  It never fetches
+    Source Maps, starts a browser, sends CDP commands, installs logpoints, or
+    calls MCP.
+    """
+
+    source_map: dict[str, Any] | None = None
+    lookup_direction: str = "generated_to_original"
+    original_source: str = ""
+    original_line_number: int | None = None
+    original_column_number: int = 0
+    generated_line_number: int | None = None
+    generated_column_number: int = 0
+    source_map_bias: str = "greatest_lower_bound"
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "SourceMapLookupSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "source_map_lookup",
+                "sourceMapLookup",
+                "source_map_consumer",
+                "sourceMapConsumer",
+                "source_map_generated_lookup",
+                "sourceMapGeneratedLookup",
+            )
+        )
+        source_map = cls._coerce_source_map(context.get("source_map", context.get("sourceMap")))
+        if not requested and source_map is None:
+            return None
+        generated_line = context.get("generated_line", context.get("generatedLine", context.get("generated_line_number", context.get("generatedLineNumber"))))
+        generated_column = context.get("generated_column", context.get("generatedColumn", context.get("generated_column_number", context.get("generatedColumnNumber", 0))))
+        original_line = context.get("original_line", context.get("originalLine", context.get("original_line_number", context.get("originalLineNumber"))))
+        original_column = context.get("original_column", context.get("originalColumn", context.get("original_column_number", context.get("originalColumnNumber", 0))))
+        direction = str(context.get("lookup_direction", context.get("lookupDirection", "")) or "").strip().lower()
+        if not direction:
+            direction = "generated_to_original" if generated_line is not None else "original_to_generated"
+        generated_line_base = int(context.get("generated_line_base", context.get("generatedLineBase", 0)) or 0)
+        generated_column_base = int(context.get("generated_column_base", context.get("generatedColumnBase", 0)) or 0)
+        original_line_base = int(context.get("original_line_base", context.get("originalLineBase", 0)) or 0)
+        original_column_base = int(context.get("original_column_base", context.get("originalColumnBase", 0)) or 0)
+        return cls(
+            source_map=source_map,
+            lookup_direction=direction.replace("-", "_"),
+            original_source=str(context.get("original_source", context.get("originalSource", context.get("source", ""))) or ""),
+            original_line_number=(int(original_line) - original_line_base) if original_line is not None else None,
+            original_column_number=int(original_column or 0) - original_column_base,
+            generated_line_number=(int(generated_line) - generated_line_base) if generated_line is not None else None,
+            generated_column_number=int(generated_column or 0) - generated_column_base,
+            source_map_bias=str(context.get("source_map_bias", context.get("sourceMapBias", "greatest_lower_bound")) or "greatest_lower_bound"),
+        )
+
+    @staticmethod
+    def _coerce_source_map(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return None
+            return parsed if isinstance(parsed, dict) else None
+        return None
+
+
+@dataclass(slots=True)
+class SourceMapLookupResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class SourceMapLookupManager:
+    """Build a review-only Source Map consumer lookup descriptor."""
+
+    def lookup(self, spec: SourceMapLookupSpec | None) -> SourceMapLookupResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return SourceMapLookupResult(status="unsupported", reason="missing_source_map_lookup_request", side_effect_policy=policy)
+        if not isinstance(spec.source_map, dict):
+            descriptor = self._base_descriptor(spec, status="blocked", reason="missing_source_map_payload")
+            return SourceMapLookupResult(status="blocked", descriptor=descriptor, side_effect_policy=policy, reason="missing_source_map_payload")
+        try:
+            descriptor = self._descriptor(spec)
+            return SourceMapLookupResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=policy)
+        except Exception as exc:
+            descriptor = self._base_descriptor(spec, status="failed", reason="source_map_lookup_failed")
+            descriptor["error"] = str(exc)
+            return SourceMapLookupResult(status="failed", descriptor=descriptor, side_effect_policy=policy, reason="source_map_lookup_failed", error=str(exc))
+
+    def _descriptor(self, spec: SourceMapLookupSpec) -> dict[str, Any]:
+        assert spec.source_map is not None
+        blockers = self._blockers(spec)
+        location: GeneratedLocation | None = None
+        if not blockers:
+            if spec.lookup_direction in {"generated_to_original", "generated"}:
+                location = SourceMapRemapper.location_from_generated(
+                    spec.source_map,
+                    generated_line_number=int(spec.generated_line_number or 0),
+                    generated_column_number=spec.generated_column_number,
+                    bias=spec.source_map_bias,
+                )
+            elif spec.lookup_direction in {"original_to_generated", "original"}:
+                location = SourceMapRemapper.location_from_source_map(
+                    spec.source_map,
+                    original_source=spec.original_source,
+                    original_line_number=int(spec.original_line_number or 0),
+                    original_column_number=spec.original_column_number,
+                    bias=spec.source_map_bias,
+                )
+            else:
+                blockers.append("unsupported_lookup_direction")
+        if location is None and not blockers:
+            blockers.append("no_source_map_mapping_found")
+        status = "blocked" if blockers else "ready_for_review"
+        return {
+            "schema_version": "reverse-deepagent.source-map-lookup.v1",
+            "status": status,
+            "review_only": True,
+            "lookup_request": self._lookup_request(spec),
+            "source_map_summary": self._source_map_summary(spec.source_map),
+            "location": location.to_dict() if location else {},
+            "mapping_found": location is not None,
+            "blockers": blockers,
+            "next_action": "review_source_map_lookup_before_debugger_or_hook_use" if location else "provide_source_map_payload_and_lookup_position",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, spec: SourceMapLookupSpec, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-lookup.v1",
+            "status": status,
+            "review_only": True,
+            "reason": reason,
+            "lookup_request": self._lookup_request(spec),
+            "source_map_summary": self._source_map_summary(spec.source_map or {}),
+            "location": {},
+            "mapping_found": False,
+            "blockers": [reason],
+            "next_action": "provide_source_map_payload_and_lookup_position",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _lookup_request(spec: SourceMapLookupSpec) -> dict[str, Any]:
+        return {
+            "lookup_direction": spec.lookup_direction,
+            "original_source": spec.original_source,
+            "original_line_number": spec.original_line_number,
+            "original_column_number": spec.original_column_number,
+            "generated_line_number": spec.generated_line_number,
+            "generated_column_number": spec.generated_column_number,
+            "source_map_bias": spec.source_map_bias,
+        }
+
+    @staticmethod
+    def _source_map_summary(source_map: dict[str, Any]) -> dict[str, Any]:
+        sources = source_map.get("sources") if isinstance(source_map.get("sources"), list) else []
+        names = source_map.get("names") if isinstance(source_map.get("names"), list) else []
+        sections = source_map.get("sections") if isinstance(source_map.get("sections"), list) else []
+        sources_content = source_map.get("sourcesContent") if isinstance(source_map.get("sourcesContent"), list) else []
+        return {
+            "version": source_map.get("version"),
+            "sources_count": len(sources),
+            "names_count": len(names),
+            "section_count": len(sections),
+            "sources_content_count": len(sources_content),
+            "sourceRoot": source_map.get("sourceRoot") or "",
+            "indexed_section_depth": BundlerSymbolScopeManager._indexed_depth(source_map),
+            "source_map_payload_present": bool(source_map),
+        }
+
+    @staticmethod
+    def _blockers(spec: SourceMapLookupSpec) -> list[str]:
+        blockers: list[str] = []
+        if spec.lookup_direction in {"generated_to_original", "generated"}:
+            if spec.generated_line_number is None:
+                blockers.append("missing_generated_line_number")
+        elif spec.lookup_direction in {"original_to_generated", "original"}:
+            if not spec.original_source:
+                blockers.append("missing_original_source")
+            if spec.original_line_number is None:
+                blockers.append("missing_original_line_number")
+        else:
+            blockers.append("unsupported_lookup_direction")
+        return blockers
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class BundlerSymbolScopeSpec:
     """Review-only descriptor request for Source Map symbol scope hints.
 
@@ -875,6 +1097,33 @@ class SourceMapRemapper:
         )
 
     @classmethod
+    def location_from_generated(
+        cls,
+        source_map_payload: str | dict[str, Any],
+        *,
+        generated_line_number: int,
+        generated_column_number: int = 0,
+        bias: str = "greatest_lower_bound",
+    ) -> GeneratedLocation | None:
+        """Map a generated bundle position back to an original source position."""
+
+        source_map = cls._coerce_source_map(source_map_payload)
+        sections = source_map.get("sections")
+        if isinstance(sections, list):
+            return cls._location_from_generated_indexed_source_map(
+                source_map,
+                generated_line_number=generated_line_number,
+                generated_column_number=generated_column_number,
+                bias=bias,
+            )
+        return cls._location_from_generated_flat_source_map(
+            source_map,
+            generated_line_number=generated_line_number,
+            generated_column_number=generated_column_number,
+            bias=bias,
+        )
+
+    @classmethod
     def _location_from_flat_source_map(
         cls,
         source_map: dict[str, Any],
@@ -940,6 +1189,57 @@ class SourceMapRemapper:
         return None
 
     @classmethod
+    def _location_from_generated_flat_source_map(
+        cls,
+        source_map: dict[str, Any],
+        *,
+        generated_line_number: int,
+        generated_column_number: int,
+        bias: str,
+    ) -> GeneratedLocation | None:
+        exact_match: dict[str, Any] | None = None
+        bias_match: dict[str, Any] | None = None
+        for mapping in cls.iter_mappings(source_map):
+            if not cls._mapping_has_original_location(mapping):
+                continue
+            if (
+                mapping.get("generated_line_number") == generated_line_number
+                and mapping.get("generated_column_number") == generated_column_number
+            ):
+                exact_match = mapping
+                break
+            if (
+                mapping.get("generated_line_number") == generated_line_number
+                and isinstance(mapping.get("generated_column_number"), int)
+                and int(mapping["generated_column_number"]) <= generated_column_number
+            ):
+                if bias_match is None or int(mapping["generated_column_number"]) > int(bias_match.get("generated_column_number", -1)):
+                    bias_match = mapping
+        if exact_match is not None:
+            return cls._original_location_from_mapping(
+                exact_match,
+                source_map=source_map,
+                requested_generated_line_number=generated_line_number,
+                requested_generated_column_number=generated_column_number,
+                strategy="source_map_generated_exact",
+            )
+        normalized_bias = bias.strip().replace("-", "_").lower()
+        if normalized_bias in {"glb", "greatest_lower_bound", "lower_bound"} and bias_match is not None:
+            return cls._original_location_from_mapping(
+                bias_match,
+                source_map=source_map,
+                requested_generated_line_number=generated_line_number,
+                requested_generated_column_number=generated_column_number,
+                strategy="source_map_generated_bias_glb",
+                extra_metadata={
+                    "matched_generated_line_number": bias_match.get("generated_line_number"),
+                    "matched_generated_column_number": bias_match.get("generated_column_number"),
+                    "bias": "greatest_lower_bound",
+                },
+            )
+        return None
+
+    @classmethod
     def _location_from_indexed_source_map(
         cls,
         source_map: dict[str, Any],
@@ -999,6 +1299,74 @@ class SourceMapRemapper:
             )
         return None
 
+    @classmethod
+    def _location_from_generated_indexed_source_map(
+        cls,
+        source_map: dict[str, Any],
+        *,
+        generated_line_number: int,
+        generated_column_number: int,
+        bias: str,
+    ) -> GeneratedLocation | None:
+        sections = source_map.get("sections")
+        if not isinstance(sections, list):
+            return None
+        candidates: list[tuple[int, dict[str, Any], int, int]] = []
+        for index, section in enumerate(sections):
+            if not isinstance(section, dict) or not isinstance(section.get("map"), dict):
+                continue
+            offset = section.get("offset") if isinstance(section.get("offset"), dict) else {}
+            offset_line = int(offset.get("line", 0) or 0)
+            offset_column = int(offset.get("column", 0) or 0)
+            if cls._section_offset_before_or_at(offset_line, offset_column, generated_line_number, generated_column_number):
+                candidates.append((index, section, offset_line, offset_column))
+        for index, section, offset_line, offset_column in reversed(candidates):
+            local_line = generated_line_number - offset_line
+            local_column = generated_column_number - offset_column if local_line == 0 else generated_column_number
+            if local_line < 0 or local_column < 0:
+                continue
+            child = cls.location_from_generated(
+                section["map"],
+                generated_line_number=local_line,
+                generated_column_number=local_column,
+                bias=bias,
+            )
+            if child is None:
+                continue
+            metadata = dict(child.metadata)
+            metadata.update(
+                {
+                    "section_index": index,
+                    "section_offset_line": offset_line,
+                    "section_offset_column": offset_column,
+                    "child_strategy": child.strategy,
+                    "requested_global_generated_line_number": generated_line_number,
+                    "requested_global_generated_column_number": generated_column_number,
+                    "local_generated_line_number": local_line,
+                    "local_generated_column_number": local_column,
+                }
+            )
+            section_entry = {
+                "section_index": index,
+                "offset_line": offset_line,
+                "offset_column": offset_column,
+                "child_strategy": child.strategy,
+            }
+            child_stack = metadata.get("section_stack") if isinstance(metadata.get("section_stack"), list) else []
+            metadata["section_stack"] = [section_entry, *child_stack]
+            metadata["indexed_section_depth"] = len(metadata["section_stack"])
+            strategy = "source_map_generated_indexed_exact" if "exact" in child.strategy else "source_map_generated_indexed_bias_glb"
+            return GeneratedLocation(
+                line_number=generated_line_number,
+                column_number=generated_column_number,
+                source=child.source,
+                original_line_number=child.original_line_number,
+                original_column_number=child.original_column_number,
+                strategy=strategy,
+                metadata=metadata,
+            )
+        return None
+
     @staticmethod
     def _location_from_mapping(
         mapping: dict[str, Any],
@@ -1037,6 +1405,66 @@ class SourceMapRemapper:
             strategy=strategy,
             metadata=metadata,
         )
+
+    @classmethod
+    def _original_location_from_mapping(
+        cls,
+        mapping: dict[str, Any],
+        *,
+        source_map: dict[str, Any],
+        requested_generated_line_number: int,
+        requested_generated_column_number: int,
+        strategy: str,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> GeneratedLocation | None:
+        sources = source_map.get("sources", []) if isinstance(source_map.get("sources"), list) else []
+        source_index = mapping.get("source_index")
+        if not isinstance(source_index, int) or not (0 <= source_index < len(sources)):
+            return None
+        raw_source = str(sources[source_index])
+        resolved_source = cls._join_source_root(str(source_map.get("sourceRoot") or ""), raw_source)
+        names = source_map.get("names", []) if isinstance(source_map.get("names"), list) else []
+        metadata = {
+            "source_index": source_index,
+            "sources_count": len(sources),
+            "names_count": len(names),
+            "matched_source": raw_source,
+            "resolved_source": resolved_source,
+            "requested_generated_line_number": requested_generated_line_number,
+            "requested_generated_column_number": requested_generated_column_number,
+            "matched_generated_line_number": mapping.get("generated_line_number"),
+            "matched_generated_column_number": mapping.get("generated_column_number"),
+        }
+        name_index = mapping.get("name_index")
+        if isinstance(name_index, int):
+            metadata["name_index"] = name_index
+            if 0 <= name_index < len(names):
+                metadata["name"] = str(names[name_index])
+        if source_map.get("sourceRoot"):
+            metadata["sourceRoot"] = source_map.get("sourceRoot")
+        if extra_metadata:
+            metadata.update(extra_metadata)
+        return GeneratedLocation(
+            line_number=int(mapping["generated_line_number"]),
+            column_number=int(mapping["generated_column_number"]),
+            source=resolved_source,
+            original_line_number=int(mapping["original_line_number"]),
+            original_column_number=int(mapping["original_column_number"]),
+            strategy=strategy,
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _mapping_has_original_location(mapping: dict[str, Any]) -> bool:
+        return (
+            isinstance(mapping.get("source_index"), int)
+            and isinstance(mapping.get("original_line_number"), int)
+            and isinstance(mapping.get("original_column_number"), int)
+        )
+
+    @staticmethod
+    def _section_offset_before_or_at(offset_line: int, offset_column: int, line_number: int, column_number: int) -> bool:
+        return offset_line < line_number or (offset_line == line_number and offset_column <= column_number)
 
     @classmethod
     def _find_source_index(cls, sources: list[Any], *, original_source: str, source_root: str = "") -> tuple[int, str, dict[str, Any]]:

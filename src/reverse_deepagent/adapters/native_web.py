@@ -171,7 +171,14 @@ from reverse_deepagent.browser.hooks import (
     SourceLogpointManager,
     SourceLogpointSpec,
 )
-from reverse_deepagent.browser.source_maps import BundlerSymbolScopeManager, BundlerSymbolScopeSpec, SourceMapFetchManager, SourceMapFetchSpec
+from reverse_deepagent.browser.source_maps import (
+    BundlerSymbolScopeManager,
+    BundlerSymbolScopeSpec,
+    SourceMapFetchManager,
+    SourceMapFetchSpec,
+    SourceMapLookupManager,
+    SourceMapLookupSpec,
+)
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -590,6 +597,70 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_lookup_request(protection_name, context):
+            spec = SourceMapLookupSpec.from_context(context)
+            result = SourceMapLookupManager().lookup(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            request = descriptor.get("lookup_request") if isinstance(descriptor.get("lookup_request"), dict) else {}
+            location = descriptor.get("location") if isinstance(descriptor.get("location"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_lookup_status={result.status}",
+                f"source_map_lookup_direction={request.get('lookup_direction', '')}",
+                f"source_map_lookup_mapping_found={descriptor.get('mapping_found', False)}",
+                f"source_map_lookup_strategy={location.get('strategy', '')}",
+                "source_map_lookup_review_only=True",
+                f"source_map_lookup_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_lookup_browser_started={policy.get('browser_started', False)}",
+                f"source_map_lookup_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_lookup_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_lookup_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_lookup_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_lookup_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_lookup_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-lookup.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map lookup descriptor.",
+                metadata={
+                    "status": result.status,
+                    "lookup_direction": request.get("lookup_direction", ""),
+                    "mapping_found": bool(descriptor.get("mapping_found", False)),
+                    "strategy": location.get("strategy", ""),
+                    "review_only": True,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_lookup_before_debugger_or_hook_use"
+                actions = ["review_source_map_lookup"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_payload_and_lookup_position"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_lookup_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -7430,6 +7501,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "fetchSourceMap",
                 "fetch_indexed_section_urls",
                 "fetchIndexedSectionUrls",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_lookup_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-lookup",
+            "source-map-consumer",
+            "source-map-generated-lookup",
+            "generated-source-map-lookup",
+            "original-source-map-lookup",
+            "review-source-map-lookup",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_lookup",
+                "sourceMapLookup",
+                "source_map_consumer",
+                "sourceMapConsumer",
+                "source_map_generated_lookup",
+                "sourceMapGeneratedLookup",
             )
         )
 

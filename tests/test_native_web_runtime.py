@@ -5451,6 +5451,46 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["fetch_source_map"])
         self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
 
+    def test_native_web_runtime_reviews_source_map_lookup_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-lookup",
+            {
+                "source_map": {
+                    "version": 3,
+                    "sourceRoot": "webpack://demo",
+                    "sources": ["./src/sign.ts"],
+                    "names": ["buildSign"],
+                    "mappings": "AAAAA",
+                },
+                "generated_line": 0,
+                "generated_column": 0,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_lookup"])
+        self.assertIn("source_map_lookup_status=ready_for_review", result.verification)
+        self.assertIn("source_map_lookup_direction=generated_to_original", result.verification)
+        self.assertIn("source_map_lookup_mapping_found=True", result.verification)
+        self.assertIn("source_map_lookup_strategy=source_map_generated_exact", result.verification)
+        self.assertIn("source_map_lookup_review_only=True", result.verification)
+        self.assertIn("source_map_lookup_fetch_source_map=False", result.verification)
+        self.assertIn("source_map_lookup_browser_started=False", result.verification)
+        self.assertIn("source_map_lookup_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_lookup_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_lookup_calls_mcp=False", result.verification)
+        self.assertIn("source_map_lookup_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_lookup_before_debugger_or_hook_use")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-lookup.json")
+        self.assertEqual(result.artifacts[0].metadata["lookup_direction"], "generated_to_original")
+        self.assertTrue(result.artifacts[0].metadata["mapping_found"])
+        self.assertEqual(result.artifacts[0].metadata["strategy"], "source_map_generated_exact")
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
     def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

@@ -1,6 +1,14 @@
 import unittest
 
-from reverse_deepagent.browser.source_maps import BundlerSymbolScopeManager, BundlerSymbolScopeSpec, SourceMapFetchManager, SourceMapFetchSpec, SourceMapRemapper
+from reverse_deepagent.browser.source_maps import (
+    BundlerSymbolScopeManager,
+    BundlerSymbolScopeSpec,
+    SourceMapFetchManager,
+    SourceMapFetchSpec,
+    SourceMapLookupManager,
+    SourceMapLookupSpec,
+    SourceMapRemapper,
+)
 
 
 BASE64_VLQ_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -172,6 +180,139 @@ class BundlerSymbolScopeManagerTests(unittest.TestCase):
         self.assertEqual(result.reason, "missing_source_map_payload")
         self.assertEqual(result.descriptor["blockers"], ["missing_source_map_payload"])
         self.assertFalse(result.descriptor["side_effect_policy"]["fetch_source_map"])
+
+
+class SourceMapLookupManagerTests(unittest.TestCase):
+    def test_source_map_lookup_maps_generated_position_to_original_exact_without_side_effects(self) -> None:
+        source_map = {
+            "version": 3,
+            "sourceRoot": "webpack://demo",
+            "sources": ["./src/sign.ts"],
+            "names": ["buildSign"],
+            "mappings": encode_vlq_segment([0, 0, 0, 0, 0]),
+        }
+        spec = SourceMapLookupSpec.from_context(
+            {
+                "source_map_lookup": True,
+                "source_map": source_map,
+                "generated_line": 0,
+                "generated_column": 0,
+            }
+        )
+
+        result = SourceMapLookupManager().lookup(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-lookup.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["mapping_found"])
+        self.assertEqual(descriptor["lookup_request"]["lookup_direction"], "generated_to_original")
+        location = descriptor["location"]
+        self.assertEqual(location["source"], "webpack://demo/./src/sign.ts")
+        self.assertEqual(location["original_line_number"], 0)
+        self.assertEqual(location["original_column_number"], 0)
+        self.assertEqual(location["strategy"], "source_map_generated_exact")
+        self.assertEqual(location["metadata"]["name"], "buildSign")
+        self.assertFalse(descriptor["side_effect_policy"]["fetch_source_map"])
+        self.assertFalse(descriptor["side_effect_policy"]["browser_started"])
+        self.assertFalse(descriptor["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(descriptor["side_effect_policy"]["runtime_evaluated"])
+        self.assertFalse(descriptor["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(descriptor["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_source_map_lookup_uses_generated_greatest_lower_bound_bias(self) -> None:
+        source_map = {
+            "version": 3,
+            "sources": ["src/sign.ts"],
+            "names": [],
+            "mappings": f"{encode_vlq_segment([0, 0, 0, 0])},{encode_vlq_segment([10, 0, 0, 5])}",
+        }
+        spec = SourceMapLookupSpec.from_context(
+            {
+                "source_map_lookup": True,
+                "source_map": source_map,
+                "generated_line": 0,
+                "generated_column": 12,
+            }
+        )
+
+        result = SourceMapLookupManager().lookup(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        location = result.descriptor["location"]
+        self.assertEqual(location["line_number"], 0)
+        self.assertEqual(location["column_number"], 10)
+        self.assertEqual(location["original_column_number"], 5)
+        self.assertEqual(location["strategy"], "source_map_generated_bias_glb")
+        self.assertEqual(location["metadata"]["matched_generated_column_number"], 10)
+        self.assertEqual(location["metadata"]["bias"], "greatest_lower_bound")
+
+    def test_source_map_lookup_maps_indexed_generated_position(self) -> None:
+        source_map = {
+            "version": 3,
+            "sections": [
+                {
+                    "offset": {"line": 2, "column": 4},
+                    "map": {"version": 3, "sources": ["src/sign.ts"], "names": [], "mappings": "AAAA"},
+                }
+            ],
+        }
+        spec = SourceMapLookupSpec.from_context(
+            {
+                "source_map_lookup": True,
+                "source_map": source_map,
+                "generated_line": 2,
+                "generated_column": 4,
+            }
+        )
+
+        result = SourceMapLookupManager().lookup(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        location = result.descriptor["location"]
+        self.assertEqual(location["line_number"], 2)
+        self.assertEqual(location["column_number"], 4)
+        self.assertEqual(location["source"], "src/sign.ts")
+        self.assertEqual(location["original_line_number"], 0)
+        self.assertEqual(location["original_column_number"], 0)
+        self.assertEqual(location["strategy"], "source_map_generated_indexed_exact")
+        self.assertEqual(location["metadata"]["section_index"], 0)
+        self.assertEqual(location["metadata"]["section_offset_line"], 2)
+        self.assertEqual(location["metadata"]["section_offset_column"], 4)
+        self.assertEqual(location["metadata"]["indexed_section_depth"], 1)
+
+    def test_source_map_lookup_blocks_missing_source_map_payload(self) -> None:
+        spec = SourceMapLookupSpec.from_context({"source_map_lookup": True, "generated_line": 0})
+
+        result = SourceMapLookupManager().lookup(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "missing_source_map_payload")
+        self.assertEqual(result.descriptor["blockers"], ["missing_source_map_payload"])
+        self.assertFalse(result.side_effect_policy["browser_started"])
+
+    def test_source_map_lookup_can_reuse_original_to_generated_remapper(self) -> None:
+        source_map = {"version": 3, "sources": ["src/sign.ts"], "names": [], "mappings": "AAAA"}
+        spec = SourceMapLookupSpec.from_context(
+            {
+                "source_map_lookup": True,
+                "source_map": source_map,
+                "lookup_direction": "original_to_generated",
+                "original_source": "src/sign.ts",
+                "original_line": 0,
+                "original_column": 0,
+            }
+        )
+
+        result = SourceMapLookupManager().lookup(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        location = result.descriptor["location"]
+        self.assertEqual(location["line_number"], 0)
+        self.assertEqual(location["column_number"], 0)
+        self.assertEqual(location["source"], "src/sign.ts")
+        self.assertEqual(location["strategy"], "source_map_exact")
 
 
 class SourceMapRemapperTests(unittest.TestCase):

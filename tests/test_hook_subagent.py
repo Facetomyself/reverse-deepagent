@@ -110,6 +110,38 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("bundler_symbol_scope_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "provide_source_map_symbol_and_original_source")
 
+    def test_review_hook_artifacts_warns_for_source_map_lookup_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_lookup": {
+                "status": "ready_for_review",
+                "mapping_found": True,
+                "location": {"strategy": "source_map_generated_exact"},
+                "next_action": "review_source_map_lookup_before_debugger_or_hook_use",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_lookup_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_lookup_before_debugger_or_hook_use")
+        self.assertEqual(result["summary"]["source_map_lookup_status"], "ready_for_review")
+        self.assertTrue(result["summary"]["source_map_lookup_mapping_found"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["hook_installed"])
+        self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_lookup_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_lookup": {"status": "blocked", "reason": "missing_source_map_payload"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_lookup_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_source_map_payload_and_lookup_position")
+
     def test_review_hook_artifacts_warns_for_object_graph_diff_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {
