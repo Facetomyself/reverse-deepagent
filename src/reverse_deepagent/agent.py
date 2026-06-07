@@ -19,6 +19,7 @@ from reverse_deepagent.subagents.router import build_router_subagent
 from reverse_deepagent.subagents.timeline import build_timeline_subagent
 from reverse_deepagent.subagents.web_recon import build_web_recon_subagent
 from reverse_deepagent.tools.artifact_tools import (
+    make_execute_workspace_foldered_canonical_broader_rollout_tool,
     make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool,
     make_execute_workspace_foldered_canonical_migration_finalization_tool,
     make_execute_workspace_foldered_canonical_physical_apply_tool,
@@ -172,6 +173,7 @@ def build_reverse_agent(
         make_review_workspace_foldered_canonical_broader_rollout_readiness_tool(effective_artifact_root),
         make_plan_workspace_foldered_canonical_broader_rollout_tool(effective_artifact_root),
         make_review_workspace_foldered_canonical_broader_rollout_preflight_tool(effective_artifact_root),
+        make_execute_workspace_foldered_canonical_broader_rollout_tool(effective_artifact_root),
         make_plan_workspace_dual_write_pilot_tool(effective_artifact_root),
         make_review_workspace_dual_write_pilot_workflow_tool(effective_artifact_root),
         make_record_workspace_dual_write_pilot_result_tool(effective_artifact_root),

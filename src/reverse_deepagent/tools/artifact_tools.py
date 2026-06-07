@@ -987,6 +987,52 @@ def make_review_workspace_foldered_canonical_broader_rollout_preflight_tool(
     return review_workspace_foldered_canonical_broader_rollout_preflight
 
 
+def make_execute_workspace_foldered_canonical_broader_rollout_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create an explicit-review-only broader rollout executor."""
+
+    root = Path(default_artifact_root)
+
+    def execute_workspace_foldered_canonical_broader_rollout(
+        artifact_root: str | None = None,
+        mode: str = "dry-run",
+        approve_broader_rollout: bool = False,
+        broader_rollout_preflight_json: str | None = None,
+        broader_rollout_preflight_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_preflight",
+        broader_rollout_plan_json: str | None = None,
+        broader_rollout_plan_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_plan",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+        expected_plan_digest: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply reviewed broader rollout metadata with journal and result evidence."""
+
+        return execute_workspace_foldered_canonical_broader_rollout_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            mode=mode,
+            approve_broader_rollout=approve_broader_rollout,
+            broader_rollout_preflight_json=broader_rollout_preflight_json,
+            broader_rollout_preflight_artifact_ref=broader_rollout_preflight_artifact_ref,
+            broader_rollout_plan_json=broader_rollout_plan_json,
+            broader_rollout_plan_artifact_ref=broader_rollout_plan_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+            expected_plan_digest=expected_plan_digest,
+        )
+
+    execute_workspace_foldered_canonical_broader_rollout.__name__ = "execute_workspace_foldered_canonical_broader_rollout"
+    execute_workspace_foldered_canonical_broader_rollout.__doc__ = (
+        "Explicit-review-only foldered-canonical broader rollout executor. Defaults to dry-run; apply mode requires "
+        "approve_broader_rollout=true, ready preflight evidence, matching plan digest, and a current backend artifact "
+        "manifest artifact ref. It writes append-only rollout journal, result artifact, and updates workspace_alias broader "
+        "rollout metadata only in apply mode. It does not move files, change canonical paths, enable dual-write, run "
+        "pipelines, start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return execute_workspace_foldered_canonical_broader_rollout
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -7726,7 +7772,7 @@ def plan_workspace_foldered_canonical_broader_rollout_payload(
             "preflight_tool": "review_workspace_foldered_canonical_broader_rollout_preflight",
             "preflight_tool_implemented": True,
             "executor_tool": "execute_workspace_foldered_canonical_broader_rollout",
-            "executor_tool_implemented": False,
+            "executor_tool_implemented": True,
             "requires_explicit_review_approval": True,
             "requires_current_backend_manifest_revalidation": True,
             "allows_automatic_execution": False,
@@ -8071,7 +8117,7 @@ def review_workspace_foldered_canonical_broader_rollout_preflight_payload(
         "executor_gate": {
             "ready_for_broader_rollout_executor_review": status == "ready_for_review",
             "executor_tool": "execute_workspace_foldered_canonical_broader_rollout",
-            "executor_tool_implemented": False,
+            "executor_tool_implemented": True,
             "requires_explicit_review_approval": True,
             "requires_current_backend_manifest_revalidation": True,
             "requires_append_only_transaction_journal": True,
@@ -8356,10 +8402,480 @@ def _foldered_canonical_broader_rollout_preflight_next_actions(blockers: list[st
     if "review_approval_ledger_does_not_approve_broader_rollout" in blockers:
         actions.append("resolve_review_approval_ledger_decision_or_digest_before_broader_rollout")
     if not blockers:
-        actions.append("review_broader_rollout_preflight_before_implementing_or_running_separate_executor")
+        actions.append("review_broader_rollout_preflight_before_running_separate_executor")
         actions.append("keep_broader_rollout_apply_explicit_review_only")
     if any("candidate" in warning for warning in warnings):
         actions.append("inspect_blocked_broader_rollout_candidate_revalidation")
+    return list(dict.fromkeys(actions))
+
+
+def execute_workspace_foldered_canonical_broader_rollout_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    mode: str = "dry-run",
+    approve_broader_rollout: bool = False,
+    broader_rollout_preflight_json: str | None = None,
+    broader_rollout_preflight_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_preflight",
+    broader_rollout_plan_json: str | None = None,
+    broader_rollout_plan_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_plan",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    expected_plan_digest: str | None = None,
+) -> dict[str, Any]:
+    """Execute explicit-review-only foldered-canonical broader rollout metadata apply."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    workspace_dir = effective_root / "workspace"
+    result_path = workspace_dir / "workspace-foldered-canonical-broader-rollout-result.json"
+    journal_path = workspace_dir / "workspace-foldered-canonical-broader-rollout-journal.json"
+
+    preflight, preflight_error, preflight_input = _load_or_read_workspace_foldered_canonical_broader_rollout_preflight(
+        default_artifact_root=effective_root,
+        broader_rollout_preflight_json=broader_rollout_preflight_json,
+        broader_rollout_preflight_artifact_ref=broader_rollout_preflight_artifact_ref,
+    )
+    plan, plan_error, plan_input = _load_or_read_workspace_foldered_canonical_broader_rollout_plan(
+        default_artifact_root=effective_root,
+        broader_rollout_plan_json=broader_rollout_plan_json,
+        broader_rollout_plan_artifact_ref=broader_rollout_plan_artifact_ref,
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+
+    requested_mode = mode or "dry-run"
+    dry_run_mode = requested_mode == "dry-run"
+    apply_mode = requested_mode == "apply"
+    created_at = datetime.now(timezone.utc).isoformat()
+    plan_digest = _foldered_canonical_broader_rollout_plan_digest_from_payload(plan)
+    expected_digest = expected_plan_digest or plan_digest
+    preflight_digest = _foldered_canonical_broader_rollout_preflight_plan_digest(preflight)
+    approval_gate = preflight.get("review_approval_gate") if isinstance(preflight.get("review_approval_gate"), dict) else {}
+    preflight_gate = preflight.get("executor_gate") if isinstance(preflight.get("executor_gate"), dict) else {}
+    manifest_revalidation = preflight.get("manifest_revalidation") if isinstance(preflight.get("manifest_revalidation"), dict) else {}
+    candidate_artifacts = plan.get("candidate_artifacts") if isinstance(plan.get("candidate_artifacts"), list) else []
+    valid_candidates = [candidate for candidate in candidate_artifacts if isinstance(candidate, dict)]
+    idempotency_key = str(approval_gate.get("idempotency_key") or plan_digest[:16] or "foldered-canonical-broader-rollout")
+    transaction_id = f"foldered-canonical-broader-rollout-{plan_digest[:16] or 'missing'}"
+    existing_journal = _read_foldered_canonical_broader_rollout_journal(journal_path)
+    duplicate_entry = _find_foldered_canonical_broader_rollout_duplicate(existing_journal, idempotency_key=idempotency_key)
+    manifest_entry_checks = _foldered_canonical_broader_rollout_apply_manifest_entry_checks(
+        candidate_artifacts=valid_candidates,
+        backend_manifest=backend_manifest,
+    )
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if requested_mode not in {"dry-run", "apply"}:
+        blockers.append("unsupported_foldered_canonical_broader_rollout_mode")
+    if apply_mode and not approve_broader_rollout:
+        blockers.append("apply_requires_approve_broader_rollout_true")
+    if preflight_error:
+        blockers.append("broader_rollout_preflight_unavailable_or_malformed")
+    if preflight.get("status") != "ready_for_review":
+        blockers.append("broader_rollout_preflight_not_ready")
+    if preflight_gate.get("ready_for_broader_rollout_executor_review") is not True:
+        blockers.append("broader_rollout_preflight_gate_not_ready")
+    if plan_error:
+        blockers.append("broader_rollout_plan_unavailable_or_malformed")
+    if plan.get("status") != "ready_for_review":
+        blockers.append("broader_rollout_plan_not_ready")
+    if backend_manifest_error:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if backend_manifest_json is not None and apply_mode:
+        blockers.append("apply_requires_backend_manifest_artifact_ref_not_inline_json")
+    if not valid_candidates:
+        blockers.append("broader_rollout_has_no_candidates")
+    if expected_digest and plan_digest and expected_digest != plan_digest:
+        blockers.append("expected_broader_rollout_plan_digest_mismatch")
+    if preflight_digest and plan_digest and preflight_digest != plan_digest:
+        blockers.append("broader_rollout_preflight_plan_digest_mismatch")
+    if not approval_gate.get("approved"):
+        blockers.append("broader_rollout_review_approval_not_approved")
+    if not approval_gate.get("digest_matches_expected"):
+        blockers.append("broader_rollout_review_approval_digest_mismatch")
+    if manifest_revalidation.get("all_candidates_still_ready") is not True:
+        blockers.append("broader_rollout_preflight_manifest_revalidation_not_ready")
+    if duplicate_entry:
+        blockers.append("broader_rollout_duplicate_idempotency_key")
+    for check in manifest_entry_checks:
+        if check.get("status") != "ready":
+            blockers.append(f"manifest_entry:{check.get('artifact_key') or 'unknown'}:{check.get('status')}")
+    if not apply_mode:
+        warnings.append("broader_rollout_dry_run_does_not_write_journal_result_or_manifest")
+    if apply_mode and not blockers:
+        warnings.append("broader_rollout_will_only_update_workspace_alias_rollout_metadata")
+
+    status = "blocked" if blockers else "planned" if dry_run_mode else "applied"
+    mutated_manifest = _foldered_canonical_broader_rollout_backend_manifest(
+        backend_manifest,
+        valid_candidates,
+        transaction_id=transaction_id,
+        applied_at=created_at,
+    )
+    journal_entry = _foldered_canonical_broader_rollout_journal_entry(
+        status=status,
+        plan_digest=plan_digest,
+        preflight_digest=preflight_digest,
+        transaction_id=transaction_id,
+        idempotency_key=idempotency_key,
+        candidate_artifacts=valid_candidates,
+        approval_gate=approval_gate,
+        blockers=blockers,
+        created_at=created_at,
+    )
+    journal_payload = _foldered_canonical_broader_rollout_journal_payload(
+        existing_journal=existing_journal,
+        entry=journal_entry,
+        append_entry=apply_mode and not blockers,
+        updated_at=created_at,
+    )
+    writes = {"backend_manifest": False, "journal": False, "result": False}
+    if apply_mode and not blockers:
+        _write_json_file(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input), mutated_manifest)
+        _write_json_file(journal_path, journal_payload)
+        writes.update({"backend_manifest": True, "journal": True})
+
+    payload = {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-result.v1",
+        "status": status,
+        "mode": requested_mode,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "planned_broader_rollout_candidate_count": len(valid_candidates),
+            "manifest_entry_check_count": len(manifest_entry_checks),
+            "applied_broader_rollout_candidate_count": len(valid_candidates) if status == "applied" else 0,
+            "transaction_id": transaction_id,
+            "idempotency_key": idempotency_key,
+            "transaction_journal_written": writes["journal"],
+            "backend_manifest_mutated": writes["backend_manifest"],
+            "result_artifact_written": False,
+            "broader_rollout_applied": status == "applied",
+            "dual_write_enabled": False,
+            "canonical_paths_changed": False,
+            "files_moved": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "broader_rollout_preflight_input": preflight_input,
+        "broader_rollout_plan_input": plan_input,
+        "backend_manifest_input": backend_manifest_input,
+        "digest_guard": {
+            "expected_plan_digest": expected_digest,
+            "current_plan_digest": plan_digest,
+            "preflight_plan_digest": preflight_digest,
+            "expected_digest_match": bool(expected_digest and plan_digest and expected_digest == plan_digest),
+            "preflight_digest_match": bool(preflight_digest and plan_digest and preflight_digest == plan_digest),
+        },
+        "review_approval_gate": approval_gate,
+        "idempotency_guard": {
+            "idempotency_key": idempotency_key,
+            "duplicate_entry_found": duplicate_entry is not None,
+            "duplicate_entry": _compact_foldered_canonical_broader_rollout_journal_entry(duplicate_entry),
+            "blocks_duplicate_apply": True,
+        },
+        "manifest_entry_checks": manifest_entry_checks,
+        "transaction_journal": {
+            "path": str(journal_path),
+            "append_only": True,
+            "entry_count": len(journal_payload.get("entries", [])),
+            "entry_appended": writes["journal"],
+            "writes_journal_in_apply_mode": writes["journal"],
+        },
+        "backend_manifest_mutation": {
+            "path": str(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input)),
+            "mutates_backend_manifest_in_apply_mode": writes["backend_manifest"],
+            "changes_canonical_paths": False,
+            "enables_dual_write": False,
+            "applies_broader_rollout_metadata": status == "applied",
+            "files_moved": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_broader_rollout_execute_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "dry_run_is_read_only": True,
+            "artifacts_written": apply_mode and not blockers,
+            "writes_transaction_journal": writes["journal"],
+            "writes_result_artifact": False,
+            "creates_directories": apply_mode and not blockers,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": writes["backend_manifest"],
+            "tightens_legacy_fallback": False,
+            "authorizes_broader_rollout": False,
+            "applies_broader_rollout": status == "applied",
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+    if apply_mode and not blockers:
+        payload["summary"]["result_artifact_written"] = True
+        payload["side_effect_policy"]["writes_result_artifact"] = True
+        _write_json_file(result_path, payload)
+    return payload
+
+
+def _load_or_read_workspace_foldered_canonical_broader_rollout_preflight(
+    *,
+    default_artifact_root: Path,
+    broader_rollout_preflight_json: str | None,
+    broader_rollout_preflight_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(broader_rollout_preflight_json, field_name="broader_rollout_preflight_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = broader_rollout_preflight_artifact_ref or "workspace_foldered_canonical_broader_rollout_preflight"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_preflight_not_observed", input_summary
+
+
+def _foldered_canonical_broader_rollout_preflight_plan_digest(preflight: dict[str, Any]) -> str:
+    guard = preflight.get("digest_guard") if isinstance(preflight.get("digest_guard"), dict) else {}
+    return str(guard.get("broader_rollout_plan_digest") or "")
+
+
+def _foldered_canonical_broader_rollout_apply_manifest_entry_checks(
+    *,
+    candidate_artifacts: list[dict[str, Any]],
+    backend_manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    entries = backend_manifest.get("entries") if isinstance(backend_manifest.get("entries"), list) else []
+    entries_by_key = {
+        str(entry.get("artifact_key") or ""): entry
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("artifact_key")
+    }
+    checks: list[dict[str, Any]] = []
+    for candidate in candidate_artifacts:
+        artifact_key = str(candidate.get("artifact_key") or "")
+        expected_path = str(candidate.get("current_canonical_path") or "")
+        expected_legacy = str(candidate.get("legacy_fallback_path") or "")
+        expected_future_path = str(candidate.get("future_path") or "")
+        expected_virtual_uri = str(candidate.get("virtual_uri") or "")
+        entry = entries_by_key.get(artifact_key)
+        status = "ready"
+        observed_path = ""
+        observed_legacy = ""
+        observed_future_path = ""
+        observed_virtual_uri = ""
+        finalized = False
+        resolver_status = ""
+        migration_status = ""
+        if not artifact_key:
+            status = "missing_artifact_key"
+        elif candidate.get("status") != "ready_for_broader_rollout_plan_review":
+            status = "plan_candidate_not_ready"
+        elif not isinstance(entry, dict):
+            status = "manifest_entry_missing"
+        else:
+            observed_path = str(entry.get("path") or "")
+            metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+            alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+            observed_legacy = str(alias.get("legacy_fallback_path") or "")
+            observed_future_path = str(alias.get("future_path") or "")
+            observed_virtual_uri = str(alias.get("virtual_uri") or "")
+            finalized = alias.get("foldered_canonical_finalized") is True
+            resolver_status = str(alias.get("resolver_migration_status") or "")
+            migration_status = str(alias.get("migration_status") or "")
+            if expected_path and observed_path != expected_path:
+                status = "canonical_path_mismatch"
+            elif expected_legacy and observed_legacy != expected_legacy:
+                status = "legacy_fallback_path_mismatch"
+            elif expected_future_path and observed_future_path != expected_future_path:
+                status = "future_path_mismatch"
+            elif expected_virtual_uri and observed_virtual_uri != expected_virtual_uri:
+                status = "virtual_uri_mismatch"
+            elif not finalized:
+                status = "not_foldered_canonical_finalized"
+            elif resolver_status != "foldered-canonical-authoritative":
+                status = "resolver_not_authoritative"
+            elif migration_status != "foldered-canonical-finalized-after-reviewed-apply":
+                status = "unexpected_migration_status"
+        checks.append(
+            {
+                "artifact_key": artifact_key,
+                "status": status,
+                "expected_canonical_path": expected_path,
+                "observed_canonical_path": observed_path,
+                "expected_legacy_fallback_path": expected_legacy,
+                "observed_legacy_fallback_path": observed_legacy,
+                "expected_future_path": expected_future_path,
+                "observed_future_path": observed_future_path,
+                "expected_virtual_uri": expected_virtual_uri,
+                "observed_virtual_uri": observed_virtual_uri,
+                "foldered_canonical_finalized": finalized,
+                "resolver_migration_status": resolver_status,
+                "migration_status": migration_status,
+            }
+        )
+    return checks
+
+
+def _foldered_canonical_broader_rollout_backend_manifest(
+    backend_manifest: dict[str, Any],
+    candidate_artifacts: list[dict[str, Any]],
+    *,
+    transaction_id: str,
+    applied_at: str,
+) -> dict[str, Any]:
+    manifest = copy.deepcopy(backend_manifest)
+    candidates_by_key = {
+        str(candidate.get("artifact_key") or ""): candidate
+        for candidate in candidate_artifacts
+        if isinstance(candidate, dict) and candidate.get("artifact_key")
+    }
+    for entry in manifest.get("entries", []):
+        if not isinstance(entry, dict):
+            continue
+        candidate = candidates_by_key.get(str(entry.get("artifact_key") or ""))
+        if not candidate:
+            continue
+        metadata = entry.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+            entry["metadata"] = metadata
+        alias = metadata.setdefault("workspace_alias", {})
+        if not isinstance(alias, dict):
+            alias = {}
+            metadata["workspace_alias"] = alias
+        alias["broader_rollout_planned"] = True
+        alias["broader_rollout_applied"] = True
+        alias["broader_rollout_applied_at"] = applied_at
+        alias["broader_rollout_transaction_id"] = transaction_id
+        alias["broader_rollout_scope"] = "foldered-canonical-finalized-workspace-artifact"
+        alias["broader_rollout_candidate_status"] = candidate.get("status") or ""
+        alias["broader_rollout_canonical_path_confirmed"] = str(candidate.get("current_canonical_path") or entry.get("path") or "")
+    metadata = manifest.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["foldered_canonical_broader_rollout_applied_at"] = applied_at
+        metadata["foldered_canonical_broader_rollout_transaction_id"] = transaction_id
+        metadata["foldered_canonical_broader_rollout_candidate_count"] = len(candidates_by_key)
+    return manifest
+
+
+def _read_foldered_canonical_broader_rollout_journal(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-journal.v1", "entries": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-journal.v1",
+            "entries": [],
+            "load_error": "malformed_existing_journal",
+        }
+    if not isinstance(payload, dict):
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-journal.v1", "entries": []}
+    if not isinstance(payload.get("entries"), list):
+        payload["entries"] = []
+    return payload
+
+
+def _find_foldered_canonical_broader_rollout_duplicate(journal: dict[str, Any], *, idempotency_key: str) -> dict[str, Any] | None:
+    for entry in journal.get("entries", []):
+        if isinstance(entry, dict) and entry.get("idempotency_key") == idempotency_key and entry.get("status") == "applied":
+            return entry
+    return None
+
+
+def _foldered_canonical_broader_rollout_journal_entry(
+    *,
+    status: str,
+    plan_digest: str,
+    preflight_digest: str,
+    transaction_id: str,
+    idempotency_key: str,
+    candidate_artifacts: list[dict[str, Any]],
+    approval_gate: dict[str, Any],
+    blockers: list[str],
+    created_at: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "plan_digest": plan_digest,
+        "preflight_plan_digest": preflight_digest,
+        "transaction_id": transaction_id,
+        "idempotency_key": idempotency_key,
+        "approval_id": approval_gate.get("approval_id") or "",
+        "approval_subject_id": approval_gate.get("expected_subject_id") or "",
+        "candidate_count": len(candidate_artifacts),
+        "artifact_keys": [str(candidate.get("artifact_key") or "") for candidate in candidate_artifacts],
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "created_at": created_at,
+    }
+
+
+def _foldered_canonical_broader_rollout_journal_payload(
+    *,
+    existing_journal: dict[str, Any],
+    entry: dict[str, Any],
+    append_entry: bool,
+    updated_at: str,
+) -> dict[str, Any]:
+    entries = [item for item in existing_journal.get("entries", []) if isinstance(item, dict)]
+    if append_entry:
+        entries.append(entry)
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-journal.v1",
+        "updated_at": updated_at,
+        "entry_count": len(entries),
+        "entries": entries,
+    }
+
+
+def _compact_foldered_canonical_broader_rollout_journal_entry(entry: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    return {
+        "status": entry.get("status") or "",
+        "plan_digest": entry.get("plan_digest") or "",
+        "transaction_id": entry.get("transaction_id") or "",
+        "idempotency_key": entry.get("idempotency_key") or "",
+        "artifact_keys": entry.get("artifact_keys") if isinstance(entry.get("artifact_keys"), list) else [],
+    }
+
+
+def _foldered_canonical_broader_rollout_execute_next_actions(status: str, blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "broader_rollout_preflight_unavailable_or_malformed" in blockers or "broader_rollout_preflight_not_ready" in blockers:
+        actions.append("create_or_pass_ready_foldered_canonical_broader_rollout_preflight")
+    if "apply_requires_approve_broader_rollout_true" in blockers:
+        actions.append("rerun_with_approve_broader_rollout_true_after_review")
+    if "broader_rollout_review_approval_not_approved" in blockers or "broader_rollout_review_approval_digest_mismatch" in blockers:
+        actions.append("resolve_review_approval_ledger_before_broader_rollout_apply")
+    if "broader_rollout_duplicate_idempotency_key" in blockers:
+        actions.append("inspect_existing_broader_rollout_journal_before_retry")
+    if any(reason.startswith("manifest_entry:") for reason in blockers):
+        actions.append("refresh_backend_manifest_and_recheck_broader_rollout_preflight")
+    if status == "planned":
+        actions.append("review_dry_run_then_rerun_apply_with_explicit_approval")
+    if status == "applied":
+        actions.append("review_foldered_canonical_broader_rollout_result")
+        actions.append("keep_canonical_paths_stable_after_broader_rollout")
     return list(dict.fromkeys(actions))
 
 
