@@ -200,6 +200,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/review/workspace-foldered-canonical-legacy-fallback-tightening-journal.json",
         )
         self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-readiness.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-readiness.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-readiness.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-readiness.json"].category, "audit")
         self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(
             routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].future_path,
