@@ -858,6 +858,53 @@ def make_review_workspace_foldered_canonical_migration_post_finalization_audit_t
     return review_workspace_foldered_canonical_migration_post_finalization_audit
 
 
+def make_review_workspace_foldered_canonical_broader_rollout_readiness_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create a read-only broader rollout readiness descriptor after foldered-canonical finalization."""
+
+    root = Path(default_artifact_root)
+
+    def review_workspace_foldered_canonical_broader_rollout_readiness(
+        artifact_root: str | None = None,
+        post_finalization_audit_json: str | None = None,
+        post_finalization_audit_artifact_ref: str | None = "workspace_foldered_canonical_migration_post_finalization_audit",
+        readiness_score_json: str | None = None,
+        readiness_score_artifact_ref: str | None = "workspace_consumer_readiness_score",
+        delivery_source_audit_json: str | None = None,
+        expansion_result_json: str | None = None,
+        expansion_result_artifact_ref: str | None = "workspace_dual_write_expansion_result",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    ) -> dict[str, Any]:
+        """Review broader rollout readiness without authorizing rollout or mutating artifacts."""
+
+        return review_workspace_foldered_canonical_broader_rollout_readiness_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            post_finalization_audit_json=post_finalization_audit_json,
+            post_finalization_audit_artifact_ref=post_finalization_audit_artifact_ref,
+            readiness_score_json=readiness_score_json,
+            readiness_score_artifact_ref=readiness_score_artifact_ref,
+            delivery_source_audit_json=delivery_source_audit_json,
+            expansion_result_json=expansion_result_json,
+            expansion_result_artifact_ref=expansion_result_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+        )
+
+    review_workspace_foldered_canonical_broader_rollout_readiness.__name__ = (
+        "review_workspace_foldered_canonical_broader_rollout_readiness"
+    )
+    review_workspace_foldered_canonical_broader_rollout_readiness.__doc__ = (
+        "Read-only foldered-canonical broader rollout readiness descriptor. It consumes post-finalization audit, "
+        "workspace consumer readiness, delivery source recheck, verified dual-write expansion evidence, and current backend "
+        "manifest evidence. It does not write artifacts, mutate manifests, enable rollout, run pipelines, start browsers, "
+        "call MCP, or touch mobile full runtime chains."
+    )
+    return review_workspace_foldered_canonical_broader_rollout_readiness
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -7158,6 +7205,310 @@ def _foldered_canonical_post_finalization_audit_next_actions(
         actions.append("keep_automatic_materialization_disabled")
     if any("legacy_fallback" in warning for warning in warnings):
         actions.append("review_legacy_fallback_metadata_before_removing_compatibility_paths")
+    return list(dict.fromkeys(actions))
+
+
+def review_workspace_foldered_canonical_broader_rollout_readiness_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    post_finalization_audit_json: str | None = None,
+    post_finalization_audit_artifact_ref: str | None = "workspace_foldered_canonical_migration_post_finalization_audit",
+    readiness_score_json: str | None = None,
+    readiness_score_artifact_ref: str | None = "workspace_consumer_readiness_score",
+    delivery_source_audit_json: str | None = None,
+    expansion_result_json: str | None = None,
+    expansion_result_artifact_ref: str | None = "workspace_dual_write_expansion_result",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+) -> dict[str, Any]:
+    """Review post-finalization evidence before any broader foldered-canonical rollout."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    audit, audit_error, audit_input = _load_or_read_workspace_foldered_canonical_migration_post_finalization_audit(
+        default_artifact_root=effective_root,
+        post_finalization_audit_json=post_finalization_audit_json,
+        post_finalization_audit_artifact_ref=post_finalization_audit_artifact_ref,
+    )
+    readiness_score, readiness_score_error, readiness_score_input = _load_or_read_workspace_consumer_readiness_score(
+        default_artifact_root=effective_root,
+        readiness_score_json=readiness_score_json,
+        readiness_score_artifact_ref=readiness_score_artifact_ref,
+    )
+    expansion_result, expansion_result_error, expansion_result_input = _load_or_read_workspace_dual_write_expansion_result(
+        default_artifact_root=effective_root,
+        expansion_result_json=expansion_result_json,
+        expansion_result_artifact_ref=expansion_result_artifact_ref,
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+    delivery_source_audit = _parse_delivery_source_audit(delivery_source_audit_json)
+    delivery_source_summary = _summarize_delivery_source_audit_payload(delivery_source_audit)
+
+    audit_summary = audit.get("summary") if isinstance(audit.get("summary"), dict) else {}
+    audit_results = audit.get("audit_results") if isinstance(audit.get("audit_results"), list) else []
+    valid_audit_results = [item for item in audit_results if isinstance(item, dict)]
+    readiness = readiness_score.get("readiness") if isinstance(readiness_score.get("readiness"), dict) else {}
+    expansion_summary = expansion_result.get("summary") if isinstance(expansion_result.get("summary"), dict) else {}
+    manifest_entries = backend_manifest.get("entries") if isinstance(backend_manifest.get("entries"), list) else []
+    finalized_manifest_entries = _foldered_canonical_finalized_manifest_entry_count(manifest_entries)
+    blocker_inputs = {
+        "post_finalization_audit": audit,
+        "post_finalization_audit_error": audit_error,
+        "readiness_score": readiness_score,
+        "readiness_score_error": readiness_score_error,
+        "delivery_source_summary": delivery_source_summary,
+        "expansion_result": expansion_result,
+        "expansion_result_error": expansion_result_error,
+        "backend_manifest_error": backend_manifest_error,
+        "finalized_manifest_entries": finalized_manifest_entries,
+        "audit_result_count": len(valid_audit_results),
+    }
+    blockers = _foldered_canonical_broader_rollout_readiness_blockers(blocker_inputs)
+    warnings = _foldered_canonical_broader_rollout_readiness_warnings(blocker_inputs)
+    status = "ready_for_review" if not blockers else "not_ready" if audit.get("schema_version") == "missing" else "blocked"
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-readiness.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "post_finalization_audit_status": audit.get("status") or "missing",
+            "consumer_readiness_status": readiness_score.get("status") or "missing",
+            "delivery_source_audit_status": delivery_source_summary["status"],
+            "dual_write_expansion_result_status": expansion_result.get("status") or "missing",
+            "backend_manifest_entry_count": len([entry for entry in manifest_entries if isinstance(entry, dict)]),
+            "finalized_manifest_entry_count": finalized_manifest_entries,
+            "audit_result_count": len(valid_audit_results),
+            "verified_audit_result_count": _safe_int(audit_summary.get("verified_audit_result_count")),
+            "planned_expansion_candidate_count": _safe_int(expansion_summary.get("planned_candidate_count")),
+            "verified_expansion_candidate_count": _safe_int(expansion_summary.get("verified_candidate_count")),
+            "broader_rollout_review_allowed": not blockers,
+            "broader_rollout_authorized_by_this_tool": False,
+            "automatic_materialization_allowed": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "post_finalization_audit_input": audit_input,
+        "readiness_score_input": readiness_score_input,
+        "delivery_source_audit_input": {"source": "inline-json" if delivery_source_audit_json else "missing"},
+        "expansion_result_input": expansion_result_input,
+        "backend_manifest_input": backend_manifest_input,
+        "post_finalization_audit_summary": _compact_foldered_canonical_post_finalization_audit(audit),
+        "readiness_score_summary": _compact_workspace_consumer_score(readiness_score),
+        "delivery_source_audit_summary": delivery_source_summary,
+        "expansion_result_summary": _compact_workspace_dual_write_expansion_result(expansion_result),
+        "readiness_checks": {
+            "post_finalization_audit_verified": audit.get("status") == "verified",
+            "consumer_readiness_ready_for_foldered_canonical_review": bool(
+                readiness_score.get("status") == "ready_for_foldered_canonical_review"
+                and readiness.get("foldered_canonical_migration_allowed") is True
+            ),
+            "delivery_source_recheck_clean": bool(
+                delivery_source_summary["status"] == "observed"
+                and delivery_source_summary["source_path_count"] == 0
+                and delivery_source_summary["external_source_path_count"] == 0
+            ),
+            "dual_write_expansion_result_verified": expansion_result.get("status") == "verified",
+            "current_manifest_observed": not backend_manifest_error,
+            "manifest_finalization_metadata_observed": finalized_manifest_entries >= len(valid_audit_results) and bool(valid_audit_results),
+        },
+        "rollout_gate": {
+            "broader_rollout_plan_allowed_for_review": not blockers,
+            "broader_rollout_apply_allowed_by_this_tool": False,
+            "automatic_materialization_allowed": False,
+            "requires_separate_broader_rollout_plan": True,
+            "requires_separate_review_approval": True,
+            "requires_fresh_consumer_readiness_recheck": True,
+            "requires_fresh_delivery_source_audit": True,
+            "requires_explicit_apply_tool_after_plan": True,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_broader_rollout_readiness_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "tightens_legacy_fallback": False,
+            "finalizes_foldered_canonical_migration": False,
+            "authorizes_broader_rollout": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_migration_post_finalization_audit(
+    *,
+    default_artifact_root: Path,
+    post_finalization_audit_json: str | None,
+    post_finalization_audit_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(post_finalization_audit_json, field_name="post_finalization_audit_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = post_finalization_audit_artifact_ref or "workspace_foldered_canonical_migration_post_finalization_audit"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "post_finalization_audit_not_observed", input_summary
+
+
+def _load_or_read_workspace_consumer_readiness_score(
+    *,
+    default_artifact_root: Path,
+    readiness_score_json: str | None,
+    readiness_score_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(readiness_score_json, field_name="readiness_score_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = readiness_score_artifact_ref or "workspace_consumer_readiness_score"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing", "readiness": {}}, "workspace_consumer_readiness_score_not_observed", input_summary
+
+
+def _foldered_canonical_finalized_manifest_entry_count(entries: list[Any]) -> int:
+    count = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        if alias.get("foldered_canonical_finalized") is True:
+            count += 1
+    return count
+
+
+def _foldered_canonical_broader_rollout_readiness_blockers(inputs: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    audit = inputs["post_finalization_audit"]
+    readiness_score = inputs["readiness_score"]
+    delivery_source_summary = inputs["delivery_source_summary"]
+    expansion_result = inputs["expansion_result"]
+    readiness = readiness_score.get("readiness") if isinstance(readiness_score.get("readiness"), dict) else {}
+    if inputs["post_finalization_audit_error"]:
+        blockers.append("post_finalization_audit_unavailable_or_malformed")
+    if audit.get("status") != "verified":
+        blockers.append("post_finalization_audit_not_verified")
+    if inputs["readiness_score_error"]:
+        blockers.append("workspace_consumer_readiness_score_unavailable_or_malformed")
+    if readiness_score.get("status") != "ready_for_foldered_canonical_review" or readiness.get("foldered_canonical_migration_allowed") is not True:
+        blockers.append("workspace_consumer_readiness_not_ready_for_broader_rollout")
+    if delivery_source_summary["status"] == "missing":
+        blockers.append("delivery_source_audit_recheck_missing")
+    elif delivery_source_summary["status"] == "malformed":
+        blockers.append("delivery_source_audit_recheck_malformed")
+    if delivery_source_summary["source_path_count"] > 0:
+        blockers.append("delivery_source_audit_source_path_usage_observed")
+    if delivery_source_summary["external_source_path_count"] > 0:
+        blockers.append("delivery_source_audit_external_source_path_usage_observed")
+    if inputs["expansion_result_error"]:
+        blockers.append("workspace_dual_write_expansion_result_unavailable_or_malformed")
+    if expansion_result.get("status") != "verified":
+        blockers.append("workspace_dual_write_expansion_result_not_verified")
+    if inputs["backend_manifest_error"]:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if inputs["audit_result_count"] <= 0:
+        blockers.append("post_finalization_audit_has_no_verified_scope")
+    if inputs["finalized_manifest_entries"] < inputs["audit_result_count"]:
+        blockers.append("backend_manifest_finalized_entry_count_below_audit_scope")
+    return blockers
+
+
+def _foldered_canonical_broader_rollout_readiness_warnings(inputs: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    expansion_result = inputs["expansion_result"]
+    expansion_summary = expansion_result.get("summary") if isinstance(expansion_result.get("summary"), dict) else {}
+    if _safe_int(expansion_summary.get("medium_risk_observed_count")) > 0:
+        warnings.append("medium_risk_expansion_artifacts_require_explicit_broader_rollout_review")
+    if _safe_int(expansion_summary.get("high_risk_observed_count")) > 0:
+        warnings.append("high_risk_expansion_artifacts_require_separate_broader_rollout_track")
+    if not warnings and not _foldered_canonical_broader_rollout_readiness_blockers(inputs):
+        warnings.append("readiness_descriptor_does_not_authorize_broader_rollout_apply")
+    return warnings
+
+
+def _compact_foldered_canonical_post_finalization_audit(audit: dict[str, Any]) -> dict[str, Any]:
+    summary = audit.get("summary") if isinstance(audit.get("summary"), dict) else {}
+    rollout_gate = audit.get("rollout_gate") if isinstance(audit.get("rollout_gate"), dict) else {}
+    return {
+        "schema_version": audit.get("schema_version") or "",
+        "status": audit.get("status") or "missing",
+        "audit_result_count": _safe_int(summary.get("audit_result_count")),
+        "verified_audit_result_count": _safe_int(summary.get("verified_audit_result_count")),
+        "all_finalized_entries_verified": bool(summary.get("all_finalized_entries_verified")),
+        "matching_journal_entry_found": bool(summary.get("matching_journal_entry_found")),
+        "backend_manifest_transaction_metadata_matches": bool(summary.get("backend_manifest_transaction_metadata_matches")),
+        "broader_rollout_allowed_by_audit_tool": bool(rollout_gate.get("broader_rollout_allowed_by_this_tool")),
+        "automatic_materialization_allowed": bool(rollout_gate.get("automatic_materialization_allowed")),
+        "blocking_reasons": audit.get("blocking_reasons") if isinstance(audit.get("blocking_reasons"), list) else [],
+        "warnings": audit.get("warnings") if isinstance(audit.get("warnings"), list) else [],
+    }
+
+
+def _foldered_canonical_broader_rollout_readiness_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+) -> list[str]:
+    actions: list[str] = []
+    if "post_finalization_audit_unavailable_or_malformed" in blockers or "post_finalization_audit_not_verified" in blockers:
+        actions.append("run_verified_post_finalization_audit_before_broader_rollout_readiness")
+    if "workspace_consumer_readiness_score_unavailable_or_malformed" in blockers or "workspace_consumer_readiness_not_ready_for_broader_rollout" in blockers:
+        actions.append("recheck_workspace_consumer_readiness_before_broader_rollout")
+    if any(reason.startswith("delivery_source_audit_") for reason in blockers):
+        actions.append("run_fresh_delivery_source_audit_without_workspace_source_path_usage")
+    if "workspace_dual_write_expansion_result_unavailable_or_malformed" in blockers or "workspace_dual_write_expansion_result_not_verified" in blockers:
+        actions.append("verify_dual_write_expansion_result_before_broader_rollout_readiness")
+    if "backend_artifact_manifest_unavailable_or_malformed" in blockers or "backend_manifest_finalized_entry_count_below_audit_scope" in blockers:
+        actions.append("provide_current_backend_manifest_with_finalized_workspace_alias_metadata")
+    if status == "ready_for_review":
+        actions.append("prepare_separate_review_only_broader_rollout_plan")
+        actions.append("keep_broader_rollout_apply_and_automatic_materialization_disabled")
+    if any("risk" in warning for warning in warnings):
+        actions.append("split_medium_or_high_risk_artifacts_into_separate_rollout_reviews")
     return list(dict.fromkeys(actions))
 
 
