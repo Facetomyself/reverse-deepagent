@@ -46,6 +46,128 @@ class ReviewGateTests(unittest.TestCase):
         self.assertEqual(gate.next_action, "delivery_allowed")
         self.assertEqual(gate.info_hint_codes, ["pure_strategy_detected"])
 
+
+    def test_gate_surfaces_strong_strategy_evidence_score_without_blocking(self) -> None:
+        rebuild = RebuildResult(
+            status=ExecutionStatus.SUCCESS,
+            rebuild_plan={
+                "ready": True,
+                "review_hints": [],
+                "evidence_score": {
+                    "score": 0.86,
+                    "label": "strong_pure_candidate",
+                    "signals": ["strategy_supported", "pure_extractable"],
+                    "blockers": [],
+                    "recommended_next_action": "review_generated_pure_rebuild_and_prepare_delivery",
+                    "side_effect_policy": {"score_only": True, "changes_ready_calculation": False},
+                },
+            },
+            next_action="run_replay_demo_or_integrate_scrapy",
+        )
+        evidence = promote_evidence(
+            [
+                EvidenceItem(
+                    summary="验证摘要 replay ready",
+                    kind=EvidenceKind.NOTE,
+                    source="function_validation_summary",
+                    anchor="candidate-1",
+                    details={"replay_ready": True, "best_candidate_id": "candidate-1"},
+                    confidence=ConfidenceLevel.HIGH,
+                )
+            ]
+        )
+
+        gate = evaluate_review_gate(rebuild, evidence)
+
+        self.assertEqual(gate.status, "pass")
+        self.assertFalse(gate.blocked)
+        self.assertEqual(gate.strategy_evidence_score_label, "strong_pure_candidate")
+        self.assertEqual(gate.strategy_evidence_score_value, 0.86)
+        self.assertEqual(gate.strategy_evidence_score_blockers, [])
+        self.assertIn("strategy_evidence_score_present", gate.reasons)
+        payload = review_gate_workspace_payload(gate)
+        self.assertEqual(payload["strategy_evidence_score"]["side_effect_policy"]["changes_ready_calculation"], False)
+
+    def test_gate_blocks_ready_plan_when_strategy_evidence_score_needs_more_evidence(self) -> None:
+        rebuild = RebuildResult(
+            status=ExecutionStatus.SUCCESS,
+            rebuild_plan={
+                "ready": True,
+                "review_hints": [],
+                "evidence_score": {
+                    "score": 0.44,
+                    "label": "needs_more_evidence",
+                    "signals": ["strategy_supported"],
+                    "blockers": ["missing_runtime_context"],
+                    "recommended_next_action": "collect_required_runtime_context_samples",
+                    "side_effect_policy": {"score_only": True, "changes_ready_calculation": False},
+                },
+            },
+            next_action="manual_review",
+        )
+        evidence = promote_evidence(
+            [
+                EvidenceItem(
+                    summary="验证摘要 replay ready",
+                    kind=EvidenceKind.NOTE,
+                    source="function_validation_summary",
+                    anchor="candidate-1",
+                    details={"replay_ready": True, "best_candidate_id": "candidate-1"},
+                    confidence=ConfidenceLevel.HIGH,
+                )
+            ]
+        )
+
+        gate = evaluate_review_gate(rebuild, evidence)
+
+        self.assertEqual(gate.status, "block")
+        self.assertTrue(gate.blocked)
+        self.assertEqual(gate.next_action, "collect_required_runtime_context_samples")
+        self.assertEqual(gate.strategy_evidence_score_blockers, ["missing_runtime_context"])
+        self.assertIn("strategy_evidence_score_blockers_present", gate.reasons)
+        self.assertIn("strategy_evidence_score:missing_runtime_context", gate.reasons)
+        self.assertIn("strategy_evidence_score_below_review_threshold", gate.reasons)
+
+    def test_gate_warns_for_reviewable_strategy_evidence_score(self) -> None:
+        rebuild = RebuildResult(
+            status=ExecutionStatus.SUCCESS,
+            rebuild_plan={
+                "ready": True,
+                "review_hints": [],
+                "strategy": {
+                    "evidence_score": {
+                        "score": 0.68,
+                        "label": "reviewable_candidate",
+                        "signals": ["strategy_supported"],
+                        "blockers": [],
+                        "recommended_next_action": "manual_review_before_delivery",
+                        "side_effect_policy": {"score_only": True, "changes_ready_calculation": False},
+                    }
+                },
+            },
+            next_action="manual_review_before_delivery",
+        )
+        evidence = promote_evidence(
+            [
+                EvidenceItem(
+                    summary="验证摘要 replay ready",
+                    kind=EvidenceKind.NOTE,
+                    source="function_validation_summary",
+                    anchor="candidate-1",
+                    details={"replay_ready": True, "best_candidate_id": "candidate-1"},
+                    confidence=ConfidenceLevel.HIGH,
+                )
+            ]
+        )
+
+        gate = evaluate_review_gate(rebuild, evidence)
+
+        self.assertEqual(gate.status, "warn")
+        self.assertFalse(gate.blocked)
+        self.assertEqual(gate.next_action, "manual_review_before_delivery")
+        self.assertEqual(gate.strategy_evidence_score_label, "reviewable_candidate")
+        self.assertIn("strategy_evidence_score_reviewable_candidate", gate.reasons)
+
     def test_gate_blocks_risk_hints_even_when_plan_claims_ready(self) -> None:
         rebuild = RebuildResult(
             status=ExecutionStatus.SUCCESS,

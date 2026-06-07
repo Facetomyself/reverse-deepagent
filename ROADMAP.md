@@ -84,7 +84,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Secret-like runtime context previews redacted to type, length, and digest metadata while preserving legacy `stable_keys` / `volatile_keys` / `changes` compatibility fields.
 - Generated rebuild review hints derived from runtime-context diff classifications for volatile, session-bound, missing, type-drift, and object-drift fields.
 - Plan-only WASM / VM / obfuscation triage hook planner with protected-flow hook/debugger candidates and workspace artifact routes.
-- Provider-neutral strategy evidence scoring baseline that combines detector confidence, validation status, replay URL presence, runtime-context stability, protected-flow triage, and rebuild readiness into review-only `evidence_score` payloads.
+- Provider-neutral strategy evidence scoring baseline that combines detector confidence, validation status, replay URL presence, runtime-context stability, protected-flow triage, and rebuild readiness into review-only `evidence_score` payloads, plus conservative review-gate consumption of score labels / blockers for delivery decisions.
 
 ## Active non-mobile follow-ups
 
@@ -108,7 +108,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 
 ### Strategy and rebuild quality
 
-- Broader evidence scoring consumer adoption in review / delivery gates if downstream automation needs it.
+- Additional evidence scoring consumers beyond the current review-gate baseline if downstream automation needs richer policy tuning or external CI / delivery integration.
 - Strategy detector pluginization if the built-in strategy corpus grows too large.
 
 ### Workspace and artifact evolution
