@@ -189,6 +189,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "automatic_loop_readiness",
             "automaticLoopReadiness",
         )
+        automatic_loop_execution_plan = _object_alias(
+            payload,
+            "paused_session_automatic_loop_execution_plan",
+            "paused-session-automatic-loop-execution-plan",
+            "pausedSessionAutomaticLoopExecutionPlan",
+            "plan_paused_session_automatic_loop_execution",
+            "planPausedSessionAutomaticLoopExecution",
+            "automatic_loop_execution_plan",
+            "automaticLoopExecutionPlan",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -225,11 +235,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         multi_step_execution = _first_object(multi_step_continuation_execution.get("execution"), multi_step_continuation_execution)
         multi_step_loop = _first_object(multi_step_loop_plan.get("loop_plan"), multi_step_loop_plan)
         multi_step_loop_exec = _first_object(multi_step_loop_execution.get("execution"), multi_step_loop_execution)
+        automatic_loop_execution = _first_object(automatic_loop_execution_plan.get("plan"), automatic_loop_execution_plan)
         execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness, automatic_loop_execution_plan)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -362,6 +373,11 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             blockers.append("paused_session_automatic_loop_readiness_blocked")
         if automatic_loop_readiness_status == "ready_for_review":
             warnings.append("automatic_loop_readiness_requires_review")
+        automatic_loop_execution_plan_status = _string(automatic_loop_execution.get("status"))
+        if automatic_loop_execution_plan_status == "blocked":
+            blockers.append("paused_session_automatic_loop_execution_plan_blocked")
+        if automatic_loop_execution_plan_status == "ready_for_review":
+            warnings.append("automatic_loop_execution_plan_requires_review")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -629,6 +645,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "next_action": _string(automatic_loop_readiness.get("next_action")),
                     "blockers": automatic_loop_readiness.get("blockers") if isinstance(automatic_loop_readiness.get("blockers"), list) else [],
                 },
+                "automatic_loop_execution_plan": {
+                    "status": _string(automatic_loop_execution.get("status") or "unknown"),
+                    "ready_for_review": _boolish(automatic_loop_execution.get("ready_for_review")),
+                    "execution_plan_ready_for_review": _boolish(automatic_loop_execution.get("execution_plan_ready_for_review")),
+                    "planned_iteration_count": automatic_loop_execution.get("planned_iteration_count", 0),
+                    "max_planned_iterations": automatic_loop_execution.get("max_planned_iterations", 0),
+                    "future_executor_implemented": _boolish(_nested_get(automatic_loop_execution, "future_executor_contract", "implemented")),
+                    "next_action": _string(automatic_loop_execution.get("next_action")),
+                    "blockers": automatic_loop_execution.get("blockers") if isinstance(automatic_loop_execution.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
@@ -821,6 +847,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_multi_step_loop_execution_blockers"
     if "paused_session_automatic_loop_readiness_blocked" in blockers:
         return "inspect_paused_session_automatic_loop_readiness_blockers"
+    if "paused_session_automatic_loop_execution_plan_blocked" in blockers:
+        return "inspect_paused_session_automatic_loop_execution_plan_blockers"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
@@ -867,6 +895,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "review_paused_session_loop_execution_result"
     if "automatic_loop_readiness_requires_review" in warnings:
         return "review_future_bounded_automatic_loop_executor_contract"
+    if "automatic_loop_execution_plan_requires_review" in warnings:
+        return "review_future_bounded_automatic_loop_executor_plan"
     if "multi_step_continuation_workflow_requires_review" in warnings:
         return "approve_multi_step_continuation_workflow"
     if "cross_process_continuation_checkpoint_ready_for_next_action_review" in warnings:

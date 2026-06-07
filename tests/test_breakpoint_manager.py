@@ -27,6 +27,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionMultiStepLoopExecutionSpec,
     PausedSessionAutomaticLoopReadinessManager,
     PausedSessionAutomaticLoopReadinessSpec,
+    PausedSessionAutomaticLoopExecutionPlanManager,
+    PausedSessionAutomaticLoopExecutionPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1560,6 +1562,76 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertIn("session_lifecycle_required_for_automatic_loop_review", result.readiness["blockers"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+
+    def test_automatic_loop_execution_plan_reviews_future_executor_without_side_effects(self) -> None:
+        readiness = {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-readiness.v1",
+            "status": "ready_for_review",
+            "ready_for_review": True,
+            "automation_executor_implemented": False,
+            "automatic_multi_step_loop_supported": False,
+            "loop_id": "loop-plan-1",
+            "workflow_id": "workflow-plan-1",
+            "pause_session_id": "pause-plan-1",
+            "target_id": "target-plan-1",
+            "max_automatic_iterations": 2,
+            "candidate_iteration_count": 2,
+            "candidate_iterations": [
+                {"iteration_index": 1, "workflow_step_index": 0, "method": "Debugger.stepOver", "fingerprint": "a"},
+                {"iteration_index": 2, "workflow_step_index": 1, "method": "Debugger.resume", "fingerprint": "b"},
+            ],
+            "blockers": [],
+        }
+        spec = PausedSessionAutomaticLoopExecutionPlanSpec.from_context(
+            {
+                "paused_session_automatic_loop_execution_plan": True,
+                "paused_session_automatic_loop_readiness": readiness,
+                "max_planned_iterations": 2,
+            }
+        )
+
+        result = PausedSessionAutomaticLoopExecutionPlanManager().plan(spec)
+        plan = result.plan
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(plan["schema_version"], "reverse-deepagent.paused-session-automatic-loop-execution-plan.v1")
+        self.assertTrue(plan["execution_plan_ready_for_review"])
+        self.assertEqual(plan["planned_iteration_count"], 2)
+        self.assertFalse(plan["future_executor_contract"]["implemented"])
+        self.assertEqual(plan["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["multi_step_continuation_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+        self.assertFalse(result.side_effect_policy["long_lived_cross_process_session_managed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_execution_plan_blocks_without_ready_readiness(self) -> None:
+        missing = PausedSessionAutomaticLoopExecutionPlanSpec.from_context({"paused_session_automatic_loop_execution_plan": True})
+        missing_result = PausedSessionAutomaticLoopExecutionPlanManager().plan(missing)
+
+        self.assertEqual(missing_result.status, "blocked")
+        self.assertIn("automatic_loop_readiness_required", missing_result.plan["blockers"])
+
+        blocked = PausedSessionAutomaticLoopExecutionPlanSpec.from_context(
+            {
+                "paused_session_automatic_loop_execution_plan": True,
+                "paused_session_automatic_loop_readiness": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "candidate_iterations": [],
+                    "blockers": ["multi_step_loop_plan_required"],
+                },
+            }
+        )
+        blocked_result = PausedSessionAutomaticLoopExecutionPlanManager().plan(blocked)
+
+        self.assertEqual(blocked_result.status, "blocked")
+        self.assertIn("automatic_loop_readiness_not_ready", blocked_result.plan["blockers"])
+        self.assertIn("automatic_loop_readiness_has_blockers", blocked_result.plan["blockers"])
+        self.assertFalse(blocked_result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(blocked_result.side_effect_policy["automatic_multi_step_loop"])
 
     def test_multi_step_loop_execution_runs_one_reviewed_next_iteration(self) -> None:
         session = RecordingCDPSession(emit_pause_on_step=True)

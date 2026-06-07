@@ -6517,6 +6517,58 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_automatic_loop_readiness_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_automatic_loop_execution_plan_from_native_runtime_is_plan_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        readiness = {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-readiness.v1",
+            "status": "ready_for_review",
+            "ready_for_review": True,
+            "automation_executor_implemented": False,
+            "automatic_multi_step_loop_supported": False,
+            "loop_id": "native-auto-loop-plan-1",
+            "workflow_id": "native-auto-workflow-plan-1",
+            "pause_session_id": "native-auto-pause-plan-1",
+            "target_id": "native-auto-target-plan-1",
+            "candidate_iteration_count": 2,
+            "candidate_iterations": [
+                {"iteration_index": 1, "workflow_step_index": 0, "method": "Debugger.stepOver", "fingerprint": "a"},
+                {"iteration_index": 2, "workflow_step_index": 1, "method": "Debugger.resume", "fingerprint": "b"},
+            ],
+            "blockers": [],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-automatic-loop-execution-plan",
+            {
+                "paused_session_automatic_loop_execution_plan": True,
+                "paused_session_automatic_loop_readiness": readiness,
+                "max_planned_iterations": 2,
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_future_bounded_automatic_loop_executor_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-automatic-loop-execution-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["planned_iteration_count"], 2)
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_multi_step_loop"])
+        self.assertFalse(result.artifacts[0].metadata["long_lived_cross_process_session_managed"])
+        self.assertIn("paused_session_automatic_loop_execution_plan_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_executor_implemented=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_event_subscribed=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_multi_step_executed=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_automatic_loop=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_long_lived_session=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_multi_step_loop_plan_from_native_runtime_is_review_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
