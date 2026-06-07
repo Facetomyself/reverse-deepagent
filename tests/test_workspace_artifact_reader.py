@@ -10,6 +10,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
+    make_plan_workspace_foldered_canonical_migration_pilot_tool,
     make_plan_workspace_dual_write_expansion_tool,
     make_plan_workspace_dual_write_pilot_tool,
     make_read_workspace_artifact_tool,
@@ -23,6 +24,7 @@ from reverse_deepagent.tools.artifact_tools import (
     record_workspace_dual_write_pilot_result_payload,
     review_workspace_dual_write_expansion_workflow_payload,
     review_workspace_dual_write_pilot_workflow_payload,
+    plan_workspace_foldered_canonical_migration_pilot_payload,
     summarize_workspace_artifact_read,
 )
 
@@ -53,6 +55,52 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             readiness_score_json=json.dumps(readiness_score),
             artifact_keys_json=json.dumps(artifact_keys or ["workspace_task_card", "workspace_runtime_context"]),
         )
+
+    def _ready_foldered_canonical_readiness_score(self) -> dict:
+        return {
+            "schema_version": "reverse-deepagent.workspace-consumer-readiness-score.v1",
+            "status": "ready_for_foldered_canonical_review",
+            "summary": {
+                "overall_score": 0.95,
+                "overall_label": "ready_for_foldered_canonical_review",
+            },
+            "readiness": {
+                "limited_dual_write_expansion_review_allowed": True,
+                "foldered_canonical_migration_allowed": True,
+            },
+            "pilot_evidence": {
+                "schema_version": "reverse-deepagent.workspace-dual-write-pilot-result.v1",
+                "status": "verified",
+                "score": 1.0,
+            },
+            "blocking_reasons": [],
+            "warnings": [],
+        }
+
+    def _verified_workspace_dual_write_expansion_result(self, plan: dict) -> dict:
+        return {
+            "schema_version": "reverse-deepagent.workspace-dual-write-expansion-result.v1",
+            "status": "verified",
+            "summary": {
+                "planned_candidate_count": len(plan["candidate_artifacts"]),
+                "verified_candidate_count": len(plan["candidate_artifacts"]),
+                "out_of_scope_observed_count": 0,
+                "high_risk_observed_count": 0,
+                "medium_risk_observed_count": 0,
+            },
+            "candidate_results": [
+                {
+                    "artifact_key": candidate["artifact_key"],
+                    "status": "verified_dual_written",
+                    "legacy_path": candidate["legacy_path"],
+                    "future_path": candidate["future_path"],
+                    "digest_match": True,
+                }
+                for candidate in plan["candidate_artifacts"]
+            ],
+            "blocking_reasons": [],
+            "warnings": [],
+        }
 
     def test_reader_resolves_key_legacy_future_and_virtual_uri_to_canonical_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -668,6 +716,110 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertTrue(record_payload["side_effect_policy"]["read_only"])
             self.assertFalse(review_payload["side_effect_policy"]["calls_mcp"])
             self.assertFalse(record_payload["side_effect_policy"]["calls_mcp"])
+
+    def test_foldered_canonical_migration_pilot_blocks_without_verified_expansion_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = plan_workspace_foldered_canonical_migration_pilot_payload(
+                default_artifact_root=root,
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+            )
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-foldered-canonical-migration-pilot-plan.v1")
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("workspace_dual_write_expansion_result_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("verified_workspace_dual_write_expansion_result_required", payload["blocking_reasons"])
+            self.assertIn("no_foldered_canonical_migration_candidates_selected", payload["blocking_reasons"])
+            self.assertTrue(payload["selection_policy"]["requires_verified_expansion_result"])
+            self.assertFalse(payload["selection_policy"]["physical_migration_enabled"])
+            self.assertFalse(payload["selection_policy"]["actual_canonical_path_change_enabled"])
+            self.assertTrue(payload["summary"]["legacy_canonical_path_remains_authoritative"])
+            self.assertFalse(payload["summary"]["physical_migration_enabled"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertTrue(payload["side_effect_policy"]["files_inspected"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(payload["side_effect_policy"]["changes_canonical_paths"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_foldered_canonical_migration_pilot_uses_verified_expansion_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            expansion_plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card", "workspace_runtime_context"])
+            expansion_result = self._verified_workspace_dual_write_expansion_result(expansion_plan)
+
+            payload = plan_workspace_foldered_canonical_migration_pilot_payload(
+                default_artifact_root=root,
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+                expansion_result_json=json.dumps(expansion_result),
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["candidate_count"], 2)
+            self.assertEqual(payload["summary"]["verified_expansion_artifact_count"], 2)
+            self.assertEqual(payload["summary"]["expansion_result_status"], "verified")
+            self.assertEqual(payload["blocking_reasons"], [])
+            self.assertIn("canonical_path_change_requires_separate_reviewed_execution_after_pilot_plan", payload["warnings"])
+            self.assertEqual(
+                [item["artifact_key"] for item in payload["candidate_artifacts"]],
+                ["workspace_task_card", "workspace_runtime_context"],
+            )
+            for candidate in payload["candidate_artifacts"]:
+                self.assertEqual(candidate["risk"]["risk_level"], "low")
+                self.assertTrue(candidate["migration_plan"]["plan_only"])
+                self.assertTrue(candidate["migration_plan"]["review_required"])
+                self.assertTrue(candidate["migration_plan"]["legacy_canonical_path_remains_authoritative"])
+                self.assertFalse(candidate["migration_plan"]["physical_migration_enabled"])
+                self.assertFalse(candidate["migration_plan"]["canonical_path_change_enabled"])
+                self.assertTrue(candidate["future_canonical_path"].startswith("/workspace/"))
+                self.assertTrue(candidate["virtual_uri"].startswith("virtual://workspace/"))
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["runs_pipeline"])
+            self.assertFalse(payload["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(payload["side_effect_policy"]["changes_canonical_paths"])
+
+    def test_foldered_canonical_migration_pilot_can_read_expansion_result_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            expansion_plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            expansion_result = self._verified_workspace_dual_write_expansion_result(expansion_plan)
+            result_path = root / "workspace" / "workspace-dual-write-expansion-result.json"
+            result_path.parent.mkdir(parents=True)
+            result_path.write_text(json.dumps(expansion_result), encoding="utf-8")
+
+            payload = plan_workspace_foldered_canonical_migration_pilot_payload(
+                default_artifact_root=root,
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["expansion_result_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["expansion_result_input"]["artifact_ref"], "workspace_dual_write_expansion_result")
+            self.assertEqual(payload["expansion_result_input"]["read_status"], "found")
+            self.assertEqual(payload["candidate_artifacts"][0]["artifact_key"], "workspace_task_card")
+
+    def test_foldered_canonical_migration_pilot_tool_returns_payload_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            expansion_plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            expansion_result = self._verified_workspace_dual_write_expansion_result(expansion_plan)
+            tool = make_plan_workspace_foldered_canonical_migration_pilot_tool(root)
+
+            payload = tool(
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+                expansion_result_json=json.dumps(expansion_result),
+            )
+
+            self.assertEqual(tool.__name__, "plan_workspace_foldered_canonical_migration_pilot")
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-foldered-canonical-migration-pilot-plan.v1")
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["creates_directories"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
 
     def test_workspace_dual_write_pilot_plan_selects_low_risk_candidates_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

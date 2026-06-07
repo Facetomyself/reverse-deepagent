@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from reverse_deepagent.runtime.base import ReverseRuntime
 from reverse_deepagent.schemas import FinalResult
-from reverse_deepagent.workspace_contract import WorkspacePathResolution, WorkspacePathResolver, default_workspace_artifact_routes
+from reverse_deepagent.workspace_contract import WorkspacePathResolution, WorkspacePathResolver, default_workspace_artifact_routes, workspace_virtual_uri
 
 
 ArtifactTool = Callable[..., dict[str, Any]]
@@ -230,6 +230,47 @@ def make_record_workspace_dual_write_expansion_result_tool(default_artifact_root
         "migrates paths, changes canonical paths, starts browsers, calls MCP, or touches mobile full runtime chains."
     )
     return record_workspace_dual_write_expansion_result
+
+
+def make_plan_workspace_foldered_canonical_migration_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only planner for a narrow foldered-canonical migration pilot."""
+
+    root = Path(default_artifact_root)
+
+    def plan_workspace_foldered_canonical_migration_pilot(
+        artifact_root: str | None = None,
+        readiness_score_json: str | None = None,
+        readiness_report_json: str | None = None,
+        pilot_result_json: str | None = None,
+        expansion_result_json: str | None = None,
+        expansion_result_artifact_ref: str | None = "workspace_dual_write_expansion_result",
+        artifact_keys_json: str | None = None,
+        max_artifacts: int = 8,
+        include_medium_risk: bool = False,
+    ) -> dict[str, Any]:
+        """Plan, but never execute, a narrow foldered-canonical migration pilot."""
+
+        return plan_workspace_foldered_canonical_migration_pilot_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            readiness_score_json=readiness_score_json,
+            readiness_report_json=readiness_report_json,
+            pilot_result_json=pilot_result_json,
+            expansion_result_json=expansion_result_json,
+            expansion_result_artifact_ref=expansion_result_artifact_ref,
+            artifact_keys_json=artifact_keys_json,
+            max_artifacts=max_artifacts,
+            include_medium_risk=include_medium_risk,
+        )
+
+    plan_workspace_foldered_canonical_migration_pilot.__name__ = "plan_workspace_foldered_canonical_migration_pilot"
+    plan_workspace_foldered_canonical_migration_pilot.__doc__ = (
+        "Read-only / plan-only narrow foldered-canonical migration pilot descriptor. It consumes workspace consumer readiness "
+        "and verified expansion result evidence, then proposes reviewed artifact keys whose future foldered paths could be piloted. "
+        "It does not write artifacts, create directories, migrate paths, change canonical paths, run pipelines, start browsers, call MCP, "
+        "or touch mobile full runtime chains."
+    )
+    return plan_workspace_foldered_canonical_migration_pilot
 
 
 def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
@@ -1452,6 +1493,271 @@ def _workspace_dual_write_expansion_review_workflow(
         "does_not_migrate_paths": True,
         "legacy_canonical_path_remains_authoritative": True,
     }
+
+
+def plan_workspace_foldered_canonical_migration_pilot_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    readiness_score_json: str | None = None,
+    readiness_report_json: str | None = None,
+    pilot_result_json: str | None = None,
+    expansion_result_json: str | None = None,
+    expansion_result_artifact_ref: str | None = "workspace_dual_write_expansion_result",
+    artifact_keys_json: str | None = None,
+    max_artifacts: int = 8,
+    include_medium_risk: bool = False,
+) -> dict[str, Any]:
+    """Return a review-only plan for a narrow foldered-canonical migration pilot."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    readiness_score, readiness_score_error = _load_or_compute_workspace_consumer_readiness_score(
+        default_artifact_root=effective_root,
+        readiness_score_json=readiness_score_json,
+        readiness_report_json=readiness_report_json,
+        pilot_result_json=pilot_result_json,
+    )
+    expansion_result, expansion_result_error, expansion_result_input = _load_or_read_workspace_dual_write_expansion_result(
+        default_artifact_root=effective_root,
+        expansion_result_json=expansion_result_json,
+        expansion_result_artifact_ref=expansion_result_artifact_ref,
+    )
+    requested_keys, requested_error = _parse_artifact_keys_json(artifact_keys_json)
+    explicit_selection = requested_keys is not None
+    max_count = max(0, int(max_artifacts))
+
+    routes_by_key = {route.artifact_key: route for route in default_workspace_artifact_routes()}
+    verified_keys = _verified_expansion_result_artifact_keys(expansion_result if isinstance(expansion_result, dict) else {})
+    selected_keys = requested_keys or verified_keys
+    if max_count:
+        selected_keys = selected_keys[:max_count]
+    elif max_count == 0:
+        selected_keys = []
+
+    candidate_artifacts: list[dict[str, Any]] = []
+    unknown_keys: list[str] = []
+    not_verified_keys: list[str] = []
+    high_risk_requested: list[str] = []
+    medium_risk_selected: list[str] = []
+    for key in selected_keys:
+        route = routes_by_key.get(key)
+        if route is None:
+            unknown_keys.append(key)
+            continue
+        if key not in verified_keys:
+            not_verified_keys.append(key)
+        risk = _dual_write_route_risk(route)
+        if risk["risk_level"] == "high":
+            high_risk_requested.append(key)
+        if risk["risk_level"] == "medium":
+            medium_risk_selected.append(key)
+        candidate_artifacts.append(_foldered_canonical_migration_candidate(route, risk))
+
+    readiness = readiness_score.get("readiness") if isinstance(readiness_score.get("readiness"), dict) else {}
+    readiness_status = str(readiness_score.get("status") or "blocked")
+    expansion_status = str(expansion_result.get("status") or "missing") if isinstance(expansion_result, dict) else "missing"
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if readiness_score_error:
+        blockers.append("workspace_consumer_readiness_score_malformed")
+    if not readiness.get("foldered_canonical_migration_allowed") or readiness_status != "ready_for_foldered_canonical_review":
+        blockers.append("workspace_consumers_not_ready_for_foldered_canonical_migration")
+    if expansion_result_error:
+        blockers.append("workspace_dual_write_expansion_result_unavailable_or_malformed")
+    if expansion_status != "verified":
+        blockers.append("verified_workspace_dual_write_expansion_result_required")
+    if requested_error:
+        blockers.append("artifact_keys_json_malformed")
+    if unknown_keys:
+        blockers.append("unknown_requested_artifact_keys")
+    if not_verified_keys:
+        blockers.append("requested_artifacts_not_verified_by_expansion_result")
+    if high_risk_requested:
+        blockers.append("high_risk_requested_artifacts_require_separate_review")
+    if medium_risk_selected and not include_medium_risk:
+        blockers.append("medium_risk_artifacts_require_explicit_include_medium_risk")
+    if not candidate_artifacts:
+        blockers.append("no_foldered_canonical_migration_candidates_selected")
+    if medium_risk_selected and include_medium_risk:
+        warnings.append("medium_risk_artifacts_selected_for_foldered_canonical_review")
+    if not blockers:
+        warnings.append("canonical_path_change_requires_separate_reviewed_execution_after_pilot_plan")
+
+    status = "ready_for_review" if not blockers else "blocked"
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-pilot-plan.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "candidate_count": len(candidate_artifacts),
+            "verified_expansion_artifact_count": len(verified_keys),
+            "readiness_score_status": readiness_status,
+            "expansion_result_status": expansion_status,
+            "unknown_requested_artifact_key_count": len(unknown_keys),
+            "not_verified_requested_artifact_key_count": len(not_verified_keys),
+            "high_risk_requested_artifact_count": len(high_risk_requested),
+            "medium_risk_selected_artifact_count": len(medium_risk_selected),
+            "explicit_selection": explicit_selection,
+            "max_artifacts": max_count,
+            "review_required": True,
+            "legacy_canonical_path_remains_authoritative": True,
+            "physical_migration_enabled": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "selection_policy": {
+            "default_source": "verified_expansion_result_artifact_keys",
+            "requires_workspace_consumer_readiness_score": True,
+            "requires_foldered_canonical_migration_allowed": True,
+            "requires_verified_expansion_result": True,
+            "explicit_keys_must_be_verified_by_expansion_result": True,
+            "default_allows_medium_risk": False,
+            "include_medium_risk_requested": bool(include_medium_risk),
+            "high_risk_explicit_keys_block_plan": True,
+            "legacy_canonical_path_remains_authoritative": True,
+            "plan_only": True,
+            "physical_migration_enabled": False,
+            "actual_canonical_path_change_enabled": False,
+        },
+        "readiness_score_summary": _compact_workspace_consumer_score(readiness_score),
+        "expansion_result_summary": _compact_workspace_dual_write_expansion_result(expansion_result if isinstance(expansion_result, dict) else {}),
+        "expansion_result_input": expansion_result_input,
+        "candidate_artifacts": candidate_artifacts,
+        "blocked_artifacts": {
+            "unknown_artifact_keys": unknown_keys,
+            "not_verified_artifact_keys": not_verified_keys,
+            "high_risk_requested_artifact_keys": high_risk_requested,
+            "medium_risk_selected_artifact_keys": medium_risk_selected,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_migration_pilot_next_actions(blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": True,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_dual_write_expansion_result(
+    *,
+    default_artifact_root: Path,
+    expansion_result_json: str | None,
+    expansion_result_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(expansion_result_json, field_name="expansion_result_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "malformed", "summary": {}}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = expansion_result_artifact_ref or "workspace_dual_write_expansion_result"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "not_observed", "summary": {}}, "workspace_dual_write_expansion_result_not_observed", input_summary
+
+
+def _verified_expansion_result_artifact_keys(expansion_result: dict[str, Any]) -> list[str]:
+    keys: list[str] = []
+    for item in expansion_result.get("candidate_results") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("status") != "verified_dual_written":
+            continue
+        key = str(item.get("artifact_key") or "")
+        if key:
+            keys.append(key)
+    return list(dict.fromkeys(keys))
+
+
+def _foldered_canonical_migration_candidate(route: Any, risk: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_key": route.artifact_key,
+        "legacy_canonical_path": route.legacy_path,
+        "current_canonical_path": route.legacy_path,
+        "future_canonical_path": route.future_path,
+        "future_path": route.future_path,
+        "virtual_uri": workspace_virtual_uri(route.future_path),
+        "virtual_folder": route.virtual_folder,
+        "category": route.category,
+        "producer_roles": list(route.producer_roles),
+        "risk": risk,
+        "migration_plan": {
+            "plan_only": True,
+            "review_required": True,
+            "legacy_canonical_path_remains_authoritative": True,
+            "future_path_candidate": route.future_path,
+            "physical_migration_enabled": False,
+            "canonical_path_change_enabled": False,
+            "rollback_plan_required_before_execution": True,
+        },
+    }
+
+
+def _compact_workspace_dual_write_expansion_result(expansion_result: dict[str, Any]) -> dict[str, Any]:
+    summary = expansion_result.get("summary") if isinstance(expansion_result.get("summary"), dict) else {}
+    return {
+        "schema_version": expansion_result.get("schema_version") or "",
+        "status": expansion_result.get("status") or "missing",
+        "planned_candidate_count": _safe_int(summary.get("planned_candidate_count")),
+        "verified_candidate_count": _safe_int(summary.get("verified_candidate_count")),
+        "out_of_scope_observed_count": _safe_int(summary.get("out_of_scope_observed_count")),
+        "high_risk_observed_count": _safe_int(summary.get("high_risk_observed_count")),
+        "medium_risk_observed_count": _safe_int(summary.get("medium_risk_observed_count")),
+        "blocking_reasons": expansion_result.get("blocking_reasons") if isinstance(expansion_result.get("blocking_reasons"), list) else [],
+        "warnings": expansion_result.get("warnings") if isinstance(expansion_result.get("warnings"), list) else [],
+    }
+
+
+def _foldered_canonical_migration_pilot_next_actions(blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "workspace_consumer_readiness_score_malformed" in blockers:
+        actions.append("fix_readiness_score_json_or_omit_it_to_recompute_score")
+    if "workspace_consumers_not_ready_for_foldered_canonical_migration" in blockers:
+        actions.append("close_resolver_adoption_and_source_path_blockers_before_foldered_canonical_pilot")
+    if "workspace_dual_write_expansion_result_unavailable_or_malformed" in blockers:
+        actions.append("record_verified_workspace_dual_write_expansion_result_before_migration_pilot")
+    if "verified_workspace_dual_write_expansion_result_required" in blockers:
+        actions.append("verify_expansion_result_before_foldered_canonical_migration_pilot")
+    if "artifact_keys_json_malformed" in blockers:
+        actions.append("fix_artifact_keys_json_and_retry_foldered_canonical_plan")
+    if "unknown_requested_artifact_keys" in blockers:
+        actions.append("remove_or_register_unknown_artifact_keys")
+    if "requested_artifacts_not_verified_by_expansion_result" in blockers:
+        actions.append("restrict_migration_pilot_to_verified_expansion_artifact_keys")
+    if "high_risk_requested_artifacts_require_separate_review" in blockers:
+        actions.append("split_high_risk_artifacts_out_of_foldered_canonical_pilot")
+    if "medium_risk_artifacts_require_explicit_include_medium_risk" in blockers:
+        actions.append("set_include_medium_risk_only_after_explicit_review")
+    if "no_foldered_canonical_migration_candidates_selected" in blockers:
+        actions.append("select_verified_low_risk_artifacts_for_foldered_canonical_pilot")
+    if not blockers:
+        actions.append("review_foldered_canonical_migration_pilot_plan_before_any_execution")
+        actions.append("prepare_separate_rollback_plan_before_canonical_path_change")
+    if "medium_risk_artifacts_selected_for_foldered_canonical_review" in warnings:
+        actions.append("review_medium_risk_artifacts_before_foldered_canonical_pilot")
+    return actions
 
 
 def _parse_delivery_source_audit(delivery_source_audit_json: str | None) -> dict[str, Any] | None:
