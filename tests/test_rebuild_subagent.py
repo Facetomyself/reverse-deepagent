@@ -215,6 +215,7 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertIn("record_workspace_foldered_canonical_migration_post_apply_validation_result", tool_names)
         self.assertIn("review_workspace_foldered_canonical_legacy_fallback_tightening_readiness", tool_names)
         self.assertIn("plan_workspace_foldered_canonical_legacy_fallback_tightening", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_legacy_fallback_tightening_preflight", tool_names)
         self.assertIn("plan_workspace_dual_write_pilot", tool_names)
         self.assertIn("review_workspace_dual_write_pilot_workflow", tool_names)
         self.assertIn("record_workspace_dual_write_pilot_result", tool_names)

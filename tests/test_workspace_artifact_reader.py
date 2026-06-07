@@ -11,6 +11,7 @@ from reverse_deepagent.tools.artifact_tools import (
     plan_workspace_foldered_canonical_legacy_fallback_tightening_payload,
     record_workspace_foldered_canonical_migration_post_apply_validation_result_payload,
     review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload,
+    review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_payload,
     make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
@@ -19,6 +20,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_plan_workspace_foldered_canonical_migration_apply_tool,
     make_plan_workspace_foldered_canonical_migration_approval_tool,
     make_plan_workspace_foldered_canonical_legacy_fallback_tightening_tool,
+    make_review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_tool,
     make_review_workspace_foldered_canonical_migration_manifest_dry_run_tool,
     make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool,
     make_review_workspace_foldered_canonical_migration_post_apply_validation_tool,
@@ -1037,6 +1039,27 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             ],
         }
 
+    def _approval_ledger_for_legacy_fallback_tightening(self, plan: dict, *, digest_override: str | None = None) -> dict:
+        digest = digest_override or plan["digest_guard"]["legacy_fallback_tightening_plan_digest"]
+        return {
+            "version": "2026-06-01.review-approval-ledger-v1",
+            "entry_count": 1,
+            "entries": [
+                {
+                    "approval_id": "approval-foldered-legacy-fallback-tightening",
+                    "subject_id": plan["approval_requirements"]["subject_id"],
+                    "action": "foldered_canonical_legacy_fallback_tightening",
+                    "decision": "approved",
+                    "status": "written",
+                    "reviewer": "reviewer-a",
+                    "subject_digest_sha256": digest,
+                    "metadata": {
+                        "idempotency_key": "idem-legacy-fallback-tightening",
+                    },
+                }
+            ],
+        }
+
     def _ready_physical_apply_evidence(self, root: Path, artifact_keys: list[str] | None = None) -> tuple[dict, dict, dict, dict]:
         preflight = self._ready_foldered_canonical_migration_preflight(root, artifact_keys or ["workspace_task_card"])
         apply_plan = plan_workspace_foldered_canonical_migration_apply_payload(
@@ -1091,6 +1114,46 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             json.dumps(backend_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+
+    def _ready_legacy_fallback_tightening_plan(self, root: Path, artifact_keys: list[str] | None = None) -> tuple[dict, dict]:
+        apply_plan, dry_run, physical_preflight, backend_manifest = self._ready_physical_apply_evidence(
+            root,
+            artifact_keys or ["workspace_task_card"],
+        )
+        self._write_physical_apply_evidence_artifacts(
+            root,
+            apply_plan=apply_plan,
+            dry_run=dry_run,
+            physical_preflight=physical_preflight,
+            backend_manifest=backend_manifest,
+        )
+        execute_workspace_foldered_canonical_physical_apply_payload(
+            default_artifact_root=root,
+            mode="apply",
+            approve_physical_apply=True,
+        )
+        promoted_manifest = json.loads((root / "workspace" / "backend-artifact-manifest.json").read_text(encoding="utf-8"))
+        validation = review_workspace_foldered_canonical_migration_post_apply_validation_payload(
+            default_artifact_root=root,
+            migration_manifest_dry_run_json=json.dumps(dry_run),
+            migration_apply_plan_json=json.dumps(apply_plan),
+            post_apply_backend_manifest_json=json.dumps(promoted_manifest),
+        )
+        validation_result = record_workspace_foldered_canonical_migration_post_apply_validation_result_payload(
+            default_artifact_root=root,
+            post_apply_validation_json=json.dumps(validation),
+        )
+        readiness = review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload(
+            default_artifact_root=root,
+            post_apply_validation_result_json=json.dumps(validation_result),
+            readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+        )
+        plan = plan_workspace_foldered_canonical_legacy_fallback_tightening_payload(
+            default_artifact_root=root,
+            legacy_fallback_tightening_readiness_json=json.dumps(readiness),
+            backend_manifest_json=json.dumps(promoted_manifest),
+        )
+        return plan, promoted_manifest
 
     def test_foldered_canonical_migration_apply_plan_blocks_without_ready_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1855,6 +1918,11 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertEqual(payload["approval_requirements"]["approval_action"], "foldered_canonical_legacy_fallback_tightening")
             self.assertFalse(payload["approval_requirements"]["records_approval_in_this_tool"])
             self.assertFalse(payload["transaction_journal_plan"]["writes_journal_in_this_tool"])
+            self.assertEqual(
+                payload["executor_gate"]["preflight_tool"],
+                "review_workspace_foldered_canonical_legacy_fallback_tightening_preflight",
+            )
+            self.assertTrue(payload["executor_gate"]["preflight_tool_implemented"])
             self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
             self.assertFalse(payload["executor_gate"]["allows_legacy_fallback_tightening_in_this_tool"])
             self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
@@ -1937,6 +2005,113 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertEqual(tool.__name__, "plan_workspace_foldered_canonical_legacy_fallback_tightening")
             self.assertEqual(payload["status"], "ready_for_review")
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+
+    def test_legacy_fallback_tightening_preflight_blocks_without_ready_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_payload(
+                default_artifact_root=root,
+            )
+
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-preflight.v1",
+            )
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("legacy_fallback_tightening_plan_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("review_approval_ledger_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("review_approval_ledger_missing_matching_legacy_fallback_tightening_approval", payload["blocking_reasons"])
+            self.assertFalse(payload["executor_gate"]["ready_for_legacy_fallback_tightening_executor_review"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["tightens_legacy_fallback"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_legacy_fallback_tightening_preflight_uses_ready_plan_manifest_and_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, promoted_manifest = self._ready_legacy_fallback_tightening_plan(
+                root,
+                ["workspace_task_card", "workspace_runtime_context"],
+            )
+
+            payload = review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_payload(
+                default_artifact_root=root,
+                legacy_fallback_tightening_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(promoted_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_legacy_fallback_tightening(plan)),
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["planned_tightening_update_count"], 2)
+            self.assertEqual(payload["summary"]["manifest_candidate_ready_count"], 2)
+            self.assertTrue(payload["summary"]["matching_review_approval_found"])
+            self.assertTrue(payload["summary"]["ready_for_legacy_fallback_tightening_executor_review"])
+            self.assertFalse(payload["summary"]["legacy_fallback_tightened_by_this_tool"])
+            self.assertTrue(payload["digest_guard"]["legacy_fallback_tightening_plan_digest"])
+            self.assertTrue(payload["digest_guard"]["digest_matches_approval"])
+            self.assertTrue(payload["review_approval_gate"]["approved"])
+            self.assertTrue(payload["review_approval_gate"]["digest_matches_expected"])
+            self.assertTrue(payload["manifest_revalidation"]["all_candidates_still_ready"])
+            self.assertTrue(payload["transaction_journal_plan"]["required"])
+            self.assertFalse(payload["transaction_journal_plan"]["writes_journal_in_this_tool"])
+            self.assertTrue(payload["idempotency_guard"]["required"])
+            self.assertEqual(payload["idempotency_guard"]["idempotency_key"], "idem-legacy-fallback-tightening")
+            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertFalse(payload["executor_gate"]["allows_manifest_mutation_in_this_tool"])
+            self.assertFalse(payload["executor_gate"]["allows_legacy_fallback_tightening_in_this_tool"])
+            self.assertTrue(payload["executor_gate"]["requires_finalization_as_separate_follow_up"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(payload["side_effect_policy"]["tightens_legacy_fallback"])
+            self.assertFalse(payload["side_effect_policy"]["finalizes_foldered_canonical_migration"])
+
+    def test_legacy_fallback_tightening_preflight_blocks_stale_manifest_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, promoted_manifest = self._ready_legacy_fallback_tightening_plan(root, ["workspace_task_card"])
+            promoted_manifest["entries"][0]["metadata"]["workspace_alias"]["legacy_fallback_tightened"] = True
+
+            payload = review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_payload(
+                default_artifact_root=root,
+                legacy_fallback_tightening_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(promoted_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_legacy_fallback_tightening(plan)),
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("backend_manifest_legacy_fallback_candidates_not_ready", payload["blocking_reasons"])
+            self.assertFalse(payload["manifest_revalidation"]["all_candidates_still_ready"])
+            self.assertEqual(
+                payload["manifest_revalidation"]["candidate_results"][0]["status"],
+                "blocked_legacy_fallback_already_tightened",
+            )
+
+    def test_legacy_fallback_tightening_preflight_tool_returns_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, promoted_manifest = self._ready_legacy_fallback_tightening_plan(root, ["workspace_task_card"])
+            tool = make_review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_tool(root)
+
+            payload = tool(
+                legacy_fallback_tightening_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(promoted_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_legacy_fallback_tightening(plan)),
+            )
+
+            self.assertEqual(tool.__name__, "review_workspace_foldered_canonical_legacy_fallback_tightening_preflight")
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-preflight.v1",
+            )
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
 
     def test_legacy_fallback_tightening_readiness_blocks_unready_consumer_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
