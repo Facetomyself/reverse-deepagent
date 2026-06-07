@@ -2882,3 +2882,16 @@ The DeepAgents agent tool list includes `review_workspace_foldered_canonical_leg
 Boundary: this only proves whether a separate future legacy fallback tightening plan may be reviewed. It does not write artifacts, record approvals, write transaction journals, run pipelines, enable dual-write, migrate paths, change canonical paths, mutate manifests, tighten legacy fallback, execute a tightening plan, finalize the foldered-canonical migration, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains.
 
 Tests cover blocking without validation / readiness evidence, ready readiness from verified validation result plus ready consumer score, blocked consumer score propagation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
+
+
+### Step 224：Review-only legacy fallback tightening apply plan descriptor baseline
+
+Status: implemented as a review-only / plan-only legacy fallback tightening apply plan descriptor after the Step 223 readiness descriptor. This is not legacy fallback tightening apply, not a tightening executor, not migration finalization, not manifest mutation, not approval recording, not transaction journal writing, not a pipeline runner, not browser / CDP / MCP integration, and not Android / iOS / mini-program full runtime chain.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `plan_workspace_foldered_canonical_legacy_fallback_tightening_payload(...)` and `make_plan_workspace_foldered_canonical_legacy_fallback_tightening_tool(...)`. The planner consumes a ready `workspace-foldered-canonical-legacy-fallback-tightening-readiness` JSON or artifact ref plus the current backend artifact manifest, selects all ready legacy fallback metadata candidates by default or an explicit `artifact_keys_json` scope, and emits `reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-plan.v1` with candidate results, planned metadata-update previews, digest guard, approval requirement, transaction journal plan, executor gate, blocking reasons, warnings, and next actions.
+
+The DeepAgents agent tool list includes `plan_workspace_foldered_canonical_legacy_fallback_tightening`, and the workspace contract indexes `workspace/workspace-foldered-canonical-legacy-fallback-tightening-plan.json` with future alias `/workspace/review/workspace-foldered-canonical-legacy-fallback-tightening-plan.json` and category `triage`.
+
+Boundary: this only prepares reviewed input for a separate future legacy fallback tightening executor. It does not write artifacts, record approvals, write transaction journals, run pipelines, enable dual-write, migrate paths, change canonical paths, mutate manifests, tighten legacy fallback, execute a tightening plan, finalize the foldered-canonical migration, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+Tests cover blocking without ready readiness / manifest evidence, ready plans from verified readiness and promoted backend manifest evidence, unknown requested artifact-key blocking, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
