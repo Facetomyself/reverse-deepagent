@@ -14,6 +14,7 @@ DEBUGGER_ARTIFACT_REVIEW_VERSION = "2026-05-31.debugger-artifact-review-v1"
 AUTOMATIC_LOOP_EXECUTOR_APPROVAL_RECORD_VERSION = "reverse-deepagent.paused-session-automatic-loop-executor-approval-record.v1"
 AUTOMATIC_LOOP_TRANSACTION_PREFLIGHT_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-preflight.v1"
 AUTOMATIC_LOOP_TRANSACTION_JOURNAL_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-journal.v1"
+AUTOMATIC_LOOP_BOUNDED_EXECUTOR_GATE_VERSION = "reverse-deepagent.paused-session-automatic-loop-bounded-executor-gate.v1"
 _LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe"}
 
 
@@ -885,6 +886,52 @@ def make_record_paused_session_automatic_loop_transaction_journal_tool(default_a
     return record_paused_session_automatic_loop_transaction_journal
 
 
+def make_review_paused_session_automatic_loop_bounded_executor_gate_tool(default_artifact_root: str | Path | None = None):
+    """Create a read-only final gate reviewer for a future bounded automatic-loop executor.
+
+    The gate consumes a reviewed transaction journal and produces machine-readable
+    executor input checks plus the future result contract. It deliberately does
+    not execute loop iterations, send CDP commands, recover callFrames, manage
+    long-lived sessions, call MCP, or touch mobile runtimes.
+    """
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def review_paused_session_automatic_loop_bounded_executor_gate(
+        transaction_journal_json: str | None = None,
+        transaction_journal_ref: str | None = None,
+        expected_journal_id: str | None = None,
+        expected_transaction_id: str | None = None,
+        expected_transaction_preflight_id: str | None = None,
+        expected_approval_record_id: str | None = None,
+        expected_journal_digest_sha256: str | None = None,
+        max_iterations: int | None = None,
+        require_fresh_live_callframe: bool = True,
+        artifact_root: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Review final bounded-executor gates without executing the loop."""
+
+        metadata = _loads_optional_object(metadata_json, field_name="metadata_json")
+        return review_paused_session_automatic_loop_bounded_executor_gate_payload(
+            transaction_journal_json=transaction_journal_json,
+            transaction_journal_ref=transaction_journal_ref,
+            expected_journal_id=expected_journal_id,
+            expected_transaction_id=expected_transaction_id,
+            expected_transaction_preflight_id=expected_transaction_preflight_id,
+            expected_approval_record_id=expected_approval_record_id,
+            expected_journal_digest_sha256=expected_journal_digest_sha256,
+            max_iterations=max_iterations,
+            require_fresh_live_callframe=require_fresh_live_callframe,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            metadata=metadata,
+        )
+
+    review_paused_session_automatic_loop_bounded_executor_gate.__name__ = "review_paused_session_automatic_loop_bounded_executor_gate"
+    return review_paused_session_automatic_loop_bounded_executor_gate
+
+
 def record_paused_session_automatic_loop_executor_approval_payload(
     *,
     approval_plan_json: str | None = None,
@@ -1203,6 +1250,150 @@ def record_paused_session_automatic_loop_transaction_journal_payload(
     }
     if written:
         _write_json(result_path, payload)
+    return payload
+
+
+def review_paused_session_automatic_loop_bounded_executor_gate_payload(
+    *,
+    transaction_journal_json: str | None = None,
+    transaction_journal_ref: str | None = None,
+    expected_journal_id: str | None = None,
+    expected_transaction_id: str | None = None,
+    expected_transaction_preflight_id: str | None = None,
+    expected_approval_record_id: str | None = None,
+    expected_journal_digest_sha256: str | None = None,
+    max_iterations: int | None = None,
+    require_fresh_live_callframe: bool = True,
+    artifact_root: str | None = None,
+    default_artifact_root: str | Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a read-only final gate descriptor for a future bounded executor."""
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+    loaded, artifact_read = _loads_object_or_artifact(
+        transaction_journal_json,
+        artifact_ref=transaction_journal_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=root,
+        field_name="transaction_journal_json",
+        artifact_field_name="transaction_journal_ref",
+    )
+    transaction_journal = _first_object(loaded.get("transaction_journal"), loaded)
+    journal_digest = _stable_json_digest(transaction_journal) if transaction_journal else None
+    journal_entries = transaction_journal.get("journal_entries") if isinstance(transaction_journal.get("journal_entries"), list) else []
+    planned_iteration_entries = [item for item in journal_entries if isinstance(item, dict) and item.get("entry_kind") == "planned_iteration_journaled"]
+    effective_max_iterations = max_iterations if isinstance(max_iterations, int) and max_iterations > 0 else len(planned_iteration_entries)
+    checks = _automatic_loop_bounded_executor_gate_checks(
+        transaction_journal=transaction_journal,
+        expected_journal_id=expected_journal_id,
+        expected_transaction_id=expected_transaction_id,
+        expected_transaction_preflight_id=expected_transaction_preflight_id,
+        expected_approval_record_id=expected_approval_record_id,
+        expected_journal_digest_sha256=expected_journal_digest_sha256,
+        journal_digest=journal_digest,
+        max_iterations=max_iterations,
+        planned_iteration_count=len(planned_iteration_entries),
+    )
+    blockers = [check["name"] for check in checks if not check["passed"]]
+    ready_for_executor_review = not blockers
+    status = "ready_for_review" if ready_for_executor_review else "blocked"
+    result_contract = {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-execution-result.v1",
+        "artifact": "workspace/paused-session-automatic-loop-execution-result.json",
+        "future_path": "/workspace/debugger/paused-session-automatic-loop-execution-result.json",
+        "required_fields": [
+            "schema_version",
+            "status",
+            "transaction_id",
+            "journal_id",
+            "executed_iteration_count",
+            "iteration_results",
+            "checkpoint_required",
+            "side_effect_policy",
+        ],
+        "per_iteration_required_fields": [
+            "iteration_index",
+            "workflow_step_index",
+            "method",
+            "reviewed_before_execution",
+            "fresh_live_callframe_verified",
+            "executed",
+            "checkpoint_required",
+        ],
+        "allowed_terminal_statuses": ["not_run", "partial", "completed", "blocked", "failed"],
+        "must_record_checkpoint_after_each_iteration": True,
+        "must_not_auto_advance_queue_after_result": True,
+    }
+    payload: dict[str, Any] = {
+        "schema_version": AUTOMATIC_LOOP_BOUNDED_EXECUTOR_GATE_VERSION,
+        "status": status,
+        "bounded_executor_gate_ready_for_review": ready_for_executor_review,
+        "ready_to_execute_now": False,
+        "automatic_loop_executed": False,
+        "journal_id": transaction_journal.get("journal_id"),
+        "transaction_id": transaction_journal.get("transaction_id"),
+        "transaction_preflight_id": transaction_journal.get("transaction_preflight_id"),
+        "approval_record_id": transaction_journal.get("approval_record_id"),
+        "preflight_id": transaction_journal.get("preflight_id"),
+        "plan_id": transaction_journal.get("plan_id"),
+        "loop_id": transaction_journal.get("loop_id"),
+        "workflow_id": transaction_journal.get("workflow_id"),
+        "pause_session_id": transaction_journal.get("pause_session_id"),
+        "target_id": transaction_journal.get("target_id"),
+        "transaction_journal_digest_sha256": journal_digest,
+        "expected_journal_digest_sha256": expected_journal_digest_sha256,
+        "source_journal_summary": {
+            "schema_version": transaction_journal.get("schema_version"),
+            "status": transaction_journal.get("status"),
+            "journal_written": _boolish(transaction_journal.get("journal_written")),
+            "transaction_started": _boolish(transaction_journal.get("transaction_started")),
+            "automatic_loop_executed": _boolish(transaction_journal.get("automatic_loop_executed") or _nested_get(transaction_journal, "journal_summary", "automatic_loop_executed")),
+            "entry_count": _nested_get(transaction_journal, "journal_summary", "entry_count"),
+            "planned_entry_count": _nested_get(transaction_journal, "journal_summary", "planned_entry_count"),
+            "ready_to_execute_now": _boolish(_nested_get(transaction_journal, "executor_input_gates", "ready_to_execute_now")),
+        },
+        "bounded_executor_input": {
+            "max_iterations": effective_max_iterations,
+            "planned_iteration_count": len(planned_iteration_entries),
+            "require_fresh_live_callframe": require_fresh_live_callframe,
+            "requires_retained_attached_session": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_per_iteration_review": True,
+            "automatic_queue_advance_allowed": False,
+            "long_lived_session_management_allowed": False,
+        },
+        "planned_iterations": [
+            {
+                "iteration_index": item.get("iteration_index"),
+                "workflow_step_index": item.get("workflow_step_index"),
+                "method": item.get("method"),
+                "fingerprint": item.get("fingerprint"),
+                "ready_for_future_executor_review": ready_for_executor_review,
+                "executed_now": False,
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_checkpoint_after_iteration": True,
+            }
+            for item in planned_iteration_entries
+        ],
+        "future_executor_contract": {
+            "executor_name": "execute_paused_session_automatic_loop",
+            "implemented": False,
+            "contract_ready_for_review": ready_for_executor_review,
+            "result_contract": result_contract,
+        },
+        "checks": checks,
+        "blockers": blockers,
+        "next_action": _automatic_loop_bounded_executor_gate_next_action(blockers=blockers),
+        "metadata": {
+            **(metadata or {}),
+            "tool": "review_paused_session_automatic_loop_bounded_executor_gate",
+            "artifact_read": artifact_read,
+            "legacy_path": "workspace/paused-session-automatic-loop-bounded-executor-gate.json",
+            "future_path": "/workspace/debugger/paused-session-automatic-loop-bounded-executor-gate.json",
+        },
+        "side_effect_policy": _automatic_loop_bounded_executor_gate_side_effect_policy(),
+    }
     return payload
 
 
@@ -1593,6 +1784,76 @@ def _automatic_loop_transaction_journal_side_effect_policy(*, written: bool) -> 
         "files_mutated": written,
         "artifacts_written_by_tool": written,
         "writes_approval_record": False,
+        "automatic_loop_executed": False,
+        "multi_step_continuation_executed": False,
+        "browser_resumed": False,
+        "debugger_stepped": False,
+        "callframe_evaluated": False,
+        "runtime_mutated": False,
+        "cdp_command_sent": False,
+        "cdp_target_attached": False,
+        "debugger_domain_enabled": False,
+        "debugger_event_subscribed": False,
+        "paused_event_captured": False,
+        "automatic_live_callframe_recovery": False,
+        "automatic_queue_advance": False,
+        "long_lived_cross_process_session_managed": False,
+        "calls_mcp": False,
+        "mobile_runtime_used": False,
+    }
+
+
+def _automatic_loop_bounded_executor_gate_checks(
+    *,
+    transaction_journal: dict[str, Any],
+    expected_journal_id: str | None,
+    expected_transaction_id: str | None,
+    expected_transaction_preflight_id: str | None,
+    expected_approval_record_id: str | None,
+    expected_journal_digest_sha256: str | None,
+    journal_digest: str | None,
+    max_iterations: int | None,
+    planned_iteration_count: int,
+) -> list[dict[str, Any]]:
+    gates = transaction_journal.get("executor_input_gates") if isinstance(transaction_journal.get("executor_input_gates"), dict) else {}
+    summary = transaction_journal.get("journal_summary") if isinstance(transaction_journal.get("journal_summary"), dict) else {}
+    policy = transaction_journal.get("side_effect_policy") if isinstance(transaction_journal.get("side_effect_policy"), dict) else {}
+    blockers = transaction_journal.get("blockers") if isinstance(transaction_journal.get("blockers"), list) else []
+    return [
+        {"name": "transaction_journal_available", "passed": bool(transaction_journal), "details": {"journal_id": transaction_journal.get("journal_id")}},
+        {"name": "transaction_journal_written", "passed": transaction_journal.get("status") == "written" and transaction_journal.get("journal_written") is True, "details": {"status": transaction_journal.get("status"), "journal_written": transaction_journal.get("journal_written")}},
+        {"name": "transaction_started", "passed": transaction_journal.get("transaction_started") is True and summary.get("transaction_started") is True, "details": {"transaction_started": transaction_journal.get("transaction_started"), "summary_transaction_started": summary.get("transaction_started")}},
+        {"name": "journal_has_no_blockers", "passed": not blockers, "details": {"blockers": blockers}},
+        {"name": "expected_journal_id_matches", "passed": not expected_journal_id or transaction_journal.get("journal_id") == expected_journal_id, "details": {"expected_journal_id": expected_journal_id, "journal_id": transaction_journal.get("journal_id")}},
+        {"name": "expected_transaction_id_matches", "passed": not expected_transaction_id or transaction_journal.get("transaction_id") == expected_transaction_id, "details": {"expected_transaction_id": expected_transaction_id, "transaction_id": transaction_journal.get("transaction_id")}},
+        {"name": "expected_transaction_preflight_id_matches", "passed": not expected_transaction_preflight_id or transaction_journal.get("transaction_preflight_id") == expected_transaction_preflight_id, "details": {"expected_transaction_preflight_id": expected_transaction_preflight_id, "transaction_preflight_id": transaction_journal.get("transaction_preflight_id")}},
+        {"name": "expected_approval_record_id_matches", "passed": not expected_approval_record_id or transaction_journal.get("approval_record_id") == expected_approval_record_id, "details": {"expected_approval_record_id": expected_approval_record_id, "approval_record_id": transaction_journal.get("approval_record_id")}},
+        {"name": "expected_journal_digest_matches", "passed": not expected_journal_digest_sha256 or expected_journal_digest_sha256 == journal_digest, "details": {"expected_journal_digest_sha256": expected_journal_digest_sha256, "transaction_journal_digest_sha256": journal_digest}},
+        {"name": "journal_not_already_executed", "passed": summary.get("automatic_loop_executed") is not True and gates.get("automatic_loop_executed") is not True and policy.get("automatic_loop_executed") is not True, "details": {"summary_automatic_loop_executed": summary.get("automatic_loop_executed"), "gate_automatic_loop_executed": gates.get("automatic_loop_executed"), "policy_automatic_loop_executed": policy.get("automatic_loop_executed")}},
+        {"name": "journal_does_not_claim_ready_to_execute_now", "passed": gates.get("ready_to_execute_now") is not True, "details": {"ready_to_execute_now": gates.get("ready_to_execute_now")}},
+        {"name": "journal_has_planned_iterations", "passed": planned_iteration_count > 0, "details": {"planned_iteration_count": planned_iteration_count}},
+        {"name": "max_iterations_positive_if_provided", "passed": max_iterations is None or max_iterations > 0, "details": {"max_iterations": max_iterations}},
+        {"name": "max_iterations_within_planned_entries", "passed": max_iterations is None or planned_iteration_count == 0 or max_iterations <= planned_iteration_count, "details": {"max_iterations": max_iterations, "planned_iteration_count": planned_iteration_count}},
+        {"name": "journal_did_not_send_cdp", "passed": policy.get("cdp_command_sent") is not True and policy.get("cdp_target_attached") is not True and policy.get("debugger_event_subscribed") is not True, "details": {"cdp_command_sent": policy.get("cdp_command_sent"), "cdp_target_attached": policy.get("cdp_target_attached"), "debugger_event_subscribed": policy.get("debugger_event_subscribed")}},
+        {"name": "journal_did_not_call_mcp_or_mobile", "passed": policy.get("calls_mcp") is not True and policy.get("mobile_runtime_used") is not True, "details": {"calls_mcp": policy.get("calls_mcp"), "mobile_runtime_used": policy.get("mobile_runtime_used")}},
+    ]
+
+
+def _automatic_loop_bounded_executor_gate_next_action(*, blockers: list[str]) -> str:
+    if blockers:
+        return "fix_paused_session_automatic_loop_bounded_executor_gate_blockers"
+    return "review_future_bounded_paused_session_automatic_loop_executor_mvp"
+
+
+def _automatic_loop_bounded_executor_gate_side_effect_policy() -> dict[str, Any]:
+    return {
+        "read_only": True,
+        "review_only": True,
+        "plan_only": True,
+        "writes_artifact": False,
+        "writes_transaction_journal": False,
+        "transaction_started": False,
+        "journal_written": False,
         "automatic_loop_executed": False,
         "multi_step_continuation_executed": False,
         "browser_resumed": False,

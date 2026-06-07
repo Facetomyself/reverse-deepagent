@@ -14,6 +14,7 @@ from reverse_deepagent.tools.debugger_tools import (
     make_record_paused_session_automatic_loop_executor_approval_tool,
     make_record_paused_session_automatic_loop_transaction_journal_tool,
     make_review_debugger_artifacts_tool,
+    make_review_paused_session_automatic_loop_bounded_executor_gate_tool,
     make_review_paused_session_automatic_loop_transaction_preflight_tool,
 )
 
@@ -167,6 +168,75 @@ def _ready_automatic_loop_transaction_preflight() -> dict:
             "automatic_loop_executed": False,
             "cdp_command_sent": False,
             "cdp_target_attached": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+        "blockers": [],
+    }
+
+
+def _ready_automatic_loop_transaction_journal() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-transaction-journal.v1",
+        "status": "written",
+        "journal_written": True,
+        "transaction_started": True,
+        "journal_id": "automatic-loop-transaction-journal:abc123",
+        "transaction_preflight_id": "automatic-loop-transaction-preflight:record-1",
+        "approval_record_id": "automatic-loop-executor-approval-record:abc123",
+        "approval_plan_id": "automatic-loop-executor-approval-plan:preflight-1",
+        "preflight_id": "preflight-1",
+        "transaction_id": "automatic-loop-executor-transaction:preflight-1",
+        "plan_id": "plan-1",
+        "loop_id": "loop-1",
+        "workflow_id": "workflow-1",
+        "pause_session_id": "pause-1",
+        "target_id": "target-1",
+        "journal_entries": [
+            {
+                "entry_index": 0,
+                "entry_kind": "transaction_started",
+                "transaction_id": "automatic-loop-executor-transaction:preflight-1",
+                "automatic_loop_executed": False,
+            },
+            {
+                "entry_index": 1,
+                "entry_kind": "planned_iteration_journaled",
+                "iteration_index": 0,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "executed_now": False,
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_checkpoint_after_iteration": True,
+            },
+        ],
+        "journal_summary": {
+            "entry_count": 2,
+            "planned_entry_count": 2,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "requires_bounded_executor_followup": True,
+        },
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_record_verified": True,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_bounded_executor_review": True,
+        },
+        "side_effect_policy": {
+            "writes_transaction_journal": True,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "debugger_event_subscribed": False,
             "calls_mcp": False,
             "mobile_runtime_used": False,
         },
@@ -1664,6 +1734,59 @@ class DebuggerSubagentTests(unittest.TestCase):
             self.assertEqual(result["status"], "planned")
             self.assertEqual(result["metadata"]["artifact_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_transaction_preflight")
 
+    def test_review_automatic_loop_bounded_executor_gate_is_read_only(self) -> None:
+        tool = make_review_paused_session_automatic_loop_bounded_executor_gate_tool()
+        result = tool(
+            transaction_journal_json=json.dumps(_ready_automatic_loop_transaction_journal()),
+            expected_transaction_id="automatic-loop-executor-transaction:preflight-1",
+            max_iterations=1,
+        )
+
+        self.assertEqual(result["status"], "ready_for_review")
+        self.assertTrue(result["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result["ready_to_execute_now"])
+        self.assertFalse(result["automatic_loop_executed"])
+        self.assertEqual(result["bounded_executor_input"]["max_iterations"], 1)
+        self.assertEqual(result["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop")
+        self.assertFalse(result["future_executor_contract"]["implemented"])
+        self.assertEqual(result["future_executor_contract"]["result_contract"]["artifact"], "workspace/paused-session-automatic-loop-execution-result.json")
+        self.assertFalse(result["side_effect_policy"]["writes_artifact"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(result["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_automatic_loop_bounded_executor_gate_blocks_bad_journal(self) -> None:
+        journal = _ready_automatic_loop_transaction_journal()
+        journal["journal_written"] = False
+        journal["side_effect_policy"]["automatic_loop_executed"] = True
+        result = make_review_paused_session_automatic_loop_bounded_executor_gate_tool()(
+            transaction_journal_json=json.dumps(journal),
+            max_iterations=2,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("transaction_journal_written", result["blockers"])
+        self.assertIn("journal_not_already_executed", result["blockers"])
+        self.assertIn("max_iterations_within_planned_entries", result["blockers"])
+        self.assertFalse(result["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["automatic_loop_executed"])
+
+    def test_review_automatic_loop_bounded_executor_gate_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-executor-journal.json").write_text(
+                json.dumps(_ready_automatic_loop_transaction_journal()),
+                encoding="utf-8",
+            )
+            result = make_review_paused_session_automatic_loop_bounded_executor_gate_tool(artifact_root)(
+                transaction_journal_ref="workspace_paused_session_automatic_loop_executor_journal",
+            )
+
+            self.assertEqual(result["status"], "ready_for_review")
+            self.assertEqual(result["metadata"]["artifact_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_executor_journal")
+
     def test_build_debugger_subagent_exposes_review_and_approval_record_tools(self) -> None:
         subagent = build_debugger_subagent()
 
@@ -1679,6 +1802,7 @@ class DebuggerSubagentTests(unittest.TestCase):
                 "record_paused_session_automatic_loop_executor_approval",
                 "review_paused_session_automatic_loop_transaction_preflight",
                 "record_paused_session_automatic_loop_transaction_journal",
+                "review_paused_session_automatic_loop_bounded_executor_gate",
             },
         )
 
@@ -1687,6 +1811,7 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertIn("approval record", load_debugger_prompt(path))
         self.assertIn("review_paused_session_automatic_loop_transaction_preflight", load_debugger_prompt(path))
         self.assertIn("record_paused_session_automatic_loop_transaction_journal", load_debugger_prompt(path))
+        self.assertIn("review_paused_session_automatic_loop_bounded_executor_gate", load_debugger_prompt(path))
         self.assertIn("preflight-only", load_debugger_prompt(path))
 
     def test_default_agent_includes_debugger_before_timeline(self) -> None:
