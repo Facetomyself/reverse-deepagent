@@ -242,6 +242,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/review/workspace-foldered-canonical-broader-rollout-readiness.json",
         )
         self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-readiness.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-plan.json"].category, "triage")
         self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(
             routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].future_path,

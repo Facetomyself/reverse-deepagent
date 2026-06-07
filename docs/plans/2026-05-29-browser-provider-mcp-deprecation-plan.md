@@ -2425,3 +2425,15 @@ The DeepAgents agent tool list includes `review_workspace_foldered_canonical_bro
 Boundary: this closes only the read-only broader rollout readiness gate. It does not write readiness artifacts, mutate manifests, move files, change canonical paths, tighten legacy fallback, execute finalization, enable dual-write, authorize broader rollout apply, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Any broader rollout plan and any apply-mode rollout remain separate reviewed follow-ups.
 
 Tests cover missing evidence blockers, verified audit + readiness + clean delivery-source recheck + verified expansion result + manifest readiness, source-path regression blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
+
+### Step 233：Review-only foldered-canonical broader rollout plan descriptor baseline
+
+Status: implemented as a review-only / plan-only broader rollout plan descriptor after the Step 232 broader rollout readiness descriptor. This is not a broader rollout preflight, not a broader rollout executor, not manifest mutation, not canonical path mutation, not artifact movement, not approval recording, not automatic materialization, not a pipeline runner, not browser / CDP / MCP integration, and not Android / iOS / mini-program full runtime chain.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `plan_workspace_foldered_canonical_broader_rollout_payload(...)` and `make_plan_workspace_foldered_canonical_broader_rollout_tool(...)`. The descriptor consumes a ready broader rollout readiness JSON or artifact ref and the current backend artifact manifest, supports optional reviewed artifact key scope, selects finalized workspace alias entries, classifies route risk, and emits `reverse-deepagent.workspace-foldered-canonical-broader-rollout-plan.v1` with candidate scope, digest guard, approval requirement, executor gate, blockers, warnings, and side-effect boundaries.
+
+The DeepAgents agent tool list includes `plan_workspace_foldered_canonical_broader_rollout`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-plan.json` with future alias `/workspace/review/workspace-foldered-canonical-broader-rollout-plan.json` and category `triage`.
+
+Boundary: this closes only the review-only broader rollout planning layer. It does not write plan artifacts, record approvals, mutate manifests, move files, change canonical paths, tighten legacy fallback, enable dual-write, authorize broader rollout apply, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Broader rollout preflight / executor remain separate reviewed follow-ups.
+
+Tests cover missing readiness / manifest blockers, ready plans from readiness plus finalized manifest evidence, unknown requested key blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.

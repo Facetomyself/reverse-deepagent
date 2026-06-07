@@ -10,6 +10,7 @@ from reverse_deepagent.tools.artifact_tools import (
     execute_workspace_foldered_canonical_legacy_fallback_tightening_payload,
     execute_workspace_foldered_canonical_migration_finalization_payload,
     execute_workspace_foldered_canonical_physical_apply_payload,
+    plan_workspace_foldered_canonical_broader_rollout_payload,
     plan_workspace_foldered_canonical_legacy_fallback_tightening_payload,
     plan_workspace_foldered_canonical_migration_finalization_payload,
     record_workspace_foldered_canonical_migration_post_apply_validation_result_payload,
@@ -25,6 +26,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool,
     make_execute_workspace_foldered_canonical_migration_finalization_tool,
     make_execute_workspace_foldered_canonical_physical_apply_tool,
+    make_plan_workspace_foldered_canonical_broader_rollout_tool,
     make_plan_workspace_foldered_canonical_migration_finalization_tool,
     make_review_workspace_foldered_canonical_broader_rollout_readiness_tool,
     make_review_workspace_foldered_canonical_migration_post_finalization_audit_tool,
@@ -3214,6 +3216,182 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertEqual(payload["backend_manifest_input"]["source"], "artifact-ref")
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse((workspace / "workspace-foldered-canonical-broader-rollout-readiness.json").exists())
+
+    def test_broader_rollout_plan_blocks_without_readiness_or_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = plan_workspace_foldered_canonical_broader_rollout_payload(
+                default_artifact_root=root,
+            )
+
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-broader-rollout-plan.v1",
+            )
+            self.assertEqual(payload["status"], "not_ready")
+            self.assertIn("broader_rollout_readiness_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("broader_rollout_readiness_not_ready_for_plan", payload["blocking_reasons"])
+            self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertFalse(payload["executor_gate"]["ready_for_broader_rollout_apply_review"])
+            self.assertFalse(payload["executor_gate"]["preflight_tool_implemented"])
+            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_broader_rollout_plan_uses_ready_readiness_and_finalized_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            result, journal, manifest = self._applied_finalization_evidence(root, ["workspace_task_card"])
+            audit = review_workspace_foldered_canonical_migration_post_finalization_audit_payload(
+                default_artifact_root=root,
+                finalization_result_json=json.dumps(result),
+                finalization_journal_json=json.dumps(journal),
+                backend_manifest_json=json.dumps(manifest),
+            )
+            expansion_plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            expansion_result = self._verified_workspace_dual_write_expansion_result(expansion_plan)
+            readiness = review_workspace_foldered_canonical_broader_rollout_readiness_payload(
+                default_artifact_root=root,
+                post_finalization_audit_json=json.dumps(audit),
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+                delivery_source_audit_json=json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.delivery-source-audit.v1",
+                        "artifact_count": 1,
+                        "source_artifact_ref_count": 1,
+                        "source_path_count": 0,
+                        "workspace_resolved_count": 1,
+                        "external_source_path_count": 0,
+                    }
+                ),
+                expansion_result_json=json.dumps(expansion_result),
+                backend_manifest_json=json.dumps(manifest),
+            )
+
+            payload = plan_workspace_foldered_canonical_broader_rollout_payload(
+                default_artifact_root=root,
+                broader_rollout_readiness_json=json.dumps(readiness),
+                backend_manifest_json=json.dumps(manifest),
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["candidate_count"], 1)
+            self.assertEqual(payload["summary"]["ready_candidate_count"], 1)
+            self.assertEqual(payload["summary"]["blocked_candidate_count"], 0)
+            self.assertEqual(payload["candidate_artifacts"][0]["artifact_key"], "workspace_task_card")
+            self.assertEqual(payload["candidate_artifacts"][0]["status"], "ready_for_broader_rollout_plan_review")
+            self.assertEqual(payload["candidate_artifacts"][0]["risk"]["risk_level"], "low")
+            self.assertTrue(payload["digest_guard"]["broader_rollout_plan_digest"])
+            self.assertTrue(payload["digest_guard"]["requires_plan_digest_match_before_apply"])
+            self.assertTrue(payload["approval_requirements"]["required_before_apply"])
+            self.assertFalse(payload["approval_requirements"]["records_approval_in_this_tool"])
+            self.assertTrue(payload["executor_gate"]["ready_for_broader_rollout_apply_review"])
+            self.assertFalse(payload["executor_gate"]["preflight_tool_implemented"])
+            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertFalse(payload["executor_gate"]["allows_rollout_apply_in_this_tool"])
+            self.assertIn("broader_rollout_plan_is_review_only_and_does_not_authorize_apply", payload["warnings"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["authorizes_broader_rollout"])
+            self.assertFalse(payload["side_effect_policy"]["applies_broader_rollout"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-broader-rollout-plan.json").exists())
+
+    def test_broader_rollout_plan_blocks_unknown_requested_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            result, journal, manifest = self._applied_finalization_evidence(root, ["workspace_task_card"])
+            audit = review_workspace_foldered_canonical_migration_post_finalization_audit_payload(
+                default_artifact_root=root,
+                finalization_result_json=json.dumps(result),
+                finalization_journal_json=json.dumps(journal),
+                backend_manifest_json=json.dumps(manifest),
+            )
+            expansion_plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            expansion_result = self._verified_workspace_dual_write_expansion_result(expansion_plan)
+            readiness = review_workspace_foldered_canonical_broader_rollout_readiness_payload(
+                default_artifact_root=root,
+                post_finalization_audit_json=json.dumps(audit),
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+                delivery_source_audit_json=json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.delivery-source-audit.v1",
+                        "artifact_count": 1,
+                        "source_artifact_ref_count": 1,
+                        "source_path_count": 0,
+                        "workspace_resolved_count": 1,
+                        "external_source_path_count": 0,
+                    }
+                ),
+                expansion_result_json=json.dumps(expansion_result),
+                backend_manifest_json=json.dumps(manifest),
+            )
+
+            payload = plan_workspace_foldered_canonical_broader_rollout_payload(
+                default_artifact_root=root,
+                broader_rollout_readiness_json=json.dumps(readiness),
+                backend_manifest_json=json.dumps(manifest),
+                artifact_keys_json=json.dumps(["missing_workspace_artifact"]),
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("unknown_requested_artifact_keys", payload["blocking_reasons"])
+            self.assertIn("no_broader_rollout_candidates_selected", payload["blocking_reasons"])
+            self.assertEqual(payload["blocked_artifacts"]["unknown_artifact_keys"], ["missing_workspace_artifact"])
+            self.assertFalse(payload["executor_gate"]["ready_for_broader_rollout_apply_review"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+
+    def test_broader_rollout_plan_tool_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            result, journal, manifest = self._applied_finalization_evidence(root, ["workspace_task_card"])
+            audit = review_workspace_foldered_canonical_migration_post_finalization_audit_payload(
+                default_artifact_root=root,
+                finalization_result_json=json.dumps(result),
+                finalization_journal_json=json.dumps(journal),
+                backend_manifest_json=json.dumps(manifest),
+            )
+            expansion_plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            expansion_result = self._verified_workspace_dual_write_expansion_result(expansion_plan)
+            readiness = review_workspace_foldered_canonical_broader_rollout_readiness_payload(
+                default_artifact_root=root,
+                post_finalization_audit_json=json.dumps(audit),
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+                delivery_source_audit_json=json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.delivery-source-audit.v1",
+                        "artifact_count": 1,
+                        "source_artifact_ref_count": 1,
+                        "source_path_count": 0,
+                        "workspace_resolved_count": 1,
+                        "external_source_path_count": 0,
+                    }
+                ),
+                expansion_result_json=json.dumps(expansion_result),
+                backend_manifest_json=json.dumps(manifest),
+            )
+            (workspace / "workspace-foldered-canonical-broader-rollout-readiness.json").write_text(
+                json.dumps(readiness),
+                encoding="utf-8",
+            )
+            tool = make_plan_workspace_foldered_canonical_broader_rollout_tool(root)
+
+            payload = tool()
+
+            self.assertEqual(tool.__name__, "plan_workspace_foldered_canonical_broader_rollout")
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["broader_rollout_readiness_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["backend_manifest_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["summary"]["ready_candidate_count"], 1)
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse((workspace / "workspace-foldered-canonical-broader-rollout-plan.json").exists())
 
     def test_legacy_fallback_tightening_readiness_blocks_unready_consumer_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

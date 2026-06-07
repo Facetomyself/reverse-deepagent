@@ -905,6 +905,47 @@ def make_review_workspace_foldered_canonical_broader_rollout_readiness_tool(
     return review_workspace_foldered_canonical_broader_rollout_readiness
 
 
+def make_plan_workspace_foldered_canonical_broader_rollout_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create a review-only broader rollout plan descriptor after readiness review."""
+
+    root = Path(default_artifact_root)
+
+    def plan_workspace_foldered_canonical_broader_rollout(
+        artifact_root: str | None = None,
+        broader_rollout_readiness_json: str | None = None,
+        broader_rollout_readiness_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_readiness",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+        artifact_keys_json: str | None = None,
+        max_artifacts: int = 32,
+        include_medium_risk: bool = False,
+    ) -> dict[str, Any]:
+        """Plan a broader rollout review scope without applying rollout or mutating manifests."""
+
+        return plan_workspace_foldered_canonical_broader_rollout_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            broader_rollout_readiness_json=broader_rollout_readiness_json,
+            broader_rollout_readiness_artifact_ref=broader_rollout_readiness_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+            artifact_keys_json=artifact_keys_json,
+            max_artifacts=max_artifacts,
+            include_medium_risk=include_medium_risk,
+        )
+
+    plan_workspace_foldered_canonical_broader_rollout.__name__ = "plan_workspace_foldered_canonical_broader_rollout"
+    plan_workspace_foldered_canonical_broader_rollout.__doc__ = (
+        "Review-only / plan-only foldered-canonical broader rollout descriptor. It consumes broader rollout readiness "
+        "evidence plus the current backend manifest, then selects finalized workspace artifact keys for a separate reviewed "
+        "rollout plan. It does not write artifacts, mutate manifests, enable dual-write, apply rollout, start browsers, "
+        "call MCP, or touch mobile full runtime chains."
+    )
+    return plan_workspace_foldered_canonical_broader_rollout
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -7509,6 +7550,350 @@ def _foldered_canonical_broader_rollout_readiness_next_actions(
         actions.append("keep_broader_rollout_apply_and_automatic_materialization_disabled")
     if any("risk" in warning for warning in warnings):
         actions.append("split_medium_or_high_risk_artifacts_into_separate_rollout_reviews")
+    return list(dict.fromkeys(actions))
+
+
+def plan_workspace_foldered_canonical_broader_rollout_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    broader_rollout_readiness_json: str | None = None,
+    broader_rollout_readiness_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_readiness",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    artifact_keys_json: str | None = None,
+    max_artifacts: int = 32,
+    include_medium_risk: bool = False,
+) -> dict[str, Any]:
+    """Plan a broader foldered-canonical rollout review scope without side effects."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    readiness, readiness_error, readiness_input = _load_or_read_workspace_foldered_canonical_broader_rollout_readiness(
+        default_artifact_root=effective_root,
+        broader_rollout_readiness_json=broader_rollout_readiness_json,
+        broader_rollout_readiness_artifact_ref=broader_rollout_readiness_artifact_ref,
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+    requested_keys, requested_error = _parse_artifact_keys_json(artifact_keys_json)
+    explicit_selection = requested_keys is not None
+    max_count = max(0, int(max_artifacts))
+    candidates, unknown_keys = _foldered_canonical_broader_rollout_candidates(
+        backend_manifest=backend_manifest,
+        requested_keys=requested_keys,
+        max_artifacts=max_count,
+        include_medium_risk=include_medium_risk,
+    )
+    ready_candidates = [item for item in candidates if item.get("status") == "ready_for_broader_rollout_plan_review"]
+    blocked_candidates = [item for item in candidates if item.get("status") != "ready_for_broader_rollout_plan_review"]
+    high_risk_candidates = [item.get("artifact_key") or "" for item in candidates if item.get("risk", {}).get("risk_level") == "high"]
+    medium_risk_candidates = [item.get("artifact_key") or "" for item in candidates if item.get("risk", {}).get("risk_level") == "medium"]
+    plan_digest = _foldered_canonical_broader_rollout_plan_digest(ready_candidates)
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    rollout_gate = readiness.get("rollout_gate") if isinstance(readiness.get("rollout_gate"), dict) else {}
+    if readiness_error:
+        blockers.append("broader_rollout_readiness_unavailable_or_malformed")
+    if readiness.get("status") != "ready_for_review":
+        blockers.append("broader_rollout_readiness_not_ready_for_plan")
+    if rollout_gate.get("broader_rollout_plan_allowed_for_review") is not True:
+        blockers.append("broader_rollout_readiness_gate_does_not_allow_plan_review")
+    if backend_manifest_error:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if requested_error:
+        blockers.append("artifact_keys_json_malformed")
+    if unknown_keys:
+        blockers.append("unknown_requested_artifact_keys")
+    if high_risk_candidates:
+        blockers.append("high_risk_artifacts_require_separate_broader_rollout_review")
+    if medium_risk_candidates and not include_medium_risk:
+        blockers.append("medium_risk_artifacts_require_explicit_include_medium_risk")
+    if blocked_candidates:
+        blockers.append("blocked_broader_rollout_candidates_present")
+    if not ready_candidates:
+        blockers.append("no_broader_rollout_candidates_selected")
+    if medium_risk_candidates and include_medium_risk:
+        warnings.append("medium_risk_artifacts_selected_for_broader_rollout_review")
+    if not blockers:
+        warnings.append("broader_rollout_plan_is_review_only_and_does_not_authorize_apply")
+
+    status = "ready_for_review" if not blockers else "blocked" if readiness.get("schema_version") != "missing" else "not_ready"
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-plan.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "planned_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "candidate_count": len(candidates),
+            "ready_candidate_count": len(ready_candidates),
+            "blocked_candidate_count": len(blocked_candidates),
+            "readiness_status": readiness.get("status") or "missing",
+            "unknown_requested_artifact_key_count": len(unknown_keys),
+            "high_risk_candidate_count": len([key for key in high_risk_candidates if key]),
+            "medium_risk_candidate_count": len([key for key in medium_risk_candidates if key]),
+            "explicit_selection": explicit_selection,
+            "max_artifacts": max_count,
+            "plan_digest": plan_digest,
+            "review_required": True,
+            "broader_rollout_apply_authorized": False,
+            "automatic_materialization_allowed": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "selection_policy": {
+            "default_source": "finalized_backend_manifest_workspace_alias_entries",
+            "requires_broader_rollout_readiness": True,
+            "requires_readiness_status_ready_for_review": True,
+            "requires_current_backend_manifest_revalidation": True,
+            "explicit_keys_must_be_finalized_manifest_entries": True,
+            "default_allows_medium_risk": False,
+            "include_medium_risk_requested": bool(include_medium_risk),
+            "high_risk_artifacts_block_plan": True,
+            "plan_only": True,
+            "actual_rollout_enabled": False,
+            "manifest_mutation_enabled": False,
+            "automatic_materialization_enabled": False,
+        },
+        "broader_rollout_readiness_input": readiness_input,
+        "backend_manifest_input": backend_manifest_input,
+        "broader_rollout_readiness_summary": _compact_foldered_canonical_broader_rollout_readiness(readiness),
+        "candidate_artifacts": candidates,
+        "blocked_artifacts": {
+            "unknown_artifact_keys": unknown_keys,
+            "high_risk_artifact_keys": [key for key in high_risk_candidates if key],
+            "medium_risk_artifact_keys": [key for key in medium_risk_candidates if key],
+            "blocked_candidate_artifact_keys": [str(item.get("artifact_key") or "") for item in blocked_candidates],
+        },
+        "digest_guard": {
+            "broader_rollout_plan_digest": plan_digest,
+            "requires_plan_digest_match_before_apply": True,
+            "requires_backend_manifest_revalidation_before_apply": True,
+        },
+        "approval_requirements": {
+            "required_before_apply": True,
+            "approval_action": "foldered_canonical_broader_rollout",
+            "subject_id": f"workspace-foldered-canonical-broader-rollout:{plan_digest}" if plan_digest else "workspace-foldered-canonical-broader-rollout",
+            "subject_digest_sha256": plan_digest,
+            "records_approval_in_this_tool": False,
+        },
+        "executor_gate": {
+            "ready_for_broader_rollout_apply_review": status == "ready_for_review",
+            "preflight_tool": "review_workspace_foldered_canonical_broader_rollout_preflight",
+            "preflight_tool_implemented": False,
+            "executor_tool": "execute_workspace_foldered_canonical_broader_rollout",
+            "executor_tool_implemented": False,
+            "requires_explicit_review_approval": True,
+            "requires_current_backend_manifest_revalidation": True,
+            "allows_automatic_execution": False,
+            "allows_manifest_mutation_in_this_tool": False,
+            "allows_canonical_path_change_in_this_tool": False,
+            "allows_dual_write_enablement_in_this_tool": False,
+            "allows_rollout_apply_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_broader_rollout_plan_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "tightens_legacy_fallback": False,
+            "authorizes_broader_rollout": False,
+            "applies_broader_rollout": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_broader_rollout_readiness(
+    *,
+    default_artifact_root: Path,
+    broader_rollout_readiness_json: str | None,
+    broader_rollout_readiness_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(broader_rollout_readiness_json, field_name="broader_rollout_readiness_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = broader_rollout_readiness_artifact_ref or "workspace_foldered_canonical_broader_rollout_readiness"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_readiness_not_observed", input_summary
+
+
+def _foldered_canonical_broader_rollout_candidates(
+    *,
+    backend_manifest: dict[str, Any],
+    requested_keys: list[str] | None,
+    max_artifacts: int,
+    include_medium_risk: bool,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    entries = backend_manifest.get("entries") if isinstance(backend_manifest.get("entries"), list) else []
+    routes_by_key = {route.artifact_key: route for route in default_workspace_artifact_routes()}
+    finalized_entries: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("artifact_key") or "")
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        if key and alias.get("foldered_canonical_finalized") is True:
+            finalized_entries[key] = entry
+    selected_keys = requested_keys if requested_keys is not None else sorted(finalized_entries)
+    unknown_keys = [key for key in selected_keys if key not in finalized_entries]
+    selected_keys = [key for key in selected_keys if key in finalized_entries]
+    if max_artifacts:
+        selected_keys = selected_keys[:max_artifacts]
+    elif max_artifacts == 0:
+        selected_keys = []
+
+    candidates: list[dict[str, Any]] = []
+    for key in selected_keys:
+        entry = finalized_entries[key]
+        route = routes_by_key.get(key)
+        risk = _dual_write_route_risk(route) if route is not None else {
+            "risk_level": "high",
+            "rationale": "manifest entry has no registered workspace route",
+            "category": "",
+            "producer_roles": [],
+        }
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        status = "ready_for_broader_rollout_plan_review"
+        blockers: list[str] = []
+        warnings: list[str] = []
+        if route is None:
+            status = "blocked_unknown_workspace_route"
+            blockers.append("registered_workspace_route_required")
+        elif risk["risk_level"] == "high":
+            status = "blocked_high_risk_artifact"
+            blockers.append("high_risk_artifact_requires_separate_review")
+        elif risk["risk_level"] == "medium" and not include_medium_risk:
+            status = "blocked_medium_risk_not_explicitly_included"
+            blockers.append("medium_risk_artifact_requires_include_medium_risk")
+        if alias.get("resolver_migration_status") != "foldered-canonical-authoritative":
+            status = "blocked_resolver_not_authoritative"
+            blockers.append("resolver_migration_status_must_be_authoritative")
+        if alias.get("migration_status") != "foldered-canonical-finalized-after-reviewed-apply":
+            status = "blocked_unexpected_migration_status"
+            blockers.append("migration_status_must_be_finalized_after_reviewed_apply")
+        if not entry.get("path"):
+            status = "blocked_missing_canonical_path"
+            blockers.append("canonical_path_required")
+        if risk["risk_level"] == "medium" and include_medium_risk:
+            warnings.append("medium_risk_artifact_selected_for_explicit_review")
+        candidates.append(
+            {
+                "artifact_key": key,
+                "status": status,
+                "current_canonical_path": str(entry.get("path") or ""),
+                "legacy_fallback_path": str(alias.get("legacy_fallback_path") or ""),
+                "future_path": str(alias.get("future_path") or ""),
+                "virtual_uri": str(alias.get("virtual_uri") or ""),
+                "category": route.category if route is not None else "",
+                "producer_roles": list(route.producer_roles) if route is not None else [],
+                "risk": risk,
+                "review_required": True,
+                "planned_rollout": {
+                    "broader_rollout_scope": "foldered-canonical-finalized-workspace-artifact",
+                    "consumer_readiness_recheck_required": True,
+                    "delivery_source_recheck_required": True,
+                    "manifest_revalidation_required": True,
+                    "apply_enabled_in_this_tool": False,
+                },
+                "blockers": blockers,
+                "warnings": warnings,
+            }
+        )
+    return candidates, unknown_keys
+
+
+def _foldered_canonical_broader_rollout_plan_digest(ready_candidates: list[dict[str, Any]]) -> str:
+    if not ready_candidates:
+        return ""
+    digest_input = [
+        {
+            "artifact_key": item.get("artifact_key") or "",
+            "current_canonical_path": item.get("current_canonical_path") or "",
+            "future_path": item.get("future_path") or "",
+            "virtual_uri": item.get("virtual_uri") or "",
+            "planned_rollout": item.get("planned_rollout") or {},
+        }
+        for item in ready_candidates
+    ]
+    return hashlib.sha256(json.dumps(digest_input, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _compact_foldered_canonical_broader_rollout_readiness(readiness: dict[str, Any]) -> dict[str, Any]:
+    summary = readiness.get("summary") if isinstance(readiness.get("summary"), dict) else {}
+    rollout_gate = readiness.get("rollout_gate") if isinstance(readiness.get("rollout_gate"), dict) else {}
+    return {
+        "schema_version": readiness.get("schema_version") or "",
+        "status": readiness.get("status") or "missing",
+        "broader_rollout_review_allowed": bool(summary.get("broader_rollout_review_allowed")),
+        "broader_rollout_authorized_by_this_tool": bool(summary.get("broader_rollout_authorized_by_this_tool")),
+        "broader_rollout_plan_allowed_for_review": bool(rollout_gate.get("broader_rollout_plan_allowed_for_review")),
+        "broader_rollout_apply_allowed_by_this_tool": bool(rollout_gate.get("broader_rollout_apply_allowed_by_this_tool")),
+        "automatic_materialization_allowed": bool(rollout_gate.get("automatic_materialization_allowed")),
+        "blocking_reasons": readiness.get("blocking_reasons") if isinstance(readiness.get("blocking_reasons"), list) else [],
+        "warnings": readiness.get("warnings") if isinstance(readiness.get("warnings"), list) else [],
+    }
+
+
+def _foldered_canonical_broader_rollout_plan_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+) -> list[str]:
+    actions: list[str] = []
+    if "broader_rollout_readiness_unavailable_or_malformed" in blockers or "broader_rollout_readiness_not_ready_for_plan" in blockers:
+        actions.append("run_verified_broader_rollout_readiness_before_planning")
+    if "backend_artifact_manifest_unavailable_or_malformed" in blockers:
+        actions.append("provide_current_backend_manifest_for_broader_rollout_plan")
+    if "artifact_keys_json_malformed" in blockers:
+        actions.append("fix_artifact_keys_json_and_retry_broader_rollout_plan")
+    if "unknown_requested_artifact_keys" in blockers:
+        actions.append("restrict_broader_rollout_plan_to_finalized_manifest_artifact_keys")
+    if "high_risk_artifacts_require_separate_broader_rollout_review" in blockers:
+        actions.append("split_high_risk_artifacts_into_separate_broader_rollout_track")
+    if "medium_risk_artifacts_require_explicit_include_medium_risk" in blockers:
+        actions.append("set_include_medium_risk_only_after_explicit_review")
+    if "blocked_broader_rollout_candidates_present" in blockers:
+        actions.append("repair_or_exclude_blocked_broader_rollout_candidates")
+    if "no_broader_rollout_candidates_selected" in blockers:
+        actions.append("select_finalized_low_risk_artifacts_for_broader_rollout_plan")
+    if status == "ready_for_review":
+        actions.append("review_broader_rollout_plan_before_any_apply_mode_follow_up")
+        actions.append("keep_broader_rollout_apply_and_automatic_materialization_disabled")
+    if any("medium_risk" in warning for warning in warnings):
+        actions.append("review_medium_risk_artifacts_before_broader_rollout_apply")
     return list(dict.fromkeys(actions))
 
 
