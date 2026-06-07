@@ -156,6 +156,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionMultiStepLoopPlanSpec,
     PausedSessionMultiStepLoopExecutionManager,
     PausedSessionMultiStepLoopExecutionSpec,
+    PausedSessionAutomaticLoopReadinessManager,
+    PausedSessionAutomaticLoopReadinessSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1616,6 +1618,61 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_readiness_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopReadinessSpec.from_context(context)
+            result = PausedSessionAutomaticLoopReadinessManager().review(spec)
+            readiness = result.readiness if isinstance(result.readiness, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
+            checks = readiness.get("readiness_checks") if isinstance(readiness.get("readiness_checks"), dict) else {}
+            verification = [
+                f"paused_session_automatic_loop_readiness_status={result.status}",
+                f"paused_session_automatic_loop_readiness_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_readiness_ready_for_review={readiness.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_readiness_executor_implemented={readiness.get('automation_executor_implemented', False)}",
+                f"paused_session_automatic_loop_readiness_candidate_iterations={readiness.get('candidate_iteration_count', 0)}",
+                f"paused_session_automatic_loop_readiness_next_iteration_reviewable={checks.get('next_iteration_reviewable', False)}",
+                f"paused_session_automatic_loop_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_readiness_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_readiness_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_readiness_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_automatic_loop_readiness_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_automatic_loop_readiness_automatic_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"paused_session_automatic_loop_readiness_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
+                f"paused_session_automatic_loop_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_readiness_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only paused-session automatic loop readiness descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": readiness.get("ready_for_review", False),
+                        "automation_executor_implemented": readiness.get("automation_executor_implemented", False),
+                        "automatic_multi_step_loop_supported": readiness.get("automatic_multi_step_loop_supported", False),
+                        "loop_id": readiness.get("loop_id"),
+                        "workflow_id": readiness.get("workflow_id"),
+                        "candidate_iteration_count": readiness.get("candidate_iteration_count", 0),
+                        "automatic_multi_step_loop": policy.get("automatic_multi_step_loop", False),
+                        "long_lived_cross_process_session_managed": policy.get("long_lived_cross_process_session_managed", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=readiness.get("next_action") or "inspect_paused_session_automatic_loop_readiness",
+                confidence=ConfidenceLevel.LOW,
             )
         if self._is_paused_session_multi_step_loop_execution_request(protection_name, context):
             spec = PausedSessionMultiStepLoopExecutionSpec.from_context(context)
@@ -6612,6 +6669,8 @@ class NativeWebRuntime(WebReverseRuntime):
         if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_automatic_loop_readiness_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_execution_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
@@ -6664,10 +6723,36 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_paused_session_automatic_loop_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-automatic-loop-readiness",
+            "paused-session-multi-step-automatic-loop-readiness",
+            "review-paused-session-automatic-loop-readiness",
+            "paused-session-automatic-continuation-loop-readiness",
+            "automatic-paused-session-loop-readiness",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_automatic_loop_readiness",
+                "pausedSessionAutomaticLoopReadiness",
+                "paused-session-automatic-loop-readiness",
+                "paused_session_multi_step_automatic_loop_readiness",
+                "pausedSessionMultiStepAutomaticLoopReadiness",
+                "review_paused_session_automatic_loop_readiness",
+                "reviewPausedSessionAutomaticLoopReadiness",
+            )
+        )
+
+    @staticmethod
     def _is_paused_session_multi_step_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
         if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            return False
+        if NativeWebRuntime._is_paused_session_automatic_loop_readiness_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
         if normalized in {
@@ -6697,6 +6782,8 @@ class NativeWebRuntime(WebReverseRuntime):
         if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_multi_step_loop_execution_request(protection_name, context):
+            return False
+        if NativeWebRuntime._is_paused_session_automatic_loop_readiness_request(protection_name, context):
             return False
         if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
             return False

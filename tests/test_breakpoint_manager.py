@@ -25,6 +25,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionMultiStepLoopPlanSpec,
     PausedSessionMultiStepLoopExecutionManager,
     PausedSessionMultiStepLoopExecutionSpec,
+    PausedSessionAutomaticLoopReadinessManager,
+    PausedSessionAutomaticLoopReadinessSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1500,6 +1502,62 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("followup_checkpoint_required", result.loop_plan["blockers"])
         self.assertIn("max_loop_iterations_reached", result.loop_plan["blockers"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+
+    def test_automatic_loop_readiness_reviews_future_executor_without_side_effects(self) -> None:
+        spec = PausedSessionAutomaticLoopReadinessSpec.from_context(
+            {
+                "paused_session_automatic_loop_readiness": True,
+                "max_automatic_iterations": 2,
+                "paused_session_cross_process_session_lifecycle": {
+                    "lifecycle": {"status": "ready_for_review", "pause_session_id": "pause-auto-1", "target_id": "target-auto-1"}
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {"status": "ready_for_review", "workflow_id": "workflow-auto-1", "planned_steps": [{"step_index": 1, "method": "Debugger.stepOver"}, {"step_index": 2, "method": "Debugger.stepOut"}]}
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "loop-auto-1",
+                        "workflow_id": "workflow-auto-1",
+                        "readiness": {"next_loop_iteration_reviewable": True, "automatic_multi_step_loop_supported": False},
+                        "iteration_plan": [
+                            {"iteration_index": 1, "workflow_step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver"},
+                            {"iteration_index": 2, "workflow_step_index": 2, "method": "Debugger.stepOut", "fingerprint": "2:Debugger.stepOut"},
+                        ],
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionAutomaticLoopReadinessManager().review(spec)
+        readiness = result.readiness
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertTrue(readiness["ready_for_review"])
+        self.assertFalse(readiness["automation_executor_implemented"])
+        self.assertFalse(readiness["automatic_multi_step_loop_supported"])
+        self.assertEqual(readiness["candidate_iteration_count"], 2)
+        self.assertEqual(readiness["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["multi_step_continuation_executed"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+        self.assertFalse(result.side_effect_policy["long_lived_cross_process_session_managed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_readiness_blocks_without_lifecycle_and_loop_plan(self) -> None:
+        spec = PausedSessionAutomaticLoopReadinessSpec.from_context({"paused_session_automatic_loop_readiness": True})
+
+        result = PausedSessionAutomaticLoopReadinessManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("multi_step_loop_plan_required", result.readiness["blockers"])
+        self.assertIn("multi_step_workflow_required", result.readiness["blockers"])
+        self.assertIn("session_lifecycle_required_for_automatic_loop_review", result.readiness["blockers"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
 

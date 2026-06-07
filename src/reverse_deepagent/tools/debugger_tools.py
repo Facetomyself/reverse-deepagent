@@ -179,6 +179,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "execute_paused_session_continuation_loop",
             "executePausedSessionContinuationLoop",
         )
+        automatic_loop_readiness = _object_alias(
+            payload,
+            "paused_session_automatic_loop_readiness",
+            "paused-session-automatic-loop-readiness",
+            "pausedSessionAutomaticLoopReadiness",
+            "paused_session_multi_step_automatic_loop_readiness",
+            "pausedSessionMultiStepAutomaticLoopReadiness",
+            "automatic_loop_readiness",
+            "automaticLoopReadiness",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -219,7 +229,7 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -347,6 +357,11 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                 warnings.append("multi_step_loop_execution_checkpoint_not_observed")
             else:
                 warnings.append("multi_step_loop_execution_review_result")
+        automatic_loop_readiness_status = _string(automatic_loop_readiness.get("status"))
+        if automatic_loop_readiness_status == "blocked":
+            blockers.append("paused_session_automatic_loop_readiness_blocked")
+        if automatic_loop_readiness_status == "ready_for_review":
+            warnings.append("automatic_loop_readiness_requires_review")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -604,6 +619,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "automatic_wrapper_continuation": _boolish(multi_step_loop_exec.get("automatic_wrapper_continuation")),
                     "blockers": multi_step_loop_exec.get("blockers") if isinstance(multi_step_loop_exec.get("blockers"), list) else [],
                 },
+                "automatic_loop_readiness": {
+                    "status": _string(automatic_loop_readiness.get("status") or "unknown"),
+                    "ready_for_review": _boolish(automatic_loop_readiness.get("ready_for_review")),
+                    "automation_executor_implemented": _boolish(automatic_loop_readiness.get("automation_executor_implemented")),
+                    "automatic_multi_step_loop_supported": _boolish(automatic_loop_readiness.get("automatic_multi_step_loop_supported")),
+                    "candidate_iteration_count": automatic_loop_readiness.get("candidate_iteration_count", 0),
+                    "max_automatic_iterations": automatic_loop_readiness.get("max_automatic_iterations", 0),
+                    "next_action": _string(automatic_loop_readiness.get("next_action")),
+                    "blockers": automatic_loop_readiness.get("blockers") if isinstance(automatic_loop_readiness.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
@@ -794,6 +819,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_multi_step_loop_plan_blockers"
     if "paused_session_multi_step_loop_execution_blocked" in blockers:
         return "inspect_multi_step_loop_execution_blockers"
+    if "paused_session_automatic_loop_readiness_blocked" in blockers:
+        return "inspect_paused_session_automatic_loop_readiness_blockers"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
@@ -838,6 +865,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "checkpoint_loop_iteration_captured_pause"
     if "multi_step_loop_execution_review_result" in warnings:
         return "review_paused_session_loop_execution_result"
+    if "automatic_loop_readiness_requires_review" in warnings:
+        return "review_future_bounded_automatic_loop_executor_contract"
     if "multi_step_continuation_workflow_requires_review" in warnings:
         return "approve_multi_step_continuation_workflow"
     if "cross_process_continuation_checkpoint_ready_for_next_action_review" in warnings:

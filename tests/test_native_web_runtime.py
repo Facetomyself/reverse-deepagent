@@ -6458,6 +6458,65 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_multi_step_continuation_workflow_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_automatic_loop_readiness_from_native_runtime_is_review_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-automatic-loop-readiness",
+            {
+                "paused_session_automatic_loop_readiness": True,
+                "max_automatic_iterations": 2,
+                "paused_session_cross_process_session_lifecycle": {
+                    "lifecycle": {"status": "ready_for_review", "pause_session_id": "native-auto-pause-1", "target_id": "native-auto-target-1"}
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "native-auto-workflow-1",
+                        "planned_steps": [
+                            {"step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver"},
+                            {"step_index": 2, "method": "Debugger.stepOut", "fingerprint": "2:Debugger.stepOut"},
+                        ],
+                    }
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "native-auto-loop-1",
+                        "workflow_id": "native-auto-workflow-1",
+                        "readiness": {"next_loop_iteration_reviewable": True, "automatic_multi_step_loop_supported": False},
+                        "iteration_plan": [
+                            {"iteration_index": 1, "workflow_step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver"},
+                            {"iteration_index": 2, "workflow_step_index": 2, "method": "Debugger.stepOut", "fingerprint": "2:Debugger.stepOut"},
+                        ],
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_future_bounded_automatic_loop_executor_contract")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-automatic-loop-readiness.json")
+        self.assertEqual(result.artifacts[0].metadata["candidate_iteration_count"], 2)
+        self.assertFalse(result.artifacts[0].metadata["automation_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_multi_step_loop"])
+        self.assertFalse(result.artifacts[0].metadata["long_lived_cross_process_session_managed"])
+        self.assertIn("paused_session_automatic_loop_readiness_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_executor_implemented=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_event_subscribed=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_multi_step_executed=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_automatic_loop=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_long_lived_session=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_readiness_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_multi_step_loop_plan_from_native_runtime_is_review_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

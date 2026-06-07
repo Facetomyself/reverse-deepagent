@@ -4760,6 +4760,321 @@ class PausedSessionMultiStepLoopPlanManager:
 
 
 @dataclass(slots=True)
+class PausedSessionAutomaticLoopReadinessSpec:
+    """Review-only readiness gate for future automatic paused-session loop execution.
+
+    This descriptor consumes existing multi-step loop evidence and answers whether a later
+    bounded automatic loop executor could even be reviewed. It never executes actions,
+    recovers callFrames, subscribes to debugger events, advances queues, or keeps a
+    long-lived cross-process session alive.
+    """
+
+    loop_plan: dict[str, Any] = field(default_factory=dict)
+    multi_step_workflow: dict[str, Any] = field(default_factory=dict)
+    session_lifecycle: dict[str, Any] = field(default_factory=dict)
+    latest_loop_execution: dict[str, Any] = field(default_factory=dict)
+    continuation_checkpoint: dict[str, Any] = field(default_factory=dict)
+    max_automatic_iterations: int = 2
+    require_review_per_iteration: bool = True
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionAutomaticLoopReadinessSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_automatic_loop_readiness")
+            or context.get("pausedSessionAutomaticLoopReadiness")
+            or context.get("paused-session-automatic-loop-readiness")
+            or context.get("paused_session_multi_step_automatic_loop_readiness")
+            or context.get("pausedSessionMultiStepAutomaticLoopReadiness")
+            or context.get("review_paused_session_automatic_loop_readiness")
+            or context.get("reviewPausedSessionAutomaticLoopReadiness")
+        )
+        loop_container = _first_dict(
+            context,
+            "paused_session_multi_step_loop_plan",
+            "pausedSessionMultiStepLoopPlan",
+            "paused-session-multi-step-loop-plan",
+            "multi_step_loop_plan",
+            "multiStepLoopPlan",
+            "loop_plan",
+            "loopPlan",
+        )
+        loop_plan = dict(loop_container.get("loop_plan")) if isinstance(loop_container.get("loop_plan"), dict) else loop_container
+        workflow_container = _first_dict(
+            context,
+            "paused_session_multi_step_continuation_workflow",
+            "pausedSessionMultiStepContinuationWorkflow",
+            "paused-session-multi-step-continuation-workflow",
+            "multi_step_continuation_workflow",
+            "multiStepContinuationWorkflow",
+            "continuation_workflow",
+            "continuationWorkflow",
+        )
+        workflow = dict(workflow_container.get("workflow")) if isinstance(workflow_container.get("workflow"), dict) else workflow_container
+        lifecycle_container = _first_dict(
+            context,
+            "paused_session_cross_process_session_lifecycle",
+            "pausedSessionCrossProcessSessionLifecycle",
+            "paused-session-cross-process-session-lifecycle",
+            "cross_process_session_lifecycle",
+            "crossProcessSessionLifecycle",
+            "paused_session_lifecycle",
+            "pausedSessionLifecycle",
+        )
+        lifecycle = dict(lifecycle_container.get("lifecycle")) if isinstance(lifecycle_container.get("lifecycle"), dict) else lifecycle_container
+        execution_container = _first_dict(
+            context,
+            "paused_session_multi_step_loop_execution",
+            "pausedSessionMultiStepLoopExecution",
+            "paused-session-multi-step-loop-execution",
+            "latest_loop_execution",
+            "latestLoopExecution",
+        )
+        execution = dict(execution_container.get("execution")) if isinstance(execution_container.get("execution"), dict) else execution_container
+        checkpoint_container = _first_dict(
+            context,
+            "paused_session_cross_process_continuation_checkpoint",
+            "pausedSessionCrossProcessContinuationCheckpoint",
+            "paused-session-cross-process-continuation-checkpoint",
+            "cross_process_continuation_checkpoint",
+            "crossProcessContinuationCheckpoint",
+            "continuation_checkpoint",
+            "continuationCheckpoint",
+        )
+        checkpoint = dict(checkpoint_container.get("checkpoint")) if isinstance(checkpoint_container.get("checkpoint"), dict) else checkpoint_container
+        if not requested and not any((loop_plan, workflow, lifecycle, execution, checkpoint)):
+            return None
+        max_raw = context.get("max_automatic_iterations", context.get("maxAutomaticIterations", 2))
+        try:
+            max_automatic_iterations = int(max_raw)
+        except (TypeError, ValueError):
+            max_automatic_iterations = 2
+        return cls(
+            loop_plan=loop_plan,
+            multi_step_workflow=workflow,
+            session_lifecycle=lifecycle,
+            latest_loop_execution=execution,
+            continuation_checkpoint=checkpoint,
+            max_automatic_iterations=max(1, min(max_automatic_iterations, 5)),
+            require_review_per_iteration=bool(context.get("require_review_per_iteration", context.get("requireReviewPerIteration", True))),
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip() or None,
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopReadinessResult:
+    status: str
+    readiness: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "readiness": self.readiness,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class PausedSessionAutomaticLoopReadinessManager:
+    """Read-only readiness descriptor before any future automatic paused-session loop executor."""
+
+    def review(self, spec: PausedSessionAutomaticLoopReadinessSpec | None) -> PausedSessionAutomaticLoopReadinessResult:
+        blockers = self._blockers(spec)
+        status = "ready_for_review" if not blockers else "blocked"
+        payload = self._payload(spec, status=status, blockers=blockers)
+        return PausedSessionAutomaticLoopReadinessResult(status=status, readiness=payload, side_effect_policy=self._side_effect_policy(), reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionAutomaticLoopReadinessSpec | None) -> list[str]:
+        if spec is None:
+            return ["automatic_loop_readiness_request_missing"]
+        blockers: list[str] = []
+        loop_plan = spec.loop_plan
+        workflow = spec.multi_step_workflow
+        lifecycle = spec.session_lifecycle
+        execution = spec.latest_loop_execution
+        checkpoint = spec.continuation_checkpoint
+        readiness = loop_plan.get("readiness") if isinstance(loop_plan.get("readiness"), dict) else {}
+        if not loop_plan:
+            blockers.append("multi_step_loop_plan_required")
+        elif loop_plan.get("status") != "ready_for_review":
+            blockers.append("multi_step_loop_plan_not_ready")
+        elif readiness.get("next_loop_iteration_reviewable") is not True:
+            blockers.append("next_loop_iteration_not_reviewable")
+        if not workflow:
+            blockers.append("multi_step_workflow_required")
+        elif workflow.get("status") != "ready_for_review":
+            blockers.append("multi_step_workflow_not_ready")
+        if lifecycle:
+            lifecycle_status = str(lifecycle.get("status") or "")
+            if lifecycle_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("session_lifecycle_blocked")
+        else:
+            blockers.append("session_lifecycle_required_for_automatic_loop_review")
+        if execution:
+            if execution.get("automatic_multi_step_loop") is not False:
+                blockers.append("previous_execution_claims_automatic_loop")
+            if execution.get("loop_advanced") is True or execution.get("queue_advanced") is True:
+                blockers.append("previous_execution_already_advanced_loop_or_queue")
+            if execution.get("status") in {"blocked", "failed", "failure", "error", "timed_out"}:
+                blockers.append("latest_loop_execution_not_reviewable")
+            if execution.get("multi_step_loop_iteration_executed") is True and not checkpoint:
+                blockers.append("post_iteration_checkpoint_required")
+        if checkpoint:
+            checkpoint_status = str(checkpoint.get("status") or "")
+            checkpoint_ready = bool(
+                checkpoint.get("continuation_ready_for_next_action")
+                or checkpoint.get("live_callframe_recovery_ready")
+                or checkpoint.get("live_callframe_recovered")
+                or checkpoint_status in {"ready_for_next_action_review", "ready_for_live_callframe_recovery", "ready_for_review"}
+            )
+            if not checkpoint_ready:
+                blockers.append("continuation_checkpoint_not_ready")
+        if spec.require_review_per_iteration is not True:
+            blockers.append("review_per_iteration_required")
+        if spec.max_automatic_iterations < 1:
+            blockers.append("automatic_loop_iteration_budget_required")
+        # This readiness can become ready for review, but it still does not enable a real automatic executor.
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionAutomaticLoopReadinessSpec | None, *, status: str, blockers: list[str]) -> dict[str, Any]:
+        loop_plan = spec.loop_plan if spec else {}
+        workflow = spec.multi_step_workflow if spec else {}
+        lifecycle = spec.session_lifecycle if spec else {}
+        execution = spec.latest_loop_execution if spec else {}
+        checkpoint = spec.continuation_checkpoint if spec else {}
+        readiness = loop_plan.get("readiness") if isinstance(loop_plan.get("readiness"), dict) else {}
+        iteration_plan = loop_plan.get("iteration_plan") if isinstance(loop_plan.get("iteration_plan"), list) else []
+        ready = status == "ready_for_review"
+        candidate_iterations = [dict(item) for item in iteration_plan if isinstance(item, dict)][: spec.max_automatic_iterations if spec else 0]
+        return {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-readiness.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "automation_executor_implemented": False,
+            "automatic_multi_step_loop_supported": False,
+            "loop_id": loop_plan.get("loop_id"),
+            "workflow_id": loop_plan.get("workflow_id") or workflow.get("workflow_id"),
+            "pause_session_id": loop_plan.get("pause_session_id") or workflow.get("pause_session_id") or lifecycle.get("pause_session_id"),
+            "target_id": loop_plan.get("target_id") or workflow.get("target_id") or lifecycle.get("target_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "max_automatic_iterations": spec.max_automatic_iterations if spec else 0,
+            "candidate_iteration_count": len(candidate_iterations),
+            "candidate_iterations": [
+                {
+                    "iteration_index": item.get("iteration_index"),
+                    "workflow_step_index": item.get("workflow_step_index"),
+                    "method": item.get("method"),
+                    "fingerprint": item.get("fingerprint"),
+                    "requires_review_approval": True,
+                    "requires_fresh_live_callframe": True,
+                    "requires_checkpoint_after_iteration": True,
+                    "would_execute_in_this_descriptor": False,
+                }
+                for item in candidate_iterations
+            ],
+            "source_statuses": {
+                "multi_step_loop_plan": loop_plan.get("status"),
+                "multi_step_workflow": workflow.get("status"),
+                "session_lifecycle": lifecycle.get("status"),
+                "latest_loop_execution": execution.get("status"),
+                "continuation_checkpoint": checkpoint.get("status"),
+            },
+            "readiness_checks": {
+                "loop_plan_ready": loop_plan.get("status") == "ready_for_review",
+                "next_iteration_reviewable": readiness.get("next_loop_iteration_reviewable") is True,
+                "workflow_ready": workflow.get("status") == "ready_for_review",
+                "session_lifecycle_present": bool(lifecycle),
+                "review_required_per_iteration": spec.require_review_per_iteration if spec else True,
+                "fresh_live_callframe_required_per_iteration": True,
+                "retained_attached_session_required_per_iteration": True,
+                "checkpoint_required_after_each_iteration": True,
+                "automation_executor_implemented": False,
+                "automatic_loop_may_run_without_review": False,
+            },
+            "future_executor_contract": {
+                "executor_name": "execute_paused_session_automatic_loop",
+                "implemented": False,
+                "would_require_review_approval": True,
+                "would_require_ready_readiness_descriptor": True,
+                "would_execute_bounded_iterations_only": True,
+                "would_stop_after_each_checkpoint": True,
+                "would_not_touch_mobile_runtime_chains": True,
+            },
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "plan_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "debugger_domain_enabled": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "multi_step_continuation_executed": False,
+            "multi_step_loop_iteration_executed": False,
+            "automatic_live_callframe_recovery": False,
+            "automatic_multi_step_loop": False,
+            "automatic_queue_advance": False,
+            "automatic_wrapper_continuation": False,
+            "long_lived_cross_process_session_managed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "automatic_loop_readiness_request_missing": ("request", "No automatic loop readiness request was provided.", "request_paused_session_automatic_loop_readiness"),
+            "multi_step_loop_plan_required": ("loop", "A ready paused-session multi-step loop plan is required.", "plan_paused_session_multi_step_loop"),
+            "multi_step_loop_plan_not_ready": ("loop", "The paused-session multi-step loop plan is not ready.", "review_paused_session_multi_step_loop_plan"),
+            "next_loop_iteration_not_reviewable": ("loop", "The next loop iteration is not reviewable.", "replan_loop_or_checkpoint_continuation"),
+            "multi_step_workflow_required": ("workflow", "A ready multi-step continuation workflow is required.", "plan_multi_step_continuation_workflow"),
+            "multi_step_workflow_not_ready": ("workflow", "The multi-step workflow is not ready.", "review_or_replan_multi_step_workflow"),
+            "session_lifecycle_required_for_automatic_loop_review": ("session", "A session lifecycle descriptor is required before automatic loop readiness review.", "review_cross_process_session_lifecycle"),
+            "session_lifecycle_blocked": ("session", "The session lifecycle descriptor is blocked.", "resolve_session_lifecycle_blockers"),
+            "previous_execution_claims_automatic_loop": ("safety", "Previous execution claims automatic loop behavior and must be audited first.", "audit_previous_loop_execution"),
+            "previous_execution_already_advanced_loop_or_queue": ("safety", "Previous execution advanced loop or queue state automatically.", "audit_loop_queue_state"),
+            "latest_loop_execution_not_reviewable": ("execution", "Latest loop execution is blocked, failed, or timed out.", "review_latest_loop_execution"),
+            "post_iteration_checkpoint_required": ("checkpoint", "A post-iteration checkpoint is required after executed loop iteration.", "checkpoint_cross_process_continuation"),
+            "continuation_checkpoint_not_ready": ("checkpoint", "The continuation checkpoint is not ready.", "refresh_continuation_checkpoint"),
+            "review_per_iteration_required": ("review", "Automatic loop readiness still requires review per iteration.", "restore_review_per_iteration_gate"),
+            "automatic_loop_iteration_budget_required": ("budget", "A bounded automatic iteration budget is required.", "set_automatic_loop_iteration_budget"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_readiness"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_readiness"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_readiness"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if blockers:
+            return "inspect_paused_session_automatic_loop_readiness_blockers"
+        if status == "ready_for_review":
+            return "review_future_bounded_automatic_loop_executor_contract"
+        return "inspect_paused_session_automatic_loop_readiness"
+
+
+@dataclass(slots=True)
 class PausedSessionMultiStepLoopExecutionSpec:
     """Review-gated one-iteration executor for a reviewed paused-session loop plan.
 
