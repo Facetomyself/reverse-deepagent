@@ -1075,6 +1075,46 @@ def make_review_workspace_foldered_canonical_broader_rollout_post_audit_tool(
     return review_workspace_foldered_canonical_broader_rollout_post_audit
 
 
+def make_plan_workspace_foldered_canonical_broader_rollout_rollback_decision_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create a review-only rollback-vs-commit decision plan descriptor."""
+
+    root = Path(default_artifact_root)
+
+    def plan_workspace_foldered_canonical_broader_rollout_rollback_decision(
+        artifact_root: str | None = None,
+        broader_rollout_post_audit_json: str | None = None,
+        broader_rollout_post_audit_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_post_audit",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+        requested_decision: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan a reviewed rollback-vs-commit decision without recording or executing it."""
+
+        return plan_workspace_foldered_canonical_broader_rollout_rollback_decision_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            broader_rollout_post_audit_json=broader_rollout_post_audit_json,
+            broader_rollout_post_audit_artifact_ref=broader_rollout_post_audit_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+            requested_decision=requested_decision,
+        )
+
+    plan_workspace_foldered_canonical_broader_rollout_rollback_decision.__name__ = (
+        "plan_workspace_foldered_canonical_broader_rollout_rollback_decision"
+    )
+    plan_workspace_foldered_canonical_broader_rollout_rollback_decision.__doc__ = (
+        "Review-only foldered-canonical broader rollout rollback-vs-commit decision plan descriptor. It consumes a "
+        "verified broader rollout post-audit descriptor and current backend artifact manifest, then prepares commit, "
+        "rollback, or defer review options without recording a decision, mutating manifests, rolling back metadata, "
+        "committing rollout state, moving files, running pipelines, starting browsers, calling MCP, or touching mobile "
+        "full runtime chains."
+    )
+    return plan_workspace_foldered_canonical_broader_rollout_rollback_decision
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -9319,6 +9359,303 @@ def _foldered_canonical_broader_rollout_post_audit_next_actions(
         actions.append("keep_rollback_vs_commit_decisioning_separate")
     if any("legacy_fallback" in warning for warning in warnings):
         actions.append("review_legacy_fallback_metadata_before_removing_compatibility_paths")
+    return list(dict.fromkeys(actions))
+
+
+def plan_workspace_foldered_canonical_broader_rollout_rollback_decision_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    broader_rollout_post_audit_json: str | None = None,
+    broader_rollout_post_audit_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_post_audit",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    requested_decision: str | None = None,
+) -> dict[str, Any]:
+    """Plan a reviewed rollback-vs-commit decision without side effects."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    post_audit, post_audit_error, post_audit_input = _load_or_read_workspace_foldered_canonical_broader_rollout_post_audit(
+        default_artifact_root=effective_root,
+        broader_rollout_post_audit_json=broader_rollout_post_audit_json,
+        broader_rollout_post_audit_artifact_ref=broader_rollout_post_audit_artifact_ref,
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+    post_summary = post_audit.get("summary") if isinstance(post_audit.get("summary"), dict) else {}
+    audit_results = post_audit.get("audit_results") if isinstance(post_audit.get("audit_results"), list) else []
+    valid_audit_results = [item for item in audit_results if isinstance(item, dict)]
+    current_manifest_checks = _foldered_canonical_broader_rollout_rollback_decision_current_manifest_checks(
+        audit_results=valid_audit_results,
+        backend_manifest=backend_manifest,
+        transaction_id=str(post_summary.get("transaction_id") or ""),
+    )
+    requested = str(requested_decision or "").strip().lower()
+    valid_requested_decisions = {"", "commit", "rollback", "defer"}
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if post_audit_error:
+        blockers.append("broader_rollout_post_audit_unavailable_or_malformed")
+    if post_audit.get("status") != "verified":
+        blockers.append("broader_rollout_post_audit_not_verified")
+    if post_summary.get("all_broader_rollout_entries_verified") is not True:
+        blockers.append("broader_rollout_post_audit_entries_not_all_verified")
+    if post_summary.get("canonical_paths_changed_by_broader_rollout") is True:
+        blockers.append("broader_rollout_post_audit_reports_canonical_path_change")
+    if post_summary.get("dual_write_enabled_by_broader_rollout") is True:
+        blockers.append("broader_rollout_post_audit_reports_dual_write_enabled")
+    if post_summary.get("files_moved_by_broader_rollout") is True:
+        blockers.append("broader_rollout_post_audit_reports_files_moved")
+    if backend_manifest_error:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if not valid_audit_results:
+        blockers.append("broader_rollout_post_audit_has_no_audit_results")
+    if requested not in valid_requested_decisions:
+        blockers.append("requested_decision_not_supported")
+    for item in current_manifest_checks:
+        if item.get("status") != "verified":
+            blockers.append(f"broader_rollout_rollback_decision:{item.get('artifact_key') or 'unknown'}:{item.get('status') or 'blocked'}")
+        for warning in item.get("warnings") or []:
+            warnings.append(f"broader_rollout_rollback_decision:{item.get('artifact_key') or 'unknown'}:{warning}")
+    if not blockers:
+        warnings.append("rollback_vs_commit_decision_plan_is_review_only_and_does_not_record_decision")
+
+    verified_check_count = sum(1 for item in current_manifest_checks if item.get("status") == "verified")
+    status = "ready_for_review" if not blockers else "blocked" if post_audit.get("schema_version") != "missing" else "not_ready"
+    decision_review_ready = status == "ready_for_review"
+    selected_decision = requested if requested in {"commit", "rollback", "defer"} else ""
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-decision-plan.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "planned_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "post_audit_status": post_audit.get("status") or "missing",
+            "audit_result_count": len(valid_audit_results),
+            "current_manifest_check_count": len(current_manifest_checks),
+            "verified_current_manifest_check_count": verified_check_count,
+            "all_current_manifest_checks_verified": bool(current_manifest_checks)
+            and verified_check_count == len(current_manifest_checks),
+            "transaction_id": post_summary.get("transaction_id") or "",
+            "idempotency_key": post_summary.get("idempotency_key") or "",
+            "requested_decision": requested,
+            "selected_decision": selected_decision,
+            "decision_review_ready": decision_review_ready,
+            "rollback_vs_commit_decision_recorded_by_this_tool": False,
+            "rollback_executed_by_this_tool": False,
+            "commit_executed_by_this_tool": False,
+            "artifacts_written": False,
+            "backend_manifest_mutated_by_this_tool": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "broader_rollout_post_audit_input": post_audit_input,
+        "backend_manifest_input": backend_manifest_input,
+        "post_audit_summary": {
+            "schema_version": post_audit.get("schema_version") or "",
+            "status": post_audit.get("status") or "missing",
+            "transaction_id": post_summary.get("transaction_id") or "",
+            "idempotency_key": post_summary.get("idempotency_key") or "",
+            "all_broader_rollout_entries_verified": post_summary.get("all_broader_rollout_entries_verified") is True,
+            "matching_journal_entry_found": post_summary.get("matching_journal_entry_found") is True,
+            "backend_manifest_transaction_metadata_matches": post_summary.get("backend_manifest_transaction_metadata_matches") is True,
+        },
+        "current_manifest_checks": current_manifest_checks,
+        "decision_options": [
+            {
+                "decision": "commit",
+                "label": "commit_broader_rollout_metadata",
+                "review_ready": decision_review_ready,
+                "requires_separate_review_approval": True,
+                "requires_separate_executor": True,
+                "writes_by_this_tool": False,
+                "description": "Keep the broader rollout metadata as accepted after human review.",
+            },
+            {
+                "decision": "rollback",
+                "label": "plan_broader_rollout_metadata_rollback",
+                "review_ready": decision_review_ready,
+                "requires_separate_review_approval": True,
+                "requires_separate_executor": True,
+                "writes_by_this_tool": False,
+                "description": "Prepare a separate reviewed rollback plan before reverting broader rollout metadata.",
+            },
+            {
+                "decision": "defer",
+                "label": "defer_decision_and_collect_more_evidence",
+                "review_ready": True,
+                "requires_separate_review_approval": False,
+                "requires_separate_executor": False,
+                "writes_by_this_tool": False,
+                "description": "Leave the broader rollout state unchanged while collecting more evidence.",
+            },
+        ],
+        "decision_gate": {
+            "decision_review_ready": decision_review_ready,
+            "requested_decision_supported": requested in valid_requested_decisions,
+            "selected_decision": selected_decision,
+            "commit_review_allowed": decision_review_ready,
+            "rollback_review_allowed": decision_review_ready,
+            "defer_review_allowed": True,
+            "decision_record_allowed_by_this_tool": False,
+            "automatic_commit_allowed": False,
+            "automatic_rollback_allowed": False,
+            "requires_separate_decision_record": decision_review_ready,
+            "requires_separate_commit_or_rollback_executor": selected_decision in {"commit", "rollback"},
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_broader_rollout_rollback_decision_next_actions(
+            status,
+            blockers,
+            warnings,
+            selected_decision=selected_decision,
+        ),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "records_decision": False,
+            "commits_broader_rollout": False,
+            "rolls_back_broader_rollout": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_broader_rollout_post_audit(
+    *,
+    default_artifact_root: Path,
+    broader_rollout_post_audit_json: str | None,
+    broader_rollout_post_audit_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(broader_rollout_post_audit_json, field_name="broader_rollout_post_audit_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = broader_rollout_post_audit_artifact_ref or "workspace_foldered_canonical_broader_rollout_post_audit"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_post_audit_not_observed", input_summary
+
+
+def _foldered_canonical_broader_rollout_rollback_decision_current_manifest_checks(
+    *,
+    audit_results: list[dict[str, Any]],
+    backend_manifest: dict[str, Any],
+    transaction_id: str,
+) -> list[dict[str, Any]]:
+    entries = backend_manifest.get("entries") if isinstance(backend_manifest.get("entries"), list) else []
+    entries_by_key = {
+        str(entry.get("artifact_key") or ""): entry
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("artifact_key")
+    }
+    checks: list[dict[str, Any]] = []
+    for audit in audit_results:
+        artifact_key = str(audit.get("artifact_key") or "")
+        expected_canonical_path = str(audit.get("observed_canonical_path") or audit.get("expected_canonical_path") or "")
+        expected_legacy_path = str(audit.get("expected_legacy_fallback_path") or "")
+        entry = entries_by_key.get(artifact_key) or {}
+        observed_path = str(entry.get("path") or "")
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        status = "verified"
+        blockers: list[str] = []
+        warnings: list[str] = []
+        if not artifact_key:
+            status = "blocked_missing_artifact_key"
+            blockers.append("artifact_key_required")
+        elif not entry:
+            status = "blocked_current_manifest_entry_missing"
+            blockers.append("current_manifest_entry_required")
+        if expected_canonical_path and observed_path and observed_path != expected_canonical_path:
+            status = "blocked_current_manifest_canonical_path_changed"
+            blockers.append("current_manifest_canonical_path_changed")
+        if expected_legacy_path and observed_path and observed_path == expected_legacy_path:
+            status = "blocked_current_manifest_canonical_path_regressed_to_legacy"
+            blockers.append("current_manifest_canonical_path_regressed_to_legacy")
+        if not alias:
+            status = "blocked_current_manifest_workspace_alias_missing"
+            blockers.append("current_manifest_workspace_alias_required")
+        elif alias.get("broader_rollout_applied") is not True:
+            status = "blocked_current_manifest_broader_rollout_not_applied"
+            blockers.append("current_manifest_broader_rollout_applied_required")
+        elif transaction_id and alias.get("broader_rollout_transaction_id") != transaction_id:
+            status = "blocked_current_manifest_transaction_id_mismatch"
+            blockers.append("current_manifest_transaction_id_mismatch")
+        if alias and alias.get("foldered_canonical_finalized") is not True:
+            warnings.append("current_manifest_not_marked_foldered_canonical_finalized")
+        checks.append(
+            {
+                "artifact_key": artifact_key,
+                "status": status,
+                "expected_canonical_path": expected_canonical_path,
+                "observed_canonical_path": observed_path,
+                "expected_legacy_fallback_path": expected_legacy_path,
+                "canonical_path_stable": bool(expected_canonical_path and observed_path == expected_canonical_path),
+                "canonical_path_regressed_to_legacy": bool(expected_legacy_path and observed_path == expected_legacy_path),
+                "broader_rollout_applied": alias.get("broader_rollout_applied") is True if alias else False,
+                "transaction_id_matches": bool(alias and transaction_id and alias.get("broader_rollout_transaction_id") == transaction_id),
+                "blockers": blockers,
+                "warnings": warnings,
+            }
+        )
+    return checks
+
+
+def _foldered_canonical_broader_rollout_rollback_decision_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+    *,
+    selected_decision: str,
+) -> list[str]:
+    actions: list[str] = []
+    if "broader_rollout_post_audit_unavailable_or_malformed" in blockers or "broader_rollout_post_audit_not_verified" in blockers:
+        actions.append("produce_verified_broader_rollout_post_audit_before_decisioning")
+    if "backend_artifact_manifest_unavailable_or_malformed" in blockers:
+        actions.append("provide_current_backend_manifest_before_rollback_vs_commit_review")
+    if "requested_decision_not_supported" in blockers:
+        actions.append("choose_supported_requested_decision_commit_rollback_or_defer")
+    if any(reason.startswith("broader_rollout_rollback_decision:") for reason in blockers):
+        actions.append("repair_or_reaudit_broader_rollout_manifest_state_before_decisioning")
+    if status == "ready_for_review":
+        actions.append("record_separate_review_decision_before_any_commit_or_rollback_executor")
+        if selected_decision == "commit":
+            actions.append("prepare_separate_broader_rollout_commit_record_after_review")
+        elif selected_decision == "rollback":
+            actions.append("prepare_separate_broader_rollout_rollback_plan_after_review")
+        else:
+            actions.append("review_commit_rollback_or_defer_options")
+    if any("foldered_canonical" in warning for warning in warnings):
+        actions.append("review_foldered_canonical_metadata_before_decision_record")
     return list(dict.fromkeys(actions))
 
 

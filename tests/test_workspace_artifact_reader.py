@@ -11,6 +11,7 @@ from reverse_deepagent.tools.artifact_tools import (
     execute_workspace_foldered_canonical_legacy_fallback_tightening_payload,
     execute_workspace_foldered_canonical_migration_finalization_payload,
     execute_workspace_foldered_canonical_physical_apply_payload,
+    plan_workspace_foldered_canonical_broader_rollout_rollback_decision_payload,
     plan_workspace_foldered_canonical_broader_rollout_payload,
     plan_workspace_foldered_canonical_legacy_fallback_tightening_payload,
     plan_workspace_foldered_canonical_migration_finalization_payload,
@@ -30,6 +31,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool,
     make_execute_workspace_foldered_canonical_migration_finalization_tool,
     make_execute_workspace_foldered_canonical_physical_apply_tool,
+    make_plan_workspace_foldered_canonical_broader_rollout_rollback_decision_tool,
     make_plan_workspace_foldered_canonical_broader_rollout_tool,
     make_review_workspace_foldered_canonical_broader_rollout_post_audit_tool,
     make_review_workspace_foldered_canonical_broader_rollout_preflight_tool,
@@ -1349,6 +1351,20 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
         journal = json.loads((workspace / "workspace-foldered-canonical-broader-rollout-journal.json").read_text(encoding="utf-8"))
         mutated_manifest = json.loads((workspace / "backend-artifact-manifest.json").read_text(encoding="utf-8"))
         return result, journal, mutated_manifest
+
+    def _verified_broader_rollout_post_audit_evidence(
+        self,
+        root: Path,
+        artifact_keys: list[str] | None = None,
+    ) -> tuple[dict, dict]:
+        result, journal, manifest = self._applied_broader_rollout_evidence(root, artifact_keys or ["workspace_task_card"])
+        post_audit = review_workspace_foldered_canonical_broader_rollout_post_audit_payload(
+            default_artifact_root=root,
+            broader_rollout_result_json=json.dumps(result),
+            broader_rollout_journal_json=json.dumps(journal),
+            backend_manifest_json=json.dumps(manifest),
+        )
+        return post_audit, manifest
 
     def test_foldered_canonical_migration_apply_plan_blocks_without_ready_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3897,6 +3913,126 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse((workspace / "workspace-foldered-canonical-broader-rollout-post-audit.json").exists())
+
+    def test_broader_rollout_rollback_decision_blocks_without_post_audit_or_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = plan_workspace_foldered_canonical_broader_rollout_rollback_decision_payload(default_artifact_root=root)
+
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-decision-plan.v1",
+            )
+            self.assertEqual(payload["status"], "not_ready")
+            self.assertIn("broader_rollout_post_audit_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertFalse(payload["decision_gate"]["decision_review_ready"])
+            self.assertFalse(payload["decision_gate"]["automatic_commit_allowed"])
+            self.assertFalse(payload["decision_gate"]["automatic_rollback_allowed"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["records_decision"])
+            self.assertFalse(payload["side_effect_policy"]["commits_broader_rollout"])
+            self.assertFalse(payload["side_effect_policy"]["rolls_back_broader_rollout"])
+
+    def test_broader_rollout_rollback_decision_plan_uses_verified_post_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            post_audit, manifest = self._verified_broader_rollout_post_audit_evidence(root, ["workspace_task_card"])
+
+            payload = plan_workspace_foldered_canonical_broader_rollout_rollback_decision_payload(
+                default_artifact_root=root,
+                broader_rollout_post_audit_json=json.dumps(post_audit),
+                backend_manifest_json=json.dumps(manifest),
+                requested_decision="commit",
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["requested_decision"], "commit")
+            self.assertEqual(payload["summary"]["selected_decision"], "commit")
+            self.assertTrue(payload["summary"]["decision_review_ready"])
+            self.assertEqual(payload["summary"]["current_manifest_check_count"], 1)
+            self.assertTrue(payload["summary"]["all_current_manifest_checks_verified"])
+            self.assertTrue(payload["decision_gate"]["decision_review_ready"])
+            self.assertTrue(payload["decision_gate"]["commit_review_allowed"])
+            self.assertTrue(payload["decision_gate"]["rollback_review_allowed"])
+            self.assertFalse(payload["decision_gate"]["decision_record_allowed_by_this_tool"])
+            self.assertTrue(payload["decision_gate"]["requires_separate_decision_record"])
+            self.assertTrue(payload["decision_gate"]["requires_separate_commit_or_rollback_executor"])
+            self.assertEqual(payload["current_manifest_checks"][0]["status"], "verified")
+            self.assertTrue(payload["current_manifest_checks"][0]["canonical_path_stable"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["records_decision"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertIn("record_separate_review_decision_before_any_commit_or_rollback_executor", payload["recommended_next_actions"])
+
+    def test_broader_rollout_rollback_decision_blocks_current_manifest_regression(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            post_audit, manifest = self._verified_broader_rollout_post_audit_evidence(root, ["workspace_task_card"])
+            alias = manifest["entries"][0]["metadata"]["workspace_alias"]
+            manifest["entries"][0]["path"] = alias["legacy_fallback_path"]
+
+            payload = plan_workspace_foldered_canonical_broader_rollout_rollback_decision_payload(
+                default_artifact_root=root,
+                broader_rollout_post_audit_json=json.dumps(post_audit),
+                backend_manifest_json=json.dumps(manifest),
+                requested_decision="rollback",
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn(
+                "broader_rollout_rollback_decision:workspace_task_card:blocked_current_manifest_canonical_path_regressed_to_legacy",
+                payload["blocking_reasons"],
+            )
+            self.assertFalse(payload["decision_gate"]["decision_review_ready"])
+            self.assertTrue(payload["current_manifest_checks"][0]["canonical_path_regressed_to_legacy"])
+            self.assertFalse(payload["side_effect_policy"]["rolls_back_broader_rollout"])
+
+    def test_broader_rollout_rollback_decision_blocks_unsupported_requested_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            post_audit, manifest = self._verified_broader_rollout_post_audit_evidence(root, ["workspace_task_card"])
+
+            payload = plan_workspace_foldered_canonical_broader_rollout_rollback_decision_payload(
+                default_artifact_root=root,
+                broader_rollout_post_audit_json=json.dumps(post_audit),
+                backend_manifest_json=json.dumps(manifest),
+                requested_decision="ship-it",
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("requested_decision_not_supported", payload["blocking_reasons"])
+            self.assertFalse(payload["decision_gate"]["requested_decision_supported"])
+            self.assertEqual(payload["decision_gate"]["selected_decision"], "")
+
+    def test_broader_rollout_rollback_decision_tool_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            post_audit, manifest = self._verified_broader_rollout_post_audit_evidence(root, ["workspace_task_card"])
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "workspace-foldered-canonical-broader-rollout-post-audit.json").write_text(
+                json.dumps(post_audit, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "backend-artifact-manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            tool = make_plan_workspace_foldered_canonical_broader_rollout_rollback_decision_tool(root)
+
+            payload = tool(requested_decision="defer")
+
+            self.assertEqual(tool.__name__, "plan_workspace_foldered_canonical_broader_rollout_rollback_decision")
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["broader_rollout_post_audit_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["backend_manifest_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["decision_gate"]["selected_decision"], "defer")
+            self.assertFalse(payload["decision_gate"]["requires_separate_commit_or_rollback_executor"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse((workspace / "workspace-foldered-canonical-broader-rollout-rollback-decision-plan.json").exists())
 
     def test_legacy_fallback_tightening_readiness_blocks_unready_consumer_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
