@@ -3050,7 +3050,7 @@ Status: implemented as a review-only / plan-only rollback-vs-commit decision des
 
 The DeepAgents agent tool list includes `plan_workspace_foldered_canonical_broader_rollout_rollback_decision`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-rollback-decision-plan.json` with future alias `/workspace/review/workspace-foldered-canonical-broader-rollout-rollback-decision-plan.json` and category `triage`.
 
-Boundary: this closes the review-only rollback-vs-commit decision planning layer only. It does not write plan artifacts, record decisions, mutate manifests, move files, change canonical paths, enable dual-write, commit broader rollout, rollback broader rollout, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Decision recording and any explicit commit / rollback executor remain separate reviewed follow-ups.
+Boundary: this closes the review-only rollback-vs-commit decision planning layer only. It does not write plan artifacts, record decisions, mutate manifests, move files, change canonical paths, enable dual-write, commit broader rollout, rollback broader rollout, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Decision recording, explicit commit execution, and rollback preflight are implemented separately; the rollback executor remains a reviewed follow-up.
 
 Tests cover missing post-audit / manifest blockers, ready commit review planning from verified post-audit evidence, current manifest regression blocking, unsupported requested decision blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
 
@@ -3062,7 +3062,7 @@ Status: implemented as an explicit reviewed decision record writer after the Ste
 
 The DeepAgents agent tool list includes `record_workspace_foldered_canonical_broader_rollout_decision`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-decision-record.json` with future alias `/workspace/review/workspace-foldered-canonical-broader-rollout-decision-record.json` and category `audit`.
 
-Boundary: this closes the reviewed decision-record layer only. It does not execute commit or rollback, mutate manifests, move files, change canonical paths, enable dual-write, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. The explicit commit executor is implemented in Step 239; rollback executor remains a separate reviewed follow-up.
+Boundary: this closes the reviewed decision-record layer only. It does not execute commit or rollback, mutate manifests, move files, change canonical paths, enable dual-write, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. The explicit commit executor is implemented in Step 239; rollback preflight is implemented in Step 240; rollback executor remains a separate reviewed follow-up.
 
 Tests cover missing plan / missing decision blockers, dry-run ready decision records without writes, reviewer / approval gates before writing, successful reviewed decision artifact writing, unsupported decision blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
 
@@ -3076,6 +3076,20 @@ In apply mode it appends `workspace/workspace-foldered-canonical-broader-rollout
 
 The DeepAgents agent tool list includes `execute_workspace_foldered_canonical_broader_rollout_commit`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-commit-result.json` and `workspace/workspace-foldered-canonical-broader-rollout-commit-journal.json` with future aliases under `/workspace/review/` and category `audit`.
 
-Boundary: this closes the reviewed commit terminalization layer only. It does not implement rollback execution or automatic decision making. Rollback remains a separate reviewed follow-up.
+Boundary: this closes the reviewed commit terminalization layer only. It does not implement rollback execution or automatic decision making. Rollback preflight is implemented in Step 240; rollback executor remains a separate reviewed follow-up.
 
 Tests cover dry-run read-only commit planning, apply approval and artifact-ref gates, terminal manifest commit metadata with append-only journal / result evidence, duplicate idempotency blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
+
+### Step 240：Read-only broader rollout rollback preflight descriptor baseline
+
+Status: implemented as a read-only broader rollout rollback executor preflight descriptor after the Step 238 decision record writer and Step 239 commit executor. This is not a rollback executor, not automatic rollback-vs-commit selection, not manifest mutation, not canonical path mutation, not artifact movement, not dual-write enablement, not automatic materialization, not a pipeline runner, not browser / CDP / MCP integration, and not Android / iOS / mini-program full runtime chain.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `review_workspace_foldered_canonical_broader_rollout_rollback_preflight_payload(...)` and `make_review_workspace_foldered_canonical_broader_rollout_rollback_preflight_tool(...)`. The descriptor consumes a recorded `workspace-foldered-canonical-broader-rollout-decision-record` selecting `rollback`, current backend artifact manifest evidence, optional `workspace-foldered-canonical-broader-rollout-commit-journal` evidence, and optional expected transaction id, then emits `reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-preflight.v1` with decision summary, transaction guard, commit-state guard, current manifest entry revalidation, rollback executor gate, blockers, warnings, recommended next actions, and side-effect boundaries.
+
+The preflight blocks when the decision record is missing or not recorded, the decision is not `rollback`, current manifest evidence is missing, no current manifest entries match the broader rollout transaction, canonical path confirmation regressed, the manifest is already rolled back, the manifest is already committed, or the optional commit journal contains a committed entry for the same transaction.
+
+The DeepAgents agent tool list includes `review_workspace_foldered_canonical_broader_rollout_rollback_preflight`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-rollback-preflight.json` with future alias `/workspace/review/workspace-foldered-canonical-broader-rollout-rollback-preflight.json` and category `audit`.
+
+Boundary: this closes the read-only rollback preflight layer only. It does not write rollback preflight artifacts, write journals, mutate manifests, roll back broader rollout metadata, move files, change canonical paths, enable dual-write, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. The explicit rollback executor remains a separate reviewed follow-up.
+
+Tests cover missing decision / manifest blockers, ready rollback preflight from a recorded rollback decision, committed-state blocking through both manifest metadata and commit journal evidence, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
