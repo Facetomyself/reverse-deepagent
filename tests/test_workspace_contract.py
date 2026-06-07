@@ -218,6 +218,18 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/review/workspace-foldered-canonical-migration-finalization-preflight.json",
         )
         self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-journal.json"].category, "audit")
         self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(
             routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].future_path,

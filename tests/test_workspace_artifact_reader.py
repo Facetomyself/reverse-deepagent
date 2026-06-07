@@ -8,6 +8,7 @@ from reverse_deepagent.tools.artifact_tools import (
     assess_workspace_migration_readiness_payload,
     audit_workspace_artifact_consumers_payload,
     execute_workspace_foldered_canonical_legacy_fallback_tightening_payload,
+    execute_workspace_foldered_canonical_migration_finalization_payload,
     execute_workspace_foldered_canonical_physical_apply_payload,
     plan_workspace_foldered_canonical_legacy_fallback_tightening_payload,
     plan_workspace_foldered_canonical_migration_finalization_payload,
@@ -20,6 +21,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
     make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool,
+    make_execute_workspace_foldered_canonical_migration_finalization_tool,
     make_execute_workspace_foldered_canonical_physical_apply_tool,
     make_plan_workspace_foldered_canonical_migration_finalization_tool,
     make_review_workspace_foldered_canonical_migration_finalization_preflight_tool,
@@ -2471,7 +2473,7 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
             self.assertFalse(payload["executor_gate"]["ready_for_foldered_canonical_finalization_preflight_review"])
             self.assertTrue(payload["executor_gate"]["preflight_tool_implemented"])
-            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertTrue(payload["executor_gate"]["executor_tool_implemented"])
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["finalizes_foldered_canonical_migration"])
@@ -2516,7 +2518,7 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertEqual(payload["approval_requirements"]["approval_action"], "foldered_canonical_migration_finalization")
             self.assertTrue(payload["executor_gate"]["ready_for_foldered_canonical_finalization_preflight_review"])
             self.assertTrue(payload["executor_gate"]["preflight_tool_implemented"])
-            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertTrue(payload["executor_gate"]["executor_tool_implemented"])
             self.assertFalse(payload["executor_gate"]["allows_finalization_in_this_tool"])
             self.assertEqual(payload["planned_manifest_updates"][0]["status"], "ready_for_foldered_canonical_finalization_plan_review")
             self.assertFalse(payload["planned_manifest_updates"][0]["mutates_manifest_in_this_tool"])
@@ -2615,7 +2617,7 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
             self.assertIn("review_approval_ledger_unavailable_or_malformed", payload["blocking_reasons"])
             self.assertFalse(payload["executor_gate"]["ready_for_foldered_canonical_finalization_executor_review"])
-            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertTrue(payload["executor_gate"]["executor_tool_implemented"])
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
@@ -2651,7 +2653,7 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertFalse(payload["transaction_journal_plan"]["writes_journal_in_this_tool"])
             self.assertTrue(payload["idempotency_guard"]["required"])
             self.assertFalse(payload["idempotency_guard"]["checks_existing_finalization_journal_in_this_tool"])
-            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertTrue(payload["executor_gate"]["executor_tool_implemented"])
             self.assertFalse(payload["executor_gate"]["allows_finalization_in_this_tool"])
             self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
             self.assertFalse(payload["side_effect_policy"]["finalizes_foldered_canonical_migration"])
@@ -2706,6 +2708,217 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertEqual(payload["finalization_plan_input"]["source"], "artifact-ref")
             self.assertEqual(payload["backend_manifest_input"]["source"], "artifact-ref")
             self.assertEqual(payload["review_approval_ledger_input"]["source"], "artifact-ref")
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_execute_foldered_canonical_finalization_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card"])
+            preflight = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+            )
+
+            payload = execute_workspace_foldered_canonical_migration_finalization_payload(
+                default_artifact_root=root,
+                finalization_preflight_json=json.dumps(preflight),
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+            )
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-foldered-canonical-migration-finalization-result.v1")
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["mode"], "dry-run")
+            self.assertFalse(payload["summary"]["result_artifact_written"])
+            self.assertFalse(payload["summary"]["backend_manifest_mutated"])
+            self.assertFalse(payload["summary"]["foldered_canonical_finalized"])
+            self.assertIn("foldered_canonical_finalization_dry_run_does_not_write_journal_result_or_manifest", payload["warnings"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(payload["side_effect_policy"]["writes_result_artifact"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["finalizes_foldered_canonical_migration"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-migration-finalization-result.json").exists())
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-migration-finalization-journal.json").exists())
+
+    def test_execute_foldered_canonical_finalization_blocks_apply_without_approval_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card"])
+            preflight = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+            )
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "workspace-foldered-canonical-migration-finalization-plan.json").write_text(
+                json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "workspace-foldered-canonical-migration-finalization-preflight.json").write_text(
+                json.dumps(preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "backend-artifact-manifest.json").write_text(
+                json.dumps(tightened_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            payload = execute_workspace_foldered_canonical_migration_finalization_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_finalization=False,
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("apply_requires_approve_finalization_true", payload["blocking_reasons"])
+            self.assertFalse(payload["summary"]["result_artifact_written"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse((workspace / "workspace-foldered-canonical-migration-finalization-result.json").exists())
+            self.assertFalse((workspace / "workspace-foldered-canonical-migration-finalization-journal.json").exists())
+
+    def test_execute_foldered_canonical_finalization_applies_manifest_metadata_with_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card"])
+            original_canonical_path = tightened_manifest["entries"][0]["path"]
+            preflight = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+            )
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "workspace-foldered-canonical-migration-finalization-plan.json").write_text(
+                json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "workspace-foldered-canonical-migration-finalization-preflight.json").write_text(
+                json.dumps(preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "backend-artifact-manifest.json").write_text(
+                json.dumps(tightened_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            payload = execute_workspace_foldered_canonical_migration_finalization_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_finalization=True,
+            )
+
+            self.assertEqual(payload["status"], "applied")
+            self.assertTrue(payload["summary"]["result_artifact_written"])
+            self.assertTrue(payload["summary"]["backend_manifest_mutated"])
+            self.assertTrue(payload["summary"]["transaction_journal_written"])
+            self.assertTrue(payload["summary"]["foldered_canonical_finalized"])
+            self.assertFalse(payload["summary"]["canonical_paths_changed"])
+            self.assertFalse(payload["summary"]["files_moved"])
+            self.assertTrue(payload["side_effect_policy"]["artifacts_written"])
+            self.assertTrue(payload["side_effect_policy"]["writes_transaction_journal"])
+            self.assertTrue(payload["side_effect_policy"]["writes_result_artifact"])
+            self.assertTrue(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["changes_canonical_paths"])
+            self.assertFalse(payload["side_effect_policy"]["tightens_legacy_fallback"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+            self.assertTrue((workspace / "workspace-foldered-canonical-migration-finalization-result.json").exists())
+            self.assertTrue((workspace / "workspace-foldered-canonical-migration-finalization-journal.json").exists())
+
+            written_manifest = json.loads((workspace / "backend-artifact-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(written_manifest["entries"][0]["path"], original_canonical_path)
+            alias = written_manifest["entries"][0]["metadata"]["workspace_alias"]
+            self.assertTrue(alias["foldered_canonical_finalization_planned"])
+            self.assertTrue(alias["foldered_canonical_finalized"])
+            self.assertEqual(alias["migration_status"], "foldered-canonical-finalized-after-reviewed-apply")
+            self.assertEqual(alias["resolver_migration_status"], "foldered-canonical-authoritative")
+            self.assertTrue(alias["legacy_fallback_tightened"])
+            self.assertFalse(alias["legacy_fallback_preserved"])
+            self.assertEqual(
+                written_manifest["metadata"]["foldered_canonical_finalization_transaction_id"],
+                payload["summary"]["transaction_id"],
+            )
+
+            journal = json.loads((workspace / "workspace-foldered-canonical-migration-finalization-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(journal["entries"]), 1)
+            self.assertEqual(journal["entries"][0]["status"], "applied")
+            self.assertEqual(journal["entries"][0]["idempotency_key"], "idem-foldered-finalization")
+            result = json.loads((workspace / "workspace-foldered-canonical-migration-finalization-result.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["status"], "applied")
+            self.assertTrue(result["summary"]["result_artifact_written"])
+
+    def test_execute_foldered_canonical_finalization_blocks_duplicate_idempotency_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card"])
+            preflight = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+            )
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "workspace-foldered-canonical-migration-finalization-plan.json").write_text(
+                json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "workspace-foldered-canonical-migration-finalization-preflight.json").write_text(
+                json.dumps(preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "backend-artifact-manifest.json").write_text(
+                json.dumps(tightened_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            first = execute_workspace_foldered_canonical_migration_finalization_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_finalization=True,
+            )
+            second = execute_workspace_foldered_canonical_migration_finalization_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_finalization=True,
+            )
+
+            self.assertEqual(first["status"], "applied")
+            self.assertEqual(second["status"], "blocked")
+            self.assertIn("foldered_canonical_finalization_duplicate_idempotency_key", second["blocking_reasons"])
+            self.assertTrue(second["idempotency_guard"]["duplicate_entry_found"])
+            self.assertFalse(second["summary"]["result_artifact_written"])
+
+    def test_execute_foldered_canonical_finalization_tool_returns_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card"])
+            preflight = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+            )
+            tool = make_execute_workspace_foldered_canonical_migration_finalization_tool(root)
+
+            payload = tool(
+                finalization_preflight_json=json.dumps(preflight),
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+            )
+
+            self.assertEqual(tool.__name__, "execute_workspace_foldered_canonical_migration_finalization")
+            self.assertEqual(payload["status"], "planned")
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["starts_browser"])
             self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
