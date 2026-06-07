@@ -1160,6 +1160,50 @@ def make_record_workspace_foldered_canonical_broader_rollout_decision_tool(
     return record_workspace_foldered_canonical_broader_rollout_decision
 
 
+def make_execute_workspace_foldered_canonical_broader_rollout_commit_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create an explicit-review-only broader rollout commit executor."""
+
+    root = Path(default_artifact_root)
+
+    def execute_workspace_foldered_canonical_broader_rollout_commit(
+        artifact_root: str | None = None,
+        mode: str = "dry-run",
+        approve_commit: bool = False,
+        decision_record_json: str | None = None,
+        decision_record_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_decision_record",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+        expected_transaction_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Commit reviewed broader rollout terminal metadata without rolling back or moving artifacts."""
+
+        return execute_workspace_foldered_canonical_broader_rollout_commit_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            mode=mode,
+            approve_commit=approve_commit,
+            decision_record_json=decision_record_json,
+            decision_record_artifact_ref=decision_record_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+            expected_transaction_id=expected_transaction_id,
+        )
+
+    execute_workspace_foldered_canonical_broader_rollout_commit.__name__ = (
+        "execute_workspace_foldered_canonical_broader_rollout_commit"
+    )
+    execute_workspace_foldered_canonical_broader_rollout_commit.__doc__ = (
+        "Explicit-review-only foldered-canonical broader rollout commit executor. Defaults to dry-run; apply mode "
+        "requires approve_commit=true, a recorded commit decision, matching current backend manifest transaction metadata, "
+        "and an artifact-ref backend manifest. It writes append-only commit journal, commit result artifact, and accepted "
+        "commit metadata only in apply mode. It never rolls back metadata, moves files, changes canonical paths, enables "
+        "dual-write, runs pipelines, starts browsers, calls MCP, or touches mobile full runtime chains."
+    )
+    return execute_workspace_foldered_canonical_broader_rollout_commit
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -9926,6 +9970,485 @@ def _foldered_canonical_broader_rollout_decision_record_next_actions(
         actions.append("prepare_separate_reviewed_broader_rollout_rollback_executor")
     elif status == "recorded" and selected_decision == "defer":
         actions.append("collect_additional_evidence_before_commit_or_rollback")
+    return list(dict.fromkeys(actions))
+
+
+def execute_workspace_foldered_canonical_broader_rollout_commit_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    mode: str = "dry-run",
+    approve_commit: bool = False,
+    decision_record_json: str | None = None,
+    decision_record_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_decision_record",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    expected_transaction_id: str | None = None,
+) -> dict[str, Any]:
+    """Execute explicit-review-only broader rollout commit terminalization."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    workspace_dir = effective_root / "workspace"
+    result_path = workspace_dir / "workspace-foldered-canonical-broader-rollout-commit-result.json"
+    journal_path = workspace_dir / "workspace-foldered-canonical-broader-rollout-commit-journal.json"
+    decision_record, decision_record_error, decision_record_input = (
+        _load_or_read_workspace_foldered_canonical_broader_rollout_decision_record(
+            default_artifact_root=effective_root,
+            decision_record_json=decision_record_json,
+            decision_record_artifact_ref=decision_record_artifact_ref,
+        )
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+
+    requested_mode = mode or "dry-run"
+    dry_run_mode = requested_mode == "dry-run"
+    apply_mode = requested_mode == "apply"
+    committed_at = datetime.now(timezone.utc).isoformat()
+    record_summary = decision_record.get("summary") if isinstance(decision_record.get("summary"), dict) else {}
+    record_body = decision_record.get("decision_record") if isinstance(decision_record.get("decision_record"), dict) else {}
+    decision = str(record_body.get("decision") or record_summary.get("decision") or "").strip().lower()
+    transaction_id = str(record_body.get("source_plan_transaction_id") or "").strip()
+    idempotency_key = str(record_body.get("source_plan_idempotency_key") or transaction_id or "").strip()
+    expected_transaction = str(expected_transaction_id or transaction_id or "").strip()
+    commit_idempotency_key = f"{idempotency_key}:commit" if idempotency_key else "foldered-canonical-broader-rollout-commit"
+    commit_transaction_id = f"foldered-canonical-broader-rollout-commit-{transaction_id or 'missing'}"
+    manifest_entry_checks = _foldered_canonical_broader_rollout_commit_manifest_entry_checks(
+        backend_manifest=backend_manifest,
+        transaction_id=transaction_id,
+    )
+    existing_journal = _read_foldered_canonical_broader_rollout_commit_journal(journal_path)
+    duplicate_entry = _find_foldered_canonical_broader_rollout_commit_duplicate(
+        existing_journal,
+        commit_idempotency_key=commit_idempotency_key,
+    )
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if requested_mode not in {"dry-run", "apply"}:
+        blockers.append("unsupported_foldered_canonical_broader_rollout_commit_mode")
+    if apply_mode and not approve_commit:
+        blockers.append("apply_requires_approve_commit_true")
+    if decision_record_error:
+        blockers.append("decision_record_unavailable_or_malformed")
+    if decision_record.get("status") != "recorded":
+        blockers.append("decision_record_not_recorded")
+    if record_summary.get("decision_record_written") is not True:
+        blockers.append("decision_record_artifact_not_written")
+    if record_body.get("recorded") is not True:
+        blockers.append("decision_record_body_not_marked_recorded")
+    if decision != "commit":
+        blockers.append("decision_record_does_not_select_commit")
+    if backend_manifest_error:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if backend_manifest_json is not None and apply_mode:
+        blockers.append("apply_requires_backend_manifest_artifact_ref_not_inline_json")
+    if not transaction_id:
+        blockers.append("source_plan_transaction_id_missing")
+    if expected_transaction and transaction_id and expected_transaction != transaction_id:
+        blockers.append("expected_transaction_id_mismatch")
+    if not manifest_entry_checks:
+        blockers.append("no_current_manifest_entries_for_broader_rollout_transaction")
+    for check in manifest_entry_checks:
+        if check.get("status") != "ready_for_commit":
+            blockers.append(f"manifest_entry:{check.get('artifact_key') or 'unknown'}:{check.get('status') or 'blocked'}")
+    if duplicate_entry:
+        blockers.append("broader_rollout_commit_duplicate_idempotency_key")
+    for reason_item in decision_record.get("blocking_reasons") or []:
+        blockers.append(f"decision_record:{reason_item}")
+    if not apply_mode:
+        warnings.append("broader_rollout_commit_dry_run_does_not_write_journal_result_or_manifest")
+    if apply_mode and not blockers:
+        warnings.append("broader_rollout_commit_will_only_mark_existing_rollout_metadata_accepted")
+
+    status = "blocked" if blockers else "planned" if dry_run_mode else "committed"
+    mutated_manifest = _foldered_canonical_broader_rollout_commit_backend_manifest(
+        backend_manifest,
+        transaction_id=transaction_id,
+        commit_transaction_id=commit_transaction_id,
+        committed_at=committed_at,
+    )
+    journal_entry = _foldered_canonical_broader_rollout_commit_journal_entry(
+        status=status,
+        transaction_id=transaction_id,
+        commit_transaction_id=commit_transaction_id,
+        commit_idempotency_key=commit_idempotency_key,
+        decision=decision,
+        manifest_entry_checks=manifest_entry_checks,
+        blockers=blockers,
+        committed_at=committed_at,
+    )
+    journal_payload = _foldered_canonical_broader_rollout_commit_journal_payload(
+        existing_journal=existing_journal,
+        entry=journal_entry,
+        append_entry=apply_mode and not blockers,
+        updated_at=committed_at,
+    )
+    writes = {"backend_manifest": False, "journal": False, "result": False}
+    if apply_mode and not blockers:
+        _write_json_file(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input), mutated_manifest)
+        _write_json_file(journal_path, journal_payload)
+        writes.update({"backend_manifest": True, "journal": True})
+
+    payload: dict[str, Any] = {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-commit-result.v1",
+        "status": status,
+        "mode": requested_mode,
+        "artifact_root": str(effective_root),
+        "committed_at": committed_at,
+        "result_artifact": _workspace_foldered_canonical_broader_rollout_commit_result_artifact_metadata(
+            effective_root,
+            written=False,
+        ),
+        "summary": {
+            "decision_record_status": decision_record.get("status") or "missing",
+            "decision": decision,
+            "transaction_id": transaction_id,
+            "commit_transaction_id": commit_transaction_id,
+            "commit_idempotency_key": commit_idempotency_key,
+            "manifest_entry_check_count": len(manifest_entry_checks),
+            "committed_manifest_entry_count": len(manifest_entry_checks) if status == "committed" else 0,
+            "transaction_journal_written": writes["journal"],
+            "backend_manifest_mutated": writes["backend_manifest"],
+            "result_artifact_written": False,
+            "broader_rollout_committed": status == "committed",
+            "broader_rollout_rolled_back": False,
+            "dual_write_enabled": False,
+            "canonical_paths_changed": False,
+            "files_moved": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "decision_record_input": decision_record_input,
+        "backend_manifest_input": backend_manifest_input,
+        "decision_record_summary": {
+            "schema_version": decision_record.get("schema_version") or "",
+            "status": decision_record.get("status") or "missing",
+            "decision": decision,
+            "decision_record_written": record_summary.get("decision_record_written") is True,
+            "reviewer": record_summary.get("reviewer") or record_body.get("reviewer") or "",
+            "source_plan_transaction_id": transaction_id,
+            "source_plan_idempotency_key": idempotency_key,
+        },
+        "digest_guard": {
+            "expected_transaction_id": expected_transaction,
+            "current_transaction_id": transaction_id,
+            "expected_transaction_match": bool(expected_transaction and transaction_id and expected_transaction == transaction_id),
+        },
+        "idempotency_guard": {
+            "commit_idempotency_key": commit_idempotency_key,
+            "duplicate_entry_found": duplicate_entry is not None,
+            "duplicate_entry": _compact_foldered_canonical_broader_rollout_commit_journal_entry(duplicate_entry),
+            "blocks_duplicate_apply": True,
+        },
+        "manifest_entry_checks": manifest_entry_checks,
+        "transaction_journal": {
+            "path": str(journal_path),
+            "append_only": True,
+            "entry_count": len(journal_payload.get("entries", [])),
+            "entry_appended": writes["journal"],
+            "writes_journal_in_apply_mode": writes["journal"],
+        },
+        "backend_manifest_mutation": {
+            "path": str(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input)),
+            "mutates_backend_manifest_in_apply_mode": writes["backend_manifest"],
+            "changes_canonical_paths": False,
+            "enables_dual_write": False,
+            "marks_broader_rollout_committed": status == "committed",
+            "rolls_back_broader_rollout": False,
+            "files_moved": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_broader_rollout_commit_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "dry_run_is_read_only": True,
+            "artifacts_written": apply_mode and not blockers,
+            "writes_transaction_journal": writes["journal"],
+            "writes_result_artifact": False,
+            "creates_directories": apply_mode and not blockers,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": writes["backend_manifest"],
+            "records_decision": False,
+            "commits_broader_rollout": status == "committed",
+            "rolls_back_broader_rollout": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+    if apply_mode and not blockers:
+        payload["result_artifact"] = _workspace_foldered_canonical_broader_rollout_commit_result_artifact_metadata(
+            effective_root,
+            written=True,
+        )
+        payload["summary"]["result_artifact_written"] = True
+        payload["side_effect_policy"]["writes_result_artifact"] = True
+        _write_json_file(result_path, payload)
+    return payload
+
+
+def _load_or_read_workspace_foldered_canonical_broader_rollout_decision_record(
+    *,
+    default_artifact_root: Path,
+    decision_record_json: str | None,
+    decision_record_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(decision_record_json, field_name="decision_record_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = decision_record_artifact_ref or "workspace_foldered_canonical_broader_rollout_decision_record"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "decision_record_not_observed", input_summary
+
+
+def _foldered_canonical_broader_rollout_commit_manifest_entry_checks(
+    *,
+    backend_manifest: dict[str, Any],
+    transaction_id: str,
+) -> list[dict[str, Any]]:
+    if not transaction_id:
+        return []
+    entries = backend_manifest.get("entries") if isinstance(backend_manifest.get("entries"), list) else []
+    checks: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        if alias.get("broader_rollout_transaction_id") != transaction_id:
+            continue
+        artifact_key = str(entry.get("artifact_key") or "")
+        observed_path = str(entry.get("path") or "")
+        confirmed_path = str(alias.get("broader_rollout_canonical_path_confirmed") or "")
+        status = "ready_for_commit"
+        blockers: list[str] = []
+        warnings: list[str] = []
+        if not artifact_key:
+            status = "missing_artifact_key"
+            blockers.append("artifact_key_required")
+        if alias.get("broader_rollout_applied") is not True:
+            status = "broader_rollout_not_applied"
+            blockers.append("broader_rollout_applied_required")
+        if alias.get("broader_rollout_planned") is not True:
+            status = "broader_rollout_not_planned"
+            blockers.append("broader_rollout_planned_required")
+        if alias.get("foldered_canonical_finalized") is not True:
+            status = "not_foldered_canonical_finalized"
+            blockers.append("foldered_canonical_finalized_required")
+        if confirmed_path and observed_path != confirmed_path:
+            status = "canonical_path_changed_after_broader_rollout"
+            blockers.append("canonical_path_must_match_broader_rollout_confirmation")
+        if alias.get("broader_rollout_rolled_back") is True:
+            status = "broader_rollout_already_rolled_back"
+            blockers.append("rollback_state_conflicts_with_commit")
+        if alias.get("broader_rollout_committed") is True:
+            warnings.append("broader_rollout_already_marked_committed_in_manifest")
+        checks.append(
+            {
+                "artifact_key": artifact_key,
+                "status": status,
+                "observed_canonical_path": observed_path,
+                "broader_rollout_canonical_path_confirmed": confirmed_path,
+                "broader_rollout_applied": alias.get("broader_rollout_applied") is True,
+                "broader_rollout_planned": alias.get("broader_rollout_planned") is True,
+                "foldered_canonical_finalized": alias.get("foldered_canonical_finalized") is True,
+                "broader_rollout_committed": alias.get("broader_rollout_committed") is True,
+                "broader_rollout_rolled_back": alias.get("broader_rollout_rolled_back") is True,
+                "canonical_path_stable": bool(observed_path and confirmed_path and observed_path == confirmed_path),
+                "blockers": blockers,
+                "warnings": warnings,
+            }
+        )
+    return checks
+
+
+def _foldered_canonical_broader_rollout_commit_backend_manifest(
+    backend_manifest: dict[str, Any],
+    *,
+    transaction_id: str,
+    commit_transaction_id: str,
+    committed_at: str,
+) -> dict[str, Any]:
+    manifest = copy.deepcopy(backend_manifest)
+    committed_count = 0
+    for entry in manifest.get("entries", []):
+        if not isinstance(entry, dict):
+            continue
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        if alias.get("broader_rollout_transaction_id") != transaction_id:
+            continue
+        alias["broader_rollout_committed"] = True
+        alias["broader_rollout_committed_at"] = committed_at
+        alias["broader_rollout_commit_transaction_id"] = commit_transaction_id
+        alias["broader_rollout_rolled_back"] = False
+        committed_count += 1
+    metadata = manifest.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["foldered_canonical_broader_rollout_committed_at"] = committed_at
+        metadata["foldered_canonical_broader_rollout_commit_transaction_id"] = commit_transaction_id
+        metadata["foldered_canonical_broader_rollout_committed_transaction_id"] = transaction_id
+        metadata["foldered_canonical_broader_rollout_committed_candidate_count"] = committed_count
+    return manifest
+
+
+def _read_foldered_canonical_broader_rollout_commit_journal(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-commit-journal.v1", "entries": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-commit-journal.v1",
+            "entries": [],
+            "read_error": True,
+        }
+    if not isinstance(payload, dict):
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-commit-journal.v1", "entries": []}
+    if not isinstance(payload.get("entries"), list):
+        payload["entries"] = []
+    return payload
+
+
+def _find_foldered_canonical_broader_rollout_commit_duplicate(
+    journal: dict[str, Any],
+    *,
+    commit_idempotency_key: str,
+) -> dict[str, Any] | None:
+    for entry in journal.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") == "committed" and entry.get("commit_idempotency_key") == commit_idempotency_key:
+            return entry
+    return None
+
+
+def _foldered_canonical_broader_rollout_commit_journal_entry(
+    *,
+    status: str,
+    transaction_id: str,
+    commit_transaction_id: str,
+    commit_idempotency_key: str,
+    decision: str,
+    manifest_entry_checks: list[dict[str, Any]],
+    blockers: list[str],
+    committed_at: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "transaction_id": transaction_id,
+        "commit_transaction_id": commit_transaction_id,
+        "commit_idempotency_key": commit_idempotency_key,
+        "decision": decision,
+        "committed_at": committed_at,
+        "manifest_entry_count": len(manifest_entry_checks),
+        "artifact_keys": [str(check.get("artifact_key") or "") for check in manifest_entry_checks if check.get("artifact_key")],
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "side_effects": {
+            "backend_manifest_mutated": status == "committed",
+            "canonical_paths_changed": False,
+            "files_moved": False,
+            "rolled_back": False,
+        },
+    }
+
+
+def _foldered_canonical_broader_rollout_commit_journal_payload(
+    *,
+    existing_journal: dict[str, Any],
+    entry: dict[str, Any],
+    append_entry: bool,
+    updated_at: str,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(existing_journal)
+    payload["schema_version"] = "reverse-deepagent.workspace-foldered-canonical-broader-rollout-commit-journal.v1"
+    entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
+    payload["entries"] = list(entries)
+    if append_entry:
+        payload["entries"].append(entry)
+    payload["entry_count"] = len(payload["entries"])
+    payload["updated_at"] = updated_at
+    payload["append_only"] = True
+    return payload
+
+
+def _compact_foldered_canonical_broader_rollout_commit_journal_entry(entry: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    return {
+        "status": entry.get("status") or "",
+        "transaction_id": entry.get("transaction_id") or "",
+        "commit_transaction_id": entry.get("commit_transaction_id") or "",
+        "commit_idempotency_key": entry.get("commit_idempotency_key") or "",
+        "decision": entry.get("decision") or "",
+        "manifest_entry_count": _safe_int(entry.get("manifest_entry_count")),
+    }
+
+
+def _workspace_foldered_canonical_broader_rollout_commit_result_artifact_metadata(
+    artifact_root: Path,
+    *,
+    written: bool,
+) -> dict[str, Any]:
+    return {
+        "artifact_key": "workspace_foldered_canonical_broader_rollout_commit_result",
+        "legacy_path": "workspace/workspace-foldered-canonical-broader-rollout-commit-result.json",
+        "future_path": "/workspace/review/workspace-foldered-canonical-broader-rollout-commit-result.json",
+        "path": str(artifact_root / "workspace" / "workspace-foldered-canonical-broader-rollout-commit-result.json"),
+        "written": written,
+        "category": "audit",
+    }
+
+
+def _foldered_canonical_broader_rollout_commit_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+) -> list[str]:
+    actions: list[str] = []
+    if "decision_record_unavailable_or_malformed" in blockers or "decision_record_not_recorded" in blockers:
+        actions.append("record_reviewed_commit_decision_before_commit_executor")
+    if "decision_record_does_not_select_commit" in blockers:
+        actions.append("use_rollback_executor_for_rollback_decision_or_defer_without_executor")
+    if "backend_artifact_manifest_unavailable_or_malformed" in blockers:
+        actions.append("provide_current_backend_manifest_before_commit_executor")
+    if "apply_requires_approve_commit_true" in blockers:
+        actions.append("set_approve_commit_true_after_human_review")
+    if "broader_rollout_commit_duplicate_idempotency_key" in blockers:
+        actions.append("inspect_existing_broader_rollout_commit_journal_before_retry")
+    if any(reason.startswith("manifest_entry:") for reason in blockers):
+        actions.append("repair_or_reaudit_current_manifest_before_commit_executor")
+    if status == "planned":
+        actions.append("review_commit_dry_run_then_rerun_apply_with_explicit_approval")
+    if status == "committed":
+        actions.append("review_foldered_canonical_broader_rollout_commit_result")
+        actions.append("keep_rollback_executor_separate_if_future_revert_is_needed")
+    if any("already_marked_committed" in warning for warning in warnings):
+        actions.append("inspect_manifest_commit_metadata_for_idempotency_before_apply")
     return list(dict.fromkeys(actions))
 
 

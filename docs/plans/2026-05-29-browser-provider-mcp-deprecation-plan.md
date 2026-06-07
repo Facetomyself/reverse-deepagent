@@ -2471,7 +2471,7 @@ Status: implemented as a read-only post-audit descriptor after the Step 235 expl
 
 The DeepAgents agent tool list includes `review_workspace_foldered_canonical_broader_rollout_post_audit`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-post-audit.json` with future alias `/workspace/review/workspace-foldered-canonical-broader-rollout-post-audit.json` and category `audit`.
 
-Boundary: this closes the read-only post-rollout audit layer only. It does not write audit artifacts, mutate manifests, move files, change canonical paths, enable dual-write, execute broader rollout, decide rollback vs commit, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Review-only rollback-vs-commit decision planning is implemented in Step 237; the explicit decision record writer is implemented in Step 238; explicit commit / rollback executors remain separate reviewed follow-ups.
+Boundary: this closes the read-only post-rollout audit layer only. It does not write audit artifacts, mutate manifests, move files, change canonical paths, enable dual-write, execute broader rollout, decide rollback vs commit, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Review-only rollback-vs-commit decision planning is implemented in Step 237; the explicit decision record writer is implemented in Step 238; the explicit commit executor is implemented in Step 239; rollback executor remains a separate reviewed follow-up.
 
 Tests cover missing result / journal / manifest blockers, verified applied result + matching journal + manifest metadata audit, manifest regression to legacy path blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
 
@@ -2495,6 +2495,20 @@ Status: implemented as an explicit reviewed decision record writer after the Ste
 
 The DeepAgents agent tool list includes `record_workspace_foldered_canonical_broader_rollout_decision`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-decision-record.json` with future alias `/workspace/review/workspace-foldered-canonical-broader-rollout-decision-record.json` and category `audit`.
 
-Boundary: this closes the reviewed decision-record layer only. It does not execute commit or rollback, mutate manifests, move files, change canonical paths, enable dual-write, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Explicit commit / rollback executors remain separate reviewed follow-ups.
+Boundary: this closes the reviewed decision-record layer only. It does not execute commit or rollback, mutate manifests, move files, change canonical paths, enable dual-write, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. The explicit commit executor is implemented in Step 239; rollback executor remains a separate reviewed follow-up.
 
 Tests cover missing plan / missing decision blockers, dry-run ready decision records without writes, reviewer / approval gates before writing, successful reviewed decision artifact writing, unsupported decision blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
+
+### Step 239：Explicit reviewed broader rollout commit executor baseline
+
+Status: implemented as an explicit reviewed broader rollout commit executor after the Step 238 decision record writer. This is not a rollback executor, not automatic rollback-vs-commit selection, not canonical path mutation, not artifact movement, not dual-write enablement, not automatic materialization, not a pipeline runner, not browser / CDP / MCP integration, and not Android / iOS / mini-program full runtime chain.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `execute_workspace_foldered_canonical_broader_rollout_commit_payload(...)` and `make_execute_workspace_foldered_canonical_broader_rollout_commit_tool(...)`. The executor defaults to `mode=dry-run`; apply requires `mode=apply`, `approve_commit=true`, a recorded `workspace-foldered-canonical-broader-rollout-decision-record` selecting `commit`, current backend artifact manifest artifact-ref rather than inline manifest JSON, matching source transaction evidence, manifest entry revalidation, and commit idempotency guard.
+
+In apply mode it appends `workspace/workspace-foldered-canonical-broader-rollout-commit-journal.json`, writes `workspace/workspace-foldered-canonical-broader-rollout-commit-result.json`, and updates only `workspace/backend-artifact-manifest.json` `metadata.workspace_alias` broader rollout commit metadata plus manifest-level commit metadata. It does not rollback broader rollout metadata, move workspace files, change canonical paths, enable dual-write, run pipelines, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+The DeepAgents agent tool list includes `execute_workspace_foldered_canonical_broader_rollout_commit`, and the workspace contract indexes `workspace/workspace-foldered-canonical-broader-rollout-commit-result.json` and `workspace/workspace-foldered-canonical-broader-rollout-commit-journal.json` with future aliases under `/workspace/review/` and category `audit`.
+
+Boundary: this closes the reviewed commit terminalization layer only. It does not implement rollback execution or automatic decision making. Rollback remains a separate reviewed follow-up.
+
+Tests cover dry-run read-only commit planning, apply approval and artifact-ref gates, terminal manifest commit metadata with append-only journal / result evidence, duplicate idempotency blocking, artifact-ref tool invocation, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
