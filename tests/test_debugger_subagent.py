@@ -893,6 +893,63 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(result["summary"]["automatic_loop_executor_preflight"]["ready_for_review"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_warns_for_automatic_loop_executor_approval_plan_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_approval_plan": {
+                "status": "ready_for_review",
+                "ready_for_review": True,
+                "approval_plan_ready_for_review": True,
+                "approved_iteration_count": 2,
+                "max_approved_iterations": 2,
+                "executor_input_gates": {
+                    "ready_to_execute_now": False,
+                    "approval_recorded": False,
+                },
+                "transaction_plan": {
+                    "transaction_started": False,
+                    "journal_written_now": False,
+                },
+                "future_executor_contract": {"implemented": False},
+                "next_action": "review_future_bounded_automatic_loop_executor_approval_transaction",
+                "blockers": [],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_executor_approval_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_bounded_automatic_loop_executor_approval_transaction")
+        approval = result["summary"]["automatic_loop_executor_approval_plan"]
+        self.assertTrue(approval["ready_for_review"])
+        self.assertTrue(approval["approval_plan_ready_for_review"])
+        self.assertFalse(approval["ready_to_execute_now"])
+        self.assertFalse(approval["approval_recorded"])
+        self.assertFalse(approval["transaction_started"])
+        self.assertFalse(approval["journal_written"])
+        self.assertEqual(approval["approved_iteration_count"], 2)
+        self.assertFalse(approval["future_executor_implemented"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_executor_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_approval_plan": {
+                "status": "blocked",
+                "ready_for_review": False,
+                "blockers": ["automatic_loop_executor_preflight_required"],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_executor_approval_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_executor_approval_plan_blockers")
+        self.assertFalse(result["summary"]["automatic_loop_executor_approval_plan"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_blocks_multi_step_loop_execution(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

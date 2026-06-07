@@ -31,6 +31,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopExecutionPlanSpec,
     PausedSessionAutomaticLoopExecutorPreflightManager,
     PausedSessionAutomaticLoopExecutorPreflightSpec,
+    PausedSessionAutomaticLoopExecutorApprovalPlanManager,
+    PausedSessionAutomaticLoopExecutorApprovalPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1669,6 +1671,101 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["long_lived_cross_process_session_managed"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_executor_approval_plan_reviews_transaction_without_side_effects(self) -> None:
+        preflight = {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-executor-preflight.v1",
+            "status": "ready_for_review",
+            "ready_for_review": True,
+            "executor_preflight_ready_for_review": True,
+            "preflight_id": "automatic-loop-executor-preflight:approval-1",
+            "plan_id": "automatic-loop-plan:approval-1",
+            "loop_id": "approval-loop-1",
+            "workflow_id": "approval-workflow-1",
+            "pause_session_id": "approval-pause-1",
+            "target_id": "approval-target-1",
+            "preflight_iteration_count": 2,
+            "max_preflight_iterations": 2,
+            "preflight_iterations": [
+                {"iteration_index": 1, "workflow_step_index": 0, "method": "Debugger.stepOver", "fingerprint": "a"},
+                {"iteration_index": 2, "workflow_step_index": 1, "method": "Debugger.resume", "fingerprint": "b"},
+            ],
+            "executor_input_gates": {
+                "ready_to_execute_now": False,
+                "executor_implemented": False,
+                "requires_review_per_iteration": True,
+                "requires_checkpoint_after_each_iteration": True,
+            },
+            "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop", "implemented": False},
+            "blockers": [],
+            "side_effect_policy": {
+                "cdp_command_sent": False,
+                "cdp_target_attached": False,
+                "debugger_domain_enabled": False,
+                "debugger_event_subscribed": False,
+                "paused_event_captured": False,
+                "callframe_evaluated": False,
+                "runtime_mutated": False,
+                "multi_step_continuation_executed": False,
+                "automatic_multi_step_loop": False,
+                "automatic_queue_advance": False,
+                "long_lived_cross_process_session_managed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        spec = PausedSessionAutomaticLoopExecutorApprovalPlanSpec.from_context(
+            {
+                "paused_session_automatic_loop_executor_approval_plan": True,
+                "paused_session_automatic_loop_executor_preflight": preflight,
+                "max_approved_iterations": 2,
+            }
+        )
+
+        result = PausedSessionAutomaticLoopExecutorApprovalPlanManager().plan(spec)
+        approval = result.approval_plan
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(approval["schema_version"], "reverse-deepagent.paused-session-automatic-loop-executor-approval-plan.v1")
+        self.assertTrue(approval["approval_plan_ready_for_review"])
+        self.assertFalse(approval["executor_input_gates"]["ready_to_execute_now"])
+        self.assertFalse(approval["executor_input_gates"]["approval_recorded"])
+        self.assertFalse(approval["transaction_plan"]["transaction_started"])
+        self.assertFalse(approval["transaction_plan"]["journal_written_now"])
+        self.assertFalse(approval["future_executor_contract"]["implemented"])
+        self.assertEqual(approval["approved_iteration_count"], 2)
+        self.assertFalse(result.side_effect_policy["approval_recorded"])
+        self.assertFalse(result.side_effect_policy["transaction_started"])
+        self.assertFalse(result.side_effect_policy["journal_written"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_executor_approval_plan_blocks_without_ready_preflight(self) -> None:
+        missing = PausedSessionAutomaticLoopExecutorApprovalPlanSpec.from_context({"paused_session_automatic_loop_executor_approval_plan": True})
+        missing_result = PausedSessionAutomaticLoopExecutorApprovalPlanManager().plan(missing)
+
+        self.assertEqual(missing_result.status, "blocked")
+        self.assertIn("automatic_loop_executor_preflight_required", missing_result.approval_plan["blockers"])
+
+        blocked = PausedSessionAutomaticLoopExecutorApprovalPlanSpec.from_context(
+            {
+                "paused_session_automatic_loop_executor_approval_plan": True,
+                "paused_session_automatic_loop_executor_preflight": {
+                    "status": "blocked",
+                    "executor_preflight_ready_for_review": False,
+                    "blockers": ["automatic_loop_execution_plan_required"],
+                },
+            }
+        )
+        blocked_result = PausedSessionAutomaticLoopExecutorApprovalPlanManager().plan(blocked)
+
+        self.assertEqual(blocked_result.status, "blocked")
+        self.assertIn("automatic_loop_executor_preflight_not_ready", blocked_result.approval_plan["blockers"])
+        self.assertIn("automatic_loop_executor_preflight_has_blockers", blocked_result.approval_plan["blockers"])
+        self.assertFalse(blocked_result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(blocked_result.side_effect_policy["automatic_multi_step_loop"])
 
     def test_automatic_loop_executor_preflight_blocks_without_ready_execution_plan(self) -> None:
         missing = PausedSessionAutomaticLoopExecutorPreflightSpec.from_context({"paused_session_automatic_loop_executor_preflight": True})
