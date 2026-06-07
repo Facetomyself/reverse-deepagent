@@ -297,6 +297,8 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_dual_write_pilot_result", "workspace/workspace-dual-write-pilot-result.json", "/workspace/delivery/", "workspace-dual-write-pilot-result.json", "audit", ("coordinator", "review")),
         ("workspace_consumer_readiness_score", "workspace/workspace-consumer-readiness-score.json", "/workspace/review/", "workspace-consumer-readiness-score.json", "audit", ("coordinator", "review")),
         ("workspace_dual_write_expansion_plan", "workspace/workspace-dual-write-expansion-plan.json", "/workspace/review/", "workspace-dual-write-expansion-plan.json", "triage", ("coordinator", "review")),
+        ("workspace_dual_write_expansion_workflow", "workspace/workspace-dual-write-expansion-workflow.json", "/workspace/review/", "workspace-dual-write-expansion-workflow.json", "triage", ("coordinator", "review")),
+        ("workspace_dual_write_expansion_result", "workspace/workspace-dual-write-expansion-result.json", "/workspace/review/", "workspace-dual-write-expansion-result.json", "audit", ("coordinator", "review")),
         ("workspace_route", "workspace/route-decision.json", "/workspace/recon/", "route-decision.json", "workspace", ("router",)),
         ("workspace_recon", "workspace/recon-result.json", "/workspace/recon/", "recon-result.json", "workspace", ("web_recon",)),
         ("workspace_network_requests", "workspace/network-requests.json", "/workspace/recon/", "network-requests.json", "network", ("web_recon",)),

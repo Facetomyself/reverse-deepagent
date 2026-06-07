@@ -13,17 +13,47 @@ from reverse_deepagent.tools.artifact_tools import (
     make_plan_workspace_dual_write_expansion_tool,
     make_plan_workspace_dual_write_pilot_tool,
     make_read_workspace_artifact_tool,
+    make_record_workspace_dual_write_expansion_result_tool,
     make_record_workspace_dual_write_pilot_result_tool,
+    make_review_workspace_dual_write_expansion_workflow_tool,
     make_review_workspace_dual_write_pilot_workflow_tool,
     plan_workspace_dual_write_pilot_payload,
     plan_workspace_dual_write_expansion_payload,
+    record_workspace_dual_write_expansion_result_payload,
     record_workspace_dual_write_pilot_result_payload,
+    review_workspace_dual_write_expansion_workflow_payload,
     review_workspace_dual_write_pilot_workflow_payload,
     summarize_workspace_artifact_read,
 )
 
 
 class WorkspaceArtifactReaderTests(unittest.TestCase):
+    def _ready_workspace_dual_write_expansion_plan(self, root: Path, artifact_keys: list[str] | None = None) -> dict:
+        readiness_score = {
+            "schema_version": "reverse-deepagent.workspace-consumer-readiness-score.v1",
+            "status": "ready_for_limited_dual_write_review",
+            "summary": {
+                "overall_score": 0.75,
+                "overall_label": "ready_for_limited_dual_write_review",
+            },
+            "readiness": {
+                "limited_dual_write_expansion_review_allowed": True,
+                "foldered_canonical_migration_allowed": False,
+            },
+            "pilot_evidence": {
+                "schema_version": "reverse-deepagent.workspace-dual-write-pilot-result.v1",
+                "status": "verified",
+                "score": 1.0,
+            },
+            "blocking_reasons": ["resolver_adoption_incomplete"],
+            "warnings": [],
+        }
+        return plan_workspace_dual_write_expansion_payload(
+            default_artifact_root=root,
+            readiness_score_json=json.dumps(readiness_score),
+            artifact_keys_json=json.dumps(artifact_keys or ["workspace_task_card", "workspace_runtime_context"]),
+        )
+
     def test_reader_resolves_key_legacy_future_and_virtual_uri_to_canonical_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "artifacts"
@@ -419,6 +449,225 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["creates_directories"])
             self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_workspace_dual_write_expansion_result_reports_not_run_without_observed_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan = self._ready_workspace_dual_write_expansion_plan(root)
+
+            payload = record_workspace_dual_write_expansion_result_payload(
+                default_artifact_root=root,
+                expansion_plan_json=json.dumps(plan),
+            )
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-dual-write-expansion-result.v1")
+            self.assertEqual(payload["status"], "not_run")
+            self.assertIn("workspace_dual_write_plan_not_observed", payload["blocking_reasons"])
+            self.assertFalse(payload["result_artifact"]["written"])
+            self.assertEqual(payload["summary"]["planned_candidate_count"], 2)
+            self.assertEqual(payload["summary"]["verified_candidate_count"], 0)
+            self.assertTrue(payload["summary"]["legacy_canonical_path_remains_authoritative"])
+            self.assertFalse(payload["summary"]["foldered_canonical_migration_enabled"])
+            self.assertTrue(payload["summary"]["mobile_full_runtime_chains_deferred"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertTrue(payload["side_effect_policy"]["files_inspected"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["runs_pipeline"])
+            self.assertFalse(payload["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(payload["side_effect_policy"]["changes_canonical_paths"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+            self.assertFalse((root / "workspace" / "workspace-dual-write-expansion-result.json").exists())
+
+    def test_workspace_dual_write_expansion_result_verifies_matching_legacy_and_future_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan = self._ready_workspace_dual_write_expansion_plan(root)
+            records = []
+            for index, candidate in enumerate(plan["candidate_artifacts"], start=1):
+                legacy = root / candidate["legacy_path"]
+                future = root / candidate["future_path"].lstrip("/")
+                legacy.parent.mkdir(parents=True, exist_ok=True)
+                future.parent.mkdir(parents=True, exist_ok=True)
+                payload_text = json.dumps({"artifact_key": candidate["artifact_key"], "n": index}, sort_keys=True) + "\n"
+                legacy.write_text(payload_text, encoding="utf-8")
+                future.write_text(payload_text, encoding="utf-8")
+                records.append({
+                    "artifact_key": candidate["artifact_key"],
+                    "canonical_path": candidate["legacy_path"],
+                    "future_path": candidate["future_path"],
+                    "write_paths": [str(legacy), str(future)],
+                    "dual_write_enabled": True,
+                    "canonical_path_remains_authoritative": True,
+                })
+            observed = {
+                "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
+                "status": "applied",
+                "mode": "scoped-opt-in-dual-write",
+                "records": records,
+            }
+
+            result = record_workspace_dual_write_expansion_result_payload(
+                default_artifact_root=root,
+                expansion_plan_json=json.dumps(plan),
+                workspace_dual_write_plan_json=json.dumps(observed),
+            )
+
+            self.assertEqual(result["status"], "verified")
+            self.assertEqual(result["summary"]["planned_candidate_count"], 2)
+            self.assertEqual(result["summary"]["verified_candidate_count"], 2)
+            self.assertEqual(result["summary"]["out_of_scope_observed_count"], 0)
+            self.assertEqual(result["summary"]["high_risk_observed_count"], 0)
+            self.assertEqual(result["summary"]["digest_mismatch_count"], 0)
+            self.assertFalse(result["result_artifact"]["written"])
+            self.assertTrue(all(item["status"] == "verified_dual_written" for item in result["candidate_results"]))
+            self.assertTrue(all(item["digest_match"] for item in result["candidate_results"]))
+            self.assertTrue(result["side_effect_policy"]["read_only"])
+            self.assertFalse(result["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(result["side_effect_policy"]["runs_pipeline"])
+            self.assertFalse(result["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(result["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(result["side_effect_policy"]["changes_canonical_paths"])
+
+    def test_workspace_dual_write_expansion_result_can_write_audit_artifact_explicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            candidate = plan["candidate_artifacts"][0]
+            legacy = root / candidate["legacy_path"]
+            future = root / candidate["future_path"].lstrip("/")
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            future.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_text('{"ok": true}\n', encoding="utf-8")
+            future.write_text('{"ok": true}\n', encoding="utf-8")
+            observed = {
+                "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
+                "status": "applied",
+                "records": [
+                    {
+                        "artifact_key": candidate["artifact_key"],
+                        "canonical_path": candidate["legacy_path"],
+                        "future_path": candidate["future_path"],
+                        "write_paths": [str(legacy), str(future)],
+                        "dual_write_enabled": True,
+                        "canonical_path_remains_authoritative": True,
+                    }
+                ],
+            }
+
+            result = record_workspace_dual_write_expansion_result_payload(
+                default_artifact_root=root,
+                expansion_plan_json=json.dumps(plan),
+                workspace_dual_write_plan_json=json.dumps(observed),
+                write_result=True,
+            )
+
+            result_path = root / "workspace" / "workspace-dual-write-expansion-result.json"
+            self.assertEqual(result["status"], "verified")
+            self.assertTrue(result["result_artifact"]["written"])
+            self.assertEqual(result["result_artifact"]["path"], str(result_path))
+            self.assertTrue(result_path.exists())
+            written = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertEqual(written["schema_version"], "reverse-deepagent.workspace-dual-write-expansion-result.v1")
+            self.assertEqual(written["status"], "verified")
+            self.assertFalse(written["side_effect_policy"]["read_only"])
+            self.assertTrue(written["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(written["side_effect_policy"]["runs_pipeline"])
+            self.assertFalse(written["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(written["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(written["side_effect_policy"]["changes_canonical_paths"])
+            self.assertFalse((root / "workspace" / "review" / "workspace-dual-write-expansion-result.json").exists())
+
+    def test_workspace_dual_write_expansion_workflow_returns_review_plan_without_running_pipeline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+
+            payload = review_workspace_dual_write_expansion_workflow_payload(
+                default_artifact_root=root,
+                expansion_plan_json=json.dumps(plan),
+            )
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-dual-write-expansion-workflow.v1")
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["expansion_plan_status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["expansion_result_status"], "not_run")
+            self.assertEqual(payload["summary"]["candidate_count"], 1)
+            self.assertEqual(payload["review_workflow"]["selected_artifact_keys"], ["workspace_task_card"])
+            self.assertTrue(payload["review_workflow"]["requires_explicit_pipeline_run"])
+            self.assertTrue(payload["review_workflow"]["requires_review_before_expansion"])
+            self.assertTrue(payload["review_workflow"]["does_not_run_pipeline"])
+            self.assertTrue(payload["review_workflow"]["does_not_enable_dual_write"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertTrue(payload["side_effect_policy"]["files_inspected"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["runs_pipeline"])
+            self.assertFalse(payload["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+            self.assertFalse((root / "workspace" / "workspace-dual-write-expansion-result.json").exists())
+
+    def test_workspace_dual_write_expansion_workflow_verifies_observed_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            candidate = plan["candidate_artifacts"][0]
+            legacy = root / candidate["legacy_path"]
+            future = root / candidate["future_path"].lstrip("/")
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            future.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_text('{"task": "demo"}\n', encoding="utf-8")
+            future.write_text('{"task": "demo"}\n', encoding="utf-8")
+            observed = {
+                "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
+                "status": "applied",
+                "records": [
+                    {
+                        "artifact_key": candidate["artifact_key"],
+                        "canonical_path": candidate["legacy_path"],
+                        "future_path": candidate["future_path"],
+                        "write_paths": [str(legacy), str(future)],
+                        "dual_write_enabled": True,
+                    }
+                ],
+            }
+
+            result = review_workspace_dual_write_expansion_workflow_payload(
+                default_artifact_root=root,
+                expansion_plan_json=json.dumps(plan),
+                workspace_dual_write_plan_json=json.dumps(observed),
+            )
+
+            self.assertEqual(result["status"], "verified")
+            self.assertEqual(result["summary"]["expansion_result_status"], "verified")
+            self.assertEqual(result["expansion_result"]["summary"]["verified_candidate_count"], 1)
+            self.assertEqual(result["expansion_result"]["candidate_results"][0]["status"], "verified_dual_written")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
+            self.assertFalse(result["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(result["side_effect_policy"]["runs_pipeline"])
+
+    def test_workspace_dual_write_expansion_tools_return_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan = self._ready_workspace_dual_write_expansion_plan(root, ["workspace_task_card"])
+            review_tool = make_review_workspace_dual_write_expansion_workflow_tool(root)
+            record_tool = make_record_workspace_dual_write_expansion_result_tool(root)
+
+            review_payload = review_tool(expansion_plan_json=json.dumps(plan))
+            record_payload = record_tool(expansion_plan_json=json.dumps(plan))
+
+            self.assertEqual(review_tool.__name__, "review_workspace_dual_write_expansion_workflow")
+            self.assertEqual(record_tool.__name__, "record_workspace_dual_write_expansion_result")
+            self.assertEqual(review_payload["schema_version"], "reverse-deepagent.workspace-dual-write-expansion-workflow.v1")
+            self.assertEqual(record_payload["schema_version"], "reverse-deepagent.workspace-dual-write-expansion-result.v1")
+            self.assertEqual(review_payload["status"], "ready_for_review")
+            self.assertEqual(record_payload["status"], "not_run")
+            self.assertTrue(review_payload["side_effect_policy"]["read_only"])
+            self.assertTrue(record_payload["side_effect_policy"]["read_only"])
+            self.assertFalse(review_payload["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(record_payload["side_effect_policy"]["calls_mcp"])
 
     def test_workspace_dual_write_pilot_plan_selects_low_risk_candidates_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

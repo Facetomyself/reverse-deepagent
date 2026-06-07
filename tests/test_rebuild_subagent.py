@@ -202,6 +202,8 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertIn("assess_workspace_migration_readiness", tool_names)
         self.assertIn("assess_workspace_consumer_readiness_score", tool_names)
         self.assertIn("plan_workspace_dual_write_expansion", tool_names)
+        self.assertIn("review_workspace_dual_write_expansion_workflow", tool_names)
+        self.assertIn("record_workspace_dual_write_expansion_result", tool_names)
         self.assertIn("plan_workspace_dual_write_pilot", tool_names)
         self.assertIn("review_workspace_dual_write_pilot_workflow", tool_names)
         self.assertIn("record_workspace_dual_write_pilot_result", tool_names)
