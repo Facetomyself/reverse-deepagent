@@ -1248,6 +1248,59 @@ def make_review_workspace_foldered_canonical_broader_rollout_rollback_preflight_
     return review_workspace_foldered_canonical_broader_rollout_rollback_preflight
 
 
+def make_execute_workspace_foldered_canonical_broader_rollout_rollback_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create an explicit-review-only broader rollout rollback executor."""
+
+    root = Path(default_artifact_root)
+
+    def execute_workspace_foldered_canonical_broader_rollout_rollback(
+        artifact_root: str | None = None,
+        mode: str = "dry-run",
+        approve_rollback: bool = False,
+        rollback_preflight_json: str | None = None,
+        rollback_preflight_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_rollback_preflight",
+        decision_record_json: str | None = None,
+        decision_record_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_decision_record",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+        commit_journal_json: str | None = None,
+        commit_journal_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_commit_journal",
+        expected_transaction_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Roll back reviewed broader rollout metadata without moving artifacts or changing canonical paths."""
+
+        return execute_workspace_foldered_canonical_broader_rollout_rollback_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            mode=mode,
+            approve_rollback=approve_rollback,
+            rollback_preflight_json=rollback_preflight_json,
+            rollback_preflight_artifact_ref=rollback_preflight_artifact_ref,
+            decision_record_json=decision_record_json,
+            decision_record_artifact_ref=decision_record_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+            commit_journal_json=commit_journal_json,
+            commit_journal_artifact_ref=commit_journal_artifact_ref,
+            expected_transaction_id=expected_transaction_id,
+        )
+
+    execute_workspace_foldered_canonical_broader_rollout_rollback.__name__ = (
+        "execute_workspace_foldered_canonical_broader_rollout_rollback"
+    )
+    execute_workspace_foldered_canonical_broader_rollout_rollback.__doc__ = (
+        "Explicit-review-only foldered-canonical broader rollout rollback executor. Defaults to dry-run; apply mode "
+        "requires approve_rollback=true, a ready rollback preflight, recorded rollback decision, current backend "
+        "manifest via artifact-ref, not-committed guards, and rollback idempotency checks. It writes append-only "
+        "rollback journal, rollback result artifact, and rollback metadata only in apply mode. It never commits metadata, "
+        "moves files, changes canonical paths, enables dual-write, runs pipelines, starts browsers, calls MCP, or "
+        "touches mobile full runtime chains."
+    )
+    return execute_workspace_foldered_canonical_broader_rollout_rollback
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -10637,7 +10690,7 @@ def review_workspace_foldered_canonical_broader_rollout_rollback_preflight_paylo
         "rollback_executor_gate": {
             "ready_for_rollback_executor_review": status == "ready_for_review",
             "executor_tool": "execute_workspace_foldered_canonical_broader_rollout_rollback",
-            "executor_implemented": False,
+            "executor_implemented": True,
             "requires_explicit_review_approval_for_executor": status == "ready_for_review",
             "rollback_apply_executed_by_this_tool": False,
         },
@@ -10668,6 +10721,497 @@ def review_workspace_foldered_canonical_broader_rollout_rollback_preflight_paylo
             "touches_mobile_full_runtime_chains": False,
         },
     }
+
+
+def execute_workspace_foldered_canonical_broader_rollout_rollback_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    mode: str = "dry-run",
+    approve_rollback: bool = False,
+    rollback_preflight_json: str | None = None,
+    rollback_preflight_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_rollback_preflight",
+    decision_record_json: str | None = None,
+    decision_record_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_decision_record",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    commit_journal_json: str | None = None,
+    commit_journal_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_commit_journal",
+    expected_transaction_id: str | None = None,
+) -> dict[str, Any]:
+    """Execute explicit-review-only broader rollout rollback metadata terminalization."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    workspace_dir = effective_root / "workspace"
+    result_path = workspace_dir / "workspace-foldered-canonical-broader-rollout-rollback-result.json"
+    journal_path = workspace_dir / "workspace-foldered-canonical-broader-rollout-rollback-journal.json"
+
+    preflight, preflight_error, preflight_input = _load_or_read_workspace_foldered_canonical_broader_rollout_rollback_preflight(
+        default_artifact_root=effective_root,
+        rollback_preflight_json=rollback_preflight_json,
+        rollback_preflight_artifact_ref=rollback_preflight_artifact_ref,
+    )
+    decision_record, decision_record_error, decision_record_input = (
+        _load_or_read_workspace_foldered_canonical_broader_rollout_decision_record(
+            default_artifact_root=effective_root,
+            decision_record_json=decision_record_json,
+            decision_record_artifact_ref=decision_record_artifact_ref,
+        )
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+    commit_journal, commit_journal_error, commit_journal_input = (
+        _load_or_read_optional_workspace_foldered_canonical_broader_rollout_commit_journal(
+            default_artifact_root=effective_root,
+            commit_journal_json=commit_journal_json,
+            commit_journal_artifact_ref=commit_journal_artifact_ref,
+        )
+    )
+
+    requested_mode = mode or "dry-run"
+    dry_run_mode = requested_mode == "dry-run"
+    apply_mode = requested_mode == "apply"
+    rolled_back_at = datetime.now(timezone.utc).isoformat()
+    preflight_summary = preflight.get("summary") if isinstance(preflight.get("summary"), dict) else {}
+    preflight_gate = preflight.get("rollback_executor_gate") if isinstance(preflight.get("rollback_executor_gate"), dict) else {}
+    preflight_commit_guard = preflight.get("commit_state_guard") if isinstance(preflight.get("commit_state_guard"), dict) else {}
+    preflight_transaction_id = str(preflight_summary.get("transaction_id") or "").strip()
+    record_summary = decision_record.get("summary") if isinstance(decision_record.get("summary"), dict) else {}
+    record_body = decision_record.get("decision_record") if isinstance(decision_record.get("decision_record"), dict) else {}
+    decision = str(record_body.get("decision") or record_summary.get("decision") or preflight_summary.get("decision") or "").strip().lower()
+    transaction_id = str(record_body.get("source_plan_transaction_id") or preflight_transaction_id or "").strip()
+    idempotency_key = str(record_body.get("source_plan_idempotency_key") or preflight_summary.get("idempotency_key") or transaction_id or "").strip()
+    expected_transaction = str(expected_transaction_id or preflight_transaction_id or transaction_id or "").strip()
+    rollback_idempotency_key = f"{idempotency_key}:rollback" if idempotency_key else "foldered-canonical-broader-rollout-rollback"
+    rollback_transaction_id = f"foldered-canonical-broader-rollout-rollback-{transaction_id or 'missing'}"
+    manifest_entry_checks = _foldered_canonical_broader_rollout_rollback_preflight_manifest_entry_checks(
+        backend_manifest=backend_manifest,
+        transaction_id=transaction_id,
+    )
+    existing_journal = _read_foldered_canonical_broader_rollout_rollback_journal(journal_path)
+    duplicate_entry = _find_foldered_canonical_broader_rollout_rollback_duplicate(
+        existing_journal,
+        rollback_idempotency_key=rollback_idempotency_key,
+    )
+    matching_commit_journal_entry = _find_foldered_canonical_broader_rollout_commit_journal_entry_by_transaction(
+        commit_journal,
+        transaction_id=transaction_id,
+    )
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if requested_mode not in {"dry-run", "apply"}:
+        blockers.append("unsupported_foldered_canonical_broader_rollout_rollback_mode")
+    if apply_mode and not approve_rollback:
+        blockers.append("apply_requires_approve_rollback_true")
+    if preflight_error:
+        blockers.append("rollback_preflight_unavailable_or_malformed")
+    if preflight.get("status") != "ready_for_review":
+        blockers.append("rollback_preflight_not_ready_for_review")
+    if preflight_gate.get("ready_for_rollback_executor_review") is not True:
+        blockers.append("rollback_preflight_executor_gate_not_ready")
+    if preflight_gate.get("rollback_apply_executed_by_this_tool") is True:
+        blockers.append("rollback_preflight_claims_apply_already_executed")
+    if preflight_summary.get("decision") and str(preflight_summary.get("decision")).strip().lower() != "rollback":
+        blockers.append("rollback_preflight_does_not_select_rollback")
+    if preflight_transaction_id and transaction_id and preflight_transaction_id != transaction_id:
+        blockers.append("rollback_preflight_transaction_id_mismatch")
+    if preflight_commit_guard.get("matching_commit_journal_entry_found") is True:
+        blockers.append("rollback_preflight_commit_state_guard_not_clear")
+    if decision_record_error:
+        blockers.append("decision_record_unavailable_or_malformed")
+    if decision_record.get("status") != "recorded":
+        blockers.append("decision_record_not_recorded")
+    if record_summary.get("decision_record_written") is not True:
+        blockers.append("decision_record_artifact_not_written")
+    if record_body.get("recorded") is not True:
+        blockers.append("decision_record_body_not_marked_recorded")
+    if decision != "rollback":
+        blockers.append("decision_record_does_not_select_rollback")
+    if backend_manifest_error:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if backend_manifest_json is not None and apply_mode:
+        blockers.append("apply_requires_backend_manifest_artifact_ref_not_inline_json")
+    if commit_journal_error:
+        blockers.append("commit_journal_unavailable_or_malformed")
+    if not transaction_id:
+        blockers.append("source_plan_transaction_id_missing")
+    if expected_transaction and transaction_id and expected_transaction != transaction_id:
+        blockers.append("expected_transaction_id_mismatch")
+    if not manifest_entry_checks:
+        blockers.append("no_current_manifest_entries_for_broader_rollout_transaction")
+    for check in manifest_entry_checks:
+        if check.get("status") != "ready_for_rollback":
+            blockers.append(f"manifest_entry:{check.get('artifact_key') or 'unknown'}:{check.get('status') or 'blocked'}")
+    if matching_commit_journal_entry:
+        blockers.append("commit_journal_contains_committed_entry_for_transaction")
+    if duplicate_entry:
+        blockers.append("broader_rollout_rollback_duplicate_idempotency_key")
+    for reason_item in preflight.get("blocking_reasons") or []:
+        blockers.append(f"rollback_preflight:{reason_item}")
+    for reason_item in decision_record.get("blocking_reasons") or []:
+        blockers.append(f"decision_record:{reason_item}")
+    if commit_journal_input.get("read_status") == "missing":
+        warnings.append("commit_journal_not_observed_optional_review_only_check")
+    if not apply_mode:
+        warnings.append("broader_rollout_rollback_dry_run_does_not_write_journal_result_or_manifest")
+    if apply_mode and not blockers:
+        warnings.append("broader_rollout_rollback_will_only_mark_existing_rollout_metadata_rolled_back")
+
+    status = "blocked" if blockers else "planned" if dry_run_mode else "rolled_back"
+    mutated_manifest = _foldered_canonical_broader_rollout_rollback_backend_manifest(
+        backend_manifest,
+        transaction_id=transaction_id,
+        rollback_transaction_id=rollback_transaction_id,
+        rolled_back_at=rolled_back_at,
+    )
+    journal_entry = _foldered_canonical_broader_rollout_rollback_journal_entry(
+        status=status,
+        transaction_id=transaction_id,
+        rollback_transaction_id=rollback_transaction_id,
+        rollback_idempotency_key=rollback_idempotency_key,
+        decision=decision,
+        manifest_entry_checks=manifest_entry_checks,
+        blockers=blockers,
+        rolled_back_at=rolled_back_at,
+    )
+    journal_payload = _foldered_canonical_broader_rollout_rollback_journal_payload(
+        existing_journal=existing_journal,
+        entry=journal_entry,
+        append_entry=apply_mode and not blockers,
+        updated_at=rolled_back_at,
+    )
+    writes = {"backend_manifest": False, "journal": False, "result": False}
+    if apply_mode and not blockers:
+        _write_json_file(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input), mutated_manifest)
+        _write_json_file(journal_path, journal_payload)
+        writes.update({"backend_manifest": True, "journal": True})
+
+    payload: dict[str, Any] = {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-result.v1",
+        "status": status,
+        "mode": requested_mode,
+        "artifact_root": str(effective_root),
+        "rolled_back_at": rolled_back_at,
+        "result_artifact": _workspace_foldered_canonical_broader_rollout_rollback_result_artifact_metadata(
+            effective_root,
+            written=False,
+        ),
+        "summary": {
+            "rollback_preflight_status": preflight.get("status") or "missing",
+            "decision_record_status": decision_record.get("status") or "missing",
+            "decision": decision,
+            "transaction_id": transaction_id,
+            "rollback_transaction_id": rollback_transaction_id,
+            "rollback_idempotency_key": rollback_idempotency_key,
+            "manifest_entry_check_count": len(manifest_entry_checks),
+            "rolled_back_manifest_entry_count": len(manifest_entry_checks) if status == "rolled_back" else 0,
+            "transaction_journal_written": writes["journal"],
+            "backend_manifest_mutated": writes["backend_manifest"],
+            "result_artifact_written": False,
+            "broader_rollout_committed": False,
+            "broader_rollout_rolled_back": status == "rolled_back",
+            "dual_write_enabled": False,
+            "canonical_paths_changed": False,
+            "files_moved": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "rollback_preflight_input": preflight_input,
+        "decision_record_input": decision_record_input,
+        "backend_manifest_input": backend_manifest_input,
+        "commit_journal_input": commit_journal_input,
+        "rollback_preflight_summary": {
+            "schema_version": preflight.get("schema_version") or "",
+            "status": preflight.get("status") or "missing",
+            "decision": preflight_summary.get("decision") or "",
+            "transaction_id": preflight_transaction_id,
+            "ready_for_rollback_executor_review": preflight_gate.get("ready_for_rollback_executor_review") is True,
+            "matching_commit_journal_entry_found": preflight_commit_guard.get("matching_commit_journal_entry_found") is True,
+        },
+        "decision_record_summary": {
+            "schema_version": decision_record.get("schema_version") or "",
+            "status": decision_record.get("status") or "missing",
+            "decision": decision,
+            "decision_record_written": record_summary.get("decision_record_written") is True,
+            "reviewer": record_summary.get("reviewer") or record_body.get("reviewer") or "",
+            "source_plan_transaction_id": transaction_id,
+            "source_plan_idempotency_key": idempotency_key,
+        },
+        "digest_guard": {
+            "expected_transaction_id": expected_transaction,
+            "current_transaction_id": transaction_id,
+            "preflight_transaction_id": preflight_transaction_id,
+            "expected_transaction_match": bool(expected_transaction and transaction_id and expected_transaction == transaction_id),
+            "preflight_transaction_match": bool(preflight_transaction_id and transaction_id and preflight_transaction_id == transaction_id),
+        },
+        "commit_state_guard": {
+            "matching_commit_journal_entry_found": matching_commit_journal_entry is not None,
+            "matching_commit_journal_entry": _compact_foldered_canonical_broader_rollout_commit_journal_entry(
+                matching_commit_journal_entry
+            ),
+            "preflight_matching_commit_journal_entry_found": preflight_commit_guard.get("matching_commit_journal_entry_found") is True,
+            "blocks_rollback_after_commit": True,
+        },
+        "idempotency_guard": {
+            "rollback_idempotency_key": rollback_idempotency_key,
+            "duplicate_entry_found": duplicate_entry is not None,
+            "duplicate_entry": _compact_foldered_canonical_broader_rollout_rollback_journal_entry(duplicate_entry),
+            "blocks_duplicate_apply": True,
+        },
+        "manifest_entry_checks": manifest_entry_checks,
+        "transaction_journal": {
+            "path": str(journal_path),
+            "append_only": True,
+            "entry_count": len(journal_payload.get("entries", [])),
+            "entry_appended": writes["journal"],
+            "writes_journal_in_apply_mode": writes["journal"],
+        },
+        "backend_manifest_mutation": {
+            "path": str(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input)),
+            "mutates_backend_manifest_in_apply_mode": writes["backend_manifest"],
+            "changes_canonical_paths": False,
+            "enables_dual_write": False,
+            "marks_broader_rollout_committed": False,
+            "rolls_back_broader_rollout": status == "rolled_back",
+            "files_moved": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_broader_rollout_rollback_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "dry_run_is_read_only": True,
+            "artifacts_written": apply_mode and not blockers,
+            "writes_transaction_journal": writes["journal"],
+            "writes_result_artifact": False,
+            "creates_directories": apply_mode and not blockers,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": writes["backend_manifest"],
+            "records_decision": False,
+            "commits_broader_rollout": False,
+            "rolls_back_broader_rollout": status == "rolled_back",
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+    if apply_mode and not blockers:
+        payload["result_artifact"] = _workspace_foldered_canonical_broader_rollout_rollback_result_artifact_metadata(
+            effective_root,
+            written=True,
+        )
+        payload["summary"]["result_artifact_written"] = True
+        payload["side_effect_policy"]["writes_result_artifact"] = True
+        _write_json_file(result_path, payload)
+    return payload
+
+
+def _load_or_read_workspace_foldered_canonical_broader_rollout_rollback_preflight(
+    *,
+    default_artifact_root: Path,
+    rollback_preflight_json: str | None,
+    rollback_preflight_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(rollback_preflight_json, field_name="rollback_preflight_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = rollback_preflight_artifact_ref or "workspace_foldered_canonical_broader_rollout_rollback_preflight"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "rollback_preflight_not_observed", input_summary
+
+
+def _foldered_canonical_broader_rollout_rollback_backend_manifest(
+    backend_manifest: dict[str, Any],
+    *,
+    transaction_id: str,
+    rollback_transaction_id: str,
+    rolled_back_at: str,
+) -> dict[str, Any]:
+    manifest = copy.deepcopy(backend_manifest)
+    rolled_back_count = 0
+    for entry in manifest.get("entries", []):
+        if not isinstance(entry, dict):
+            continue
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        if alias.get("broader_rollout_transaction_id") != transaction_id:
+            continue
+        alias["broader_rollout_applied"] = False
+        alias["broader_rollout_committed"] = False
+        alias["broader_rollout_rolled_back"] = True
+        alias["broader_rollout_rolled_back_at"] = rolled_back_at
+        alias["broader_rollout_rollback_transaction_id"] = rollback_transaction_id
+        rolled_back_count += 1
+    metadata = manifest.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["foldered_canonical_broader_rollout_rolled_back_at"] = rolled_back_at
+        metadata["foldered_canonical_broader_rollout_rollback_transaction_id"] = rollback_transaction_id
+        metadata["foldered_canonical_broader_rollout_rolled_back_transaction_id"] = transaction_id
+        metadata["foldered_canonical_broader_rollout_rolled_back_candidate_count"] = rolled_back_count
+    return manifest
+
+
+def _read_foldered_canonical_broader_rollout_rollback_journal(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-journal.v1", "entries": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-journal.v1",
+            "entries": [],
+            "read_error": True,
+        }
+    if not isinstance(payload, dict):
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-journal.v1", "entries": []}
+    if not isinstance(payload.get("entries"), list):
+        payload["entries"] = []
+    return payload
+
+
+def _find_foldered_canonical_broader_rollout_rollback_duplicate(
+    journal: dict[str, Any],
+    *,
+    rollback_idempotency_key: str,
+) -> dict[str, Any] | None:
+    for entry in journal.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") == "rolled_back" and entry.get("rollback_idempotency_key") == rollback_idempotency_key:
+            return entry
+    return None
+
+
+def _foldered_canonical_broader_rollout_rollback_journal_entry(
+    *,
+    status: str,
+    transaction_id: str,
+    rollback_transaction_id: str,
+    rollback_idempotency_key: str,
+    decision: str,
+    manifest_entry_checks: list[dict[str, Any]],
+    blockers: list[str],
+    rolled_back_at: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "transaction_id": transaction_id,
+        "rollback_transaction_id": rollback_transaction_id,
+        "rollback_idempotency_key": rollback_idempotency_key,
+        "decision": decision,
+        "rolled_back_at": rolled_back_at,
+        "manifest_entry_count": len(manifest_entry_checks),
+        "artifact_keys": [str(check.get("artifact_key") or "") for check in manifest_entry_checks if check.get("artifact_key")],
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "side_effects": {
+            "backend_manifest_mutated": status == "rolled_back",
+            "canonical_paths_changed": False,
+            "files_moved": False,
+            "rolled_back": status == "rolled_back",
+        },
+    }
+
+
+def _foldered_canonical_broader_rollout_rollback_journal_payload(
+    *,
+    existing_journal: dict[str, Any],
+    entry: dict[str, Any],
+    append_entry: bool,
+    updated_at: str,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(existing_journal)
+    payload["schema_version"] = "reverse-deepagent.workspace-foldered-canonical-broader-rollout-rollback-journal.v1"
+    entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
+    payload["entries"] = list(entries)
+    if append_entry:
+        payload["entries"].append(entry)
+    payload["entry_count"] = len(payload["entries"])
+    payload["updated_at"] = updated_at
+    payload["append_only"] = True
+    return payload
+
+
+def _compact_foldered_canonical_broader_rollout_rollback_journal_entry(entry: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    return {
+        "status": entry.get("status") or "",
+        "transaction_id": entry.get("transaction_id") or "",
+        "rollback_transaction_id": entry.get("rollback_transaction_id") or "",
+        "rollback_idempotency_key": entry.get("rollback_idempotency_key") or "",
+        "decision": entry.get("decision") or "",
+        "manifest_entry_count": _safe_int(entry.get("manifest_entry_count")),
+    }
+
+
+def _workspace_foldered_canonical_broader_rollout_rollback_result_artifact_metadata(
+    artifact_root: Path,
+    *,
+    written: bool,
+) -> dict[str, Any]:
+    return {
+        "artifact_key": "workspace_foldered_canonical_broader_rollout_rollback_result",
+        "legacy_path": "workspace/workspace-foldered-canonical-broader-rollout-rollback-result.json",
+        "future_path": "/workspace/review/workspace-foldered-canonical-broader-rollout-rollback-result.json",
+        "path": str(artifact_root / "workspace" / "workspace-foldered-canonical-broader-rollout-rollback-result.json"),
+        "written": written,
+        "category": "audit",
+    }
+
+
+def _foldered_canonical_broader_rollout_rollback_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+) -> list[str]:
+    actions: list[str] = []
+    if "rollback_preflight_unavailable_or_malformed" in blockers or "rollback_preflight_not_ready_for_review" in blockers:
+        actions.append("run_ready_rollback_preflight_before_rollback_executor")
+    if "decision_record_unavailable_or_malformed" in blockers or "decision_record_not_recorded" in blockers:
+        actions.append("record_reviewed_rollback_decision_before_rollback_executor")
+    if "decision_record_does_not_select_rollback" in blockers:
+        actions.append("use_commit_executor_for_commit_decision_or_defer_without_executor")
+    if "backend_artifact_manifest_unavailable_or_malformed" in blockers:
+        actions.append("provide_current_backend_manifest_before_rollback_executor")
+    if "apply_requires_approve_rollback_true" in blockers:
+        actions.append("set_approve_rollback_true_after_human_review")
+    if "apply_requires_backend_manifest_artifact_ref_not_inline_json" in blockers:
+        actions.append("rerun_apply_with_backend_manifest_artifact_ref")
+    if "commit_journal_contains_committed_entry_for_transaction" in blockers or "rollback_preflight_commit_state_guard_not_clear" in blockers:
+        actions.append("do_not_rollback_committed_broader_rollout_without_separate_revert_track")
+    if "broader_rollout_rollback_duplicate_idempotency_key" in blockers:
+        actions.append("inspect_existing_broader_rollout_rollback_journal_before_retry")
+    if any(reason.startswith("manifest_entry:") for reason in blockers):
+        actions.append("repair_or_reaudit_current_manifest_before_rollback_executor")
+    if status == "planned":
+        actions.append("review_rollback_dry_run_then_rerun_apply_with_explicit_approval")
+    if status == "rolled_back":
+        actions.append("review_foldered_canonical_broader_rollout_rollback_result")
+        actions.append("rerun_broader_rollout_post_audit_or_readiness_before_future_rollout")
+    return list(dict.fromkeys(actions))
 
 
 def _load_or_read_optional_workspace_foldered_canonical_broader_rollout_commit_journal(
