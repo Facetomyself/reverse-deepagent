@@ -688,6 +688,45 @@ def make_review_workspace_foldered_canonical_migration_finalization_readiness_to
     return review_workspace_foldered_canonical_migration_finalization_readiness
 
 
+def make_plan_workspace_foldered_canonical_migration_finalization_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create a review-only foldered-canonical migration finalization plan descriptor."""
+
+    root = Path(default_artifact_root)
+
+    def plan_workspace_foldered_canonical_migration_finalization(
+        artifact_root: str | None = None,
+        finalization_readiness_json: str | None = None,
+        finalization_readiness_artifact_ref: str | None = "workspace_foldered_canonical_migration_finalization_readiness",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+        artifact_keys_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan finalization metadata changes without mutating manifests or changing paths."""
+
+        return plan_workspace_foldered_canonical_migration_finalization_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            finalization_readiness_json=finalization_readiness_json,
+            finalization_readiness_artifact_ref=finalization_readiness_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+            artifact_keys_json=artifact_keys_json,
+        )
+
+    plan_workspace_foldered_canonical_migration_finalization.__name__ = (
+        "plan_workspace_foldered_canonical_migration_finalization"
+    )
+    plan_workspace_foldered_canonical_migration_finalization.__doc__ = (
+        "Review-only foldered-canonical migration finalization plan descriptor. It consumes a ready finalization readiness "
+        "descriptor and current backend artifact manifest, then previews finalization metadata updates for a later reviewed "
+        "preflight / executor. It does not write artifacts, mutate manifests, change canonical paths, finalize migration, "
+        "run pipelines, start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return plan_workspace_foldered_canonical_migration_finalization
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -5386,7 +5425,7 @@ def review_workspace_foldered_canonical_migration_finalization_readiness_payload
         "finalization_plan_gate": {
             "ready_for_foldered_canonical_finalization_plan_review": status == "ready_for_review",
             "plan_tool": "plan_workspace_foldered_canonical_migration_finalization",
-            "plan_tool_implemented": False,
+            "plan_tool_implemented": True,
             "requires_legacy_fallback_tightening_result": True,
             "requires_current_backend_manifest_revalidation": True,
             "allows_automatic_execution": False,
@@ -5417,6 +5456,332 @@ def review_workspace_foldered_canonical_migration_finalization_readiness_payload
             "touches_mobile_full_runtime_chains": False,
         },
     }
+
+
+def plan_workspace_foldered_canonical_migration_finalization_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    finalization_readiness_json: str | None = None,
+    finalization_readiness_artifact_ref: str | None = "workspace_foldered_canonical_migration_finalization_readiness",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    artifact_keys_json: str | None = None,
+) -> dict[str, Any]:
+    """Return a review-only foldered-canonical migration finalization plan descriptor."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    readiness, readiness_error, readiness_input = _load_or_read_workspace_foldered_canonical_migration_finalization_readiness(
+        default_artifact_root=effective_root,
+        finalization_readiness_json=finalization_readiness_json,
+        finalization_readiness_artifact_ref=finalization_readiness_artifact_ref,
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+    requested_keys, requested_error = _parse_artifact_keys_json(artifact_keys_json)
+    readiness_gate = readiness.get("finalization_plan_gate") if isinstance(readiness.get("finalization_plan_gate"), dict) else {}
+    readiness_revalidation = readiness.get("manifest_revalidation") if isinstance(readiness.get("manifest_revalidation"), dict) else {}
+    readiness_candidates = (
+        readiness_revalidation.get("candidate_results")
+        if isinstance(readiness_revalidation.get("candidate_results"), list)
+        else []
+    )
+    candidates, unknown_keys = _foldered_canonical_finalization_plan_candidates(
+        readiness_candidates=[item for item in readiness_candidates if isinstance(item, dict)],
+        backend_manifest=backend_manifest,
+        requested_keys=requested_keys,
+    )
+    ready_updates = [
+        candidate
+        for candidate in candidates
+        if candidate.get("status") == "ready_for_foldered_canonical_finalization_plan_review"
+    ]
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if readiness_error:
+        blockers.append("foldered_canonical_finalization_readiness_unavailable_or_malformed")
+    if readiness.get("status") != "ready_for_review":
+        blockers.append("foldered_canonical_finalization_readiness_not_ready")
+    if readiness_gate.get("ready_for_foldered_canonical_finalization_plan_review") is not True:
+        blockers.append("foldered_canonical_finalization_readiness_gate_not_ready")
+    if backend_manifest_error:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if requested_error:
+        blockers.append("artifact_keys_json_malformed")
+    if unknown_keys:
+        blockers.append("unknown_requested_artifact_keys")
+    if not ready_updates:
+        blockers.append("no_foldered_canonical_finalization_candidates_ready")
+    for candidate in candidates:
+        if candidate.get("status") != "ready_for_foldered_canonical_finalization_plan_review":
+            warnings.append(f"finalization_candidate:{candidate.get('artifact_key') or 'unknown'}:{candidate.get('status') or 'blocked'}")
+    for reason in readiness.get("blocking_reasons") or []:
+        blockers.append(f"foldered_canonical_finalization_readiness:{reason}")
+    for warning in readiness.get("warnings") or []:
+        warnings.append(f"foldered_canonical_finalization_readiness:{warning}")
+    if not blockers:
+        warnings.append("foldered_canonical_finalization_plan_requires_review_approval_before_preflight")
+        warnings.append("foldered_canonical_finalization_preflight_and_executor_remain_separate_follow_ups")
+
+    plan_digest = _foldered_canonical_finalization_plan_digest(ready_updates)
+    status = "ready_for_review" if not blockers else "blocked"
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-finalization-plan.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "readiness_status": readiness.get("status") or "missing",
+            "backend_manifest_status": "loaded" if not backend_manifest_error else "missing_or_blocked",
+            "candidate_count": len(candidates),
+            "planned_finalization_update_count": len(ready_updates) if status == "ready_for_review" else 0,
+            "explicit_selection": requested_keys is not None,
+            "unknown_requested_artifact_key_count": len(unknown_keys),
+            "review_required": True,
+            "plan_only": True,
+            "canonical_paths_changed_by_this_tool": False,
+            "legacy_fallback_tightened_by_this_tool": False,
+            "foldered_canonical_finalized": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "finalization_readiness_input": readiness_input,
+        "backend_manifest_input": backend_manifest_input,
+        "selection_policy": {
+            "default_scope": "all-ready-foldered-canonical-finalization-candidates",
+            "explicit_artifact_keys_supported": True,
+            "requires_ready_finalization_readiness_descriptor": True,
+            "requires_current_backend_manifest": True,
+            "allows_manifest_mutation": False,
+            "allows_canonical_path_change": False,
+            "allows_finalization": False,
+        },
+        "readiness_summary": {
+            "schema_version": readiness.get("schema_version") or "",
+            "status": readiness.get("status") or "missing",
+            "ready_for_foldered_canonical_finalization_plan_review": bool(
+                readiness_gate.get("ready_for_foldered_canonical_finalization_plan_review")
+            ),
+            "blocking_reasons": readiness.get("blocking_reasons") if isinstance(readiness.get("blocking_reasons"), list) else [],
+            "warnings": readiness.get("warnings") if isinstance(readiness.get("warnings"), list) else [],
+        },
+        "candidate_results": candidates,
+        "planned_manifest_updates": ready_updates if status == "ready_for_review" else [],
+        "blocked_artifacts": {
+            "unknown_artifact_keys": unknown_keys,
+            "blocked_candidate_count": len(
+                [candidate for candidate in candidates if candidate.get("status") != "ready_for_foldered_canonical_finalization_plan_review"]
+            ),
+        },
+        "digest_guard": {
+            "foldered_canonical_finalization_plan_digest": plan_digest,
+            "requires_preflight_revalidation_before_manifest_mutation": True,
+            "requires_executor_revalidation_before_manifest_mutation": True,
+        },
+        "approval_requirements": {
+            "required_before_preflight_or_executor": True,
+            "approval_action": "foldered_canonical_migration_finalization",
+            "subject_id": f"workspace-foldered-canonical-finalization:{plan_digest}" if plan_digest else "workspace-foldered-canonical-finalization",
+            "subject_digest_sha256": plan_digest,
+            "records_approval_in_this_tool": False,
+        },
+        "transaction_journal_plan": {
+            "required_before_manifest_mutation": True,
+            "journal_artifact": "workspace/workspace-foldered-canonical-migration-finalization-journal.json",
+            "writes_journal_in_this_tool": False,
+            "records_plan_digest": True,
+            "records_approval_evidence": True,
+            "append_only": True,
+        },
+        "executor_gate": {
+            "ready_for_foldered_canonical_finalization_preflight_review": status == "ready_for_review",
+            "preflight_tool": "review_workspace_foldered_canonical_migration_finalization_preflight",
+            "preflight_tool_implemented": False,
+            "executor_tool": "execute_workspace_foldered_canonical_migration_finalization",
+            "executor_tool_implemented": False,
+            "requires_explicit_review_approval": True,
+            "requires_current_backend_manifest_revalidation": True,
+            "allows_automatic_execution": False,
+            "allows_manifest_mutation_in_this_tool": False,
+            "allows_canonical_path_change_in_this_tool": False,
+            "allows_legacy_fallback_tightening_in_this_tool": False,
+            "allows_finalization_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_finalization_plan_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "tightens_legacy_fallback": False,
+            "finalizes_foldered_canonical_migration": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_migration_finalization_readiness(
+    *,
+    default_artifact_root: Path,
+    finalization_readiness_json: str | None,
+    finalization_readiness_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(finalization_readiness_json, field_name="finalization_readiness_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = finalization_readiness_artifact_ref or "workspace_foldered_canonical_migration_finalization_readiness"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "finalization_readiness_not_observed", input_summary
+
+
+def _foldered_canonical_finalization_plan_candidates(
+    *,
+    readiness_candidates: list[dict[str, Any]],
+    backend_manifest: dict[str, Any],
+    requested_keys: list[str] | None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    candidates_by_key = {
+        str(candidate.get("artifact_key") or ""): candidate
+        for candidate in readiness_candidates
+        if isinstance(candidate, dict) and candidate.get("artifact_key")
+    }
+    entries = backend_manifest.get("entries") if isinstance(backend_manifest.get("entries"), list) else []
+    entries_by_key = {
+        str(entry.get("artifact_key") or ""): entry
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("artifact_key")
+    }
+    selected_keys = requested_keys if requested_keys is not None else sorted(candidates_by_key)
+    unknown_keys = [key for key in selected_keys if key not in candidates_by_key]
+    candidates: list[dict[str, Any]] = []
+    for key in selected_keys:
+        readiness_candidate = candidates_by_key.get(key)
+        if not isinstance(readiness_candidate, dict):
+            continue
+        entry = entries_by_key.get(key)
+        status = "ready_for_foldered_canonical_finalization_plan_review"
+        blockers: list[str] = []
+        warnings: list[str] = []
+        current_path = ""
+        legacy_fallback_path = ""
+        virtual_uri = ""
+        if readiness_candidate.get("status") != "ready":
+            status = f"blocked_readiness_candidate_{readiness_candidate.get('status') or 'not_ready'}"
+            blockers.append("readiness_candidate_must_be_ready")
+        if not isinstance(entry, dict):
+            status = "blocked_manifest_entry_missing"
+            blockers.append("backend_manifest_entry_required")
+        else:
+            current_path = str(entry.get("path") or "")
+            metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+            alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+            legacy_fallback_path = str(alias.get("legacy_fallback_path") or "")
+            virtual_uri = str(alias.get("virtual_uri") or "")
+            expected_path = str(readiness_candidate.get("observed_canonical_path") or "")
+            expected_legacy = str(readiness_candidate.get("observed_legacy_fallback_path") or "")
+            if expected_path and current_path != expected_path:
+                status = "blocked_canonical_path_mismatch"
+                blockers.append("canonical_path_must_match_readiness")
+            elif expected_legacy and legacy_fallback_path != expected_legacy:
+                status = "blocked_legacy_fallback_path_mismatch"
+                blockers.append("legacy_fallback_path_must_match_readiness")
+            elif not current_path or current_path == legacy_fallback_path:
+                status = "blocked_canonical_path_not_foldered"
+                blockers.append("canonical_path_must_remain_foldered")
+            elif alias.get("legacy_fallback_tightened") is not True:
+                status = "blocked_legacy_fallback_not_tightened"
+                blockers.append("legacy_fallback_must_be_tightened")
+            elif alias.get("legacy_fallback_preserved") is True:
+                status = "blocked_legacy_fallback_still_preserved"
+                blockers.append("legacy_fallback_must_not_remain_preserved")
+            if alias.get("foldered_canonical_finalized") is True:
+                warnings.append("foldered_canonical_already_marked_finalized")
+        candidates.append(
+            {
+                "artifact_key": key,
+                "status": status,
+                "current_canonical_path": current_path,
+                "legacy_fallback_path": legacy_fallback_path,
+                "virtual_uri": virtual_uri,
+                "review_required": True,
+                "planned_metadata_update": {
+                    "workspace_alias.foldered_canonical_finalization_planned": True,
+                    "workspace_alias.foldered_canonical_finalized": True,
+                    "workspace_alias.migration_status": "foldered-canonical-finalized-after-reviewed-apply",
+                    "workspace_alias.resolver_migration_status": "foldered-canonical-authoritative",
+                },
+                "blockers": blockers,
+                "warnings": warnings,
+                "mutates_manifest_in_this_tool": False,
+            }
+        )
+    return candidates, unknown_keys
+
+
+def _foldered_canonical_finalization_plan_digest(planned_updates: list[dict[str, Any]]) -> str:
+    if not planned_updates:
+        return ""
+    digest_input = [
+        {
+            "artifact_key": item.get("artifact_key") or "",
+            "current_canonical_path": item.get("current_canonical_path") or "",
+            "legacy_fallback_path": item.get("legacy_fallback_path") or "",
+            "planned_metadata_update": item.get("planned_metadata_update") or {},
+        }
+        for item in planned_updates
+    ]
+    return hashlib.sha256(json.dumps(digest_input, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _foldered_canonical_finalization_plan_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+) -> list[str]:
+    actions: list[str] = []
+    if "foldered_canonical_finalization_readiness_unavailable_or_malformed" in blockers or "foldered_canonical_finalization_readiness_not_ready" in blockers:
+        actions.append("create_or_pass_ready_foldered_canonical_finalization_readiness_descriptor")
+    if "backend_artifact_manifest_unavailable_or_malformed" in blockers:
+        actions.append("provide_current_backend_manifest_before_finalization_plan")
+    if "no_foldered_canonical_finalization_candidates_ready" in blockers:
+        actions.append("review_backend_manifest_workspace_alias_finalization_metadata")
+    if "unknown_requested_artifact_keys" in blockers:
+        actions.append("remove_unknown_artifact_keys_or_update_workspace_contract")
+    if status == "ready_for_review":
+        actions.append("record_review_approval_before_finalization_preflight")
+        actions.append("keep_finalization_preflight_and_executor_as_separate_follow_ups")
+    if any("preflight_and_executor_remain_separate" in warning for warning in warnings):
+        actions.append("do_not_mutate_manifest_from_finalization_plan_descriptor")
+    return list(dict.fromkeys(actions))
 
 
 def _load_or_read_workspace_foldered_canonical_legacy_fallback_tightening_result(
