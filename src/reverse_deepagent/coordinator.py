@@ -1013,6 +1013,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_paused_session_automatic_loop_execution_plan": "triage",
     "workspace_paused_session_automatic_loop_executor_preflight": "triage",
     "workspace_paused_session_automatic_loop_executor_approval_plan": "triage",
+    "workspace_paused_session_automatic_loop_executor_approval_record": "audit",
     "workspace_closure_functions": "trace",
     "workspace_closure_function_candidates": "triage",
     "workspace_closure_wrapper_replacement_plan": "triage",
@@ -1968,6 +1969,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["paused-session-automatic-loop-executor-preflight.json"] = evidence.details
         elif evidence.source == "paused_session_automatic_loop_executor_approval_plan":
             payloads["paused-session-automatic-loop-executor-approval-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_executor_approval_record":
+            payloads["paused-session-automatic-loop-executor-approval-record.json"] = evidence.details
         elif evidence.source == "closure_functions":
             payloads["closure-functions.json"] = evidence.details
         elif evidence.source == "closure_function_candidates":

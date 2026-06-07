@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,7 @@ from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_
 
 
 DEBUGGER_ARTIFACT_REVIEW_VERSION = "2026-05-31.debugger-artifact-review-v1"
+AUTOMATIC_LOOP_EXECUTOR_APPROVAL_RECORD_VERSION = "reverse-deepagent.paused-session-automatic-loop-executor-approval-record.v1"
 _LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe"}
 
 
@@ -735,6 +738,271 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
     return review_debugger_artifacts
 
 
+def make_record_paused_session_automatic_loop_executor_approval_tool(default_artifact_root: str | Path | None = None):
+    """Create an explicit approval-record writer for future automatic-loop execution.
+
+    The tool only records reviewer approval metadata for a ready approval-plan
+    descriptor. It never sends CDP commands, resumes debugger state, evaluates
+    callframes, executes continuation steps, starts transactions, writes executor
+    journals, calls MCP, or touches mobile runtime chains.
+    """
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def record_paused_session_automatic_loop_executor_approval(
+        approval_plan_json: str | None = None,
+        approval_plan_ref: str | None = None,
+        reviewer: str | None = None,
+        decision: str = "approved",
+        reason: str | None = None,
+        mode: str = "dry-run",
+        write_result: bool = False,
+        approve_approval_record: bool = False,
+        expected_approval_plan_id: str | None = None,
+        expected_preflight_id: str | None = None,
+        expected_plan_digest_sha256: str | None = None,
+        artifact_root: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Record reviewer approval for a ready automatic-loop executor approval plan."""
+
+        metadata = _loads_optional_object(metadata_json, field_name="metadata_json")
+        return record_paused_session_automatic_loop_executor_approval_payload(
+            approval_plan_json=approval_plan_json,
+            approval_plan_ref=approval_plan_ref,
+            reviewer=reviewer,
+            decision=decision,
+            reason=reason,
+            mode=mode,
+            write_result=write_result,
+            approve_approval_record=approve_approval_record,
+            expected_approval_plan_id=expected_approval_plan_id,
+            expected_preflight_id=expected_preflight_id,
+            expected_plan_digest_sha256=expected_plan_digest_sha256,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            metadata=metadata,
+        )
+
+    record_paused_session_automatic_loop_executor_approval.__name__ = "record_paused_session_automatic_loop_executor_approval"
+    return record_paused_session_automatic_loop_executor_approval
+
+
+def record_paused_session_automatic_loop_executor_approval_payload(
+    *,
+    approval_plan_json: str | None = None,
+    approval_plan_ref: str | None = None,
+    reviewer: str | None = None,
+    decision: str = "approved",
+    reason: str | None = None,
+    mode: str = "dry-run",
+    write_result: bool = False,
+    approve_approval_record: bool = False,
+    expected_approval_plan_id: str | None = None,
+    expected_preflight_id: str | None = None,
+    expected_plan_digest_sha256: str | None = None,
+    artifact_root: str | None = None,
+    default_artifact_root: str | Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build or write the automatic-loop executor approval record payload."""
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+    loaded, artifact_read = _loads_object_or_artifact(
+        approval_plan_json,
+        artifact_ref=approval_plan_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=root,
+        field_name="approval_plan_json",
+        artifact_field_name="approval_plan_ref",
+    )
+    approval_plan = _first_object(loaded.get("approval_plan"), loaded)
+    effective_root = Path(artifact_root) if artifact_root else root
+    effective_root = effective_root.expanduser().resolve()
+    plan_digest = _stable_json_digest(approval_plan) if approval_plan else None
+    blockers = _automatic_loop_executor_approval_record_blockers(
+        approval_plan=approval_plan,
+        reviewer=reviewer,
+        decision=decision,
+        mode=mode,
+        write_result=write_result,
+        approve_approval_record=approve_approval_record,
+        expected_approval_plan_id=expected_approval_plan_id,
+        expected_preflight_id=expected_preflight_id,
+        expected_plan_digest_sha256=expected_plan_digest_sha256,
+        plan_digest=plan_digest,
+    )
+    written = not blockers and mode == "apply" and write_result and approve_approval_record
+    approved_for_execution = written and decision == "approved"
+    status = "blocked" if blockers else "written" if written else "planned"
+    created_at = datetime.now(timezone.utc).isoformat()
+    approval_plan_id = _string(approval_plan.get("approval_plan_id"))
+    preflight_id = _string(approval_plan.get("preflight_id"))
+    approval_record_id = _automatic_loop_executor_approval_record_id(
+        approval_plan_id=approval_plan_id,
+        preflight_id=preflight_id,
+        decision=decision,
+        reviewer=reviewer,
+        created_at=created_at,
+    )
+    result_path = effective_root / "workspace" / "paused-session-automatic-loop-executor-approval-record.json"
+    payload: dict[str, Any] = {
+        "schema_version": AUTOMATIC_LOOP_EXECUTOR_APPROVAL_RECORD_VERSION,
+        "status": status,
+        "approval_recorded": written,
+        "approved_for_execution": approved_for_execution,
+        "dry_run": not written,
+        "mode": mode,
+        "write_result": write_result,
+        "approval_record_id": approval_record_id,
+        "approval_plan_id": approval_plan_id or None,
+        "preflight_id": preflight_id or None,
+        "plan_id": approval_plan.get("plan_id"),
+        "loop_id": approval_plan.get("loop_id"),
+        "workflow_id": approval_plan.get("workflow_id"),
+        "pause_session_id": approval_plan.get("pause_session_id"),
+        "target_id": approval_plan.get("target_id"),
+        "decision": decision,
+        "reviewer": reviewer,
+        "reason": reason,
+        "created_at": created_at,
+        "approval_plan_digest_sha256": plan_digest,
+        "expected_plan_digest_sha256": expected_plan_digest_sha256,
+        "source_approval_plan_summary": {
+            "schema_version": approval_plan.get("schema_version"),
+            "status": approval_plan.get("status"),
+            "ready_for_review": _boolish(approval_plan.get("ready_for_review")),
+            "approval_plan_ready_for_review": _boolish(approval_plan.get("approval_plan_ready_for_review")),
+            "approved_iteration_count": approval_plan.get("approved_iteration_count", 0),
+            "max_approved_iterations": approval_plan.get("max_approved_iterations", 0),
+            "ready_to_execute_now": _boolish(_nested_get(approval_plan, "executor_input_gates", "ready_to_execute_now")),
+            "future_executor_implemented": _boolish(_nested_get(approval_plan, "future_executor_contract", "implemented")),
+            "transaction_started": _boolish(_nested_get(approval_plan, "transaction_plan", "transaction_started")),
+            "journal_written_now": _boolish(_nested_get(approval_plan, "transaction_plan", "journal_written_now")),
+            "next_action": approval_plan.get("next_action"),
+        },
+        "approved_iterations": [
+            {
+                "iteration_index": item.get("iteration_index"),
+                "workflow_step_index": item.get("workflow_step_index"),
+                "method": item.get("method"),
+                "fingerprint": item.get("fingerprint"),
+                "approval_status": "approved_by_record" if written and decision == "approved" else "review_record_planned",
+                "executed_now": False,
+                "requires_checkpoint_after_iteration": True,
+            }
+            for item in approval_plan.get("approved_iterations", [])
+            if isinstance(item, dict)
+        ],
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_recorded": approved_for_execution,
+            "approved_for_execution": approved_for_execution,
+            "transaction_started": False,
+            "journal_written": False,
+            "requires_ready_approval_plan": True,
+            "requires_transaction_journal": True,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_checkpoint_after_each_iteration": True,
+        },
+        "checks": _automatic_loop_executor_approval_record_checks(
+            approval_plan=approval_plan,
+            reviewer=reviewer,
+            decision=decision,
+            mode=mode,
+            write_result=write_result,
+            approve_approval_record=approve_approval_record,
+            expected_approval_plan_id=expected_approval_plan_id,
+            expected_preflight_id=expected_preflight_id,
+            expected_plan_digest_sha256=expected_plan_digest_sha256,
+            plan_digest=plan_digest,
+        ),
+        "blockers": blockers,
+        "next_action": _automatic_loop_executor_approval_record_next_action(status=status, blockers=blockers),
+        "metadata": {
+            **(metadata or {}),
+            "tool": "record_paused_session_automatic_loop_executor_approval",
+            "artifact_read": artifact_read,
+            "legacy_path": "workspace/paused-session-automatic-loop-executor-approval-record.json",
+            "future_path": "/workspace/debugger/paused-session-automatic-loop-executor-approval-record.json",
+            "path": str(result_path),
+        },
+        "side_effect_policy": _automatic_loop_executor_approval_record_side_effect_policy(written=written),
+    }
+    if written:
+        _write_json(result_path, payload)
+    return payload
+
+
+def _automatic_loop_executor_approval_record_checks(
+    *,
+    approval_plan: dict[str, Any],
+    reviewer: str | None,
+    decision: str,
+    mode: str,
+    write_result: bool,
+    approve_approval_record: bool,
+    expected_approval_plan_id: str | None,
+    expected_preflight_id: str | None,
+    expected_plan_digest_sha256: str | None,
+    plan_digest: str | None,
+) -> list[dict[str, Any]]:
+    plan_blockers = approval_plan.get("blockers") if isinstance(approval_plan.get("blockers"), list) else []
+    return [
+        {"name": "approval_plan_available", "passed": bool(approval_plan), "details": {"approval_plan_id": approval_plan.get("approval_plan_id")}},
+        {"name": "approval_plan_ready_for_review", "passed": approval_plan.get("status") == "ready_for_review" and approval_plan.get("approval_plan_ready_for_review") is True, "details": {"status": approval_plan.get("status"), "approval_plan_ready_for_review": approval_plan.get("approval_plan_ready_for_review")}},
+        {"name": "approval_plan_has_no_blockers", "passed": not plan_blockers, "details": {"blockers": plan_blockers}},
+        {"name": "reviewer_present", "passed": bool((reviewer or "").strip()), "details": {"reviewer": reviewer}},
+        {"name": "decision_supported", "passed": decision in {"approved", "rejected", "needs_changes"}, "details": {"decision": decision}},
+        {"name": "mode_supported", "passed": mode in {"dry-run", "apply"}, "details": {"mode": mode}},
+        {"name": "apply_requires_write_result", "passed": mode != "apply" or bool(write_result), "details": {"write_result": write_result}},
+        {"name": "apply_requires_explicit_approval_record", "passed": mode != "apply" or bool(approve_approval_record), "details": {"approve_approval_record": approve_approval_record}},
+        {"name": "expected_approval_plan_id_matches", "passed": not expected_approval_plan_id or approval_plan.get("approval_plan_id") == expected_approval_plan_id, "details": {"expected_approval_plan_id": expected_approval_plan_id, "approval_plan_id": approval_plan.get("approval_plan_id")}},
+        {"name": "expected_preflight_id_matches", "passed": not expected_preflight_id or approval_plan.get("preflight_id") == expected_preflight_id, "details": {"expected_preflight_id": expected_preflight_id, "preflight_id": approval_plan.get("preflight_id")}},
+        {"name": "expected_plan_digest_matches", "passed": not expected_plan_digest_sha256 or expected_plan_digest_sha256 == plan_digest, "details": {"expected_plan_digest_sha256": expected_plan_digest_sha256, "approval_plan_digest_sha256": plan_digest}},
+        {"name": "approval_plan_does_not_claim_ready_to_execute", "passed": _nested_get(approval_plan, "executor_input_gates", "ready_to_execute_now") is not True, "details": {"ready_to_execute_now": _nested_get(approval_plan, "executor_input_gates", "ready_to_execute_now")}},
+        {"name": "future_executor_not_implemented", "passed": _nested_get(approval_plan, "future_executor_contract", "implemented") is not True, "details": {"future_executor_implemented": _nested_get(approval_plan, "future_executor_contract", "implemented")}},
+        {"name": "transaction_not_started", "passed": _nested_get(approval_plan, "transaction_plan", "transaction_started") is not True, "details": {"transaction_started": _nested_get(approval_plan, "transaction_plan", "transaction_started")}},
+        {"name": "journal_not_written", "passed": _nested_get(approval_plan, "transaction_plan", "journal_written_now") is not True, "details": {"journal_written_now": _nested_get(approval_plan, "transaction_plan", "journal_written_now")}},
+    ]
+
+
+def _automatic_loop_executor_approval_record_blockers(**kwargs: Any) -> list[str]:
+    return [check["name"] for check in _automatic_loop_executor_approval_record_checks(**kwargs) if not check["passed"]]
+
+
+def _automatic_loop_executor_approval_record_next_action(*, status: str, blockers: list[str]) -> str:
+    if blockers:
+        return "fix_paused_session_automatic_loop_executor_approval_record_blockers"
+    if status == "planned":
+        return "review_then_write_paused_session_automatic_loop_executor_approval_record"
+    return "use_approval_record_for_future_bounded_automatic_loop_executor_transaction_preflight"
+
+
+def _automatic_loop_executor_approval_record_side_effect_policy(*, written: bool) -> dict[str, Any]:
+    return {
+        "dry_run_is_read_only": True,
+        "writes_approval_record": written,
+        "review_decision_recorded": written,
+        "writes_transaction_journal": False,
+        "transaction_started": False,
+        "automatic_loop_executed": False,
+        "multi_step_continuation_executed": False,
+        "browser_resumed": False,
+        "debugger_stepped": False,
+        "callframe_evaluated": False,
+        "runtime_mutated": False,
+        "cdp_command_sent": False,
+        "calls_mcp": False,
+        "mobile_runtime_used": False,
+    }
+
+
+def _automatic_loop_executor_approval_record_id(*, approval_plan_id: str, preflight_id: str, decision: str, reviewer: str | None, created_at: str) -> str:
+    digest = hashlib.sha256(f"{approval_plan_id}\0{preflight_id}\0{decision}\0{reviewer or ''}\0{created_at}".encode("utf-8")).hexdigest()[:16]
+    return f"automatic-loop-executor-approval-record:{digest}"
+
+
 def _loads_object_or_artifact(
     payload: str | None,
     *,
@@ -765,6 +1033,21 @@ def _loads_object(payload: str, *, field_name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{field_name} must decode to a JSON object")
     return value
+
+
+def _loads_optional_object(payload: str | None, *, field_name: str) -> dict[str, Any]:
+    if payload is None or not str(payload).strip():
+        return {}
+    return _loads_object(payload, field_name=field_name)
+
+
+def _stable_json_digest(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _object_alias(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
