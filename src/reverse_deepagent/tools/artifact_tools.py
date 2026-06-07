@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -600,6 +601,54 @@ def make_review_workspace_foldered_canonical_legacy_fallback_tightening_prefligh
         "migration, run pipelines, start browsers, call MCP, or touch mobile full runtime chains."
     )
     return review_workspace_foldered_canonical_legacy_fallback_tightening_preflight
+
+
+def make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create an explicit-review-only legacy fallback tightening executor."""
+
+    root = Path(default_artifact_root)
+
+    def execute_workspace_foldered_canonical_legacy_fallback_tightening(
+        artifact_root: str | None = None,
+        mode: str = "dry-run",
+        approve_legacy_fallback_tightening: bool = False,
+        legacy_fallback_tightening_preflight_json: str | None = None,
+        legacy_fallback_tightening_preflight_artifact_ref: str | None = "workspace_foldered_canonical_legacy_fallback_tightening_preflight",
+        legacy_fallback_tightening_plan_json: str | None = None,
+        legacy_fallback_tightening_plan_artifact_ref: str | None = "workspace_foldered_canonical_legacy_fallback_tightening_plan",
+        backend_manifest_json: str | None = None,
+        backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+        expected_plan_digest: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply reviewed legacy fallback metadata tightening with journal and result evidence."""
+
+        return execute_workspace_foldered_canonical_legacy_fallback_tightening_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            mode=mode,
+            approve_legacy_fallback_tightening=approve_legacy_fallback_tightening,
+            legacy_fallback_tightening_preflight_json=legacy_fallback_tightening_preflight_json,
+            legacy_fallback_tightening_preflight_artifact_ref=legacy_fallback_tightening_preflight_artifact_ref,
+            legacy_fallback_tightening_plan_json=legacy_fallback_tightening_plan_json,
+            legacy_fallback_tightening_plan_artifact_ref=legacy_fallback_tightening_plan_artifact_ref,
+            backend_manifest_json=backend_manifest_json,
+            backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+            expected_plan_digest=expected_plan_digest,
+        )
+
+    execute_workspace_foldered_canonical_legacy_fallback_tightening.__name__ = (
+        "execute_workspace_foldered_canonical_legacy_fallback_tightening"
+    )
+    execute_workspace_foldered_canonical_legacy_fallback_tightening.__doc__ = (
+        "Explicit-review-only legacy fallback tightening executor. Defaults to dry-run; apply mode requires "
+        "approve_legacy_fallback_tightening=true, ready preflight evidence, matching plan digest, and a current backend "
+        "artifact manifest. It writes append-only tightening journal, result artifact, and updates workspace_alias legacy "
+        "fallback metadata only in apply mode. It does not move files, change canonical paths, finalize migration, run "
+        "pipelines, start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return execute_workspace_foldered_canonical_legacy_fallback_tightening
 
 
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
@@ -4165,7 +4214,7 @@ def plan_workspace_foldered_canonical_legacy_fallback_tightening_payload(
             "preflight_tool": "review_workspace_foldered_canonical_legacy_fallback_tightening_preflight",
             "preflight_tool_implemented": True,
             "executor_tool": "execute_workspace_foldered_canonical_legacy_fallback_tightening",
-            "executor_tool_implemented": False,
+            "executor_tool_implemented": True,
             "requires_explicit_review_approval": True,
             "requires_current_backend_manifest_revalidation": True,
             "allows_automatic_execution": False,
@@ -4452,7 +4501,7 @@ def review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_pay
         "executor_gate": {
             "ready_for_legacy_fallback_tightening_executor_review": status == "ready_for_review",
             "executor_tool": "execute_workspace_foldered_canonical_legacy_fallback_tightening",
-            "executor_tool_implemented": False,
+            "executor_tool_implemented": True,
             "requires_explicit_review_approval": True,
             "requires_current_backend_manifest_revalidation": True,
             "requires_append_only_transaction_journal": True,
@@ -4706,6 +4755,472 @@ def _legacy_fallback_tightening_preflight_next_actions(blockers: list[str], warn
         actions.append("keep_foldered_canonical_finalization_as_separate_follow_up")
     if any("candidate" in warning for warning in warnings):
         actions.append("inspect_blocked_legacy_fallback_tightening_candidates")
+    return list(dict.fromkeys(actions))
+
+
+def execute_workspace_foldered_canonical_legacy_fallback_tightening_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    mode: str = "dry-run",
+    approve_legacy_fallback_tightening: bool = False,
+    legacy_fallback_tightening_preflight_json: str | None = None,
+    legacy_fallback_tightening_preflight_artifact_ref: str | None = "workspace_foldered_canonical_legacy_fallback_tightening_preflight",
+    legacy_fallback_tightening_plan_json: str | None = None,
+    legacy_fallback_tightening_plan_artifact_ref: str | None = "workspace_foldered_canonical_legacy_fallback_tightening_plan",
+    backend_manifest_json: str | None = None,
+    backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    expected_plan_digest: str | None = None,
+) -> dict[str, Any]:
+    """Execute explicit-review-only legacy fallback metadata tightening."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    workspace_dir = effective_root / "workspace"
+    result_path = workspace_dir / "workspace-foldered-canonical-legacy-fallback-tightening-result.json"
+    journal_path = workspace_dir / "workspace-foldered-canonical-legacy-fallback-tightening-journal.json"
+
+    preflight, preflight_error, preflight_input = _load_or_read_workspace_foldered_canonical_legacy_fallback_tightening_preflight(
+        default_artifact_root=effective_root,
+        legacy_fallback_tightening_preflight_json=legacy_fallback_tightening_preflight_json,
+        legacy_fallback_tightening_preflight_artifact_ref=legacy_fallback_tightening_preflight_artifact_ref,
+    )
+    plan, plan_error, plan_input = _load_or_read_workspace_foldered_canonical_legacy_fallback_tightening_plan(
+        default_artifact_root=effective_root,
+        legacy_fallback_tightening_plan_json=legacy_fallback_tightening_plan_json,
+        legacy_fallback_tightening_plan_artifact_ref=legacy_fallback_tightening_plan_artifact_ref,
+    )
+    backend_manifest, backend_manifest_error, backend_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=backend_manifest_json,
+        backend_manifest_artifact_ref=backend_manifest_artifact_ref,
+    )
+
+    requested_mode = mode or "dry-run"
+    dry_run_mode = requested_mode == "dry-run"
+    apply_mode = requested_mode == "apply"
+    created_at = datetime.now(timezone.utc).isoformat()
+    plan_digest = _legacy_fallback_tightening_plan_digest_from_payload(plan)
+    expected_digest = expected_plan_digest or plan_digest
+    preflight_digest = _legacy_fallback_tightening_preflight_plan_digest(preflight)
+    approval_gate = preflight.get("review_approval_gate") if isinstance(preflight.get("review_approval_gate"), dict) else {}
+    preflight_gate = preflight.get("executor_gate") if isinstance(preflight.get("executor_gate"), dict) else {}
+    manifest_revalidation = preflight.get("manifest_revalidation") if isinstance(preflight.get("manifest_revalidation"), dict) else {}
+    planned_updates = plan.get("planned_manifest_updates") if isinstance(plan.get("planned_manifest_updates"), list) else []
+    valid_updates = [update for update in planned_updates if isinstance(update, dict)]
+    idempotency_key = str(approval_gate.get("idempotency_key") or plan_digest[:16] or "legacy-fallback-tightening")
+    transaction_id = f"foldered-canonical-legacy-fallback-tightening-{plan_digest[:16] or 'missing'}"
+    existing_journal = _read_legacy_fallback_tightening_journal(journal_path)
+    duplicate_entry = _find_legacy_fallback_tightening_duplicate(existing_journal, idempotency_key=idempotency_key)
+    manifest_entry_checks = _legacy_fallback_tightening_apply_manifest_entry_checks(
+        planned_updates=valid_updates,
+        backend_manifest=backend_manifest,
+    )
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if requested_mode not in {"dry-run", "apply"}:
+        blockers.append("unsupported_legacy_fallback_tightening_mode")
+    if apply_mode and not approve_legacy_fallback_tightening:
+        blockers.append("apply_requires_approve_legacy_fallback_tightening_true")
+    if preflight_error:
+        blockers.append("legacy_fallback_tightening_preflight_unavailable_or_malformed")
+    if preflight.get("status") != "ready_for_review":
+        blockers.append("legacy_fallback_tightening_preflight_not_ready")
+    if preflight_gate.get("ready_for_legacy_fallback_tightening_executor_review") is not True:
+        blockers.append("legacy_fallback_tightening_preflight_gate_not_ready")
+    if plan_error:
+        blockers.append("legacy_fallback_tightening_plan_unavailable_or_malformed")
+    if plan.get("status") != "ready_for_review":
+        blockers.append("legacy_fallback_tightening_plan_not_ready")
+    if backend_manifest_error:
+        blockers.append("backend_artifact_manifest_unavailable_or_malformed")
+    if backend_manifest_json is not None and apply_mode:
+        blockers.append("apply_requires_backend_manifest_artifact_ref_not_inline_json")
+    if not valid_updates:
+        blockers.append("legacy_fallback_tightening_has_no_manifest_updates")
+    if expected_digest and plan_digest and expected_digest != plan_digest:
+        blockers.append("expected_legacy_fallback_tightening_plan_digest_mismatch")
+    if preflight_digest and plan_digest and preflight_digest != plan_digest:
+        blockers.append("legacy_fallback_tightening_preflight_plan_digest_mismatch")
+    if not approval_gate.get("approved"):
+        blockers.append("legacy_fallback_tightening_review_approval_not_approved")
+    if not approval_gate.get("digest_matches_expected"):
+        blockers.append("legacy_fallback_tightening_review_approval_digest_mismatch")
+    if manifest_revalidation.get("all_candidates_still_ready") is not True:
+        blockers.append("legacy_fallback_tightening_preflight_manifest_revalidation_not_ready")
+    if duplicate_entry:
+        blockers.append("legacy_fallback_tightening_duplicate_idempotency_key")
+    for check in manifest_entry_checks:
+        if check.get("status") != "ready":
+            blockers.append(f"manifest_entry:{check.get('artifact_key') or 'unknown'}:{check.get('status')}")
+    if not apply_mode:
+        warnings.append("legacy_fallback_tightening_dry_run_does_not_write_journal_result_or_manifest")
+    if apply_mode and not blockers:
+        warnings.append("legacy_fallback_tightening_will_not_finalize_foldered_canonical_migration")
+        warnings.append("foldered_canonical_finalization_remains_separate_reviewed_follow_up")
+
+    status = "blocked" if blockers else "planned" if dry_run_mode else "applied"
+    mutated_manifest = _legacy_fallback_tightened_backend_manifest(
+        backend_manifest,
+        valid_updates,
+        transaction_id=transaction_id,
+        applied_at=created_at,
+    )
+    journal_entry = _legacy_fallback_tightening_journal_entry(
+        status=status,
+        plan_digest=plan_digest,
+        preflight_digest=preflight_digest,
+        transaction_id=transaction_id,
+        idempotency_key=idempotency_key,
+        planned_updates=valid_updates,
+        approval_gate=approval_gate,
+        blockers=blockers,
+        created_at=created_at,
+    )
+    journal_payload = _legacy_fallback_tightening_journal_payload(
+        existing_journal=existing_journal,
+        entry=journal_entry,
+        append_entry=apply_mode and not blockers,
+        updated_at=created_at,
+    )
+    writes = {
+        "backend_manifest": False,
+        "journal": False,
+        "result": False,
+    }
+    if apply_mode and not blockers:
+        _write_json_file(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input), mutated_manifest)
+        _write_json_file(journal_path, journal_payload)
+        writes.update({"backend_manifest": True, "journal": True})
+
+    payload = {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-result.v1",
+        "status": status,
+        "mode": requested_mode,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "planned_tightening_update_count": len(valid_updates),
+            "manifest_entry_check_count": len(manifest_entry_checks),
+            "applied_tightening_update_count": len(valid_updates) if status == "applied" else 0,
+            "transaction_id": transaction_id,
+            "idempotency_key": idempotency_key,
+            "transaction_journal_written": writes["journal"],
+            "backend_manifest_mutated": writes["backend_manifest"],
+            "result_artifact_written": False,
+            "legacy_fallback_tightened": status == "applied",
+            "canonical_paths_changed": False,
+            "files_moved": False,
+            "foldered_canonical_finalized": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "legacy_fallback_tightening_preflight_input": preflight_input,
+        "legacy_fallback_tightening_plan_input": plan_input,
+        "backend_manifest_input": backend_manifest_input,
+        "digest_guard": {
+            "expected_plan_digest": expected_digest,
+            "current_plan_digest": plan_digest,
+            "preflight_plan_digest": preflight_digest,
+            "expected_digest_match": bool(expected_digest and plan_digest and expected_digest == plan_digest),
+            "preflight_digest_match": bool(preflight_digest and plan_digest and preflight_digest == plan_digest),
+        },
+        "review_approval_gate": approval_gate,
+        "idempotency_guard": {
+            "idempotency_key": idempotency_key,
+            "duplicate_entry_found": duplicate_entry is not None,
+            "duplicate_entry": _compact_legacy_fallback_tightening_journal_entry(duplicate_entry),
+            "blocks_duplicate_apply": True,
+        },
+        "manifest_entry_checks": manifest_entry_checks,
+        "transaction_journal": {
+            "path": str(journal_path),
+            "append_only": True,
+            "entry_count": len(journal_payload.get("entries", [])),
+            "entry_appended": writes["journal"],
+            "writes_journal_in_apply_mode": writes["journal"],
+        },
+        "backend_manifest_mutation": {
+            "path": str(_physical_apply_backend_manifest_path(effective_root, backend_manifest_input)),
+            "mutates_backend_manifest_in_apply_mode": writes["backend_manifest"],
+            "changes_canonical_paths": False,
+            "tightens_legacy_fallback": status == "applied",
+            "finalizes_foldered_canonical_migration": False,
+            "files_moved": False,
+        },
+        "finalization_requirement": {
+            "required_after_tightening": True,
+            "finalization_tool": "review_workspace_foldered_canonical_migration_finalization_readiness",
+            "runs_finalization_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _legacy_fallback_tightening_execute_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "dry_run_is_read_only": True,
+            "artifacts_written": apply_mode and not blockers,
+            "writes_transaction_journal": writes["journal"],
+            "writes_result_artifact": False,
+            "creates_directories": apply_mode and not blockers,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": writes["backend_manifest"],
+            "tightens_legacy_fallback": status == "applied",
+            "finalizes_foldered_canonical_migration": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+    if apply_mode and not blockers:
+        payload["summary"]["result_artifact_written"] = True
+        payload["side_effect_policy"]["writes_result_artifact"] = True
+        _write_json_file(result_path, payload)
+    return payload
+
+
+def _load_or_read_workspace_foldered_canonical_legacy_fallback_tightening_preflight(
+    *,
+    default_artifact_root: Path,
+    legacy_fallback_tightening_preflight_json: str | None,
+    legacy_fallback_tightening_preflight_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(
+        legacy_fallback_tightening_preflight_json,
+        field_name="legacy_fallback_tightening_preflight_json",
+    )
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = legacy_fallback_tightening_preflight_artifact_ref or "workspace_foldered_canonical_legacy_fallback_tightening_preflight"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "legacy_fallback_tightening_preflight_not_observed", input_summary
+
+
+def _legacy_fallback_tightening_preflight_plan_digest(preflight: dict[str, Any]) -> str:
+    guard = preflight.get("digest_guard") if isinstance(preflight.get("digest_guard"), dict) else {}
+    return str(guard.get("legacy_fallback_tightening_plan_digest") or "")
+
+
+def _legacy_fallback_tightening_apply_manifest_entry_checks(
+    *,
+    planned_updates: list[dict[str, Any]],
+    backend_manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    entries = backend_manifest.get("entries") if isinstance(backend_manifest.get("entries"), list) else []
+    entries_by_key = {
+        str(entry.get("artifact_key") or ""): entry
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("artifact_key")
+    }
+    checks: list[dict[str, Any]] = []
+    for update in planned_updates:
+        artifact_key = str(update.get("artifact_key") or "")
+        expected_path = str(update.get("current_canonical_path") or "")
+        expected_legacy = str(update.get("legacy_fallback_path") or "")
+        entry = entries_by_key.get(artifact_key)
+        status = "ready"
+        observed_path = ""
+        observed_legacy = ""
+        legacy_preserved = False
+        legacy_tightened = False
+        if not artifact_key:
+            status = "missing_artifact_key"
+        elif not isinstance(entry, dict):
+            status = "manifest_entry_missing"
+        else:
+            observed_path = str(entry.get("path") or "")
+            metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+            alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+            observed_legacy = str(alias.get("legacy_fallback_path") or "")
+            legacy_preserved = alias.get("legacy_fallback_preserved") is True
+            legacy_tightened = alias.get("legacy_fallback_tightened") is True
+            if expected_path and observed_path != expected_path:
+                status = "canonical_path_mismatch"
+            elif expected_legacy and observed_legacy != expected_legacy:
+                status = "legacy_fallback_path_mismatch"
+            elif legacy_tightened:
+                status = "legacy_fallback_already_tightened"
+            elif not legacy_preserved:
+                status = "legacy_fallback_not_preserved"
+            elif observed_path and observed_legacy and observed_path == observed_legacy:
+                status = "canonical_path_still_legacy"
+        checks.append(
+            {
+                "artifact_key": artifact_key,
+                "status": status,
+                "expected_canonical_path": expected_path,
+                "observed_canonical_path": observed_path,
+                "expected_legacy_fallback_path": expected_legacy,
+                "observed_legacy_fallback_path": observed_legacy,
+                "legacy_fallback_preserved": legacy_preserved,
+                "legacy_fallback_tightened": legacy_tightened,
+            }
+        )
+    return checks
+
+
+def _legacy_fallback_tightened_backend_manifest(
+    backend_manifest: dict[str, Any],
+    planned_updates: list[dict[str, Any]],
+    *,
+    transaction_id: str,
+    applied_at: str,
+) -> dict[str, Any]:
+    manifest = copy.deepcopy(backend_manifest)
+    updates_by_key = {
+        str(update.get("artifact_key") or ""): update
+        for update in planned_updates
+        if isinstance(update, dict) and update.get("artifact_key")
+    }
+    for entry in manifest.get("entries", []):
+        if not isinstance(entry, dict):
+            continue
+        update = updates_by_key.get(str(entry.get("artifact_key") or ""))
+        if not update:
+            continue
+        metadata = entry.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+            entry["metadata"] = metadata
+        alias = metadata.setdefault("workspace_alias", {})
+        if not isinstance(alias, dict):
+            alias = {}
+            metadata["workspace_alias"] = alias
+        planned_metadata = update.get("planned_metadata_update") if isinstance(update.get("planned_metadata_update"), dict) else {}
+        alias["legacy_fallback_tightening_planned"] = bool(
+            planned_metadata.get("workspace_alias.legacy_fallback_tightening_planned", True)
+        )
+        alias["legacy_fallback_tightened"] = True
+        alias["legacy_fallback_preserved"] = False
+        alias["legacy_fallback_status"] = planned_metadata.get("workspace_alias.legacy_fallback_status") or "tightened-after-reviewed-apply"
+        alias["legacy_fallback_tightened_at"] = applied_at
+        alias["legacy_fallback_tightening_transaction_id"] = transaction_id
+    metadata = manifest.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["legacy_fallback_tightening_applied_at"] = applied_at
+        metadata["legacy_fallback_tightening_transaction_id"] = transaction_id
+    return manifest
+
+
+def _read_legacy_fallback_tightening_journal(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-journal.v1", "entries": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "schema_version": "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-journal.v1",
+            "entries": [],
+            "load_error": "malformed_existing_journal",
+        }
+    if not isinstance(payload, dict):
+        return {"schema_version": "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-journal.v1", "entries": []}
+    if not isinstance(payload.get("entries"), list):
+        payload["entries"] = []
+    return payload
+
+
+def _find_legacy_fallback_tightening_duplicate(journal: dict[str, Any], *, idempotency_key: str) -> dict[str, Any] | None:
+    for entry in journal.get("entries", []):
+        if isinstance(entry, dict) and entry.get("idempotency_key") == idempotency_key and entry.get("status") == "applied":
+            return entry
+    return None
+
+
+def _legacy_fallback_tightening_journal_entry(
+    *,
+    status: str,
+    plan_digest: str,
+    preflight_digest: str,
+    transaction_id: str,
+    idempotency_key: str,
+    planned_updates: list[dict[str, Any]],
+    approval_gate: dict[str, Any],
+    blockers: list[str],
+    created_at: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "plan_digest": plan_digest,
+        "preflight_plan_digest": preflight_digest,
+        "transaction_id": transaction_id,
+        "idempotency_key": idempotency_key,
+        "approval_id": approval_gate.get("approval_id") or "",
+        "approval_subject_id": approval_gate.get("expected_subject_id") or "",
+        "planned_tightening_update_count": len(planned_updates),
+        "artifact_keys": [str(update.get("artifact_key") or "") for update in planned_updates],
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "created_at": created_at,
+    }
+
+
+def _legacy_fallback_tightening_journal_payload(
+    *,
+    existing_journal: dict[str, Any],
+    entry: dict[str, Any],
+    append_entry: bool,
+    updated_at: str,
+) -> dict[str, Any]:
+    entries = [item for item in existing_journal.get("entries", []) if isinstance(item, dict)]
+    if append_entry:
+        entries.append(entry)
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-journal.v1",
+        "updated_at": updated_at,
+        "entry_count": len(entries),
+        "entries": entries,
+    }
+
+
+def _compact_legacy_fallback_tightening_journal_entry(entry: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    return {
+        "status": entry.get("status") or "",
+        "plan_digest": entry.get("plan_digest") or "",
+        "transaction_id": entry.get("transaction_id") or "",
+        "idempotency_key": entry.get("idempotency_key") or "",
+        "artifact_keys": entry.get("artifact_keys") if isinstance(entry.get("artifact_keys"), list) else [],
+    }
+
+
+def _legacy_fallback_tightening_execute_next_actions(status: str, blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "legacy_fallback_tightening_preflight_unavailable_or_malformed" in blockers or "legacy_fallback_tightening_preflight_not_ready" in blockers:
+        actions.append("create_or_pass_ready_legacy_fallback_tightening_preflight")
+    if "apply_requires_approve_legacy_fallback_tightening_true" in blockers:
+        actions.append("rerun_with_approve_legacy_fallback_tightening_true_after_review")
+    if "legacy_fallback_tightening_review_approval_not_approved" in blockers or "legacy_fallback_tightening_review_approval_digest_mismatch" in blockers:
+        actions.append("resolve_review_approval_ledger_before_tightening_apply")
+    if "legacy_fallback_tightening_duplicate_idempotency_key" in blockers:
+        actions.append("inspect_existing_legacy_fallback_tightening_journal_before_retry")
+    if any(reason.startswith("manifest_entry:") for reason in blockers):
+        actions.append("refresh_backend_manifest_and_recheck_legacy_fallback_tightening_preflight")
+    if status == "planned":
+        actions.append("review_dry_run_then_rerun_apply_with_explicit_approval")
+    if status == "applied":
+        actions.append("review_legacy_fallback_tightening_result")
+        actions.append("start_foldered_canonical_finalization_readiness_as_separate_follow_up")
+    if "foldered_canonical_finalization_remains_separate_reviewed_follow_up" in warnings:
+        actions.append("do_not_finalize_migration_from_legacy_fallback_tightening_executor")
     return list(dict.fromkeys(actions))
 
 

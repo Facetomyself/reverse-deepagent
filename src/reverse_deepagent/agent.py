@@ -20,6 +20,7 @@ from reverse_deepagent.subagents.timeline import build_timeline_subagent
 from reverse_deepagent.subagents.web_recon import build_web_recon_subagent
 from reverse_deepagent.tools.artifact_tools import (
     make_execute_workspace_foldered_canonical_physical_apply_tool,
+    make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool,
     make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
@@ -154,6 +155,7 @@ def build_reverse_agent(
         make_review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_tool(effective_artifact_root),
         make_plan_workspace_foldered_canonical_legacy_fallback_tightening_tool(effective_artifact_root),
         make_review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_tool(effective_artifact_root),
+        make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool(effective_artifact_root),
         make_plan_workspace_dual_write_pilot_tool(effective_artifact_root),
         make_review_workspace_dual_write_pilot_workflow_tool(effective_artifact_root),
         make_record_workspace_dual_write_pilot_result_tool(effective_artifact_root),
