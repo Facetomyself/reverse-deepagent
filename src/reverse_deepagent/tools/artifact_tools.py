@@ -450,6 +450,41 @@ def make_review_workspace_foldered_canonical_migration_post_apply_validation_too
     return review_workspace_foldered_canonical_migration_post_apply_validation
 
 
+def make_record_workspace_foldered_canonical_migration_post_apply_validation_result_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create a writer for reviewed foldered-canonical post-apply validation result artifacts."""
+
+    root = Path(default_artifact_root)
+
+    def record_workspace_foldered_canonical_migration_post_apply_validation_result(
+        artifact_root: str | None = None,
+        post_apply_validation_json: str | None = None,
+        post_apply_validation_artifact_ref: str | None = "workspace_foldered_canonical_migration_post_apply_validation",
+        write_result: bool = False,
+    ) -> dict[str, Any]:
+        """Record post-apply validation evidence without mutating manifests or tightening legacy fallback."""
+
+        return record_workspace_foldered_canonical_migration_post_apply_validation_result_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            post_apply_validation_json=post_apply_validation_json,
+            post_apply_validation_artifact_ref=post_apply_validation_artifact_ref,
+            write_result=write_result,
+        )
+
+    record_workspace_foldered_canonical_migration_post_apply_validation_result.__name__ = (
+        "record_workspace_foldered_canonical_migration_post_apply_validation_result"
+    )
+    record_workspace_foldered_canonical_migration_post_apply_validation_result.__doc__ = (
+        "Record a durable foldered-canonical post-apply validation result from an existing validation descriptor. "
+        "Defaults to dry-run; write_result=true writes only workspace/workspace-foldered-canonical-migration-post-apply-validation-result.json. "
+        "It does not mutate backend manifests, move files, tighten legacy fallback, finalize migration, run pipelines, start browsers, "
+        "call MCP, or touch mobile full runtime chains."
+    )
+    return record_workspace_foldered_canonical_migration_post_apply_validation_result
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -3461,6 +3496,218 @@ def _foldered_canonical_post_apply_validation_next_actions(blockers: list[str], 
     if any("workspace_alias_metadata_missing" in warning for warning in warnings):
         actions.append("review_backend_manifest_workspace_alias_metadata_after_apply")
     return actions
+
+
+def record_workspace_foldered_canonical_migration_post_apply_validation_result_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    post_apply_validation_json: str | None = None,
+    post_apply_validation_artifact_ref: str | None = "workspace_foldered_canonical_migration_post_apply_validation",
+    write_result: bool = False,
+) -> dict[str, Any]:
+    """Record a durable post-apply validation result artifact from a reviewed descriptor."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    validation, validation_error, validation_input = _load_or_read_workspace_foldered_canonical_post_apply_validation(
+        default_artifact_root=effective_root,
+        post_apply_validation_json=post_apply_validation_json,
+        post_apply_validation_artifact_ref=post_apply_validation_artifact_ref,
+    )
+    summary = validation.get("summary") if isinstance(validation.get("summary"), dict) else {}
+    gate = validation.get("execution_gate") if isinstance(validation.get("execution_gate"), dict) else {}
+    post_apply_validation = (
+        validation.get("post_apply_validation")
+        if isinstance(validation.get("post_apply_validation"), dict)
+        else {}
+    )
+    validation_results = (
+        post_apply_validation.get("validation_results")
+        if isinstance(post_apply_validation.get("validation_results"), list)
+        else []
+    )
+    valid_results = [item for item in validation_results if isinstance(item, dict)]
+    compatibility = (
+        validation.get("compatibility_validation")
+        if isinstance(validation.get("compatibility_validation"), dict)
+        else {}
+    )
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if validation_error:
+        blockers.append("post_apply_validation_unavailable_or_malformed")
+    if validation.get("status") != "ready_for_review":
+        blockers.append("post_apply_validation_not_ready_for_review")
+    if gate.get("ready_for_post_apply_validation_review") is not True:
+        blockers.append("post_apply_validation_review_gate_not_ready")
+    if not valid_results:
+        blockers.append("post_apply_validation_has_no_validation_results")
+    for reason in validation.get("blocking_reasons") or []:
+        blockers.append(f"post_apply_validation:{reason}")
+    for warning in validation.get("warnings") or []:
+        warnings.append(f"post_apply_validation:{warning}")
+    ready_result_count = sum(
+        1
+        for item in valid_results
+        if item.get("status") == "ready_for_post_apply_validation_review"
+    )
+    if valid_results and ready_result_count != len(valid_results):
+        blockers.append("post_apply_validation_contains_blocked_results")
+    if compatibility.get("all_promotions_observed") is not True:
+        blockers.append("post_apply_validation_promotions_not_all_observed")
+    if not blockers:
+        warnings.append("legacy_fallback_tightening_requires_separate_reviewed_follow_up")
+        warnings.append("foldered_canonical_finalization_requires_separate_reviewed_follow_up")
+
+    status = "verified" if not blockers else "blocked" if validation.get("schema_version") != "missing" else "not_ready"
+    result_artifact = _workspace_foldered_canonical_post_apply_validation_result_artifact_metadata(
+        effective_root,
+        written=False,
+    )
+    payload: dict[str, Any] = {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-post-apply-validation-result.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "result_artifact": result_artifact,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "post_apply_validation_status": validation.get("status") or "missing",
+            "validation_result_count": len(valid_results),
+            "ready_validation_result_count": ready_result_count,
+            "observed_canonical_path_promotion_validated": bool(summary.get("observed_canonical_path_promotion_validated")),
+            "all_promotions_observed": bool(compatibility.get("all_promotions_observed")),
+            "write_result_requested": bool(write_result),
+            "result_artifact_written": False,
+            "backend_manifest_mutated_by_this_tool": False,
+            "canonical_path_changed_by_this_tool": False,
+            "legacy_fallback_tightened": False,
+            "foldered_canonical_finalized": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "post_apply_validation_input": validation_input,
+        "post_apply_validation_summary": {
+            "schema_version": validation.get("schema_version") or "",
+            "status": validation.get("status") or "missing",
+            "planned_manifest_change_count": _safe_int(summary.get("planned_manifest_change_count")),
+            "validated_manifest_change_count": _safe_int(summary.get("validated_manifest_change_count")),
+            "ready_for_post_apply_validation_review": bool(gate.get("ready_for_post_apply_validation_review")),
+            "digest_match": bool((validation.get("digest_guard") or {}).get("digest_match"))
+            if isinstance(validation.get("digest_guard"), dict)
+            else False,
+            "blocking_reasons": validation.get("blocking_reasons")
+            if isinstance(validation.get("blocking_reasons"), list)
+            else [],
+            "warnings": validation.get("warnings") if isinstance(validation.get("warnings"), list) else [],
+        },
+        "validation_results": valid_results,
+        "compatibility_validation": compatibility,
+        "legacy_fallback_review_gate": {
+            "legacy_fallback_tightening_allowed_by_this_tool": False,
+            "requires_separate_readiness_descriptor": True,
+            "requires_consumer_readiness_recheck": True,
+            "requires_delivery_source_audit_recheck": True,
+            "requires_explicit_review_approval": True,
+        },
+        "finalization_gate": {
+            "foldered_canonical_finalization_allowed_by_this_tool": False,
+            "requires_legacy_fallback_tightening_result": True,
+            "requires_separate_finalization_plan": True,
+            "requires_explicit_review_approval": True,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_post_apply_validation_result_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "read_only": not bool(write_result),
+            "files_inspected": False,
+            "artifacts_written": bool(write_result),
+            "creates_directories": bool(write_result),
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "tightens_legacy_fallback": False,
+            "finalizes_foldered_canonical_migration": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+    if write_result:
+        result_path = effective_root / "workspace" / "workspace-foldered-canonical-migration-post-apply-validation-result.json"
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        payload["result_artifact"] = _workspace_foldered_canonical_post_apply_validation_result_artifact_metadata(
+            effective_root,
+            written=True,
+        )
+        payload["summary"]["result_artifact_written"] = True
+        result_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
+
+
+def _load_or_read_workspace_foldered_canonical_post_apply_validation(
+    *,
+    default_artifact_root: Path,
+    post_apply_validation_json: str | None,
+    post_apply_validation_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(post_apply_validation_json, field_name="post_apply_validation_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = post_apply_validation_artifact_ref or "workspace_foldered_canonical_migration_post_apply_validation"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "post_apply_validation_not_observed", input_summary
+
+
+def _workspace_foldered_canonical_post_apply_validation_result_artifact_metadata(
+    artifact_root: Path,
+    *,
+    written: bool,
+) -> dict[str, Any]:
+    return {
+        "artifact_key": "workspace_foldered_canonical_migration_post_apply_validation_result",
+        "legacy_path": "workspace/workspace-foldered-canonical-migration-post-apply-validation-result.json",
+        "future_path": "/workspace/review/workspace-foldered-canonical-migration-post-apply-validation-result.json",
+        "path": str(artifact_root / "workspace" / "workspace-foldered-canonical-migration-post-apply-validation-result.json"),
+        "written": written,
+        "category": "audit",
+    }
+
+
+def _foldered_canonical_post_apply_validation_result_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+) -> list[str]:
+    actions: list[str] = []
+    if "post_apply_validation_unavailable_or_malformed" in blockers or "post_apply_validation_not_ready_for_review" in blockers:
+        actions.append("create_or_pass_ready_post_apply_validation_descriptor")
+    if "post_apply_validation_promotions_not_all_observed" in blockers or "post_apply_validation_contains_blocked_results" in blockers:
+        actions.append("fix_or_rerun_physical_apply_then_regenerate_post_apply_validation")
+    if status == "verified":
+        actions.append("review_legacy_fallback_tightening_readiness_before_any_fallback_change")
+        actions.append("keep_foldered_canonical_finalization_as_separate_reviewed_follow_up")
+    if any("legacy_fallback_tightening" in warning for warning in warnings):
+        actions.append("do_not_tighten_legacy_fallback_from_this_result_writer")
+    return list(dict.fromkeys(actions))
 
 
 def review_workspace_foldered_canonical_migration_physical_apply_preflight_payload(

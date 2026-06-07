@@ -2854,3 +2854,18 @@ The DeepAgents agent tool list includes `execute_workspace_foldered_canonical_ph
 Boundary: this closes the first explicit executor layer for backend-manifest canonical-path promotion only. It does not move artifacts, run pipelines, enable dual-write, collect files, start browsers, send CDP commands, call MCP, tighten legacy fallback, auto-run post-apply validation, decide rollback vs commit, or touch Android / iOS / mini-program full runtime chains. Legacy fallback tightening and final foldered-canonical migration finalization remain separate reviewed follow-ups.
 
 Tests cover dry-run read-only behavior, apply blocking without explicit approval flag, successful backend manifest promotion with rollback checkpoint / journal / result writes, duplicate idempotency-key blocking, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
+
+
+### Step 222：Explicit foldered-canonical post-apply validation result writer baseline
+
+Status: implemented as an explicit post-apply validation result writer after the Step 219 post-apply validation descriptor and Step 221 physical apply executor skeleton. This is not legacy fallback tightening, not migration finalization, not manifest mutation, not rollback checkpoint writing, not approval recording, not transaction journal writing, not a pipeline runner, not browser / CDP / MCP integration, and not Android / iOS / mini-program full runtime chain.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `record_workspace_foldered_canonical_migration_post_apply_validation_result_payload(...)` and `make_record_workspace_foldered_canonical_migration_post_apply_validation_result_tool(...)`. The writer consumes a ready `workspace-foldered-canonical-migration-post-apply-validation` descriptor JSON or artifact ref, verifies that all planned canonical-path promotions were observed and that the descriptor's review gate is ready, and emits `reverse-deepagent.workspace-foldered-canonical-migration-post-apply-validation-result.v1` with validation-result summary, compatibility evidence, legacy fallback review gate, finalization gate, blocking reasons, warnings, and next actions.
+
+By default the writer is dry-run / read-only. Only `write_result=true` writes `workspace/workspace-foldered-canonical-migration-post-apply-validation-result.json`; even then it writes only this audit result artifact and does not mutate `workspace/backend-artifact-manifest.json`, move files, tighten legacy fallback, or finalize the foldered-canonical migration.
+
+The DeepAgents agent tool list includes `record_workspace_foldered_canonical_migration_post_apply_validation_result`, and the workspace contract indexes `workspace/workspace-foldered-canonical-migration-post-apply-validation-result.json` with future alias `/workspace/review/workspace-foldered-canonical-migration-post-apply-validation-result.json` and category `audit`.
+
+Boundary: this closes the durable post-apply validation evidence layer after explicit physical apply. Legacy fallback tightening readiness / apply planning / executor and final foldered-canonical migration finalization remain separate reviewed follow-ups. The tool does not write rollback checkpoints, record approvals, write transaction journals, run pipelines, enable dual-write, migrate paths, change canonical paths, mutate manifests, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+Tests cover blocking without ready validation evidence, dry-run read-only behavior, explicit `write_result=true` artifact writing, default agent tool exposure, workspace route aliasing, compileall, and workspace / contract / rebuild-agent regressions.
