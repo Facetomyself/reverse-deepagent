@@ -170,6 +170,18 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/review/workspace-foldered-canonical-migration-physical-apply-preflight.json",
         )
         self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-physical-apply-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-physical-apply-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-physical-apply-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-physical-apply-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-journal.json"].category, "audit")
         self.assertEqual(routes["workspace/paused-session-live-continuation-preflight.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(
             routes["workspace/paused-session-live-continuation-preflight.json"].future_path,

@@ -7,9 +7,11 @@ from reverse_deepagent.tools.artifact_tools import (
     assess_workspace_consumer_readiness_score_payload,
     assess_workspace_migration_readiness_payload,
     audit_workspace_artifact_consumers_payload,
+    execute_workspace_foldered_canonical_physical_apply_payload,
     make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
+    make_execute_workspace_foldered_canonical_physical_apply_tool,
     make_plan_workspace_foldered_canonical_migration_pilot_tool,
     make_plan_workspace_foldered_canonical_migration_apply_tool,
     make_plan_workspace_foldered_canonical_migration_approval_tool,
@@ -1029,6 +1031,61 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             ],
         }
 
+    def _ready_physical_apply_evidence(self, root: Path, artifact_keys: list[str] | None = None) -> tuple[dict, dict, dict, dict]:
+        preflight = self._ready_foldered_canonical_migration_preflight(root, artifact_keys or ["workspace_task_card"])
+        apply_plan = plan_workspace_foldered_canonical_migration_apply_payload(
+            default_artifact_root=root,
+            migration_preflight_json=json.dumps(preflight),
+        )
+        approval_plan = plan_workspace_foldered_canonical_migration_approval_payload(
+            default_artifact_root=root,
+            migration_apply_plan_json=json.dumps(apply_plan),
+            transaction_id="tx-foldered-physical",
+            idempotency_key="idem-foldered-physical",
+        )
+        dry_run = review_workspace_foldered_canonical_migration_manifest_dry_run_payload(
+            default_artifact_root=root,
+            migration_approval_plan_json=json.dumps(approval_plan),
+            migration_apply_plan_json=json.dumps(apply_plan),
+            backend_manifest_json=json.dumps(self._backend_manifest_for_apply_plan(apply_plan)),
+        )
+        physical_preflight = review_workspace_foldered_canonical_migration_physical_apply_preflight_payload(
+            default_artifact_root=root,
+            migration_manifest_dry_run_json=json.dumps(dry_run),
+            migration_apply_plan_json=json.dumps(apply_plan),
+            review_approval_ledger_json=json.dumps(self._approval_ledger_for_physical_apply(dry_run)),
+        )
+        backend_manifest = self._backend_manifest_for_apply_plan(apply_plan)
+        return apply_plan, dry_run, physical_preflight, backend_manifest
+
+    def _write_physical_apply_evidence_artifacts(
+        self,
+        root: Path,
+        *,
+        apply_plan: dict,
+        dry_run: dict,
+        physical_preflight: dict,
+        backend_manifest: dict,
+    ) -> None:
+        workspace = root / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "workspace-foldered-canonical-migration-apply-plan.json").write_text(
+            json.dumps(apply_plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (workspace / "workspace-foldered-canonical-migration-manifest-dry-run.json").write_text(
+            json.dumps(dry_run, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (workspace / "workspace-foldered-canonical-migration-physical-apply-preflight.json").write_text(
+            json.dumps(physical_preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (workspace / "backend-artifact-manifest.json").write_text(
+            json.dumps(backend_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
     def test_foldered_canonical_migration_apply_plan_blocks_without_ready_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "artifacts"
@@ -1644,6 +1701,159 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["starts_browser"])
             self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_execute_foldered_canonical_physical_apply_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            apply_plan, dry_run, physical_preflight, backend_manifest = self._ready_physical_apply_evidence(root, ["workspace_task_card"])
+
+            payload = execute_workspace_foldered_canonical_physical_apply_payload(
+                default_artifact_root=root,
+                physical_apply_preflight_json=json.dumps(physical_preflight),
+                migration_manifest_dry_run_json=json.dumps(dry_run),
+                migration_apply_plan_json=json.dumps(apply_plan),
+                backend_manifest_json=json.dumps(backend_manifest),
+            )
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-foldered-canonical-migration-physical-apply-result.v1")
+            self.assertEqual(payload["status"], "planned")
+            self.assertEqual(payload["summary"]["planned_manifest_change_count"], 1)
+            self.assertFalse(payload["summary"]["rollback_checkpoint_written"])
+            self.assertFalse(payload["summary"]["transaction_journal_written"])
+            self.assertFalse(payload["summary"]["backend_manifest_mutated"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["writes_rollback_checkpoint"])
+            self.assertFalse(payload["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-migration-physical-apply-result.json").exists())
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-migration-physical-apply-journal.json").exists())
+
+    def test_execute_foldered_canonical_physical_apply_blocks_apply_without_approval_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            apply_plan, dry_run, physical_preflight, backend_manifest = self._ready_physical_apply_evidence(root, ["workspace_task_card"])
+            self._write_physical_apply_evidence_artifacts(
+                root,
+                apply_plan=apply_plan,
+                dry_run=dry_run,
+                physical_preflight=physical_preflight,
+                backend_manifest=backend_manifest,
+            )
+
+            payload = execute_workspace_foldered_canonical_physical_apply_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_physical_apply=False,
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("apply_requires_approve_physical_apply_true", payload["blocking_reasons"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-migration-rollback-checkpoint.json").exists())
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-migration-physical-apply-journal.json").exists())
+
+    def test_execute_foldered_canonical_physical_apply_promotes_backend_manifest_with_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            apply_plan, dry_run, physical_preflight, backend_manifest = self._ready_physical_apply_evidence(root, ["workspace_task_card", "workspace_runtime_context"])
+            self._write_physical_apply_evidence_artifacts(
+                root,
+                apply_plan=apply_plan,
+                dry_run=dry_run,
+                physical_preflight=physical_preflight,
+                backend_manifest=backend_manifest,
+            )
+
+            payload = execute_workspace_foldered_canonical_physical_apply_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_physical_apply=True,
+            )
+
+            self.assertEqual(payload["status"], "applied")
+            self.assertEqual(payload["summary"]["applied_manifest_change_count"], 2)
+            self.assertTrue(payload["summary"]["rollback_checkpoint_written"])
+            self.assertTrue(payload["summary"]["transaction_journal_written"])
+            self.assertTrue(payload["summary"]["backend_manifest_mutated"])
+            self.assertTrue(payload["summary"]["result_artifact_written"])
+            self.assertTrue(payload["side_effect_policy"]["artifacts_written"])
+            self.assertTrue(payload["side_effect_policy"]["writes_rollback_checkpoint"])
+            self.assertTrue(payload["side_effect_policy"]["writes_transaction_journal"])
+            self.assertTrue(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertTrue(payload["side_effect_policy"]["changes_canonical_paths"])
+            self.assertFalse(payload["side_effect_policy"]["moves_files"])
+            self.assertFalse(payload["side_effect_policy"]["tightens_legacy_fallback"])
+            rollback_path = root / "workspace" / "workspace-foldered-canonical-migration-rollback-checkpoint.json"
+            journal_path = root / "workspace" / "workspace-foldered-canonical-migration-physical-apply-journal.json"
+            result_path = root / "workspace" / "workspace-foldered-canonical-migration-physical-apply-result.json"
+            self.assertTrue(rollback_path.exists())
+            self.assertTrue(journal_path.exists())
+            self.assertTrue(result_path.exists())
+            mutated = json.loads((root / "workspace" / "backend-artifact-manifest.json").read_text(encoding="utf-8"))
+            for entry, step in zip(mutated["entries"], apply_plan["apply_plan"]["planned_steps"]):
+                self.assertEqual(entry["path"], step["future_canonical_path"])
+                alias = entry["metadata"]["workspace_alias"]
+                self.assertEqual(alias["legacy_fallback_path"], step["current_canonical_path"])
+                self.assertFalse(alias["canonical_path_remains_authoritative"])
+                self.assertTrue(alias["legacy_fallback_preserved"])
+                self.assertFalse(alias["legacy_fallback_tightened"])
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(journal["entry_count"], 1)
+            self.assertEqual(journal["entries"][0]["status"], "applied")
+            validation = review_workspace_foldered_canonical_migration_post_apply_validation_payload(
+                default_artifact_root=root,
+                migration_manifest_dry_run_json=json.dumps(dry_run),
+                migration_apply_plan_json=json.dumps(apply_plan),
+                post_apply_backend_manifest_json=json.dumps(mutated),
+            )
+            self.assertEqual(validation["status"], "ready_for_review")
+
+    def test_execute_foldered_canonical_physical_apply_blocks_duplicate_idempotency_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            apply_plan, dry_run, physical_preflight, backend_manifest = self._ready_physical_apply_evidence(root, ["workspace_task_card"])
+            self._write_physical_apply_evidence_artifacts(
+                root,
+                apply_plan=apply_plan,
+                dry_run=dry_run,
+                physical_preflight=physical_preflight,
+                backend_manifest=backend_manifest,
+            )
+            first = execute_workspace_foldered_canonical_physical_apply_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_physical_apply=True,
+            )
+            self.assertEqual(first["status"], "applied")
+
+            duplicate = execute_workspace_foldered_canonical_physical_apply_payload(
+                default_artifact_root=root,
+                mode="apply",
+                approve_physical_apply=True,
+            )
+
+            self.assertEqual(duplicate["status"], "blocked")
+            self.assertIn("physical_apply_duplicate_idempotency_key", duplicate["blocking_reasons"])
+            self.assertTrue(duplicate["idempotency_guard"]["duplicate_entry_found"])
+            journal = json.loads((root / "workspace" / "workspace-foldered-canonical-migration-physical-apply-journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(journal["entry_count"], 1)
+
+    def test_execute_foldered_canonical_physical_apply_tool_returns_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            apply_plan, dry_run, physical_preflight, backend_manifest = self._ready_physical_apply_evidence(root, ["workspace_task_card"])
+            tool = make_execute_workspace_foldered_canonical_physical_apply_tool(root)
+
+            payload = tool(
+                physical_apply_preflight_json=json.dumps(physical_preflight),
+                migration_manifest_dry_run_json=json.dumps(dry_run),
+                migration_apply_plan_json=json.dumps(apply_plan),
+                backend_manifest_json=json.dumps(backend_manifest),
+            )
+
+            self.assertEqual(tool.__name__, "execute_workspace_foldered_canonical_physical_apply")
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-foldered-canonical-migration-physical-apply-result.v1")
+            self.assertEqual(payload["status"], "planned")
+            self.assertTrue(payload["side_effect_policy"]["dry_run_is_read_only"])
 
     def test_workspace_dual_write_pilot_plan_selects_low_risk_candidates_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
