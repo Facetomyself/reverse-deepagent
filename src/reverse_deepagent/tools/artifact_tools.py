@@ -333,6 +333,45 @@ def make_plan_workspace_foldered_canonical_migration_apply_tool(default_artifact
     return plan_workspace_foldered_canonical_migration_apply
 
 
+def make_plan_workspace_foldered_canonical_migration_approval_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only approval / transaction reviewer for foldered-canonical migration apply."""
+
+    root = Path(default_artifact_root)
+
+    def plan_workspace_foldered_canonical_migration_approval(
+        artifact_root: str | None = None,
+        migration_apply_plan_json: str | None = None,
+        migration_apply_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_apply_plan",
+        reviewer: str | None = None,
+        review_ticket: str | None = None,
+        transaction_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan approval, transaction, idempotency, rollback, and validation gates without executing apply."""
+
+        return plan_workspace_foldered_canonical_migration_approval_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            migration_apply_plan_json=migration_apply_plan_json,
+            migration_apply_plan_artifact_ref=migration_apply_plan_artifact_ref,
+            reviewer=reviewer,
+            review_ticket=review_ticket,
+            transaction_id=transaction_id,
+            idempotency_key=idempotency_key,
+        )
+
+    plan_workspace_foldered_canonical_migration_approval.__name__ = "plan_workspace_foldered_canonical_migration_approval"
+    plan_workspace_foldered_canonical_migration_approval.__doc__ = (
+        "Read-only / plan-only foldered-canonical migration apply approval and transaction descriptor. It consumes a ready "
+        "apply plan, then emits approval ledger requirements, transaction journal plans, idempotency guards, stale evidence "
+        "guards, manifest dry-run requirements, rollback checkpoint requirements, post-apply validation requirements, and "
+        "compatibility windows. It does not record approval, write journals, inspect files, write artifacts, create directories, "
+        "run pipelines, enable dual-write, migrate paths, change canonical paths, mutate manifests, start browsers, call MCP, "
+        "or touch mobile full runtime chains."
+    )
+    return plan_workspace_foldered_canonical_migration_approval
+
+
 def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only tool for limited workspace dual-write pilot planning."""
 
@@ -2309,6 +2348,312 @@ def _foldered_canonical_apply_plan_next_actions(blockers: list[str], warnings: l
         actions.append("implement_or_call_separate_explicit_apply_executor_after_approval")
     if "medium_risk_candidates_require_final_apply_review" in warnings:
         actions.append("complete_final_review_for_medium_risk_apply_candidates")
+    return actions
+
+
+def plan_workspace_foldered_canonical_migration_approval_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    migration_apply_plan_json: str | None = None,
+    migration_apply_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_apply_plan",
+    reviewer: str | None = None,
+    review_ticket: str | None = None,
+    transaction_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Return a review-only approval / transaction plan for foldered-canonical migration apply."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    apply_plan, apply_plan_error, apply_plan_input = _load_or_read_workspace_foldered_canonical_migration_apply_plan(
+        default_artifact_root=effective_root,
+        migration_apply_plan_json=migration_apply_plan_json,
+        migration_apply_plan_artifact_ref=migration_apply_plan_artifact_ref,
+    )
+    apply_plan_section = apply_plan.get("apply_plan") if isinstance(apply_plan.get("apply_plan"), dict) else {}
+    planned_steps = apply_plan_section.get("planned_steps") if isinstance(apply_plan_section.get("planned_steps"), list) else []
+    valid_steps = [item for item in planned_steps if isinstance(item, dict)]
+    execution_gate = apply_plan.get("execution_gate") if isinstance(apply_plan.get("execution_gate"), dict) else {}
+    manifest_guard = apply_plan.get("manifest_mutation_guard") if isinstance(apply_plan.get("manifest_mutation_guard"), dict) else {}
+    rollback_requirements = apply_plan.get("rollback_requirements") if isinstance(apply_plan.get("rollback_requirements"), dict) else {}
+    compatibility_guard = apply_plan.get("compatibility_guard") if isinstance(apply_plan.get("compatibility_guard"), dict) else {}
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if apply_plan_error:
+        blockers.append("foldered_canonical_migration_apply_plan_unavailable_or_malformed")
+    if apply_plan.get("status") != "ready_for_review":
+        blockers.append("foldered_canonical_migration_apply_plan_not_ready")
+    if apply_plan_section.get("plan_only") is not True:
+        blockers.append("foldered_canonical_migration_apply_plan_not_plan_only")
+    if execution_gate.get("ready_for_apply_review") is not True:
+        blockers.append("apply_review_gate_not_ready")
+    if execution_gate.get("requires_separate_apply_executor") is not True:
+        blockers.append("apply_plan_missing_separate_apply_executor_gate")
+    if execution_gate.get("allows_automatic_execution") is not False:
+        blockers.append("apply_plan_allows_automatic_execution")
+    if not valid_steps:
+        blockers.append("apply_plan_has_no_planned_steps")
+    if manifest_guard.get("required_before_apply") is not True:
+        blockers.append("manifest_mutation_guard_not_ready")
+    if manifest_guard.get("mutates_manifest_in_this_tool") is not False:
+        blockers.append("apply_plan_allows_manifest_mutation_in_tool")
+    if rollback_requirements.get("required_before_apply") is not True:
+        blockers.append("rollback_requirements_not_ready")
+    if execution_gate.get("allows_manifest_mutation_in_this_tool") is not False:
+        blockers.append("apply_plan_allows_manifest_mutation_in_tool")
+    if execution_gate.get("allows_canonical_path_change_in_this_tool") is not False:
+        blockers.append("apply_plan_allows_canonical_path_change_in_tool")
+    if execution_gate.get("allows_file_move_in_this_tool") is not False:
+        blockers.append("apply_plan_allows_file_move_in_tool")
+    for reason in apply_plan.get("blocking_reasons") or []:
+        blockers.append(f"apply_plan:{reason}")
+    if not blockers:
+        warnings.append("approval_descriptor_requires_external_review_ledger_record_before_apply")
+        warnings.append("transaction_journal_must_be_written_by_separate_apply_executor")
+        warnings.append("manifest_dry_run_and_rollback_checkpoint_required_before_apply")
+
+    status = "ready_for_review" if not blockers else "blocked"
+    digest = _foldered_canonical_apply_plan_digest(apply_plan)
+    transaction_plan = _foldered_canonical_approval_transaction_plan(
+        digest=digest,
+        transaction_id=transaction_id,
+        idempotency_key=idempotency_key,
+    )
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-approval-plan.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "planned_apply_step_count": len(valid_steps) if status == "ready_for_review" else 0,
+            "apply_plan_status": apply_plan.get("status") or "missing",
+            "requires_review_approval": True,
+            "requires_transaction_journal": True,
+            "requires_idempotency_key": True,
+            "requires_manifest_dry_run": True,
+            "requires_rollback_checkpoint": True,
+            "requires_post_apply_validation": True,
+            "legacy_canonical_path_remains_authoritative": True,
+            "approval_recorded": False,
+            "transaction_journal_written": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "apply_plan_summary": _compact_foldered_canonical_migration_apply_plan(apply_plan),
+        "apply_plan_input": apply_plan_input,
+        "approval_requirements": {
+            "requires_review_approval": True,
+            "reviewer": reviewer or "",
+            "review_ticket": review_ticket or "",
+            "review_ledger_artifact": "workspace/review-approval-ledger.json",
+            "required_decision": "approved",
+            "records_approval_in_this_tool": False,
+            "approval_artifact_written": False,
+            "approval_must_match_apply_plan_digest": True,
+            "apply_plan_digest": digest,
+        },
+        "transaction_journal_plan": transaction_plan,
+        "idempotency_guard": {
+            "duplicate_apply_guard_required": True,
+            "idempotency_key_required": True,
+            "idempotency_key": transaction_plan["idempotency_key"],
+            "checks_existing_journal_in_this_tool": False,
+            "blocks_replay_without_matching_approval": True,
+            "blocks_replay_without_matching_apply_plan_digest": True,
+        },
+        "staleness_guard": {
+            "requires_fresh_apply_plan": True,
+            "requires_fresh_preflight": True,
+            "requires_digest_revalidation_by_apply_executor": True,
+            "apply_plan_digest": digest,
+            "checks_files_in_this_tool": False,
+            "stale_preflight_blocks_apply": True,
+            "stale_digest_blocks_apply": True,
+        },
+        "manifest_dry_run_requirements": {
+            "required_before_apply": True,
+            "manifest_mutation_guard": _compact_foldered_canonical_manifest_mutation_guard(manifest_guard),
+            "dry_run_artifact": "workspace/workspace-foldered-canonical-migration-manifest-dry-run.json",
+            "runs_dry_run_in_this_tool": False,
+        },
+        "rollback_checkpoint_requirements": {
+            "required_before_apply": True,
+            "rollback_requirements": _compact_foldered_canonical_rollback_requirements(rollback_requirements),
+            "checkpoint_artifact": "workspace/workspace-foldered-canonical-migration-rollback-checkpoint.json",
+            "writes_checkpoint_in_this_tool": False,
+        },
+        "post_apply_validation_requirements": {
+            "required_after_apply": True,
+            "validation_artifact": "workspace/workspace-foldered-canonical-migration-post-apply-validation.json",
+            "requires_legacy_and_future_read_parity": True,
+            "requires_backend_manifest_alias_validation": True,
+            "requires_workspace_contract_route_validation": True,
+            "requires_transaction_journal_validation": True,
+            "runs_validation_in_this_tool": False,
+        },
+        "compatibility_window": {
+            "preserve_legacy_read_fallback": True,
+            "canonical_switch_not_performed_by_this_tool": True,
+            "source_path_tightening_forbidden": True,
+            "compatibility_guard": compatibility_guard,
+        },
+        "execution_gate": {
+            "ready_for_approval_review": status == "ready_for_review",
+            "requires_explicit_review_approval": True,
+            "requires_separate_apply_executor": True,
+            "allows_automatic_execution": False,
+            "allows_journal_write_in_this_tool": False,
+            "allows_manifest_mutation_in_this_tool": False,
+            "allows_canonical_path_change_in_this_tool": False,
+            "allows_file_move_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_approval_next_actions(blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_migration_apply_plan(
+    *,
+    default_artifact_root: Path,
+    migration_apply_plan_json: str | None,
+    migration_apply_plan_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(migration_apply_plan_json, field_name="migration_apply_plan_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked", "apply_plan": {"planned_steps": []}}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = migration_apply_plan_artifact_ref or "workspace_foldered_canonical_migration_apply_plan"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing", "apply_plan": {"planned_steps": []}}, "foldered_canonical_migration_apply_plan_not_observed", input_summary
+
+
+def _compact_foldered_canonical_migration_apply_plan(apply_plan: dict[str, Any]) -> dict[str, Any]:
+    summary = apply_plan.get("summary") if isinstance(apply_plan.get("summary"), dict) else {}
+    apply_plan_section = apply_plan.get("apply_plan") if isinstance(apply_plan.get("apply_plan"), dict) else {}
+    planned_steps = apply_plan_section.get("planned_steps") if isinstance(apply_plan_section.get("planned_steps"), list) else []
+    gate = apply_plan.get("execution_gate") if isinstance(apply_plan.get("execution_gate"), dict) else {}
+    return {
+        "schema_version": apply_plan.get("schema_version") or "",
+        "status": apply_plan.get("status") or "missing",
+        "candidate_count": _safe_int(summary.get("candidate_count")),
+        "ready_candidate_count": _safe_int(summary.get("ready_candidate_count")),
+        "planned_apply_step_count": _safe_int(summary.get("planned_apply_step_count") if summary else len(planned_steps)),
+        "preflight_status": summary.get("preflight_status") or "",
+        "plan_only": bool(apply_plan_section.get("plan_only")),
+        "requires_separate_apply_executor": bool(apply_plan_section.get("requires_separate_apply_executor") or gate.get("requires_separate_apply_executor")),
+        "ready_for_apply_review": bool(gate.get("ready_for_apply_review")),
+        "blocking_reasons": apply_plan.get("blocking_reasons") if isinstance(apply_plan.get("blocking_reasons"), list) else [],
+        "warnings": apply_plan.get("warnings") if isinstance(apply_plan.get("warnings"), list) else [],
+    }
+
+
+def _foldered_canonical_apply_plan_digest(apply_plan: dict[str, Any]) -> str:
+    if not apply_plan:
+        return ""
+    encoded = json.dumps(apply_plan, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _foldered_canonical_approval_transaction_plan(
+    *,
+    digest: str,
+    transaction_id: str | None,
+    idempotency_key: str | None,
+) -> dict[str, Any]:
+    suffix = digest[:16] if digest else "missing-apply-plan"
+    planned_transaction_id = transaction_id or f"planned-foldered-canonical-migration-{suffix}"
+    planned_idempotency_key = idempotency_key or f"planned-foldered-canonical-migration-{suffix}"
+    return {
+        "plan_only": True,
+        "transaction_id": planned_transaction_id,
+        "idempotency_key": planned_idempotency_key,
+        "apply_plan_digest": digest,
+        "transaction_journal_artifact": "workspace/workspace-foldered-canonical-migration-transaction-journal.json",
+        "append_only": True,
+        "writes_journal_in_this_tool": False,
+        "requires_duplicate_guard": True,
+        "requires_stale_digest_guard": True,
+    }
+
+
+def _compact_foldered_canonical_manifest_mutation_guard(manifest_guard: dict[str, Any]) -> dict[str, Any]:
+    changes = manifest_guard.get("required_manifest_changes_preview") if isinstance(manifest_guard.get("required_manifest_changes_preview"), list) else []
+    return {
+        "required_before_apply": bool(manifest_guard.get("required_before_apply")),
+        "plan_only": bool(manifest_guard.get("plan_only")),
+        "mutates_manifest_in_this_tool": bool(manifest_guard.get("mutates_manifest_in_this_tool")),
+        "requires_backend_manifest_snapshot": bool(manifest_guard.get("requires_backend_manifest_snapshot")),
+        "requires_workspace_contract_route_alias": bool(manifest_guard.get("requires_workspace_contract_route_alias")),
+        "requires_digest_snapshot_match": bool(manifest_guard.get("requires_digest_snapshot_match")),
+        "requires_rollback_manifest_entry": bool(manifest_guard.get("requires_rollback_manifest_entry")),
+        "preview_change_count": len(changes),
+    }
+
+
+def _compact_foldered_canonical_rollback_requirements(rollback_requirements: dict[str, Any]) -> dict[str, Any]:
+    rollback_items = rollback_requirements.get("rollback_items") if isinstance(rollback_requirements.get("rollback_items"), list) else []
+    return {
+        "required_before_apply": bool(rollback_requirements.get("required_before_apply")),
+        "plan_only": bool(rollback_requirements.get("plan_only")),
+        "automatic_rollback": bool(rollback_requirements.get("automatic_rollback")),
+        "rollback_executor_invoked": bool(rollback_requirements.get("rollback_executor_invoked")),
+        "source_preflight_rollback_plan_status": rollback_requirements.get("source_preflight_rollback_plan_status") or "",
+        "candidate_count": _safe_int(rollback_requirements.get("candidate_count")),
+        "rollback_item_count": _safe_int(rollback_requirements.get("rollback_item_count") if "rollback_item_count" in rollback_requirements else len(rollback_items)),
+    }
+
+
+def _foldered_canonical_approval_next_actions(blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "foldered_canonical_migration_apply_plan_unavailable_or_malformed" in blockers:
+        actions.append("create_or_pass_ready_foldered_canonical_migration_apply_plan")
+    if "foldered_canonical_migration_apply_plan_not_ready" in blockers or "apply_review_gate_not_ready" in blockers:
+        actions.append("resolve_apply_plan_blockers_before_approval_review")
+    if "apply_plan_has_no_planned_steps" in blockers:
+        actions.append("provide_apply_plan_with_reviewable_planned_steps")
+    if "manifest_mutation_guard_not_ready" in blockers:
+        actions.append("prepare_manifest_mutation_guard_before_approval_review")
+    if "rollback_requirements_not_ready" in blockers:
+        actions.append("prepare_rollback_requirements_before_approval_review")
+    if any(reason in blockers for reason in ["apply_plan_allows_automatic_execution", "apply_plan_allows_manifest_mutation_in_tool", "apply_plan_allows_canonical_path_change_in_tool", "apply_plan_allows_file_move_in_tool"]):
+        actions.append("tighten_apply_plan_side_effect_boundaries_before_review")
+    if not blockers:
+        actions.append("record_explicit_review_approval_for_apply_plan_digest")
+        actions.append("run_manifest_dry_run_and_write_rollback_checkpoint_with_separate_reviewed_executor")
+        actions.append("invoke_separate_foldered_canonical_apply_executor_after_approval")
+        actions.append("run_post_apply_validation_before_tightening_legacy_fallback")
+    if "transaction_journal_must_be_written_by_separate_apply_executor" in warnings:
+        actions.append("ensure_apply_executor_writes_append_only_transaction_journal")
     return actions
 
 
