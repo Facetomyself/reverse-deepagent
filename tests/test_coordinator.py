@@ -762,6 +762,16 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native source map readiness",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_readiness",
+                    details={
+                        "status": "ready_for_review",
+                        "readiness": {"debugger_location_ready": True, "rebuild_source_metadata_ready": True},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native object-root mutation audit",
                     kind=EvidenceKind.DYNAMIC,
                     source="object_root_mutation_audit",
@@ -977,6 +987,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["source-map-lookup.json"]["location"]["strategy"], "source_map_generated_exact")
         self.assertTrue(payloads["source-map-source-content.json"]["source_content_available"])
         self.assertEqual(payloads["source-map-source-content.json"]["content_summary"]["sha256"], "abc123")
+        self.assertTrue(payloads["source-map-readiness.json"]["readiness"]["debugger_location_ready"])
+        self.assertTrue(payloads["source-map-readiness.json"]["readiness"]["rebuild_source_metadata_ready"])
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
         self.assertEqual(payloads["object-root-mutation-audit.json"]["change_count"], 4)
         self.assertEqual(payloads["object-graph-diff.json"]["change_count"], 2)
@@ -1028,6 +1040,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_source_map_fetch_result"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_lookup"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_source_content"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_readiness"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_bundler_symbol_scope"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")

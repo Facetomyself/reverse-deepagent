@@ -8,6 +8,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFetchSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
+    SourceMapReadinessManager,
+    SourceMapReadinessSpec,
     SourceMapSourceContentManager,
     SourceMapSourceContentSpec,
     SourceMapRemapper,
@@ -442,6 +444,91 @@ class SourceMapSourceContentManagerTests(unittest.TestCase):
         self.assertEqual(result.reason, "missing_source_map_payload")
         self.assertEqual(result.descriptor["blockers"], ["missing_source_map_payload"])
         self.assertFalse(result.side_effect_policy["browser_started"])
+
+
+class SourceMapReadinessManagerTests(unittest.TestCase):
+    def test_source_map_readiness_reviews_joined_lookup_content_and_symbol_descriptors_without_side_effects(self) -> None:
+        spec = SourceMapReadinessSpec.from_context(
+            {
+                "source_map_readiness": True,
+                "source_map_lookup": {
+                    "status": "ready_for_review",
+                    "mapping_found": True,
+                    "location": {"strategy": "source_map_generated_exact"},
+                    "next_action": "review_source_map_lookup_before_debugger_or_hook_use",
+                },
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "source_content_available": True,
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": False, "preview_exported": False},
+                    "next_action": "review_source_content_availability_before_debugger_or_rebuild",
+                },
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "scope_candidate_count": 1,
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                    "hook_readiness": {"source_logpoint_reviewable": True},
+                    "next_action": "review_symbol_scope_before_source_logpoint_or_hook",
+                },
+                "source_map_fetch_result": {"status": "success", "ok": True, "attempted": True, "payload_exported": False},
+            }
+        )
+
+        result = SourceMapReadinessManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-readiness.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertEqual(descriptor["blockers"], [])
+        readiness = descriptor["readiness"]
+        self.assertTrue(readiness["debugger_location_ready"])
+        self.assertTrue(readiness["source_content_metadata_ready"])
+        self.assertTrue(readiness["source_logpoint_planning_ready"])
+        self.assertTrue(readiness["rebuild_source_metadata_ready"])
+        self.assertTrue(readiness["bundler_scope_review_ready"])
+        self.assertFalse(readiness["raw_source_content_exported"])
+        self.assertFalse(readiness["preview_exported"])
+        self.assertFalse(readiness["automatic_logpoint_install_supported"])
+        self.assertFalse(readiness["automatic_debugger_execution_supported"])
+        self.assertFalse(readiness["raw_source_aware_rebuild_supported"])
+        self.assertEqual(descriptor["evidence_status"]["source_content"]["sha256"], "abc123")
+        self.assertFalse(descriptor["side_effect_policy"]["fetch_source_map"])
+        self.assertFalse(descriptor["side_effect_policy"]["browser_started"])
+        self.assertFalse(descriptor["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(descriptor["side_effect_policy"]["runtime_evaluated"])
+        self.assertFalse(descriptor["side_effect_policy"]["logpoint_installed"])
+        self.assertFalse(descriptor["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(descriptor["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_source_map_readiness_blocks_missing_lookup_and_source_content(self) -> None:
+        spec = SourceMapReadinessSpec.from_context({"source_map_readiness": True})
+
+        result = SourceMapReadinessManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_lookup_descriptor_missing", result.descriptor["blockers"])
+        self.assertIn("source_map_source_content_descriptor_missing", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "provide_ready_source_map_lookup_descriptor")
+
+    def test_source_map_readiness_blocks_raw_source_or_preview_export_leak(self) -> None:
+        spec = SourceMapReadinessSpec.from_context(
+            {
+                "source_map_readiness": True,
+                "source_map_lookup": {"status": "ready_for_review", "mapping_found": True},
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "source_content_available": True,
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": True, "preview_exported": False},
+                },
+            }
+        )
+
+        result = SourceMapReadinessManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("raw_source_content_export_detected", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "replace_source_content_descriptor_with_metadata_only_version")
 
 
 class SourceMapRemapperTests(unittest.TestCase):

@@ -5536,6 +5536,63 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["fetch_source_map"])
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
 
+    def test_native_web_runtime_reviews_source_map_readiness_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-readiness",
+            {
+                "source_map_lookup": {
+                    "status": "ready_for_review",
+                    "mapping_found": True,
+                    "location": {"strategy": "source_map_generated_exact"},
+                },
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "source_content_available": True,
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": False, "preview_exported": False},
+                },
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "scope_candidate_count": 1,
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                    "hook_readiness": {"source_logpoint_reviewable": True},
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_readiness"])
+        self.assertIn("source_map_readiness_status=ready_for_review", result.verification)
+        self.assertIn("source_map_readiness_debugger_location_ready=True", result.verification)
+        self.assertIn("source_map_readiness_source_content_metadata_ready=True", result.verification)
+        self.assertIn("source_map_readiness_rebuild_source_metadata_ready=True", result.verification)
+        self.assertIn("source_map_readiness_source_logpoint_planning_ready=True", result.verification)
+        self.assertIn("source_map_readiness_bundler_scope_review_ready=True", result.verification)
+        self.assertIn("source_map_readiness_source_content_sha256=abc123", result.verification)
+        self.assertIn("source_map_readiness_review_only=True", result.verification)
+        self.assertIn("source_map_readiness_raw_exported=False", result.verification)
+        self.assertIn("source_map_readiness_preview_exported=False", result.verification)
+        self.assertIn("source_map_readiness_fetch_source_map=False", result.verification)
+        self.assertIn("source_map_readiness_browser_started=False", result.verification)
+        self.assertIn("source_map_readiness_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_readiness_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_readiness_logpoint_installed=False", result.verification)
+        self.assertIn("source_map_readiness_calls_mcp=False", result.verification)
+        self.assertIn("source_map_readiness_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_readiness_before_debugger_rebuild_or_logpoint_planning")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-readiness.json")
+        self.assertTrue(result.artifacts[0].metadata["debugger_location_ready"])
+        self.assertTrue(result.artifacts[0].metadata["source_content_metadata_ready"])
+        self.assertTrue(result.artifacts[0].metadata["rebuild_source_metadata_ready"])
+        self.assertTrue(result.artifacts[0].metadata["source_logpoint_planning_ready"])
+        self.assertTrue(result.artifacts[0].metadata["bundler_scope_review_ready"])
+        self.assertEqual(result.artifacts[0].metadata["sha256"], "abc123")
+        self.assertFalse(result.artifacts[0].metadata["raw_source_content_exported"])
+        self.assertFalse(result.artifacts[0].metadata["preview_exported"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
     def test_native_web_runtime_apply_minimal_protection_sets_source_logpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

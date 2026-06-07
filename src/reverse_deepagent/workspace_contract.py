@@ -399,6 +399,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_source_map_fetch_result", "workspace/source-map-fetch-result.json", "/workspace/debugger/", "source-map-fetch-result.json", "trace", ("debugger", "hook", "review")),
         ("workspace_source_map_lookup", "workspace/source-map-lookup.json", "/workspace/debugger/", "source-map-lookup.json", "triage", ("debugger", "hook", "review")),
         ("workspace_source_map_source_content", "workspace/source-map-source-content.json", "/workspace/debugger/", "source-map-source-content.json", "triage", ("debugger", "hook", "review")),
+        ("workspace_source_map_readiness", "workspace/source-map-readiness.json", "/workspace/debugger/", "source-map-readiness.json", "triage", ("debugger", "hook", "review", "rebuild")),
         ("workspace_bundler_symbol_scope", "workspace/bundler-symbol-scope.json", "/workspace/hooks/", "bundler-symbol-scope.json", "triage", ("hook", "debugger", "review")),
         ("workspace_source_logpoints", "workspace/source-logpoints.json", "/workspace/debugger/", "source-logpoints.json", "trace", ("debugger", "hook")),
         ("workspace_source_logpoint_timeline", "workspace/source-logpoint-timeline.json", "/workspace/timeline/", "source-logpoint-timeline.json", "trace", ("timeline", "debugger")),

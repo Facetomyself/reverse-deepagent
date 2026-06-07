@@ -178,6 +178,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFetchSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
+    SourceMapReadinessManager,
+    SourceMapReadinessSpec,
     SourceMapSourceContentManager,
     SourceMapSourceContentSpec,
 )
@@ -599,6 +601,83 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_readiness_request(protection_name, context):
+            spec = SourceMapReadinessSpec.from_context(context)
+            result = SourceMapReadinessManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            readiness = descriptor.get("readiness") if isinstance(descriptor.get("readiness"), dict) else {}
+            evidence_status = descriptor.get("evidence_status") if isinstance(descriptor.get("evidence_status"), dict) else {}
+            source_content = evidence_status.get("source_content") if isinstance(evidence_status.get("source_content"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_readiness_status={result.status}",
+                f"source_map_readiness_debugger_location_ready={readiness.get('debugger_location_ready', False)}",
+                f"source_map_readiness_source_content_metadata_ready={readiness.get('source_content_metadata_ready', False)}",
+                f"source_map_readiness_rebuild_source_metadata_ready={readiness.get('rebuild_source_metadata_ready', False)}",
+                f"source_map_readiness_source_logpoint_planning_ready={readiness.get('source_logpoint_planning_ready', False)}",
+                f"source_map_readiness_bundler_scope_review_ready={readiness.get('bundler_scope_review_ready', False)}",
+                f"source_map_readiness_source_content_sha256={source_content.get('sha256', '')}",
+                "source_map_readiness_review_only=True",
+                f"source_map_readiness_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_readiness_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_readiness_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_readiness_browser_started={policy.get('browser_started', False)}",
+                f"source_map_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_readiness_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_readiness_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_readiness_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_readiness_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-readiness.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map readiness descriptor.",
+                metadata={
+                    "status": result.status,
+                    "debugger_location_ready": bool(readiness.get("debugger_location_ready", False)),
+                    "source_content_metadata_ready": bool(readiness.get("source_content_metadata_ready", False)),
+                    "rebuild_source_metadata_ready": bool(readiness.get("rebuild_source_metadata_ready", False)),
+                    "source_logpoint_planning_ready": bool(readiness.get("source_logpoint_planning_ready", False)),
+                    "bundler_scope_review_ready": bool(readiness.get("bundler_scope_review_ready", False)),
+                    "sha256": source_content.get("sha256", ""),
+                    "review_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_readiness_before_debugger_rebuild_or_logpoint_planning"
+                actions = ["review_source_map_readiness"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_lookup_and_source_content_descriptors"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_readiness_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -7620,6 +7699,28 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapSourcesContent",
                 "review_source_map_source_content",
                 "reviewSourceMapSourceContent",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-readiness",
+            "source-map-review-readiness",
+            "source-map-debugger-readiness",
+            "review-source-map-readiness",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_readiness",
+                "sourceMapReadiness",
+                "review_source_map_readiness",
+                "reviewSourceMapReadiness",
+                "source_map_debugger_readiness",
+                "sourceMapDebuggerReadiness",
             )
         )
 

@@ -378,6 +378,15 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "source-map-sources-content",
             "sourceMapSourcesContent",
         )
+        source_map_readiness = _object_alias(
+            payload,
+            "source_map_readiness",
+            "source-map-readiness",
+            "sourceMapReadiness",
+            "source_map_debugger_readiness",
+            "source-map-debugger-readiness",
+            "sourceMapDebuggerReadiness",
+        )
         object_graph_diff = _object_alias(
             payload,
             "object_graph_diff",
@@ -464,6 +473,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 bundler_symbol_scope,
                 source_map_lookup,
                 source_map_source_content,
+                source_map_readiness,
                 object_graph_diff,
                 closure_wrapper_continuation_readiness,
                 closure_wrapper_continuation_execution_plan,
@@ -485,6 +495,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("source_map_lookup_blocked")
         if _status(source_map_source_content) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("source_map_source_content_blocked")
+        if _status(source_map_readiness) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_readiness_blocked")
         if _status(object_graph_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("object_graph_diff_blocked")
         if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -847,6 +859,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("source_map_lookup_requires_review")
         if source_map_source_content and _status(source_map_source_content) == "ready_for_review":
             warnings.append("source_map_source_content_requires_review")
+        if source_map_readiness and _status(source_map_readiness) == "ready_for_review":
+            warnings.append("source_map_readiness_requires_review")
         if object_graph_diff and _status(object_graph_diff) == "ready_for_review":
             warnings.append("object_graph_diff_requires_review")
         if missing_count:
@@ -916,6 +930,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "source_map_source_content_status": _status(source_map_source_content),
                 "source_map_source_content_available": bool(source_map_source_content.get("source_content_available", False)),
                 "source_map_source_content_next_action": source_map_source_content.get("next_action"),
+                "source_map_readiness_status": _status(source_map_readiness),
+                "source_map_readiness_debugger_location_ready": bool(_nested_get(source_map_readiness, "readiness", "debugger_location_ready")),
+                "source_map_readiness_rebuild_source_metadata_ready": bool(_nested_get(source_map_readiness, "readiness", "rebuild_source_metadata_ready")),
+                "source_map_readiness_next_action": source_map_readiness.get("next_action"),
                 "object_graph_diff_status": _status(object_graph_diff),
                 "object_graph_diff_change_count": _intish(object_graph_diff.get("change_count") or _nested_get(object_graph_diff, "diff", "change_count")),
                 "object_graph_diff_risk": _nested_get(object_graph_diff, "risk_summary", "risk"),
@@ -1450,6 +1468,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "provide_source_map_payload_and_lookup_position"
     if "source_map_source_content_blocked" in blockers:
         return "provide_source_map_with_sources_content"
+    if "source_map_readiness_blocked" in blockers:
+        return "provide_source_map_lookup_and_source_content_descriptors"
     if "object_graph_diff_blocked" in blockers:
         return "provide_before_and_after_object_graph_snapshots"
     if "async_chunk_load_failed" in blockers:
@@ -1466,6 +1486,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_source_map_lookup_before_debugger_or_hook_use"
     if "source_map_source_content_requires_review" in warnings:
         return "review_source_content_availability_before_debugger_or_rebuild"
+    if "source_map_readiness_requires_review" in warnings:
+        return "review_source_map_readiness_before_debugger_rebuild_or_logpoint_planning"
     if "object_graph_diff_requires_review" in warnings:
         return "review_object_graph_diff_before_hook_or_replay"
     if "closure_wrapper_strategy_descriptor_plan_only_requires_review" in warnings:
