@@ -957,6 +957,19 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop transaction journal",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_executor_journal",
+                    details={
+                        "status": "written",
+                        "journal_written": True,
+                        "transaction_started": True,
+                        "executor_input_gates": {"ready_to_execute_now": False, "journal_written": True, "automatic_loop_executed": False},
+                        "side_effect_policy": {"writes_transaction_journal": True, "automatic_loop_executed": False, "cdp_command_sent": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1036,6 +1049,14 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-transaction-preflight.json"]["journal_writer_input_gates"]["journal_written"])
         self.assertFalse(payloads["paused-session-automatic-loop-transaction-preflight.json"]["side_effect_policy"]["writes_transaction_journal"])
         self.assertFalse(payloads["paused-session-automatic-loop-transaction-preflight.json"]["side_effect_policy"]["automatic_loop_executed"])
+        self.assertTrue(payloads["paused-session-automatic-loop-executor-journal.json"]["journal_written"])
+        self.assertTrue(payloads["paused-session-automatic-loop-executor-journal.json"]["transaction_started"])
+        self.assertFalse(payloads["paused-session-automatic-loop-executor-journal.json"]["executor_input_gates"]["ready_to_execute_now"])
+        self.assertTrue(payloads["paused-session-automatic-loop-executor-journal.json"]["executor_input_gates"]["journal_written"])
+        self.assertFalse(payloads["paused-session-automatic-loop-executor-journal.json"]["executor_input_gates"]["automatic_loop_executed"])
+        self.assertTrue(payloads["paused-session-automatic-loop-executor-journal.json"]["side_effect_policy"]["writes_transaction_journal"])
+        self.assertFalse(payloads["paused-session-automatic-loop-executor-journal.json"]["side_effect_policy"]["automatic_loop_executed"])
+        self.assertFalse(payloads["paused-session-automatic-loop-executor-journal.json"]["side_effect_policy"]["cdp_command_sent"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1194,6 +1215,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_executor_approval_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_executor_approval_record"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_transaction_preflight"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_executor_journal"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")

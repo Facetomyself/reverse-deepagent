@@ -13,6 +13,7 @@ from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_
 DEBUGGER_ARTIFACT_REVIEW_VERSION = "2026-05-31.debugger-artifact-review-v1"
 AUTOMATIC_LOOP_EXECUTOR_APPROVAL_RECORD_VERSION = "reverse-deepagent.paused-session-automatic-loop-executor-approval-record.v1"
 AUTOMATIC_LOOP_TRANSACTION_PREFLIGHT_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-preflight.v1"
+AUTOMATIC_LOOP_TRANSACTION_JOURNAL_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-journal.v1"
 _LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe"}
 
 
@@ -833,6 +834,57 @@ def make_review_paused_session_automatic_loop_transaction_preflight_tool(default
     return review_paused_session_automatic_loop_transaction_preflight
 
 
+def make_record_paused_session_automatic_loop_transaction_journal_tool(default_artifact_root: str | Path | None = None):
+    """Create an explicit transaction journal writer for automatic-loop execution.
+
+    This writer only records a reviewed transaction journal for a future bounded
+    executor. It does not send CDP commands, recover callFrames, execute loop
+    iterations, start long-lived sessions, call MCP, or touch mobile runtimes.
+    """
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def record_paused_session_automatic_loop_transaction_journal(
+        transaction_preflight_json: str | None = None,
+        transaction_preflight_ref: str | None = None,
+        reviewer: str | None = None,
+        reason: str | None = None,
+        mode: str = "dry-run",
+        write_result: bool = False,
+        approve_transaction_journal: bool = False,
+        expected_transaction_preflight_id: str | None = None,
+        expected_approval_record_id: str | None = None,
+        expected_transaction_id: str | None = None,
+        expected_preflight_id: str | None = None,
+        expected_preflight_digest_sha256: str | None = None,
+        artifact_root: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Write a reviewed automatic-loop transaction journal record."""
+
+        metadata = _loads_optional_object(metadata_json, field_name="metadata_json")
+        return record_paused_session_automatic_loop_transaction_journal_payload(
+            transaction_preflight_json=transaction_preflight_json,
+            transaction_preflight_ref=transaction_preflight_ref,
+            reviewer=reviewer,
+            reason=reason,
+            mode=mode,
+            write_result=write_result,
+            approve_transaction_journal=approve_transaction_journal,
+            expected_transaction_preflight_id=expected_transaction_preflight_id,
+            expected_approval_record_id=expected_approval_record_id,
+            expected_transaction_id=expected_transaction_id,
+            expected_preflight_id=expected_preflight_id,
+            expected_preflight_digest_sha256=expected_preflight_digest_sha256,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            metadata=metadata,
+        )
+
+    record_paused_session_automatic_loop_transaction_journal.__name__ = "record_paused_session_automatic_loop_transaction_journal"
+    return record_paused_session_automatic_loop_transaction_journal
+
+
 def record_paused_session_automatic_loop_executor_approval_payload(
     *,
     approval_plan_json: str | None = None,
@@ -973,6 +1025,181 @@ def record_paused_session_automatic_loop_executor_approval_payload(
             "path": str(result_path),
         },
         "side_effect_policy": _automatic_loop_executor_approval_record_side_effect_policy(written=written),
+    }
+    if written:
+        _write_json(result_path, payload)
+    return payload
+
+
+def record_paused_session_automatic_loop_transaction_journal_payload(
+    *,
+    transaction_preflight_json: str | None = None,
+    transaction_preflight_ref: str | None = None,
+    reviewer: str | None = None,
+    reason: str | None = None,
+    mode: str = "dry-run",
+    write_result: bool = False,
+    approve_transaction_journal: bool = False,
+    expected_transaction_preflight_id: str | None = None,
+    expected_approval_record_id: str | None = None,
+    expected_transaction_id: str | None = None,
+    expected_preflight_id: str | None = None,
+    expected_preflight_digest_sha256: str | None = None,
+    artifact_root: str | None = None,
+    default_artifact_root: str | Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build or write an explicit automatic-loop transaction journal payload."""
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+    loaded, artifact_read = _loads_object_or_artifact(
+        transaction_preflight_json,
+        artifact_ref=transaction_preflight_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=root,
+        field_name="transaction_preflight_json",
+        artifact_field_name="transaction_preflight_ref",
+    )
+    transaction_preflight = _first_object(loaded.get("transaction_preflight"), loaded)
+    effective_root = Path(artifact_root) if artifact_root else root
+    effective_root = effective_root.expanduser().resolve()
+    transaction_plan = transaction_preflight.get("transaction_plan") if isinstance(transaction_preflight.get("transaction_plan"), dict) else {}
+    transaction_id = _string(transaction_plan.get("transaction_id"))
+    transaction_preflight_id = _string(transaction_preflight.get("transaction_preflight_id"))
+    approval_record_id = _string(transaction_preflight.get("approval_record_id"))
+    preflight_id = _string(transaction_preflight.get("preflight_id"))
+    preflight_digest = _stable_json_digest(transaction_preflight) if transaction_preflight else None
+    result_path = effective_root / "workspace" / "paused-session-automatic-loop-executor-journal.json"
+    blockers = _automatic_loop_transaction_journal_blockers(
+        transaction_preflight=transaction_preflight,
+        reviewer=reviewer,
+        mode=mode,
+        write_result=write_result,
+        approve_transaction_journal=approve_transaction_journal,
+        expected_transaction_preflight_id=expected_transaction_preflight_id,
+        expected_approval_record_id=expected_approval_record_id,
+        expected_transaction_id=expected_transaction_id,
+        expected_preflight_id=expected_preflight_id,
+        expected_preflight_digest_sha256=expected_preflight_digest_sha256,
+        preflight_digest=preflight_digest,
+        result_path=result_path,
+    )
+    written = not blockers and mode == "apply" and write_result and approve_transaction_journal
+    status = "blocked" if blockers else "written" if written else "planned"
+    created_at = datetime.now(timezone.utc).isoformat()
+    journal_id = _automatic_loop_transaction_journal_id(
+        transaction_preflight_id=transaction_preflight_id,
+        approval_record_id=approval_record_id,
+        transaction_id=transaction_id,
+        reviewer=reviewer,
+        created_at=created_at,
+    )
+    planned_entries = transaction_preflight.get("planned_journal_entries") if isinstance(transaction_preflight.get("planned_journal_entries"), list) else []
+    journal_entries = [
+        {
+            "entry_index": 0,
+            "entry_kind": "transaction_started",
+            "transaction_id": transaction_id or None,
+            "transaction_preflight_id": transaction_preflight_id or None,
+            "approval_record_id": approval_record_id or None,
+            "reviewer": reviewer,
+            "created_at": created_at,
+            "automatic_loop_executed": False,
+        }
+    ]
+    for index, item in enumerate(planned_entries, start=1):
+        if not isinstance(item, dict):
+            continue
+        journal_entries.append(
+            {
+                "entry_index": index,
+                "entry_kind": "planned_iteration_journaled",
+                "iteration_index": item.get("iteration_index"),
+                "workflow_step_index": item.get("workflow_step_index"),
+                "method": item.get("method"),
+                "fingerprint": item.get("fingerprint"),
+                "executed_now": False,
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_checkpoint_after_iteration": True,
+            }
+        )
+    payload: dict[str, Any] = {
+        "schema_version": AUTOMATIC_LOOP_TRANSACTION_JOURNAL_VERSION,
+        "status": status,
+        "journal_written": written,
+        "transaction_started": written,
+        "dry_run": not written,
+        "mode": mode,
+        "write_result": write_result,
+        "journal_id": journal_id,
+        "transaction_preflight_id": transaction_preflight_id or None,
+        "approval_record_id": approval_record_id or None,
+        "approval_plan_id": transaction_preflight.get("approval_plan_id"),
+        "preflight_id": preflight_id or None,
+        "transaction_id": transaction_id or None,
+        "plan_id": transaction_preflight.get("plan_id"),
+        "loop_id": transaction_preflight.get("loop_id"),
+        "workflow_id": transaction_preflight.get("workflow_id"),
+        "pause_session_id": transaction_preflight.get("pause_session_id"),
+        "target_id": transaction_preflight.get("target_id"),
+        "reviewer": reviewer,
+        "reason": reason,
+        "created_at": created_at,
+        "transaction_preflight_digest_sha256": preflight_digest,
+        "expected_preflight_digest_sha256": expected_preflight_digest_sha256,
+        "source_transaction_preflight_summary": {
+            "schema_version": transaction_preflight.get("schema_version"),
+            "status": transaction_preflight.get("status"),
+            "transaction_preflight_ready_for_review": _boolish(transaction_preflight.get("transaction_preflight_ready_for_review")),
+            "approval_record_verified": _boolish(_nested_get(transaction_preflight, "journal_writer_input_gates", "approval_record_verified")),
+            "ready_to_write_now": _boolish(_nested_get(transaction_preflight, "transaction_plan", "ready_to_write_now")),
+            "transaction_started": _boolish(_nested_get(transaction_preflight, "transaction_plan", "transaction_started")),
+            "journal_written_now": _boolish(_nested_get(transaction_preflight, "transaction_plan", "journal_written_now")),
+        },
+        "journal_entries": journal_entries,
+        "journal_summary": {
+            "entry_count": len(journal_entries) if written else 0,
+            "planned_entry_count": len(journal_entries),
+            "transaction_started": written,
+            "journal_written": written,
+            "automatic_loop_executed": False,
+            "requires_bounded_executor_followup": True,
+        },
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_record_verified": _boolish(_nested_get(transaction_preflight, "journal_writer_input_gates", "approval_record_verified")),
+            "transaction_started": written,
+            "journal_written": written,
+            "automatic_loop_executed": False,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_bounded_executor_review": True,
+        },
+        "checks": _automatic_loop_transaction_journal_checks(
+            transaction_preflight=transaction_preflight,
+            reviewer=reviewer,
+            mode=mode,
+            write_result=write_result,
+            approve_transaction_journal=approve_transaction_journal,
+            expected_transaction_preflight_id=expected_transaction_preflight_id,
+            expected_approval_record_id=expected_approval_record_id,
+            expected_transaction_id=expected_transaction_id,
+            expected_preflight_id=expected_preflight_id,
+            expected_preflight_digest_sha256=expected_preflight_digest_sha256,
+            preflight_digest=preflight_digest,
+            result_path=result_path,
+        ),
+        "blockers": blockers,
+        "next_action": _automatic_loop_transaction_journal_next_action(status=status, blockers=blockers),
+        "metadata": {
+            **(metadata or {}),
+            "tool": "record_paused_session_automatic_loop_transaction_journal",
+            "artifact_read": artifact_read,
+            "legacy_path": "workspace/paused-session-automatic-loop-executor-journal.json",
+            "future_path": "/workspace/debugger/paused-session-automatic-loop-executor-journal.json",
+            "path": str(result_path),
+        },
+        "side_effect_policy": _automatic_loop_transaction_journal_side_effect_policy(written=written),
     }
     if written:
         _write_json(result_path, payload)
@@ -1278,6 +1505,94 @@ def _automatic_loop_transaction_preflight_side_effect_policy() -> dict[str, Any]
         "writes_transaction_journal": False,
         "transaction_started": False,
         "journal_written": False,
+        "automatic_loop_executed": False,
+        "multi_step_continuation_executed": False,
+        "browser_resumed": False,
+        "debugger_stepped": False,
+        "callframe_evaluated": False,
+        "runtime_mutated": False,
+        "cdp_command_sent": False,
+        "cdp_target_attached": False,
+        "debugger_domain_enabled": False,
+        "debugger_event_subscribed": False,
+        "paused_event_captured": False,
+        "automatic_live_callframe_recovery": False,
+        "automatic_queue_advance": False,
+        "long_lived_cross_process_session_managed": False,
+        "calls_mcp": False,
+        "mobile_runtime_used": False,
+    }
+
+
+def _automatic_loop_transaction_journal_checks(
+    *,
+    transaction_preflight: dict[str, Any],
+    reviewer: str | None,
+    mode: str,
+    write_result: bool,
+    approve_transaction_journal: bool,
+    expected_transaction_preflight_id: str | None,
+    expected_approval_record_id: str | None,
+    expected_transaction_id: str | None,
+    expected_preflight_id: str | None,
+    expected_preflight_digest_sha256: str | None,
+    preflight_digest: str | None,
+    result_path: Path,
+) -> list[dict[str, Any]]:
+    blockers = transaction_preflight.get("blockers") if isinstance(transaction_preflight.get("blockers"), list) else []
+    transaction_plan = transaction_preflight.get("transaction_plan") if isinstance(transaction_preflight.get("transaction_plan"), dict) else {}
+    gates = transaction_preflight.get("journal_writer_input_gates") if isinstance(transaction_preflight.get("journal_writer_input_gates"), dict) else {}
+    policy = transaction_preflight.get("side_effect_policy") if isinstance(transaction_preflight.get("side_effect_policy"), dict) else {}
+    return [
+        {"name": "transaction_preflight_available", "passed": bool(transaction_preflight), "details": {"transaction_preflight_id": transaction_preflight.get("transaction_preflight_id")}},
+        {"name": "transaction_preflight_ready_for_review", "passed": transaction_preflight.get("status") == "ready_for_review" and transaction_preflight.get("transaction_preflight_ready_for_review") is True, "details": {"status": transaction_preflight.get("status"), "transaction_preflight_ready_for_review": transaction_preflight.get("transaction_preflight_ready_for_review")}},
+        {"name": "transaction_preflight_has_no_blockers", "passed": not blockers, "details": {"blockers": blockers}},
+        {"name": "reviewer_present", "passed": bool((reviewer or "").strip()), "details": {"reviewer": reviewer}},
+        {"name": "mode_supported", "passed": mode in {"dry-run", "apply"}, "details": {"mode": mode}},
+        {"name": "apply_requires_write_result", "passed": mode != "apply" or bool(write_result), "details": {"write_result": write_result}},
+        {"name": "apply_requires_explicit_transaction_journal", "passed": mode != "apply" or bool(approve_transaction_journal), "details": {"approve_transaction_journal": approve_transaction_journal}},
+        {"name": "approval_record_verified", "passed": gates.get("approval_record_verified") is True, "details": {"approval_record_verified": gates.get("approval_record_verified")}},
+        {"name": "expected_transaction_preflight_id_matches", "passed": not expected_transaction_preflight_id or transaction_preflight.get("transaction_preflight_id") == expected_transaction_preflight_id, "details": {"expected_transaction_preflight_id": expected_transaction_preflight_id, "transaction_preflight_id": transaction_preflight.get("transaction_preflight_id")}},
+        {"name": "expected_approval_record_id_matches", "passed": not expected_approval_record_id or transaction_preflight.get("approval_record_id") == expected_approval_record_id, "details": {"expected_approval_record_id": expected_approval_record_id, "approval_record_id": transaction_preflight.get("approval_record_id")}},
+        {"name": "expected_transaction_id_matches", "passed": not expected_transaction_id or transaction_plan.get("transaction_id") == expected_transaction_id, "details": {"expected_transaction_id": expected_transaction_id, "transaction_id": transaction_plan.get("transaction_id")}},
+        {"name": "expected_preflight_id_matches", "passed": not expected_preflight_id or transaction_preflight.get("preflight_id") == expected_preflight_id, "details": {"expected_preflight_id": expected_preflight_id, "preflight_id": transaction_preflight.get("preflight_id")}},
+        {"name": "expected_preflight_digest_matches", "passed": not expected_preflight_digest_sha256 or expected_preflight_digest_sha256 == preflight_digest, "details": {"expected_preflight_digest_sha256": expected_preflight_digest_sha256, "transaction_preflight_digest_sha256": preflight_digest}},
+        {"name": "preflight_does_not_claim_ready_to_write_now", "passed": transaction_plan.get("ready_to_write_now") is not True and gates.get("ready_to_write_now") is not True, "details": {"transaction_plan_ready_to_write_now": transaction_plan.get("ready_to_write_now"), "gate_ready_to_write_now": gates.get("ready_to_write_now")}},
+        {"name": "transaction_not_already_started", "passed": transaction_plan.get("transaction_started") is not True and gates.get("transaction_started") is not True, "details": {"transaction_started": transaction_plan.get("transaction_started"), "gate_transaction_started": gates.get("transaction_started")}},
+        {"name": "journal_not_already_written", "passed": transaction_plan.get("journal_written_now") is not True and gates.get("journal_written") is not True, "details": {"journal_written_now": transaction_plan.get("journal_written_now"), "gate_journal_written": gates.get("journal_written")}},
+        {"name": "automatic_loop_not_executed", "passed": gates.get("automatic_loop_executed") is not True and policy.get("automatic_loop_executed") is not True, "details": {"gate_automatic_loop_executed": gates.get("automatic_loop_executed"), "policy_automatic_loop_executed": policy.get("automatic_loop_executed")}},
+        {"name": "preflight_did_not_send_cdp", "passed": policy.get("cdp_command_sent") is not True and policy.get("cdp_target_attached") is not True, "details": {"cdp_command_sent": policy.get("cdp_command_sent"), "cdp_target_attached": policy.get("cdp_target_attached")}},
+        {"name": "preflight_did_not_call_mcp_or_mobile", "passed": policy.get("calls_mcp") is not True and policy.get("mobile_runtime_used") is not True, "details": {"calls_mcp": policy.get("calls_mcp"), "mobile_runtime_used": policy.get("mobile_runtime_used")}},
+        {"name": "journal_file_not_already_present", "passed": not result_path.exists(), "details": {"path": str(result_path), "exists": result_path.exists()}},
+    ]
+
+
+def _automatic_loop_transaction_journal_blockers(**kwargs: Any) -> list[str]:
+    return [check["name"] for check in _automatic_loop_transaction_journal_checks(**kwargs) if not check["passed"]]
+
+
+def _automatic_loop_transaction_journal_next_action(*, status: str, blockers: list[str]) -> str:
+    if blockers:
+        return "fix_paused_session_automatic_loop_transaction_journal_blockers"
+    if status == "planned":
+        return "review_then_write_paused_session_automatic_loop_transaction_journal"
+    return "review_future_bounded_paused_session_automatic_loop_executor"
+
+
+def _automatic_loop_transaction_journal_id(*, transaction_preflight_id: str, approval_record_id: str, transaction_id: str, reviewer: str | None, created_at: str) -> str:
+    digest = hashlib.sha256(f"{transaction_preflight_id}\0{approval_record_id}\0{transaction_id}\0{reviewer or ''}\0{created_at}".encode("utf-8")).hexdigest()[:16]
+    return f"automatic-loop-transaction-journal:{digest}"
+
+
+def _automatic_loop_transaction_journal_side_effect_policy(*, written: bool) -> dict[str, Any]:
+    return {
+        "dry_run_is_read_only": True,
+        "writes_transaction_journal": written,
+        "transaction_started": written,
+        "journal_written": written,
+        "files_mutated": written,
+        "artifacts_written_by_tool": written,
+        "writes_approval_record": False,
         "automatic_loop_executed": False,
         "multi_step_continuation_executed": False,
         "browser_resumed": False,
