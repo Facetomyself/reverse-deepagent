@@ -1115,6 +1115,51 @@ def make_plan_workspace_foldered_canonical_broader_rollout_rollback_decision_too
     return plan_workspace_foldered_canonical_broader_rollout_rollback_decision
 
 
+def make_record_workspace_foldered_canonical_broader_rollout_decision_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create a reviewed decision record writer for broader rollout rollback-vs-commit review."""
+
+    root = Path(default_artifact_root)
+
+    def record_workspace_foldered_canonical_broader_rollout_decision(
+        artifact_root: str | None = None,
+        rollback_decision_plan_json: str | None = None,
+        rollback_decision_plan_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_rollback_decision_plan",
+        decision: str | None = None,
+        reviewer: str | None = None,
+        reason: str | None = None,
+        write_result: bool = False,
+        approve_decision_record: bool = False,
+    ) -> dict[str, Any]:
+        """Record a reviewed commit / rollback / defer decision without executing it."""
+
+        return record_workspace_foldered_canonical_broader_rollout_decision_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            rollback_decision_plan_json=rollback_decision_plan_json,
+            rollback_decision_plan_artifact_ref=rollback_decision_plan_artifact_ref,
+            decision=decision,
+            reviewer=reviewer,
+            reason=reason,
+            write_result=write_result,
+            approve_decision_record=approve_decision_record,
+        )
+
+    record_workspace_foldered_canonical_broader_rollout_decision.__name__ = (
+        "record_workspace_foldered_canonical_broader_rollout_decision"
+    )
+    record_workspace_foldered_canonical_broader_rollout_decision.__doc__ = (
+        "Record a reviewed foldered-canonical broader rollout commit / rollback / defer decision. It consumes a "
+        "ready rollback-vs-commit decision plan and only writes "
+        "workspace/workspace-foldered-canonical-broader-rollout-decision-record.json when write_result=true, "
+        "approve_decision_record=true, and a reviewer is provided. It never commits broader rollout state, rolls back "
+        "metadata, mutates manifests, moves files, runs pipelines, starts browsers, calls MCP, or touches mobile full "
+        "runtime chains."
+    )
+    return record_workspace_foldered_canonical_broader_rollout_decision
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -9655,7 +9700,232 @@ def _foldered_canonical_broader_rollout_rollback_decision_next_actions(
         else:
             actions.append("review_commit_rollback_or_defer_options")
     if any("foldered_canonical" in warning for warning in warnings):
-        actions.append("review_foldered_canonical_metadata_before_decision_record")
+            actions.append("review_foldered_canonical_metadata_before_decision_record")
+    return list(dict.fromkeys(actions))
+
+
+def record_workspace_foldered_canonical_broader_rollout_decision_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    rollback_decision_plan_json: str | None = None,
+    rollback_decision_plan_artifact_ref: str | None = "workspace_foldered_canonical_broader_rollout_rollback_decision_plan",
+    decision: str | None = None,
+    reviewer: str | None = None,
+    reason: str | None = None,
+    write_result: bool = False,
+    approve_decision_record: bool = False,
+) -> dict[str, Any]:
+    """Record a reviewed broader rollout rollback-vs-commit decision without execution."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    plan, plan_error, plan_input = _load_or_read_workspace_foldered_canonical_broader_rollout_rollback_decision_plan(
+        default_artifact_root=effective_root,
+        rollback_decision_plan_json=rollback_decision_plan_json,
+        rollback_decision_plan_artifact_ref=rollback_decision_plan_artifact_ref,
+    )
+    plan_summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+    decision_gate = plan.get("decision_gate") if isinstance(plan.get("decision_gate"), dict) else {}
+    selected_from_plan = str(plan_summary.get("selected_decision") or decision_gate.get("selected_decision") or "").strip().lower()
+    selected_decision = str(decision or selected_from_plan or "").strip().lower()
+    reviewer_value = str(reviewer or "").strip()
+    valid_decisions = {"commit", "rollback", "defer"}
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if plan_error:
+        blockers.append("rollback_decision_plan_unavailable_or_malformed")
+    if plan.get("status") != "ready_for_review":
+        blockers.append("rollback_decision_plan_not_ready_for_review")
+    if decision_gate.get("decision_review_ready") is not True:
+        blockers.append("rollback_decision_plan_gate_not_ready")
+    if not selected_decision:
+        blockers.append("decision_required")
+    elif selected_decision not in valid_decisions:
+        blockers.append("decision_not_supported")
+    if selected_decision == "commit" and decision_gate.get("commit_review_allowed") is not True:
+        blockers.append("commit_decision_not_allowed_by_plan")
+    if selected_decision == "rollback" and decision_gate.get("rollback_review_allowed") is not True:
+        blockers.append("rollback_decision_not_allowed_by_plan")
+    if selected_from_plan and selected_decision and selected_decision != selected_from_plan:
+        warnings.append("decision_differs_from_requested_plan_selection")
+    if write_result and not reviewer_value:
+        blockers.append("reviewer_required_to_write_decision_record")
+    if write_result and approve_decision_record is not True:
+        blockers.append("approve_decision_record_required_to_write")
+    for reason_item in plan.get("blocking_reasons") or []:
+        blockers.append(f"rollback_decision_plan:{reason_item}")
+    for warning_item in plan.get("warnings") or []:
+        warnings.append(f"rollback_decision_plan:{warning_item}")
+    if not blockers:
+        warnings.append("decision_record_does_not_execute_commit_or_rollback")
+
+    will_write = bool(write_result and not blockers)
+    status = "recorded" if will_write else "ready_for_record" if not blockers else "blocked" if plan.get("schema_version") != "missing" else "not_ready"
+    result_artifact = _workspace_foldered_canonical_broader_rollout_decision_record_artifact_metadata(
+        effective_root,
+        written=False,
+    )
+    recorded_at = datetime.now(timezone.utc).isoformat()
+    payload: dict[str, Any] = {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-broader-rollout-decision-record.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "result_artifact": result_artifact,
+        "recorded_at": recorded_at,
+        "summary": {
+            "rollback_decision_plan_status": plan.get("status") or "missing",
+            "decision": selected_decision,
+            "reviewer": reviewer_value,
+            "write_result_requested": bool(write_result),
+            "approve_decision_record": bool(approve_decision_record),
+            "decision_record_written": False,
+            "commit_executed_by_this_tool": False,
+            "rollback_executed_by_this_tool": False,
+            "backend_manifest_mutated_by_this_tool": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "rollback_decision_plan_input": plan_input,
+        "rollback_decision_plan_summary": {
+            "schema_version": plan.get("schema_version") or "",
+            "status": plan.get("status") or "missing",
+            "transaction_id": plan_summary.get("transaction_id") or "",
+            "idempotency_key": plan_summary.get("idempotency_key") or "",
+            "requested_decision": plan_summary.get("requested_decision") or "",
+            "selected_decision": selected_from_plan,
+            "decision_review_ready": decision_gate.get("decision_review_ready") is True,
+            "commit_review_allowed": decision_gate.get("commit_review_allowed") is True,
+            "rollback_review_allowed": decision_gate.get("rollback_review_allowed") is True,
+            "defer_review_allowed": decision_gate.get("defer_review_allowed") is True,
+            "blocking_reasons": plan.get("blocking_reasons") if isinstance(plan.get("blocking_reasons"), list) else [],
+            "warnings": plan.get("warnings") if isinstance(plan.get("warnings"), list) else [],
+        },
+        "decision_record": {
+            "decision": selected_decision,
+            "reviewer": reviewer_value,
+            "reason": str(reason or ""),
+            "recorded_at": recorded_at,
+            "source_plan_artifact_ref": rollback_decision_plan_artifact_ref or "",
+            "source_plan_transaction_id": plan_summary.get("transaction_id") or "",
+            "source_plan_idempotency_key": plan_summary.get("idempotency_key") or "",
+            "recorded": will_write,
+        },
+        "downstream_gates": {
+            "commit_executor_allowed_by_this_tool": False,
+            "rollback_executor_allowed_by_this_tool": False,
+            "requires_separate_commit_or_rollback_executor": selected_decision in {"commit", "rollback"},
+            "requires_separate_review_approval_for_executor": selected_decision in {"commit", "rollback"},
+            "defer_requires_no_executor": selected_decision == "defer",
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_broader_rollout_decision_record_next_actions(
+            status,
+            blockers,
+            selected_decision=selected_decision,
+            write_result=write_result,
+        ),
+        "side_effect_policy": {
+            "read_only": not will_write,
+            "files_inspected": False,
+            "artifacts_written": will_write,
+            "creates_directories": will_write,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "moves_files": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "records_decision": will_write,
+            "commits_broader_rollout": False,
+            "rolls_back_broader_rollout": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+    if will_write:
+        result_path = effective_root / "workspace" / "workspace-foldered-canonical-broader-rollout-decision-record.json"
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        payload["result_artifact"] = _workspace_foldered_canonical_broader_rollout_decision_record_artifact_metadata(
+            effective_root,
+            written=True,
+        )
+        payload["summary"]["decision_record_written"] = True
+        payload["decision_record"]["recorded"] = True
+        result_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
+
+
+def _load_or_read_workspace_foldered_canonical_broader_rollout_rollback_decision_plan(
+    *,
+    default_artifact_root: Path,
+    rollback_decision_plan_json: str | None,
+    rollback_decision_plan_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(rollback_decision_plan_json, field_name="rollback_decision_plan_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = rollback_decision_plan_artifact_ref or "workspace_foldered_canonical_broader_rollout_rollback_decision_plan"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "rollback_decision_plan_not_observed", input_summary
+
+
+def _workspace_foldered_canonical_broader_rollout_decision_record_artifact_metadata(
+    artifact_root: Path,
+    *,
+    written: bool,
+) -> dict[str, Any]:
+    return {
+        "artifact_key": "workspace_foldered_canonical_broader_rollout_decision_record",
+        "legacy_path": "workspace/workspace-foldered-canonical-broader-rollout-decision-record.json",
+        "future_path": "/workspace/review/workspace-foldered-canonical-broader-rollout-decision-record.json",
+        "path": str(artifact_root / "workspace" / "workspace-foldered-canonical-broader-rollout-decision-record.json"),
+        "written": written,
+        "category": "audit",
+    }
+
+
+def _foldered_canonical_broader_rollout_decision_record_next_actions(
+    status: str,
+    blockers: list[str],
+    *,
+    selected_decision: str,
+    write_result: bool,
+) -> list[str]:
+    actions: list[str] = []
+    if "rollback_decision_plan_unavailable_or_malformed" in blockers or "rollback_decision_plan_not_ready_for_review" in blockers:
+        actions.append("produce_ready_rollback_vs_commit_decision_plan_before_recording")
+    if "decision_required" in blockers or "decision_not_supported" in blockers:
+        actions.append("choose_supported_decision_commit_rollback_or_defer")
+    if "reviewer_required_to_write_decision_record" in blockers:
+        actions.append("provide_reviewer_before_writing_decision_record")
+    if "approve_decision_record_required_to_write" in blockers:
+        actions.append("set_approve_decision_record_true_before_writing")
+    if status == "ready_for_record" and not write_result:
+        actions.append("call_with_write_result_true_after_human_review_to_record_decision")
+    if status == "recorded" and selected_decision == "commit":
+        actions.append("prepare_separate_reviewed_broader_rollout_commit_executor")
+    elif status == "recorded" and selected_decision == "rollback":
+        actions.append("prepare_separate_reviewed_broader_rollout_rollback_executor")
+    elif status == "recorded" and selected_decision == "defer":
+        actions.append("collect_additional_evidence_before_commit_or_rollback")
     return list(dict.fromkeys(actions))
 
 
