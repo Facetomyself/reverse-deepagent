@@ -85,6 +85,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 - Generated rebuild review hints derived from runtime-context diff classifications for volatile, session-bound, missing, type-drift, and object-drift fields.
 - Plan-only WASM / VM / obfuscation triage hook planner with protected-flow hook/debugger candidates and workspace artifact routes.
 - Provider-neutral strategy evidence scoring baseline that combines detector confidence, validation status, replay URL presence, runtime-context stability, protected-flow triage, and rebuild readiness into review-only `evidence_score` payloads, plus conservative review-gate consumption of score labels / blockers for delivery decisions.
+- StrategyDetector provider registry and external plugin template baseline through the `reverse_deepagent.strategy_detectors` entry point; metadata listing is side-effect-free and does not run detectors, collect runtime context, execute replay, start browsers, call MCP, or touch mobile runtimes.
 
 ## Active non-mobile follow-ups
 
@@ -109,7 +110,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 ### Strategy and rebuild quality
 
 - Additional evidence scoring consumers beyond the current review-gate baseline if downstream automation needs richer policy tuning or external CI / delivery integration.
-- Strategy detector pluginization if the built-in strategy corpus grows too large.
+- Real third-party StrategyDetector provider packages beyond the template if site-specific or private detector corpora need to move out of core.
 
 ### Workspace and artifact evolution
 
