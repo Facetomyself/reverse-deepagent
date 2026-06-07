@@ -224,6 +224,7 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertIn("review_workspace_foldered_canonical_migration_post_finalization_audit", tool_names)
         self.assertIn("review_workspace_foldered_canonical_broader_rollout_readiness", tool_names)
         self.assertIn("plan_workspace_foldered_canonical_broader_rollout", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_broader_rollout_preflight", tool_names)
         self.assertIn("plan_workspace_dual_write_pilot", tool_names)
         self.assertIn("review_workspace_dual_write_pilot_workflow", tool_names)
         self.assertIn("record_workspace_dual_write_pilot_result", tool_names)
