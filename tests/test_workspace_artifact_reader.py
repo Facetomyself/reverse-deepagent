@@ -13,6 +13,7 @@ from reverse_deepagent.tools.artifact_tools import (
     plan_workspace_foldered_canonical_migration_finalization_payload,
     record_workspace_foldered_canonical_migration_post_apply_validation_result_payload,
     review_workspace_foldered_canonical_migration_finalization_readiness_payload,
+    review_workspace_foldered_canonical_migration_finalization_preflight_payload,
     review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload,
     review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_payload,
     make_assess_workspace_consumer_readiness_score_tool,
@@ -21,6 +22,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool,
     make_execute_workspace_foldered_canonical_physical_apply_tool,
     make_plan_workspace_foldered_canonical_migration_finalization_tool,
+    make_review_workspace_foldered_canonical_migration_finalization_preflight_tool,
     make_plan_workspace_foldered_canonical_migration_pilot_tool,
     make_plan_workspace_foldered_canonical_migration_apply_tool,
     make_plan_workspace_foldered_canonical_migration_approval_tool,
@@ -1066,6 +1068,27 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             ],
         }
 
+    def _approval_ledger_for_finalization(self, plan: dict, *, digest_override: str | None = None) -> dict:
+        digest = digest_override or plan["digest_guard"]["foldered_canonical_finalization_plan_digest"]
+        return {
+            "version": "2026-06-01.review-approval-ledger-v1",
+            "entry_count": 1,
+            "entries": [
+                {
+                    "approval_id": "approval-foldered-finalization",
+                    "subject_id": plan["approval_requirements"]["subject_id"],
+                    "action": "foldered_canonical_migration_finalization",
+                    "decision": "approved",
+                    "status": "written",
+                    "reviewer": "reviewer-a",
+                    "subject_digest_sha256": digest,
+                    "metadata": {
+                        "idempotency_key": "idem-foldered-finalization",
+                    },
+                }
+            ],
+        }
+
     def _ready_physical_apply_evidence(self, root: Path, artifact_keys: list[str] | None = None) -> tuple[dict, dict, dict, dict]:
         preflight = self._ready_foldered_canonical_migration_preflight(root, artifact_keys or ["workspace_task_card"])
         apply_plan = plan_workspace_foldered_canonical_migration_apply_payload(
@@ -1160,6 +1183,37 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             backend_manifest_json=json.dumps(promoted_manifest),
         )
         return plan, promoted_manifest
+
+    def _ready_finalization_plan(self, root: Path, artifact_keys: list[str] | None = None) -> tuple[dict, dict]:
+        tightening_plan, promoted_manifest = self._ready_legacy_fallback_tightening_plan(
+            root,
+            artifact_keys or ["workspace_task_card"],
+        )
+        tightening_preflight = review_workspace_foldered_canonical_legacy_fallback_tightening_preflight_payload(
+            default_artifact_root=root,
+            legacy_fallback_tightening_plan_json=json.dumps(tightening_plan),
+            backend_manifest_json=json.dumps(promoted_manifest),
+            review_approval_ledger_json=json.dumps(self._approval_ledger_for_legacy_fallback_tightening(tightening_plan)),
+        )
+        tightening_result = execute_workspace_foldered_canonical_legacy_fallback_tightening_payload(
+            default_artifact_root=root,
+            mode="apply",
+            approve_legacy_fallback_tightening=True,
+            legacy_fallback_tightening_preflight_json=json.dumps(tightening_preflight),
+            legacy_fallback_tightening_plan_json=json.dumps(tightening_plan),
+        )
+        tightened_manifest = json.loads((root / "workspace" / "backend-artifact-manifest.json").read_text(encoding="utf-8"))
+        readiness = review_workspace_foldered_canonical_migration_finalization_readiness_payload(
+            default_artifact_root=root,
+            legacy_fallback_tightening_result_json=json.dumps(tightening_result),
+            backend_manifest_json=json.dumps(tightened_manifest),
+        )
+        plan = plan_workspace_foldered_canonical_migration_finalization_payload(
+            default_artifact_root=root,
+            finalization_readiness_json=json.dumps(readiness),
+            backend_manifest_json=json.dumps(tightened_manifest),
+        )
+        return plan, tightened_manifest
 
     def test_foldered_canonical_migration_apply_plan_blocks_without_ready_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2416,7 +2470,7 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertIn("foldered_canonical_finalization_readiness_unavailable_or_malformed", payload["blocking_reasons"])
             self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
             self.assertFalse(payload["executor_gate"]["ready_for_foldered_canonical_finalization_preflight_review"])
-            self.assertFalse(payload["executor_gate"]["preflight_tool_implemented"])
+            self.assertTrue(payload["executor_gate"]["preflight_tool_implemented"])
             self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
@@ -2461,7 +2515,7 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertTrue(payload["digest_guard"]["foldered_canonical_finalization_plan_digest"])
             self.assertEqual(payload["approval_requirements"]["approval_action"], "foldered_canonical_migration_finalization")
             self.assertTrue(payload["executor_gate"]["ready_for_foldered_canonical_finalization_preflight_review"])
-            self.assertFalse(payload["executor_gate"]["preflight_tool_implemented"])
+            self.assertTrue(payload["executor_gate"]["preflight_tool_implemented"])
             self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
             self.assertFalse(payload["executor_gate"]["allows_finalization_in_this_tool"])
             self.assertEqual(payload["planned_manifest_updates"][0]["status"], "ready_for_foldered_canonical_finalization_plan_review")
@@ -2540,6 +2594,118 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertEqual(payload["status"], "ready_for_review")
             self.assertEqual(payload["finalization_readiness_input"]["source"], "artifact-ref")
             self.assertEqual(payload["backend_manifest_input"]["source"], "artifact-ref")
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_foldered_canonical_finalization_preflight_blocks_without_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+            )
+
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-migration-finalization-preflight.v1",
+            )
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("foldered_canonical_finalization_plan_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("review_approval_ledger_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertFalse(payload["executor_gate"]["ready_for_foldered_canonical_finalization_executor_review"])
+            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["finalizes_foldered_canonical_migration"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_foldered_canonical_finalization_preflight_uses_ready_plan_manifest_and_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card", "workspace_runtime_context"])
+
+            payload = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(tightened_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["planned_finalization_update_count"], 2)
+            self.assertEqual(payload["summary"]["manifest_candidate_ready_count"], 2)
+            self.assertTrue(payload["summary"]["matching_review_approval_found"])
+            self.assertTrue(payload["summary"]["ready_for_foldered_canonical_finalization_executor_review"])
+            self.assertTrue(payload["digest_guard"]["digest_matches_approval"])
+            self.assertEqual(
+                payload["digest_guard"]["foldered_canonical_finalization_plan_digest"],
+                plan["digest_guard"]["foldered_canonical_finalization_plan_digest"],
+            )
+            self.assertTrue(payload["review_approval_gate"]["approved"])
+            self.assertTrue(payload["review_approval_gate"]["digest_matches_expected"])
+            self.assertTrue(payload["manifest_revalidation"]["all_candidates_still_ready"])
+            self.assertTrue(payload["transaction_journal_plan"]["required"])
+            self.assertFalse(payload["transaction_journal_plan"]["writes_journal_in_this_tool"])
+            self.assertTrue(payload["idempotency_guard"]["required"])
+            self.assertFalse(payload["idempotency_guard"]["checks_existing_finalization_journal_in_this_tool"])
+            self.assertFalse(payload["executor_gate"]["executor_tool_implemented"])
+            self.assertFalse(payload["executor_gate"]["allows_finalization_in_this_tool"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["finalizes_foldered_canonical_migration"])
+            self.assertIn("run_separate_explicit_finalization_executor_with_transaction_journal", payload["recommended_next_actions"])
+
+    def test_foldered_canonical_finalization_preflight_blocks_stale_manifest_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card"])
+            stale_manifest = json.loads(json.dumps(tightened_manifest))
+            stale_manifest["entries"][0]["metadata"]["workspace_alias"]["legacy_fallback_tightened"] = False
+
+            payload = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+                default_artifact_root=root,
+                finalization_plan_json=json.dumps(plan),
+                backend_manifest_json=json.dumps(stale_manifest),
+                review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("backend_manifest_finalization_candidates_not_ready", payload["blocking_reasons"])
+            self.assertFalse(payload["manifest_revalidation"]["all_candidates_still_ready"])
+            self.assertEqual(
+                payload["manifest_revalidation"]["candidate_results"][0]["status"],
+                "blocked_legacy_fallback_not_tightened",
+            )
+
+    def test_foldered_canonical_finalization_preflight_tool_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            plan, tightened_manifest = self._ready_finalization_plan(root, ["workspace_task_card"])
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "workspace-foldered-canonical-migration-finalization-plan.json").write_text(
+                json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "backend-artifact-manifest.json").write_text(
+                json.dumps(tightened_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (workspace / "review-approval-ledger.json").write_text(
+                json.dumps(self._approval_ledger_for_finalization(plan), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            tool = make_review_workspace_foldered_canonical_migration_finalization_preflight_tool(root)
+
+            payload = tool()
+
+            self.assertEqual(tool.__name__, "review_workspace_foldered_canonical_migration_finalization_preflight")
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["finalization_plan_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["backend_manifest_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["review_approval_ledger_input"]["source"], "artifact-ref")
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["starts_browser"])
             self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
