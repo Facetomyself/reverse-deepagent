@@ -485,6 +485,43 @@ def make_record_workspace_foldered_canonical_migration_post_apply_validation_res
     return record_workspace_foldered_canonical_migration_post_apply_validation_result
 
 
+def make_review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_tool(
+    default_artifact_root: str | Path,
+) -> ArtifactTool:
+    """Create a read-only readiness reviewer for legacy fallback tightening."""
+
+    root = Path(default_artifact_root)
+
+    def review_workspace_foldered_canonical_legacy_fallback_tightening_readiness(
+        artifact_root: str | None = None,
+        post_apply_validation_result_json: str | None = None,
+        post_apply_validation_result_artifact_ref: str | None = "workspace_foldered_canonical_migration_post_apply_validation_result",
+        readiness_score_json: str | None = None,
+        readiness_score_artifact_ref: str | None = "workspace_consumer_readiness_score",
+    ) -> dict[str, Any]:
+        """Review whether legacy fallback tightening can be planned, without mutating manifests."""
+
+        return review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            post_apply_validation_result_json=post_apply_validation_result_json,
+            post_apply_validation_result_artifact_ref=post_apply_validation_result_artifact_ref,
+            readiness_score_json=readiness_score_json,
+            readiness_score_artifact_ref=readiness_score_artifact_ref,
+        )
+
+    review_workspace_foldered_canonical_legacy_fallback_tightening_readiness.__name__ = (
+        "review_workspace_foldered_canonical_legacy_fallback_tightening_readiness"
+    )
+    review_workspace_foldered_canonical_legacy_fallback_tightening_readiness.__doc__ = (
+        "Read-only legacy fallback tightening readiness descriptor. It consumes a verified post-apply validation result and "
+        "an explicit workspace consumer readiness score artifact / JSON, then reports whether a separate reviewed tightening "
+        "plan may be prepared. It does not write artifacts, mutate manifests, change canonical paths, tighten fallback, finalize "
+        "migration, run pipelines, start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return review_workspace_foldered_canonical_legacy_fallback_tightening_readiness
+
+
 def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
 
@@ -3707,6 +3744,217 @@ def _foldered_canonical_post_apply_validation_result_next_actions(
         actions.append("keep_foldered_canonical_finalization_as_separate_reviewed_follow_up")
     if any("legacy_fallback_tightening" in warning for warning in warnings):
         actions.append("do_not_tighten_legacy_fallback_from_this_result_writer")
+    return list(dict.fromkeys(actions))
+
+
+def review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    post_apply_validation_result_json: str | None = None,
+    post_apply_validation_result_artifact_ref: str | None = "workspace_foldered_canonical_migration_post_apply_validation_result",
+    readiness_score_json: str | None = None,
+    readiness_score_artifact_ref: str | None = "workspace_consumer_readiness_score",
+) -> dict[str, Any]:
+    """Return a read-only readiness descriptor for a future legacy fallback tightening plan."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    validation_result, validation_error, validation_input = _load_or_read_workspace_foldered_canonical_post_apply_validation_result(
+        default_artifact_root=effective_root,
+        post_apply_validation_result_json=post_apply_validation_result_json,
+        post_apply_validation_result_artifact_ref=post_apply_validation_result_artifact_ref,
+    )
+    readiness_score, readiness_error, readiness_input = _load_or_read_workspace_consumer_readiness_score_artifact(
+        default_artifact_root=effective_root,
+        readiness_score_json=readiness_score_json,
+        readiness_score_artifact_ref=readiness_score_artifact_ref,
+    )
+    validation_summary = validation_result.get("summary") if isinstance(validation_result.get("summary"), dict) else {}
+    validation_gate = (
+        validation_result.get("legacy_fallback_review_gate")
+        if isinstance(validation_result.get("legacy_fallback_review_gate"), dict)
+        else {}
+    )
+    readiness = readiness_score.get("readiness") if isinstance(readiness_score.get("readiness"), dict) else {}
+    readiness_summary = _compact_workspace_consumer_score(readiness_score)
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if validation_error:
+        blockers.append("post_apply_validation_result_unavailable_or_malformed")
+    if validation_result.get("status") != "verified":
+        blockers.append("post_apply_validation_result_not_verified")
+    if validation_summary.get("all_promotions_observed") is not True:
+        blockers.append("post_apply_validation_result_promotions_not_observed")
+    if validation_gate.get("requires_consumer_readiness_recheck") is not True:
+        warnings.append("post_apply_validation_result_does_not_require_consumer_readiness_recheck")
+    if readiness_error:
+        blockers.append("workspace_consumer_readiness_score_unavailable_or_malformed")
+    if readiness_score.get("status") != "ready_for_foldered_canonical_review":
+        blockers.append("workspace_consumer_readiness_score_not_ready_for_foldered_canonical_review")
+    if readiness.get("foldered_canonical_migration_allowed") is not True:
+        blockers.append("workspace_consumer_readiness_blocks_foldered_canonical_follow_up")
+    for reason in validation_result.get("blocking_reasons") or []:
+        blockers.append(f"post_apply_validation_result:{reason}")
+    for reason in readiness_score.get("blocking_reasons") or []:
+        blockers.append(f"workspace_consumer_readiness_score:{reason}")
+    for warning in validation_result.get("warnings") or []:
+        warnings.append(f"post_apply_validation_result:{warning}")
+    for warning in readiness_score.get("warnings") or []:
+        warnings.append(f"workspace_consumer_readiness_score:{warning}")
+    if not blockers:
+        warnings.append("legacy_fallback_tightening_plan_requires_separate_review")
+        warnings.append("legacy_fallback_tightening_executor_not_run_by_readiness_descriptor")
+
+    status = "ready_for_review" if not blockers else "blocked"
+    validation_result_count = _safe_int(validation_summary.get("validation_result_count"))
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-readiness.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "post_apply_validation_result_status": validation_result.get("status") or "missing",
+            "workspace_consumer_readiness_score_status": readiness_score.get("status") or "missing",
+            "validation_result_count": validation_result_count,
+            "all_promotions_observed": bool(validation_summary.get("all_promotions_observed")),
+            "ready_for_legacy_fallback_tightening_plan_review": status == "ready_for_review",
+            "legacy_fallback_tightened": False,
+            "foldered_canonical_finalized": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "post_apply_validation_result_input": validation_input,
+        "workspace_consumer_readiness_score_input": readiness_input,
+        "post_apply_validation_result_summary": {
+            "schema_version": validation_result.get("schema_version") or "",
+            "status": validation_result.get("status") or "missing",
+            "ready_validation_result_count": _safe_int(validation_summary.get("ready_validation_result_count")),
+            "observed_canonical_path_promotion_validated": bool(
+                validation_summary.get("observed_canonical_path_promotion_validated")
+            ),
+            "result_artifact_written": bool(validation_summary.get("result_artifact_written")),
+            "legacy_fallback_tightened": bool(validation_summary.get("legacy_fallback_tightened")),
+            "foldered_canonical_finalized": bool(validation_summary.get("foldered_canonical_finalized")),
+        },
+        "workspace_consumer_readiness_score_summary": readiness_summary,
+        "readiness_checks": {
+            "post_apply_validation_result_verified": validation_result.get("status") == "verified",
+            "all_promotions_observed": bool(validation_summary.get("all_promotions_observed")),
+            "consumer_readiness_rechecked": not bool(readiness_error),
+            "consumer_readiness_ready_for_foldered_canonical_review": readiness_score.get("status") == "ready_for_foldered_canonical_review",
+            "foldered_canonical_follow_up_allowed": bool(readiness.get("foldered_canonical_migration_allowed")),
+            "requires_separate_apply_plan": True,
+            "requires_explicit_review_approval": True,
+        },
+        "tightening_plan_gate": {
+            "ready_for_legacy_fallback_tightening_plan_review": status == "ready_for_review",
+            "plan_tool": "plan_workspace_foldered_canonical_legacy_fallback_tightening",
+            "plan_tool_implemented": False,
+            "requires_post_apply_validation_result": True,
+            "requires_workspace_consumer_readiness_score": True,
+            "requires_delivery_source_audit_recheck": True,
+            "allows_automatic_execution": False,
+            "allows_manifest_mutation_in_this_tool": False,
+            "allows_legacy_fallback_tightening_in_this_tool": False,
+            "allows_finalization_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_legacy_fallback_tightening_readiness_next_actions(status, blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "tightens_legacy_fallback": False,
+            "finalizes_foldered_canonical_migration": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_post_apply_validation_result(
+    *,
+    default_artifact_root: Path,
+    post_apply_validation_result_json: str | None,
+    post_apply_validation_result_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(post_apply_validation_result_json, field_name="post_apply_validation_result_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = post_apply_validation_result_artifact_ref or "workspace_foldered_canonical_migration_post_apply_validation_result"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "post_apply_validation_result_not_observed", input_summary
+
+
+def _load_or_read_workspace_consumer_readiness_score_artifact(
+    *,
+    default_artifact_root: Path,
+    readiness_score_json: str | None,
+    readiness_score_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(readiness_score_json, field_name="readiness_score_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = readiness_score_artifact_ref or "workspace_consumer_readiness_score"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "workspace_consumer_readiness_score_not_observed", input_summary
+
+
+def _foldered_canonical_legacy_fallback_tightening_readiness_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+) -> list[str]:
+    actions: list[str] = []
+    if "post_apply_validation_result_unavailable_or_malformed" in blockers or "post_apply_validation_result_not_verified" in blockers:
+        actions.append("record_verified_post_apply_validation_result_before_tightening_review")
+    if "workspace_consumer_readiness_score_unavailable_or_malformed" in blockers:
+        actions.append("record_or_pass_ready_workspace_consumer_readiness_score_before_tightening_review")
+    if "workspace_consumer_readiness_score_not_ready_for_foldered_canonical_review" in blockers:
+        actions.append("resolve_workspace_consumer_readiness_blockers_before_legacy_fallback_tightening")
+    if status == "ready_for_review":
+        actions.append("review_legacy_fallback_tightening_plan_as_separate_step")
+        actions.append("keep_foldered_canonical_finalization_separate_from_fallback_tightening")
+    if any("executor_not_run" in warning for warning in warnings):
+        actions.append("do_not_mutate_manifest_from_readiness_descriptor")
     return list(dict.fromkeys(actions))
 
 

@@ -9,6 +9,7 @@ from reverse_deepagent.tools.artifact_tools import (
     audit_workspace_artifact_consumers_payload,
     execute_workspace_foldered_canonical_physical_apply_payload,
     record_workspace_foldered_canonical_migration_post_apply_validation_result_payload,
+    review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload,
     make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
@@ -21,6 +22,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_review_workspace_foldered_canonical_migration_post_apply_validation_tool,
     make_review_workspace_foldered_canonical_migration_preflight_tool,
     make_record_workspace_foldered_canonical_migration_post_apply_validation_result_tool,
+    make_review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_tool,
     make_plan_workspace_dual_write_expansion_tool,
     make_plan_workspace_dual_write_pilot_tool,
     make_read_workspace_artifact_tool,
@@ -1709,6 +1711,141 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
                 "reverse-deepagent.workspace-foldered-canonical-migration-post-apply-validation-result.v1",
             )
             self.assertEqual(payload["status"], "verified")
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+
+    def test_legacy_fallback_tightening_readiness_blocks_without_validation_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload(
+                default_artifact_root=root,
+            )
+
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-readiness.v1",
+            )
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("post_apply_validation_result_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("workspace_consumer_readiness_score_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertFalse(payload["tightening_plan_gate"]["ready_for_legacy_fallback_tightening_plan_review"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["tightens_legacy_fallback"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_legacy_fallback_tightening_readiness_uses_verified_result_and_readiness_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            validation_result = {
+                "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-post-apply-validation-result.v1",
+                "status": "verified",
+                "summary": {
+                    "validation_result_count": 2,
+                    "ready_validation_result_count": 2,
+                    "all_promotions_observed": True,
+                    "observed_canonical_path_promotion_validated": True,
+                    "result_artifact_written": True,
+                    "legacy_fallback_tightened": False,
+                    "foldered_canonical_finalized": False,
+                },
+                "legacy_fallback_review_gate": {
+                    "requires_consumer_readiness_recheck": True,
+                    "requires_delivery_source_audit_recheck": True,
+                },
+                "blocking_reasons": [],
+                "warnings": [],
+            }
+            readiness_score = self._ready_foldered_canonical_readiness_score()
+
+            payload = review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload(
+                default_artifact_root=root,
+                post_apply_validation_result_json=json.dumps(validation_result),
+                readiness_score_json=json.dumps(readiness_score),
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["validation_result_count"], 2)
+            self.assertTrue(payload["summary"]["all_promotions_observed"])
+            self.assertTrue(payload["summary"]["ready_for_legacy_fallback_tightening_plan_review"])
+            self.assertTrue(payload["readiness_checks"]["post_apply_validation_result_verified"])
+            self.assertTrue(payload["readiness_checks"]["consumer_readiness_ready_for_foldered_canonical_review"])
+            self.assertFalse(payload["tightening_plan_gate"]["plan_tool_implemented"])
+            self.assertFalse(payload["tightening_plan_gate"]["allows_legacy_fallback_tightening_in_this_tool"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["tightens_legacy_fallback"])
+            self.assertFalse(payload["side_effect_policy"]["finalizes_foldered_canonical_migration"])
+            self.assertIn("review_legacy_fallback_tightening_plan_as_separate_step", payload["recommended_next_actions"])
+
+    def test_legacy_fallback_tightening_readiness_blocks_unready_consumer_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            validation_result = {
+                "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-post-apply-validation-result.v1",
+                "status": "verified",
+                "summary": {
+                    "validation_result_count": 1,
+                    "ready_validation_result_count": 1,
+                    "all_promotions_observed": True,
+                    "observed_canonical_path_promotion_validated": True,
+                },
+                "legacy_fallback_review_gate": {"requires_consumer_readiness_recheck": True},
+                "blocking_reasons": [],
+                "warnings": [],
+            }
+            readiness_score = {
+                "schema_version": "reverse-deepagent.workspace-consumer-readiness-score.v1",
+                "status": "blocked",
+                "summary": {"overall_score": 0.4, "overall_label": "blocked"},
+                "readiness": {
+                    "foldered_canonical_migration_allowed": False,
+                    "limited_dual_write_expansion_review_allowed": False,
+                },
+                "pilot_evidence": {"status": "missing", "score": 0.0},
+                "blocking_reasons": ["source_path_usage_observed"],
+                "warnings": [],
+            }
+
+            payload = review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload(
+                default_artifact_root=root,
+                post_apply_validation_result_json=json.dumps(validation_result),
+                readiness_score_json=json.dumps(readiness_score),
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertIn("workspace_consumer_readiness_score_not_ready_for_foldered_canonical_review", payload["blocking_reasons"])
+            self.assertIn("workspace_consumer_readiness_score:source_path_usage_observed", payload["blocking_reasons"])
+            self.assertFalse(payload["readiness_checks"]["foldered_canonical_follow_up_allowed"])
+
+    def test_legacy_fallback_tightening_readiness_tool_returns_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            validation_result = {
+                "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-post-apply-validation-result.v1",
+                "status": "verified",
+                "summary": {
+                    "validation_result_count": 1,
+                    "ready_validation_result_count": 1,
+                    "all_promotions_observed": True,
+                    "observed_canonical_path_promotion_validated": True,
+                },
+                "legacy_fallback_review_gate": {"requires_consumer_readiness_recheck": True},
+                "blocking_reasons": [],
+                "warnings": [],
+            }
+            tool = make_review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_tool(root)
+
+            payload = tool(
+                post_apply_validation_result_json=json.dumps(validation_result),
+                readiness_score_json=json.dumps(self._ready_foldered_canonical_readiness_score()),
+            )
+
+            self.assertEqual(tool.__name__, "review_workspace_foldered_canonical_legacy_fallback_tightening_readiness")
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-legacy-fallback-tightening-readiness.v1",
+            )
+            self.assertEqual(payload["status"], "ready_for_review")
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
 
     def test_foldered_canonical_physical_apply_preflight_blocks_without_approval_ledger(self) -> None:
