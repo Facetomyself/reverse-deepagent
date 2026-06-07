@@ -129,6 +129,43 @@ def make_assess_workspace_consumer_readiness_score_tool(default_artifact_root: s
     return assess_workspace_consumer_readiness_score
 
 
+def make_plan_workspace_dual_write_expansion_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only tool for reviewed opt-in workspace dual-write expansion planning."""
+
+    root = Path(default_artifact_root)
+
+    def plan_workspace_dual_write_expansion(
+        artifact_root: str | None = None,
+        readiness_score_json: str | None = None,
+        readiness_report_json: str | None = None,
+        pilot_result_json: str | None = None,
+        artifact_keys_json: str | None = None,
+        max_artifacts: int = 24,
+        include_medium_risk: bool = False,
+    ) -> dict[str, Any]:
+        """Plan opt-in dual-write expansion without enabling dual-write or writing artifacts."""
+
+        return plan_workspace_dual_write_expansion_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            readiness_score_json=readiness_score_json,
+            readiness_report_json=readiness_report_json,
+            pilot_result_json=pilot_result_json,
+            artifact_keys_json=artifact_keys_json,
+            max_artifacts=max_artifacts,
+            include_medium_risk=include_medium_risk,
+        )
+
+    plan_workspace_dual_write_expansion.__name__ = "plan_workspace_dual_write_expansion"
+    plan_workspace_dual_write_expansion.__doc__ = (
+        "Read-only opt-in workspace dual-write expansion plan. It consumes workspace-consumer-readiness-score evidence, "
+        "optional migration readiness / pilot result inputs, and optional reviewed artifact keys to produce the next reviewed expansion scope. "
+        "It does not inspect files, write artifacts, create directories, run pipelines, enable dual-write, migrate paths, change canonical paths, "
+        "start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return plan_workspace_dual_write_expansion
+
+
 def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only tool for limited workspace dual-write pilot planning."""
 
@@ -685,6 +722,230 @@ def _workspace_consumer_score_next_actions(
         actions.append("review_narrow_foldered_canonical_migration_pilot")
     if not actions:
         actions.append("resolve_workspace_consumer_readiness_blockers")
+    return actions
+
+
+def plan_workspace_dual_write_expansion_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    readiness_score_json: str | None = None,
+    readiness_report_json: str | None = None,
+    pilot_result_json: str | None = None,
+    artifact_keys_json: str | None = None,
+    max_artifacts: int = 24,
+    include_medium_risk: bool = False,
+) -> dict[str, Any]:
+    """Return a review-only opt-in dual-write expansion plan."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    readiness_score, readiness_score_error = _load_or_compute_workspace_consumer_readiness_score(
+        default_artifact_root=effective_root,
+        readiness_score_json=readiness_score_json,
+        readiness_report_json=readiness_report_json,
+        pilot_result_json=pilot_result_json,
+    )
+    requested_keys, requested_error = _parse_artifact_keys_json(artifact_keys_json)
+    explicit_selection = requested_keys is not None
+    max_count = max(0, int(max_artifacts))
+    routes = list(default_workspace_artifact_routes())
+    routes_by_key = {route.artifact_key: route for route in routes}
+    resolver = WorkspacePathResolver(enable_dual_write=True)
+
+    selected_routes: list[Any] = []
+    unknown_keys: list[str] = []
+    if explicit_selection:
+        for key in requested_keys or []:
+            route = routes_by_key.get(key)
+            if route is None:
+                unknown_keys.append(key)
+                continue
+            selected_routes.append(route)
+        if max_count:
+            selected_routes = selected_routes[:max_count]
+    else:
+        for route in routes:
+            risk = _dual_write_route_risk(route)
+            if risk["risk_level"] == "low" or (include_medium_risk and risk["risk_level"] == "medium"):
+                selected_routes.append(route)
+            if max_count and len(selected_routes) >= max_count:
+                break
+    if max_count == 0:
+        selected_routes = []
+
+    candidate_artifacts: list[dict[str, Any]] = []
+    high_risk_requested: list[str] = []
+    medium_risk_selected: list[str] = []
+    for route in selected_routes:
+        risk = _dual_write_route_risk(route)
+        if risk["risk_level"] == "high":
+            high_risk_requested.append(route.artifact_key)
+        if risk["risk_level"] == "medium":
+            medium_risk_selected.append(route.artifact_key)
+        plan = resolver.plan_dual_write(route.artifact_key)
+        candidate_artifacts.append(
+            {
+                "artifact_key": route.artifact_key,
+                "legacy_path": route.legacy_path,
+                "future_path": route.future_path,
+                "virtual_uri": plan.get("virtual_uri"),
+                "category": route.category,
+                "producer_roles": list(route.producer_roles),
+                "risk": risk,
+                "dual_write_plan": plan,
+                "review_required": True,
+                "expansion_only": True,
+            }
+        )
+
+    readiness = readiness_score.get("readiness") if isinstance(readiness_score.get("readiness"), dict) else {}
+    pilot_evidence = readiness_score.get("pilot_evidence") if isinstance(readiness_score.get("pilot_evidence"), dict) else {}
+    readiness_status = str(readiness_score.get("status") or "blocked")
+    pilot_score = float(pilot_evidence.get("score") or 0.0)
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if readiness_score_error:
+        blockers.append("workspace_consumer_readiness_score_malformed")
+    if not bool(readiness.get("limited_dual_write_expansion_review_allowed")):
+        blockers.append("workspace_consumer_readiness_not_ready_for_expansion")
+    if pilot_score < 1.0:
+        blockers.append("verified_dual_write_pilot_result_required_before_expansion")
+    if requested_error:
+        blockers.append("artifact_keys_json_malformed")
+    if unknown_keys:
+        blockers.append("unknown_requested_artifact_keys")
+    if high_risk_requested:
+        blockers.append("high_risk_requested_artifacts_require_separate_review")
+    if medium_risk_selected and not include_medium_risk:
+        blockers.append("medium_risk_artifacts_require_explicit_include_medium_risk")
+    if not candidate_artifacts:
+        blockers.append("no_dual_write_expansion_candidates_selected")
+    if medium_risk_selected and include_medium_risk:
+        warnings.append("medium_risk_artifacts_selected_for_explicit_review")
+    if readiness_status == "ready_for_limited_dual_write_review" and pilot_score >= 1.0:
+        warnings.append("foldered_canonical_migration_still_requires_separate_review")
+    status = "ready_for_review" if not blockers else "blocked"
+    return {
+        "schema_version": "reverse-deepagent.workspace-dual-write-expansion-plan.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "candidate_count": len(candidate_artifacts),
+            "readiness_score_status": readiness_status,
+            "readiness_score_overall": readiness_score.get("summary", {}).get("overall_score") if isinstance(readiness_score.get("summary"), dict) else None,
+            "pilot_result_status": pilot_evidence.get("status") or "missing",
+            "pilot_evidence_score": pilot_score,
+            "unknown_requested_artifact_key_count": len(unknown_keys),
+            "high_risk_requested_artifact_count": len(high_risk_requested),
+            "medium_risk_selected_artifact_count": len(medium_risk_selected),
+            "explicit_selection": explicit_selection,
+            "max_artifacts": max_count,
+            "review_required": True,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "selection_policy": {
+            "default_risk_level": "low",
+            "default_allows_medium_risk": False,
+            "include_medium_risk_requested": bool(include_medium_risk),
+            "requires_workspace_consumer_readiness_score": True,
+            "requires_verified_dual_write_pilot_result": True,
+            "legacy_canonical_path_remains_authoritative": True,
+            "physical_migration_enabled": False,
+            "actual_dual_write_enabled": False,
+        },
+        "readiness_score_summary": _compact_workspace_consumer_score(readiness_score),
+        "candidate_artifacts": candidate_artifacts,
+        "blocked_artifacts": {
+            "unknown_artifact_keys": unknown_keys,
+            "high_risk_requested_artifact_keys": high_risk_requested,
+            "medium_risk_selected_artifact_keys": medium_risk_selected,
+        },
+        "blocking_reasons": blockers,
+        "warnings": warnings,
+        "recommended_next_actions": _workspace_dual_write_expansion_next_actions(blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_compute_workspace_consumer_readiness_score(
+    *,
+    default_artifact_root: Path,
+    readiness_score_json: str | None,
+    readiness_report_json: str | None,
+    pilot_result_json: str | None,
+) -> tuple[dict[str, Any], str]:
+    payload, error = _parse_json_object(readiness_score_json, field_name="readiness_score_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, ""
+        return {
+            "schema_version": "invalid-json",
+            "status": "blocked",
+            "summary": {"overall_score": 0.0},
+            "readiness": {"limited_dual_write_expansion_review_allowed": False},
+            "pilot_evidence": {"status": "malformed", "score": 0.0},
+        }, error
+    return assess_workspace_consumer_readiness_score_payload(
+        default_artifact_root=default_artifact_root,
+        readiness_report_json=readiness_report_json,
+        pilot_result_json=pilot_result_json,
+    ), ""
+
+
+def _compact_workspace_consumer_score(readiness_score: dict[str, Any]) -> dict[str, Any]:
+    summary = readiness_score.get("summary") if isinstance(readiness_score.get("summary"), dict) else {}
+    readiness = readiness_score.get("readiness") if isinstance(readiness_score.get("readiness"), dict) else {}
+    pilot = readiness_score.get("pilot_evidence") if isinstance(readiness_score.get("pilot_evidence"), dict) else {}
+    return {
+        "schema_version": readiness_score.get("schema_version") or "",
+        "status": readiness_score.get("status") or "blocked",
+        "overall_score": summary.get("overall_score"),
+        "overall_label": summary.get("overall_label"),
+        "limited_dual_write_expansion_review_allowed": bool(readiness.get("limited_dual_write_expansion_review_allowed")),
+        "foldered_canonical_migration_allowed": bool(readiness.get("foldered_canonical_migration_allowed")),
+        "pilot_result_status": pilot.get("status") or "missing",
+        "pilot_evidence_score": float(pilot.get("score") or 0.0),
+        "blocking_reasons": readiness_score.get("blocking_reasons") if isinstance(readiness_score.get("blocking_reasons"), list) else [],
+        "warnings": readiness_score.get("warnings") if isinstance(readiness_score.get("warnings"), list) else [],
+    }
+
+
+def _workspace_dual_write_expansion_next_actions(blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "workspace_consumer_readiness_score_malformed" in blockers:
+        actions.append("fix_readiness_score_json_or_omit_it_to_recompute_score")
+    if "workspace_consumer_readiness_not_ready_for_expansion" in blockers:
+        actions.append("resolve_workspace_consumer_readiness_blockers_before_expansion")
+    if "verified_dual_write_pilot_result_required_before_expansion" in blockers:
+        actions.append("run_and_record_verified_scoped_dual_write_pilot_before_expansion")
+    if "artifact_keys_json_malformed" in blockers:
+        actions.append("fix_artifact_keys_json_and_retry_expansion_plan")
+    if "unknown_requested_artifact_keys" in blockers:
+        actions.append("remove_or_register_unknown_artifact_keys")
+    if "high_risk_requested_artifacts_require_separate_review" in blockers:
+        actions.append("split_high_risk_delivery_or_transaction_artifacts_into_separate_manual_review")
+    if "medium_risk_artifacts_require_explicit_include_medium_risk" in blockers:
+        actions.append("set_include_medium_risk_only_after_explicit_review")
+    if "no_dual_write_expansion_candidates_selected" in blockers:
+        actions.append("select_reviewed_low_risk_workspace_artifact_keys_for_expansion")
+    if not blockers:
+        actions.append("review_expansion_plan_then_run_pipeline_with_scoped_workspace_dual_write_keys")
+    if "foldered_canonical_migration_still_requires_separate_review" in warnings:
+        actions.append("keep_foldered_canonical_migration_as_separate_pilot_after_expansion_evidence")
     return actions
 
 

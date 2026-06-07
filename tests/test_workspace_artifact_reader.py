@@ -10,11 +10,13 @@ from reverse_deepagent.tools.artifact_tools import (
     make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
+    make_plan_workspace_dual_write_expansion_tool,
     make_plan_workspace_dual_write_pilot_tool,
     make_read_workspace_artifact_tool,
     make_record_workspace_dual_write_pilot_result_tool,
     make_review_workspace_dual_write_pilot_workflow_tool,
     plan_workspace_dual_write_pilot_payload,
+    plan_workspace_dual_write_expansion_payload,
     record_workspace_dual_write_pilot_result_payload,
     review_workspace_dual_write_pilot_workflow_payload,
     summarize_workspace_artifact_read,
@@ -332,6 +334,88 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertEqual(tool.__name__, "assess_workspace_consumer_readiness_score")
             self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-consumer-readiness-score.v1")
             self.assertEqual(payload["summary"]["mobile_full_runtime_chains_deferred"], True)
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["creates_directories"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_workspace_dual_write_expansion_plan_blocks_without_verified_pilot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = plan_workspace_dual_write_expansion_payload(default_artifact_root=root, max_artifacts=2)
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-dual-write-expansion-plan.v1")
+            self.assertEqual(payload["status"], "blocked")
+            self.assertEqual(payload["summary"]["candidate_count"], 2)
+            self.assertIn("verified_dual_write_pilot_result_required_before_expansion", payload["blocking_reasons"])
+            self.assertTrue(payload["selection_policy"]["requires_workspace_consumer_readiness_score"])
+            self.assertTrue(payload["selection_policy"]["requires_verified_dual_write_pilot_result"])
+            self.assertFalse(payload["selection_policy"]["actual_dual_write_enabled"])
+            for candidate in payload["candidate_artifacts"]:
+                self.assertEqual(candidate["risk"]["risk_level"], "low")
+                self.assertTrue(candidate["dual_write_plan"]["dual_write_enabled"])
+                self.assertTrue(candidate["dual_write_plan"]["canonical_path_remains_authoritative"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["files_inspected"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["runs_pipeline"])
+            self.assertFalse(payload["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_workspace_dual_write_expansion_plan_uses_verified_score_and_explicit_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            readiness_score = {
+                "schema_version": "reverse-deepagent.workspace-consumer-readiness-score.v1",
+                "status": "ready_for_limited_dual_write_review",
+                "summary": {
+                    "overall_score": 0.75,
+                    "overall_label": "ready_for_limited_dual_write_review",
+                },
+                "readiness": {
+                    "limited_dual_write_expansion_review_allowed": True,
+                    "foldered_canonical_migration_allowed": False,
+                },
+                "pilot_evidence": {
+                    "schema_version": "reverse-deepagent.workspace-dual-write-pilot-result.v1",
+                    "status": "verified",
+                    "score": 1.0,
+                },
+                "blocking_reasons": ["resolver_adoption_incomplete"],
+                "warnings": [],
+            }
+
+            payload = plan_workspace_dual_write_expansion_payload(
+                default_artifact_root=root,
+                readiness_score_json=json.dumps(readiness_score),
+                artifact_keys_json=json.dumps(["workspace_task_card", "workspace_runtime_context"]),
+            )
+
+            self.assertEqual(payload["status"], "ready_for_review")
+            self.assertEqual(payload["summary"]["candidate_count"], 2)
+            self.assertEqual(payload["summary"]["pilot_evidence_score"], 1.0)
+            self.assertEqual(payload["blocking_reasons"], [])
+            self.assertIn("foldered_canonical_migration_still_requires_separate_review", payload["warnings"])
+            self.assertEqual(
+                [item["artifact_key"] for item in payload["candidate_artifacts"]],
+                ["workspace_task_card", "workspace_runtime_context"],
+            )
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["changes_canonical_paths"])
+
+    def test_workspace_dual_write_expansion_tool_returns_payload_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            tool = make_plan_workspace_dual_write_expansion_tool(root)
+
+            payload = tool(max_artifacts=1)
+
+            self.assertEqual(tool.__name__, "plan_workspace_dual_write_expansion")
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-dual-write-expansion-plan.v1")
+            self.assertEqual(payload["summary"]["candidate_count"], 1)
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["creates_directories"])
             self.assertFalse(payload["side_effect_policy"]["calls_mcp"])

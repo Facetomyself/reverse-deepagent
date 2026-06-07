@@ -2716,3 +2716,15 @@ The DeepAgents agent tool list includes `assess_workspace_consumer_readiness_sco
 Boundary: this descriptor is read-only. It does not inspect files, write artifacts, create directories, run pipelines, enable dual-write, migrate paths, change canonical paths, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Broader opt-in dual-write rollout and narrow foldered-canonical migration pilots remain follow-up work gated by reviewed evidence.
 
 Tests cover default score side-effect policy, source_path / external source path blockers, verified pilot evidence scoring, workspace route aliasing, default agent tool exposure, compileall, and workspace / contract / rebuild-agent regressions.
+
+### Step 211：Opt-in workspace dual-write expansion plan baseline
+
+Status: implemented as a read-only / plan-only opt-in workspace dual-write expansion planner after the consumer readiness score. This is not a broader rollout executor, not a pipeline runner, not physical folder migration, not a canonical path change, not browser / CDP / MCP integration, and not Android / iOS / mini-program full runtime chain.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `plan_workspace_dual_write_expansion_payload(...)` and `make_plan_workspace_dual_write_expansion_tool(...)`. The planner consumes `workspace-consumer-readiness-score` JSON or recomputes it from optional migration readiness / pilot result inputs, requires verified dual-write pilot evidence before expansion review, and selects low-risk workspace artifact keys by default. Explicit artifact keys can be reviewed, unknown keys are blocked, high-risk delivery / transaction artifacts remain blocked, and medium-risk artifacts require explicit `include_medium_risk` review.
+
+The DeepAgents agent tool list includes `plan_workspace_dual_write_expansion`, and the workspace contract indexes `workspace/workspace-dual-write-expansion-plan.json` with future alias `/workspace/review/workspace-dual-write-expansion-plan.json`. Candidate artifacts carry legacy path, future path, virtual URI, risk classification, and a plan-only `WorkspacePathResolver(enable_dual_write=True)` write path preview while keeping canonical flat paths authoritative.
+
+Boundary: this descriptor is read-only and plan-only. It does not inspect files, write artifacts, create directories, run pipelines, enable dual-write, migrate paths, change canonical paths, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Actual reviewed expansion runs and foldered-canonical migration pilots remain separate follow-up work gated by explicit pipeline execution and observed evidence.
+
+Tests cover blocking without verified pilot evidence, verified score + explicit key planning, side-effect policy, workspace route aliasing, default agent tool exposure, compileall, and workspace / contract / rebuild-agent regressions.
