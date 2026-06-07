@@ -449,6 +449,48 @@ def make_review_workspace_foldered_canonical_migration_post_apply_validation_too
     return review_workspace_foldered_canonical_migration_post_apply_validation
 
 
+def make_review_workspace_foldered_canonical_migration_physical_apply_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only physical-apply preflight reviewer for foldered-canonical migration."""
+
+    root = Path(default_artifact_root)
+
+    def review_workspace_foldered_canonical_migration_physical_apply_preflight(
+        artifact_root: str | None = None,
+        migration_manifest_dry_run_json: str | None = None,
+        migration_manifest_dry_run_artifact_ref: str | None = "workspace_foldered_canonical_migration_manifest_dry_run",
+        migration_apply_plan_json: str | None = None,
+        migration_apply_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_apply_plan",
+        review_approval_ledger_json: str | None = None,
+        review_approval_ledger_artifact_ref: str | None = "workspace_review_approval_ledger",
+        rollback_checkpoint_json: str | None = None,
+        rollback_checkpoint_artifact_ref: str | None = "workspace_foldered_canonical_migration_rollback_checkpoint",
+    ) -> dict[str, Any]:
+        """Review physical apply executor inputs without writing journals, checkpoints, or manifests."""
+
+        return review_workspace_foldered_canonical_migration_physical_apply_preflight_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            migration_manifest_dry_run_json=migration_manifest_dry_run_json,
+            migration_manifest_dry_run_artifact_ref=migration_manifest_dry_run_artifact_ref,
+            migration_apply_plan_json=migration_apply_plan_json,
+            migration_apply_plan_artifact_ref=migration_apply_plan_artifact_ref,
+            review_approval_ledger_json=review_approval_ledger_json,
+            review_approval_ledger_artifact_ref=review_approval_ledger_artifact_ref,
+            rollback_checkpoint_json=rollback_checkpoint_json,
+            rollback_checkpoint_artifact_ref=rollback_checkpoint_artifact_ref,
+        )
+
+    review_workspace_foldered_canonical_migration_physical_apply_preflight.__name__ = "review_workspace_foldered_canonical_migration_physical_apply_preflight"
+    review_workspace_foldered_canonical_migration_physical_apply_preflight.__doc__ = (
+        "Read-only foldered-canonical migration physical apply executor preflight descriptor. It consumes a ready manifest "
+        "dry-run, matching apply plan, review approval ledger evidence, and optional rollback checkpoint evidence, then checks "
+        "the explicit executor gate before any mutation. It does not write journals, write checkpoints, write artifacts, inspect "
+        "files, create directories, run pipelines, enable dual-write, migrate paths, change canonical paths, mutate manifests, "
+        "start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return review_workspace_foldered_canonical_migration_physical_apply_preflight
+
+
 def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only tool for limited workspace dual-write pilot planning."""
 
@@ -3369,6 +3411,405 @@ def _foldered_canonical_post_apply_validation_next_actions(blockers: list[str], 
         actions.append("keep_legacy_fallback_until_delivery_source_audit_and_consumer_readiness_are_rechecked")
     if any("workspace_alias_metadata_missing" in warning for warning in warnings):
         actions.append("review_backend_manifest_workspace_alias_metadata_after_apply")
+    return actions
+
+
+def review_workspace_foldered_canonical_migration_physical_apply_preflight_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    migration_manifest_dry_run_json: str | None = None,
+    migration_manifest_dry_run_artifact_ref: str | None = "workspace_foldered_canonical_migration_manifest_dry_run",
+    migration_apply_plan_json: str | None = None,
+    migration_apply_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_apply_plan",
+    review_approval_ledger_json: str | None = None,
+    review_approval_ledger_artifact_ref: str | None = "workspace_review_approval_ledger",
+    rollback_checkpoint_json: str | None = None,
+    rollback_checkpoint_artifact_ref: str | None = "workspace_foldered_canonical_migration_rollback_checkpoint",
+) -> dict[str, Any]:
+    """Return a read-only preflight descriptor for a future foldered-canonical physical apply executor."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    dry_run, dry_run_error, dry_run_input = _load_or_read_workspace_foldered_canonical_migration_manifest_dry_run(
+        default_artifact_root=effective_root,
+        migration_manifest_dry_run_json=migration_manifest_dry_run_json,
+        migration_manifest_dry_run_artifact_ref=migration_manifest_dry_run_artifact_ref,
+    )
+    apply_plan, apply_plan_error, apply_plan_input = _load_or_read_workspace_foldered_canonical_migration_apply_plan(
+        default_artifact_root=effective_root,
+        migration_apply_plan_json=migration_apply_plan_json,
+        migration_apply_plan_artifact_ref=migration_apply_plan_artifact_ref,
+    )
+    approval_ledger, approval_ledger_error, approval_ledger_input = _load_or_read_review_approval_ledger(
+        default_artifact_root=effective_root,
+        review_approval_ledger_json=review_approval_ledger_json,
+        review_approval_ledger_artifact_ref=review_approval_ledger_artifact_ref,
+    )
+    rollback_checkpoint, rollback_checkpoint_error, rollback_checkpoint_input = _load_or_read_workspace_foldered_canonical_rollback_checkpoint(
+        default_artifact_root=effective_root,
+        rollback_checkpoint_json=rollback_checkpoint_json,
+        rollback_checkpoint_artifact_ref=rollback_checkpoint_artifact_ref,
+    )
+
+    dry_run_gate = dry_run.get("execution_gate") if isinstance(dry_run.get("execution_gate"), dict) else {}
+    dry_run_digest = dry_run.get("digest_guard") if isinstance(dry_run.get("digest_guard"), dict) else {}
+    dry_run_manifest = dry_run.get("manifest_dry_run") if isinstance(dry_run.get("manifest_dry_run"), dict) else {}
+    dry_run_rollback = dry_run.get("rollback_checkpoint") if isinstance(dry_run.get("rollback_checkpoint"), dict) else {}
+    apply_plan_section = apply_plan.get("apply_plan") if isinstance(apply_plan.get("apply_plan"), dict) else {}
+    planned_steps = apply_plan_section.get("planned_steps") if isinstance(apply_plan_section.get("planned_steps"), list) else []
+    valid_steps = [step for step in planned_steps if isinstance(step, dict)]
+    current_apply_plan_digest = _foldered_canonical_apply_plan_digest(apply_plan)
+    dry_run_apply_plan_digest = str(dry_run_digest.get("current_apply_plan_digest") or dry_run_digest.get("approval_apply_plan_digest") or "")
+    expected_approval = _foldered_canonical_physical_apply_expected_approval(
+        apply_plan_digest=current_apply_plan_digest,
+        dry_run=dry_run,
+    )
+    approval_evidence = _foldered_canonical_physical_apply_approval_evidence(
+        approval_ledger=approval_ledger,
+        expected=expected_approval,
+    )
+    rollback_evidence = _foldered_canonical_physical_apply_rollback_evidence(
+        rollback_checkpoint=rollback_checkpoint,
+        rollback_checkpoint_error=rollback_checkpoint_error,
+        rollback_plan=dry_run_rollback,
+        apply_plan_digest=current_apply_plan_digest,
+    )
+    executor_inputs = _foldered_canonical_physical_apply_executor_inputs(
+        apply_plan=apply_plan,
+        dry_run=dry_run,
+        approval_evidence=approval_evidence,
+        rollback_evidence=rollback_evidence,
+    )
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if dry_run_error:
+        blockers.append("foldered_canonical_migration_manifest_dry_run_unavailable_or_malformed")
+    if dry_run.get("status") != "ready_for_review":
+        blockers.append("foldered_canonical_migration_manifest_dry_run_not_ready")
+    if dry_run_gate.get("ready_for_manifest_dry_run_review") is not True:
+        blockers.append("manifest_dry_run_review_gate_not_ready")
+    if apply_plan_error:
+        blockers.append("foldered_canonical_migration_apply_plan_unavailable_or_malformed")
+    if apply_plan.get("status") != "ready_for_review":
+        blockers.append("foldered_canonical_migration_apply_plan_not_ready")
+    if apply_plan_section.get("plan_only") is not True:
+        blockers.append("foldered_canonical_migration_apply_plan_not_plan_only")
+    if not valid_steps:
+        blockers.append("physical_apply_preflight_has_no_apply_steps")
+    if dry_run_apply_plan_digest and current_apply_plan_digest and dry_run_apply_plan_digest != current_apply_plan_digest:
+        blockers.append("manifest_dry_run_apply_plan_digest_mismatch")
+    if not dry_run_apply_plan_digest:
+        blockers.append("manifest_dry_run_apply_plan_digest_missing")
+    if approval_ledger_error:
+        blockers.append("review_approval_ledger_unavailable_or_malformed")
+    if not approval_evidence["matching_approval_found"]:
+        blockers.append("review_approval_ledger_missing_matching_physical_apply_approval")
+    if not approval_evidence["approved"]:
+        blockers.append("review_approval_ledger_does_not_approve_physical_apply")
+    if dry_run_rollback.get("required_before_apply") is not True:
+        blockers.append("rollback_checkpoint_requirement_not_ready")
+    if dry_run_manifest.get("planned_changes") and dry_run_manifest.get("writes_artifact_in_this_tool") is not False:
+        blockers.append("manifest_dry_run_allows_artifact_write_in_tool")
+    if dry_run_manifest.get("mutates_manifest_in_this_tool") is not False:
+        blockers.append("manifest_dry_run_allows_manifest_mutation_in_tool")
+    if rollback_evidence["checkpoint_provided"] and not rollback_evidence["checkpoint_matches_apply_plan_digest"]:
+        blockers.append("rollback_checkpoint_apply_plan_digest_mismatch")
+    if not rollback_evidence["checkpoint_provided"]:
+        warnings.append("rollback_checkpoint_must_be_materialized_by_physical_apply_executor_before_manifest_mutation")
+    if rollback_evidence["checkpoint_provided"] and not rollback_evidence["captures_backend_manifest_snapshot"]:
+        warnings.append("rollback_checkpoint_missing_backend_manifest_snapshot_evidence")
+    if not blockers:
+        warnings.append("physical_apply_preflight_ready_for_explicit_reviewed_executor")
+        warnings.append("post_apply_validation_must_run_after_physical_apply")
+
+    status = "ready_for_review" if not blockers else "blocked"
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-physical-apply-preflight.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "manifest_dry_run_status": dry_run.get("status") or "missing",
+            "apply_plan_status": apply_plan.get("status") or "missing",
+            "planned_apply_step_count": len(valid_steps),
+            "review_approval_ledger_status": "loaded" if not approval_ledger_error else "missing_or_blocked",
+            "matching_review_approval_found": approval_evidence["matching_approval_found"],
+            "rollback_checkpoint_provided": rollback_evidence["checkpoint_provided"],
+            "rollback_checkpoint_required_before_manifest_mutation": True,
+            "transaction_journal_required": True,
+            "idempotency_guard_required": True,
+            "post_apply_validation_required": True,
+            "ready_for_physical_apply_executor_review": status == "ready_for_review",
+            "physical_apply_executed_by_this_tool": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "manifest_dry_run_summary": _compact_foldered_canonical_migration_manifest_dry_run(dry_run),
+        "apply_plan_summary": _compact_foldered_canonical_migration_apply_plan(apply_plan),
+        "manifest_dry_run_input": dry_run_input,
+        "apply_plan_input": apply_plan_input,
+        "review_approval_ledger_input": approval_ledger_input,
+        "rollback_checkpoint_input": rollback_checkpoint_input,
+        "digest_guard": {
+            "manifest_dry_run_apply_plan_digest": dry_run_apply_plan_digest,
+            "current_apply_plan_digest": current_apply_plan_digest,
+            "digest_match": bool(dry_run_apply_plan_digest and current_apply_plan_digest and dry_run_apply_plan_digest == current_apply_plan_digest),
+            "requires_executor_revalidation_before_each_write": True,
+        },
+        "review_approval_gate": approval_evidence,
+        "rollback_checkpoint_gate": rollback_evidence,
+        "transaction_journal_plan": {
+            "required": True,
+            "append_only": True,
+            "journal_artifact": "workspace/workspace-foldered-canonical-migration-physical-apply-journal.json",
+            "writes_journal_in_this_tool": False,
+            "records_apply_plan_digest": True,
+            "records_manifest_dry_run_digest": True,
+            "records_approval_evidence": True,
+            "records_rollback_checkpoint_evidence": True,
+        },
+        "idempotency_guard": {
+            "required": True,
+            "idempotency_key": approval_evidence.get("idempotency_key") or expected_approval["idempotency_key"],
+            "checks_existing_apply_journal_in_this_tool": False,
+            "must_block_duplicate_physical_apply": True,
+        },
+        "post_apply_validation_requirement": {
+            "required_after_apply": True,
+            "validation_tool": "review_workspace_foldered_canonical_migration_post_apply_validation",
+            "validation_artifact": "workspace/workspace-foldered-canonical-migration-post-apply-validation.json",
+            "runs_validation_in_this_tool": False,
+            "legacy_fallback_must_remain_until_validation_review": True,
+        },
+        "executor_inputs": executor_inputs,
+        "execution_gate": {
+            "ready_for_physical_apply_executor_review": status == "ready_for_review",
+            "requires_explicit_review_approval": True,
+            "requires_separate_physical_apply_executor": True,
+            "allows_automatic_execution": False,
+            "allows_journal_write_in_this_tool": False,
+            "allows_rollback_checkpoint_write_in_this_tool": False,
+            "allows_manifest_mutation_in_this_tool": False,
+            "allows_canonical_path_change_in_this_tool": False,
+            "allows_file_move_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_physical_apply_preflight_next_actions(blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "writes_transaction_journal": False,
+            "writes_rollback_checkpoint": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_review_approval_ledger(
+    *,
+    default_artifact_root: Path,
+    review_approval_ledger_json: str | None,
+    review_approval_ledger_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(review_approval_ledger_json, field_name="review_approval_ledger_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"version": "invalid-json", "entries": []}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = review_approval_ledger_artifact_ref or "workspace_review_approval_ledger"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"version": "missing", "entries": []}, "review_approval_ledger_not_observed", input_summary
+
+
+def _load_or_read_workspace_foldered_canonical_rollback_checkpoint(
+    *,
+    default_artifact_root: Path,
+    rollback_checkpoint_json: str | None,
+    rollback_checkpoint_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(rollback_checkpoint_json, field_name="rollback_checkpoint_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = rollback_checkpoint_artifact_ref or "workspace_foldered_canonical_migration_rollback_checkpoint"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "foldered_canonical_rollback_checkpoint_not_observed", input_summary
+
+
+def _foldered_canonical_physical_apply_expected_approval(*, apply_plan_digest: str, dry_run: dict[str, Any]) -> dict[str, Any]:
+    rollback = dry_run.get("rollback_checkpoint") if isinstance(dry_run.get("rollback_checkpoint"), dict) else {}
+    transaction_id = str(rollback.get("transaction_id") or "")
+    idempotency_key = str(rollback.get("idempotency_key") or transaction_id or apply_plan_digest[:16])
+    subject_id = f"workspace-foldered-canonical-physical-apply:{apply_plan_digest}" if apply_plan_digest else "workspace-foldered-canonical-physical-apply"
+    return {
+        "subject_id": subject_id,
+        "action": "foldered_canonical_physical_apply",
+        "decision": "approved",
+        "apply_plan_digest": apply_plan_digest,
+        "transaction_id": transaction_id,
+        "idempotency_key": idempotency_key,
+    }
+
+
+def _foldered_canonical_physical_apply_approval_evidence(
+    *,
+    approval_ledger: dict[str, Any],
+    expected: dict[str, Any],
+) -> dict[str, Any]:
+    entries = approval_ledger.get("entries") if isinstance(approval_ledger.get("entries"), list) else []
+    candidates = [entry for entry in entries if isinstance(entry, dict)]
+    matching: dict[str, Any] | None = None
+    for entry in candidates:
+        if entry.get("subject_id") == expected["subject_id"] and entry.get("action") == expected["action"]:
+            matching = entry
+            break
+    approved = bool(matching and matching.get("decision") == "approved" and matching.get("status") == "written")
+    digest = str((matching or {}).get("subject_digest_sha256") or "")
+    digest_matches = bool(digest and expected.get("apply_plan_digest") and digest == expected.get("apply_plan_digest"))
+    metadata = matching.get("metadata") if isinstance((matching or {}).get("metadata"), dict) else {}
+    return {
+        "review_required": True,
+        "approval_ledger_artifact": "workspace/review-approval-ledger.json",
+        "expected_subject_id": expected["subject_id"],
+        "expected_action": expected["action"],
+        "expected_decision": expected["decision"],
+        "matching_approval_found": matching is not None,
+        "approved": bool(approved and digest_matches),
+        "approval_status": str((matching or {}).get("status") or "missing"),
+        "approval_id": str((matching or {}).get("approval_id") or ""),
+        "reviewer": str((matching or {}).get("reviewer") or ""),
+        "subject_digest_sha256": digest,
+        "expected_apply_plan_digest": expected.get("apply_plan_digest") or "",
+        "digest_matches_expected": digest_matches,
+        "transaction_id": str(metadata.get("transaction_id") or expected.get("transaction_id") or ""),
+        "idempotency_key": str(metadata.get("idempotency_key") or expected.get("idempotency_key") or ""),
+        "writes_approval_in_this_tool": False,
+        "ledger_entry_count": len(candidates),
+    }
+
+
+def _foldered_canonical_physical_apply_rollback_evidence(
+    *,
+    rollback_checkpoint: dict[str, Any],
+    rollback_checkpoint_error: str,
+    rollback_plan: dict[str, Any],
+    apply_plan_digest: str,
+) -> dict[str, Any]:
+    checkpoint_digest = str(rollback_checkpoint.get("apply_plan_digest") or rollback_checkpoint.get("current_apply_plan_digest") or "")
+    checkpoint_provided = not bool(rollback_checkpoint_error) and rollback_checkpoint.get("schema_version") not in {"missing", "invalid-json"}
+    return {
+        "required_before_manifest_mutation": True,
+        "checkpoint_artifact": "workspace/workspace-foldered-canonical-migration-rollback-checkpoint.json",
+        "checkpoint_provided": checkpoint_provided,
+        "checkpoint_status": rollback_checkpoint.get("status") or "missing",
+        "writes_checkpoint_in_this_tool": False,
+        "must_be_written_by_physical_apply_executor_before_manifest_mutation": not checkpoint_provided,
+        "captures_backend_manifest_snapshot": bool(
+            rollback_checkpoint.get("backend_manifest_snapshot")
+            or rollback_checkpoint.get("captures_backend_manifest_snapshot")
+            or rollback_plan.get("captures_backend_manifest_snapshot")
+        ),
+        "captures_apply_plan_digest": bool(checkpoint_digest or rollback_plan.get("captures_apply_plan_digest")),
+        "checkpoint_apply_plan_digest": checkpoint_digest,
+        "expected_apply_plan_digest": apply_plan_digest,
+        "checkpoint_matches_apply_plan_digest": bool((not checkpoint_digest and not checkpoint_provided) or (checkpoint_digest and checkpoint_digest == apply_plan_digest)),
+        "source_plan": {
+            "planned_manifest_change_count": _safe_int(rollback_plan.get("planned_manifest_change_count")),
+            "rollback_item_count": _safe_int(rollback_plan.get("rollback_item_count")),
+            "transaction_id": rollback_plan.get("transaction_id") or "",
+            "idempotency_key": rollback_plan.get("idempotency_key") or "",
+        },
+    }
+
+
+def _foldered_canonical_physical_apply_executor_inputs(
+    *,
+    apply_plan: dict[str, Any],
+    dry_run: dict[str, Any],
+    approval_evidence: dict[str, Any],
+    rollback_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    apply_plan_section = apply_plan.get("apply_plan") if isinstance(apply_plan.get("apply_plan"), dict) else {}
+    dry_run_manifest = dry_run.get("manifest_dry_run") if isinstance(dry_run.get("manifest_dry_run"), dict) else {}
+    planned_steps = apply_plan_section.get("planned_steps") if isinstance(apply_plan_section.get("planned_steps"), list) else []
+    planned_changes = dry_run_manifest.get("planned_changes") if isinstance(dry_run_manifest.get("planned_changes"), list) else []
+    return {
+        "review_required": True,
+        "executor_name": "execute_workspace_foldered_canonical_physical_apply",
+        "executor_not_implemented_by_this_tool": True,
+        "apply_step_count": len([item for item in planned_steps if isinstance(item, dict)]),
+        "manifest_change_count": len([item for item in planned_changes if isinstance(item, dict)]),
+        "requires_matching_review_approval": True,
+        "requires_rollback_checkpoint_before_manifest_mutation": True,
+        "requires_append_only_transaction_journal": True,
+        "requires_idempotency_guard": True,
+        "requires_post_apply_validation": True,
+        "approval_subject_id": approval_evidence.get("expected_subject_id") or "",
+        "approval_id": approval_evidence.get("approval_id") or "",
+        "transaction_id": approval_evidence.get("transaction_id") or rollback_evidence.get("source_plan", {}).get("transaction_id") or "",
+        "idempotency_key": approval_evidence.get("idempotency_key") or rollback_evidence.get("source_plan", {}).get("idempotency_key") or "",
+        "planned_artifact_keys": [str(item.get("artifact_key") or "") for item in planned_steps if isinstance(item, dict)],
+    }
+
+
+def _foldered_canonical_physical_apply_preflight_next_actions(blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "foldered_canonical_migration_manifest_dry_run_unavailable_or_malformed" in blockers:
+        actions.append("create_or_pass_ready_foldered_canonical_manifest_dry_run")
+    if "foldered_canonical_migration_apply_plan_unavailable_or_malformed" in blockers:
+        actions.append("create_or_pass_matching_foldered_canonical_migration_apply_plan")
+    if "manifest_dry_run_apply_plan_digest_mismatch" in blockers or "manifest_dry_run_apply_plan_digest_missing" in blockers:
+        actions.append("regenerate_manifest_dry_run_from_current_apply_plan_before_physical_apply_preflight")
+    if "review_approval_ledger_unavailable_or_malformed" in blockers or "review_approval_ledger_missing_matching_physical_apply_approval" in blockers:
+        actions.append("record_review_approval_for_foldered_canonical_physical_apply")
+    if "review_approval_ledger_does_not_approve_physical_apply" in blockers:
+        actions.append("resolve_review_approval_ledger_decision_or_digest_before_apply")
+    if "rollback_checkpoint_apply_plan_digest_mismatch" in blockers:
+        actions.append("regenerate_rollback_checkpoint_from_current_apply_plan")
+    if not blockers:
+        actions.append("review_physical_apply_preflight_before_running_separate_executor")
+        actions.append("run_separate_explicit_physical_apply_executor_with_transaction_journal_and_rollback_checkpoint")
+        actions.append("run_post_apply_validation_descriptor_after_executor")
+    if "rollback_checkpoint_must_be_materialized_by_physical_apply_executor_before_manifest_mutation" in warnings:
+        actions.append("ensure_physical_apply_executor_writes_rollback_checkpoint_before_manifest_mutation")
     return actions
 
 
