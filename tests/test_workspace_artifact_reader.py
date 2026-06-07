@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 
 from reverse_deepagent.tools.artifact_tools import (
+    assess_workspace_consumer_readiness_score_payload,
     assess_workspace_migration_readiness_payload,
     audit_workspace_artifact_consumers_payload,
+    make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
     make_plan_workspace_dual_write_pilot_tool,
@@ -235,6 +237,104 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertTrue(payload["side_effect_policy"]["read_only"])
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+
+    def test_workspace_consumer_readiness_score_blocks_foldered_canonical_until_source_paths_close(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            delivery_audit = {
+                "schema_version": "reverse-deepagent.delivery-artifact-source-audit.v1",
+                "artifact_count": 2,
+                "source_artifact_ref_count": 1,
+                "source_path_count": 1,
+                "workspace_resolved_count": 1,
+                "external_source_path_count": 1,
+                "legacy_source_path_count": 0,
+                "future_source_path_count": 0,
+                "artifact_root_relative_source_path_count": 0,
+                "relative_source_path_count": 0,
+            }
+
+            payload = assess_workspace_consumer_readiness_score_payload(
+                default_artifact_root=root,
+                delivery_source_audit_json=json.dumps(delivery_audit),
+            )
+
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-consumer-readiness-score.v1")
+            self.assertEqual(payload["status"], "ready_for_limited_dual_write_review")
+            self.assertFalse(payload["readiness"]["foldered_canonical_migration_allowed"])
+            self.assertTrue(payload["readiness"]["limited_dual_write_expansion_review_allowed"])
+            self.assertIn("source_path_usage_observed", payload["blocking_reasons"])
+            self.assertIn("external_source_path_usage_observed", payload["blocking_reasons"])
+            self.assertIn("dual_write_pilot_result_not_observed", payload["warnings"])
+            self.assertEqual(payload["scores"]["source_path_risk"], 0.0)
+            self.assertEqual(payload["pilot_evidence"]["status"], "not_observed")
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["files_inspected"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["enables_dual_write"])
+            self.assertFalse(payload["side_effect_policy"]["migrates_paths"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+            self.assertFalse((root / "workspace" / "workspace-consumer-readiness-score.json").exists())
+
+    def test_workspace_consumer_readiness_score_uses_verified_pilot_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            readiness_report = assess_workspace_migration_readiness_payload(
+                default_artifact_root=root,
+                delivery_source_audit_json=json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.delivery-artifact-source-audit.v1",
+                        "artifact_count": 1,
+                        "source_artifact_ref_count": 1,
+                        "source_path_count": 0,
+                        "workspace_resolved_count": 1,
+                        "external_source_path_count": 0,
+                    }
+                ),
+            )
+            pilot_result = {
+                "schema_version": "reverse-deepagent.workspace-dual-write-pilot-result.v1",
+                "status": "verified",
+                "summary": {
+                    "planned_candidate_count": 2,
+                    "verified_candidate_count": 2,
+                },
+                "blocking_reasons": [],
+                "warnings": [],
+            }
+
+            payload = assess_workspace_consumer_readiness_score_payload(
+                default_artifact_root=root,
+                readiness_report_json=json.dumps(readiness_report),
+                pilot_result_json=json.dumps(pilot_result),
+            )
+
+            self.assertEqual(payload["pilot_evidence"]["status"], "verified")
+            self.assertEqual(payload["pilot_evidence"]["score"], 1.0)
+            self.assertEqual(payload["scores"]["dual_write_pilot_evidence"], 1.0)
+            self.assertEqual(payload["scores"]["source_path_risk"], 1.0)
+            self.assertEqual(payload["status"], "ready_for_limited_dual_write_review")
+            self.assertIn("resolver_adoption_incomplete", payload["blocking_reasons"])
+            self.assertNotIn("dual_write_pilot_result_not_observed", payload["warnings"])
+            self.assertIn(
+                "close_partial_or_candidate_workspace_consumers_before_foldered_canonical_migration",
+                payload["recommended_next_actions"],
+            )
+
+    def test_workspace_consumer_readiness_score_tool_returns_payload_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            tool = make_assess_workspace_consumer_readiness_score_tool(root)
+
+            payload = tool()
+
+            self.assertEqual(tool.__name__, "assess_workspace_consumer_readiness_score")
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.workspace-consumer-readiness-score.v1")
+            self.assertEqual(payload["summary"]["mobile_full_runtime_chains_deferred"], True)
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["creates_directories"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
 
     def test_workspace_dual_write_pilot_plan_selects_low_risk_candidates_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -2137,3 +2137,15 @@ Status: implemented as a metadata-only StrategyDetector provider registry and ex
 Boundary: this closes only the plugin seam for strategy detectors. Metadata listing imports plugin registration modules but does not execute detector logic, collect runtime context, execute replay, start browsers, send CDP, evaluate JavaScript, install hooks, call MCP, mutate files, or touch Android / iOS / mini-program full runtime chains. Future work may add real third-party or private StrategyDetector provider packages when site-specific corpora need to move out of core.
 
 Tests cover built-in provider metadata, explicit registry-backed detection compatibility, fake entry-point loading without detector execution, secret-like metadata rejection, public metadata helper behavior, template package entry point declaration, template registration side-effect policy, compileall, and strategy detector / corpus / evidence-scoring regressions.
+
+### Step 210：Workspace consumer readiness score baseline
+
+Status: implemented as a read-only workspace consumer readiness scoring descriptor for dual-write expansion and foldered-canonical migration review. This is not broader dual-write rollout, not physical folder migration, not a canonical path change, not browser / CDP / MCP integration, and not Android / iOS / mini-program full runtime chain.
+
+`reverse_deepagent.tools.artifact_tools` now exposes `assess_workspace_consumer_readiness_score_payload(...)` and `make_assess_workspace_consumer_readiness_score_tool(...)`. The score consumes the existing workspace consumer audit, optional workspace migration readiness report, optional delivery source audit JSON, and optional dual-write pilot result JSON. It emits `reverse-deepagent.workspace-consumer-readiness-score.v1` with resolver adoption, virtual URI adoption, future path readiness, source_path risk, dual-write pilot evidence, foldered-canonical readiness, status, blockers, warnings, and recommended next actions.
+
+The DeepAgents agent tool list includes `assess_workspace_consumer_readiness_score`, and the workspace contract indexes `workspace/workspace-consumer-readiness-score.json` with future alias `/workspace/review/workspace-consumer-readiness-score.json`. The descriptor helps review whether to expand scoped opt-in dual-write or keep foldered-canonical migration blocked while partial consumers or `source_path` usage remain.
+
+Boundary: this descriptor is read-only. It does not inspect files, write artifacts, create directories, run pipelines, enable dual-write, migrate paths, change canonical paths, start browsers, send CDP commands, call MCP, or touch Android / iOS / mini-program full runtime chains. Broader opt-in dual-write rollout and narrow foldered-canonical migration pilots remain follow-up work gated by reviewed evidence.
+
+Tests cover default score side-effect policy, source_path / external source path blockers, verified pilot evidence scoring, workspace route aliasing, default agent tool exposure, compileall, and workspace / contract / rebuild-agent regressions.

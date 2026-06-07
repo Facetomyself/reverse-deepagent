@@ -51,7 +51,7 @@ These items have baseline implementations and tests. Some are intentionally cons
 
 - DeepAgents workspace contract indexed-only baseline.
 - Manifest-only workspace alias for future foldered virtual paths while keeping flat `workspace/*.json` paths canonical.
-- Workspace artifact reader, specialized read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, delivery source compatibility audit, workspace migration readiness report, limited dual-write pilot plan / scoped writer / result artifact / review workflow, pure-Python reviewed scoped dual-write pilot smoke CLI, resolver compatibility metrics, and workspace consumer adoption audit baselines for artifact key, legacy path, future path, `virtual://workspace/...` URI, artifact-root-relative consumption, explicit source_path classification, scoped dual-write output verification, and reviewed local delivery planning / apply inputs by coordinator, review / rebuild / timeline / hook / debugger / delivery subagents.
+- Workspace artifact reader, specialized read-only review-helper artifact-ref resolver, rebuild generation artifact-ref inputs, delivery artifact-list resolver, delivery source compatibility audit, workspace migration readiness report, workspace consumer readiness score, limited dual-write pilot plan / scoped writer / result artifact / review workflow, pure-Python reviewed scoped dual-write pilot smoke CLI, resolver compatibility metrics, and workspace consumer adoption audit baselines for artifact key, legacy path, future path, `virtual://workspace/...` URI, artifact-root-relative consumption, explicit source_path classification, scored dual-write / foldered-canonical review readiness, scoped dual-write output verification, and reviewed local delivery planning / apply inputs by coordinator, review / rebuild / timeline / hook / debugger / delivery subagents.
 - Router, web recon, browser runtime, debugger, hook, timeline, review, rebuild, and delivery subagent baselines.
 - Review approval ledger baseline.
 
@@ -115,7 +115,7 @@ These are the next realistic non-mobile work items. They should be implemented w
 ### Workspace and artifact evolution
 
 - Use `reverse-agent-workspace-dual-write-smoke` / `review_workspace_dual_write_pilot_workflow` evidence from reviewed scoped dual-write runs before any broader dual-write rollout or foldered-canonical migration pilot; current smoke and workflow intentionally keep high-risk delivery / transaction artifacts out of default pilots and keep foldered-canonical migration blocked while partial consumers or `source_path` usage remain.
-- Opt-in dual-write expansion informed by resolver compatibility metrics.
+- Opt-in dual-write expansion informed by resolver compatibility metrics and `workspace-consumer-readiness-score` evidence.
 - A narrow foldered-canonical migration pilot only after consumers support the resolver.
 
 ### Delivery and external integration hardening

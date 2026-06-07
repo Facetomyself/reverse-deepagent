@@ -89,6 +89,7 @@ git fetch origin
 - DeepAgents workspace contract 由 `src/reverse_deepagent/workspace_contract.py` 维护；新增或改变 subagent role、middleware checkpoint、workspace artifact、manifest key 或虚拟文件夹规划时，必须同步 `tests/test_workspace_contract.py`、README / runtime docs，并保持 `workspace/workspace-contract.json` 输出。
 - `workspace/workspace-contract.json` 当前保持 indexed-only contract；现有扁平 `workspace/*.json` artifact 路径仍为 canonical path。`workspace/backend-artifact-manifest.json` 的 entry metadata 会为已登记 workspace artifact 提供 manifest-only `workspace_alias`，指向 `/workspace/<area>/...` foldered future path / `virtual://workspace/<area>/...` URI；没有 manifest alias、兼容覆盖和回归测试时，不得移动或重命名既有 artifact 路径。
 - `review_workspace_dual_write_pilot_workflow` 只是 review-first workflow helper：它可以串联 readiness、pilot plan 和 observed scoped dual-write result verification，但不得运行 pipeline、启用双写、迁移路径、改变 canonical path、启动浏览器、调用 MCP 或触碰 Android / iOS / 小程序完整运行链路；`write_result=true` 只能写 `workspace/workspace-dual-write-pilot-result.json` 审计结果。
+- `assess_workspace_consumer_readiness_score` 只能作为 read-only review descriptor：允许消费 consumer audit、migration readiness、delivery source audit 和 dual-write pilot result JSON，输出 `workspace/workspace-consumer-readiness-score.json` / `/workspace/review/workspace-consumer-readiness-score.json` 的评分语义；不得检查文件、写 artifact、创建目录、启用 dual-write、迁移路径、改变 canonical path、启动浏览器、发送 CDP、调用 MCP 或触碰 Android / iOS / 小程序完整运行链路。
 
 重点文件变更要求：
 

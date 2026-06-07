@@ -98,6 +98,37 @@ def make_assess_workspace_migration_readiness_tool(default_artifact_root: str | 
     return assess_workspace_migration_readiness
 
 
+def make_assess_workspace_consumer_readiness_score_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only scoring tool for workspace consumer migration readiness."""
+
+    root = Path(default_artifact_root)
+
+    def assess_workspace_consumer_readiness_score(
+        artifact_root: str | None = None,
+        readiness_report_json: str | None = None,
+        pilot_result_json: str | None = None,
+        delivery_source_audit_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Score workspace consumer readiness without enabling dual-write or migrating paths."""
+
+        return assess_workspace_consumer_readiness_score_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            readiness_report_json=readiness_report_json,
+            pilot_result_json=pilot_result_json,
+            delivery_source_audit_json=delivery_source_audit_json,
+        )
+
+    assess_workspace_consumer_readiness_score.__name__ = "assess_workspace_consumer_readiness_score"
+    assess_workspace_consumer_readiness_score.__doc__ = (
+        "Read-only workspace consumer readiness score for dual-write expansion and foldered-canonical migration review. "
+        "It consumes the static consumer audit, optional migration readiness report, optional delivery source audit JSON, "
+        "and optional observed dual-write pilot result JSON. It does not inspect files, write artifacts, create directories, "
+        "enable dual-write, migrate paths, change canonical paths, start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return assess_workspace_consumer_readiness_score
+
+
 def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only tool for limited workspace dual-write pilot planning."""
 
@@ -352,6 +383,309 @@ def assess_workspace_migration_readiness_payload(
             "touches_mobile_full_runtime_chains": False,
         },
     }
+
+
+def assess_workspace_consumer_readiness_score_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    readiness_report_json: str | None = None,
+    pilot_result_json: str | None = None,
+    delivery_source_audit_json: str | None = None,
+) -> dict[str, Any]:
+    """Return a read-only score for workspace consumer migration readiness."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    consumer_audit = audit_workspace_artifact_consumers_payload()
+    readiness_report = _parse_readiness_report(readiness_report_json)
+    if readiness_report is None:
+        readiness_report = assess_workspace_migration_readiness_payload(
+            default_artifact_root=effective_root,
+            delivery_source_audit_json=delivery_source_audit_json,
+        )
+    pilot_result, pilot_result_error = _parse_json_object(pilot_result_json, field_name="pilot_result_json")
+    consumer_summary = _workspace_consumer_score_summary(consumer_audit)
+    readiness_summary = _compact_readiness_summary(readiness_report)
+    delivery_source_summary = _score_delivery_source_summary(readiness_report)
+    pilot_evidence = _workspace_pilot_result_score(pilot_result, pilot_result_error)
+    scoring = _workspace_consumer_scoring(
+        consumer_summary=consumer_summary,
+        readiness_summary=readiness_summary,
+        delivery_source_summary=delivery_source_summary,
+        pilot_evidence=pilot_evidence,
+    )
+    readiness = _workspace_consumer_readiness_decision(scoring, readiness_summary, delivery_source_summary, pilot_evidence)
+    return {
+        "schema_version": "reverse-deepagent.workspace-consumer-readiness-score.v1",
+        "status": readiness["status"],
+        "artifact_root": str(effective_root),
+        "summary": {
+            "overall_score": scoring["overall_score"],
+            "overall_label": scoring["overall_label"],
+            "consumer_count": consumer_summary["consumer_count"],
+            "resolver_ready_count": consumer_summary["resolver_ready_count"],
+            "partial_count": consumer_summary["partial_count"],
+            "candidate_count": consumer_summary["candidate_count"],
+            "explicit_filesystem_boundary_count": consumer_summary["explicit_filesystem_boundary_count"],
+            "limited_dual_write_pilot_status": readiness_summary["limited_dual_write_pilot_status"],
+            "foldered_canonical_migration_status": readiness_summary["foldered_canonical_migration_status"],
+            "pilot_result_status": pilot_evidence["status"],
+            "blocking_reason_count": len(readiness["blocking_reasons"]),
+            "warning_count": len(readiness["warnings"]),
+            "review_required": True,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "scores": scoring["scores"],
+        "consumer_audit_summary": consumer_summary,
+        "migration_readiness_summary": readiness_summary,
+        "delivery_source_audit_summary": delivery_source_summary,
+        "pilot_evidence": pilot_evidence,
+        "readiness": readiness,
+        "blocking_reasons": readiness["blocking_reasons"],
+        "warnings": readiness["warnings"],
+        "recommended_next_actions": readiness["recommended_next_actions"],
+        "source_evidence": {
+            "consumer_audit_schema_version": consumer_audit.get("schema_version") or "",
+            "migration_readiness_schema_version": readiness_report.get("schema_version") or "",
+            "pilot_result_schema_version": pilot_evidence.get("schema_version") or "missing",
+            "delivery_source_audit_status": delivery_source_summary["status"],
+        },
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _workspace_consumer_score_summary(consumer_audit: dict[str, Any]) -> dict[str, Any]:
+    consumers = consumer_audit.get("consumers") if isinstance(consumer_audit.get("consumers"), list) else []
+    by_status = consumer_audit.get("summary", {}).get("by_status") if isinstance(consumer_audit.get("summary"), dict) else {}
+    if not isinstance(by_status, dict):
+        by_status = {}
+    consumer_count = len(consumers)
+    resolver_ready_count = _safe_int(by_status.get("resolver-ready"))
+    partial_count = _safe_int(by_status.get("partial"))
+    candidate_count = _safe_int(by_status.get("candidate"))
+    explicit_boundary_count = _safe_int(by_status.get("explicit-filesystem-boundary"))
+    non_workspace_count = _safe_int(by_status.get("non-workspace-input"))
+    migration_relevant_count = resolver_ready_count + partial_count + candidate_count
+    unresolved_count = partial_count + candidate_count
+    resolver_ready_ratio = round(resolver_ready_count / migration_relevant_count, 4) if migration_relevant_count else 0.0
+    return {
+        "consumer_count": consumer_count,
+        "migration_relevant_count": migration_relevant_count,
+        "resolver_ready_count": resolver_ready_count,
+        "partial_count": partial_count,
+        "candidate_count": candidate_count,
+        "unresolved_consumer_count": unresolved_count,
+        "explicit_filesystem_boundary_count": explicit_boundary_count,
+        "non_workspace_input_count": non_workspace_count,
+        "resolver_ready_ratio": resolver_ready_ratio,
+        "by_status": dict(sorted(by_status.items())),
+    }
+
+
+def _score_delivery_source_summary(readiness_report: dict[str, Any]) -> dict[str, Any]:
+    payload = readiness_report.get("delivery_source_audit") if isinstance(readiness_report.get("delivery_source_audit"), dict) else {}
+    if not payload:
+        return {
+            "schema_version": "missing",
+            "status": "missing",
+            "source_path_count": 0,
+            "workspace_resolved_count": 0,
+            "external_source_path_count": 0,
+            "source_path_risk": "unknown",
+        }
+    source_path_count = _safe_int(payload.get("source_path_count"))
+    external_count = _safe_int(payload.get("external_source_path_count"))
+    risk = "none" if source_path_count == 0 and external_count == 0 else "observed"
+    return {
+        "schema_version": payload.get("schema_version") or "unknown",
+        "status": payload.get("status") or "unknown",
+        "source_path_count": source_path_count,
+        "workspace_resolved_count": _safe_int(payload.get("workspace_resolved_count")),
+        "external_source_path_count": external_count,
+        "legacy_source_path_count": _safe_int(payload.get("legacy_source_path_count")),
+        "future_source_path_count": _safe_int(payload.get("future_source_path_count")),
+        "artifact_root_relative_source_path_count": _safe_int(payload.get("artifact_root_relative_source_path_count")),
+        "relative_source_path_count": _safe_int(payload.get("relative_source_path_count")),
+        "source_path_risk": risk,
+    }
+
+
+def _workspace_pilot_result_score(pilot_result: dict[str, Any] | None, pilot_result_error: str) -> dict[str, Any]:
+    if pilot_result_error:
+        return {
+            "schema_version": "invalid-json",
+            "status": "malformed",
+            "score": 0.0,
+            "verified_candidate_count": 0,
+            "planned_candidate_count": 0,
+            "blocking_reasons": ["pilot_result_json_malformed"],
+            "warnings": [],
+            "error": pilot_result_error,
+        }
+    if not pilot_result:
+        return {
+            "schema_version": "missing",
+            "status": "not_observed",
+            "score": 0.0,
+            "verified_candidate_count": 0,
+            "planned_candidate_count": 0,
+            "blocking_reasons": [],
+            "warnings": ["dual_write_pilot_result_not_provided"],
+        }
+    summary = pilot_result.get("summary") if isinstance(pilot_result.get("summary"), dict) else {}
+    status = str(pilot_result.get("status") or "unknown")
+    planned = _safe_int(summary.get("planned_candidate_count"))
+    verified = _safe_int(summary.get("verified_candidate_count"))
+    if status == "verified" and planned and verified >= planned:
+        score = 1.0
+    elif status in {"partial", "verified"} and planned:
+        score = round(max(0.0, min(1.0, verified / planned)), 4)
+    elif status == "not_run":
+        score = 0.0
+    else:
+        score = 0.0
+    blockers = pilot_result.get("blocking_reasons") if isinstance(pilot_result.get("blocking_reasons"), list) else []
+    warnings = pilot_result.get("warnings") if isinstance(pilot_result.get("warnings"), list) else []
+    return {
+        "schema_version": pilot_result.get("schema_version") or "unknown",
+        "status": status,
+        "score": score,
+        "verified_candidate_count": verified,
+        "planned_candidate_count": planned,
+        "blocking_reasons": [str(item) for item in blockers],
+        "warnings": [str(item) for item in warnings],
+    }
+
+
+def _workspace_consumer_scoring(
+    *,
+    consumer_summary: dict[str, Any],
+    readiness_summary: dict[str, Any],
+    delivery_source_summary: dict[str, Any],
+    pilot_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    migration_relevant = consumer_summary["migration_relevant_count"]
+    resolver_adoption = consumer_summary["resolver_ready_ratio"] if migration_relevant else 0.0
+    virtual_uri_adoption = resolver_adoption
+    future_path_readiness = 1.0 if readiness_summary["limited_dual_write_pilot_status"] == "ready_for_review" else 0.0
+    source_path_risk_score = 1.0 if delivery_source_summary["source_path_risk"] == "none" else 0.0
+    if delivery_source_summary["status"] == "missing":
+        source_path_risk_score = 0.25
+    pilot_score = float(pilot_evidence.get("score") or 0.0)
+    foldered_canonical = 1.0 if readiness_summary["foldered_canonical_migration_status"] == "ready_for_review" else 0.0
+    scores = {
+        "resolver_adoption": round(resolver_adoption, 4),
+        "virtual_uri_adoption": round(virtual_uri_adoption, 4),
+        "future_path_readiness": round(future_path_readiness, 4),
+        "source_path_risk": round(source_path_risk_score, 4),
+        "dual_write_pilot_evidence": round(pilot_score, 4),
+        "foldered_canonical_readiness": round(foldered_canonical, 4),
+    }
+    overall = round(
+        scores["resolver_adoption"] * 0.30
+        + scores["virtual_uri_adoption"] * 0.10
+        + scores["future_path_readiness"] * 0.20
+        + scores["source_path_risk"] * 0.15
+        + scores["dual_write_pilot_evidence"] * 0.15
+        + scores["foldered_canonical_readiness"] * 0.10,
+        4,
+    )
+    if overall >= 0.86:
+        label = "ready_for_foldered_canonical_review"
+    elif overall >= 0.62:
+        label = "ready_for_limited_dual_write_review"
+    elif overall >= 0.40:
+        label = "needs_targeted_resolver_adoption"
+    else:
+        label = "blocked"
+    return {"scores": scores, "overall_score": overall, "overall_label": label}
+
+
+def _workspace_consumer_readiness_decision(
+    scoring: dict[str, Any],
+    readiness_summary: dict[str, Any],
+    delivery_source_summary: dict[str, Any],
+    pilot_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    scores = scoring["scores"]
+    if scores["resolver_adoption"] < 1.0:
+        blockers.append("resolver_adoption_incomplete")
+    if readiness_summary["limited_dual_write_pilot_status"] != "ready_for_review":
+        blockers.append("limited_dual_write_pilot_not_ready")
+    if delivery_source_summary["status"] == "missing":
+        warnings.append("delivery_source_audit_missing")
+    if delivery_source_summary["source_path_count"] > 0:
+        blockers.append("source_path_usage_observed")
+    if delivery_source_summary["external_source_path_count"] > 0:
+        blockers.append("external_source_path_usage_observed")
+    if pilot_evidence["status"] in {"malformed", "blocked"}:
+        blockers.append("dual_write_pilot_result_not_usable")
+    elif pilot_evidence["status"] == "not_observed":
+        warnings.append("dual_write_pilot_result_not_observed")
+    elif pilot_evidence["score"] < 1.0:
+        warnings.append("dual_write_pilot_not_fully_verified")
+    foldered_ready = readiness_summary["foldered_canonical_migration_status"] == "ready_for_review"
+    if foldered_ready and pilot_evidence["score"] >= 1.0 and not blockers:
+        status = "ready_for_foldered_canonical_review"
+    elif readiness_summary["limited_dual_write_pilot_status"] == "ready_for_review" and "limited_dual_write_pilot_not_ready" not in blockers:
+        status = "ready_for_limited_dual_write_review"
+    else:
+        status = "blocked"
+    actions = _workspace_consumer_score_next_actions(status, blockers, warnings, pilot_evidence)
+    return {
+        "status": status,
+        "review_required": True,
+        "foldered_canonical_migration_allowed": status == "ready_for_foldered_canonical_review",
+        "limited_dual_write_expansion_review_allowed": status in {"ready_for_limited_dual_write_review", "ready_for_foldered_canonical_review"},
+        "blocking_reasons": blockers,
+        "warnings": warnings,
+        "recommended_next_actions": actions,
+    }
+
+
+def _workspace_consumer_score_next_actions(
+    status: str,
+    blockers: list[str],
+    warnings: list[str],
+    pilot_evidence: dict[str, Any],
+) -> list[str]:
+    actions: list[str] = []
+    if "resolver_adoption_incomplete" in blockers:
+        actions.append("close_partial_or_candidate_workspace_consumers_before_foldered_canonical_migration")
+    if "limited_dual_write_pilot_not_ready" in blockers:
+        actions.append("resolve_workspace_migration_readiness_blockers_before_dual_write_expansion")
+    if "source_path_usage_observed" in blockers:
+        actions.append("replace_workspace_source_path_inputs_with_artifact_ref_where_possible")
+    if "external_source_path_usage_observed" in blockers:
+        actions.append("keep_external_filesystem_sources_as_explicit_delivery_boundaries")
+    if "delivery_source_audit_missing" in warnings:
+        actions.append("run_execute_local_delivery_dry_run_and_collect_delivery_artifact_source_audit")
+    if pilot_evidence["status"] == "not_observed":
+        actions.append("run_reviewed_scoped_dual_write_pilot_and_record_result_before_foldered_canonical_review")
+    if "dual_write_pilot_not_fully_verified" in warnings:
+        actions.append("resolve_dual_write_pilot_verification_gaps_before_expansion")
+    if status == "ready_for_limited_dual_write_review":
+        actions.append("review_opt_in_dual_write_expansion_scope_using_low_risk_artifact_keys")
+    if status == "ready_for_foldered_canonical_review":
+        actions.append("review_narrow_foldered_canonical_migration_pilot")
+    if not actions:
+        actions.append("resolve_workspace_consumer_readiness_blockers")
+    return actions
 
 
 def _parse_delivery_source_audit(delivery_source_audit_json: str | None) -> dict[str, Any] | None:

@@ -295,6 +295,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_task_card", "workspace/task-card.json", "/workspace/recon/", "task-card.json", "workspace", ("router",)),
         ("workspace_dual_write_plan", "workspace/workspace-dual-write-plan.json", "/workspace/delivery/", "workspace-dual-write-plan.json", "workspace", ("coordinator", "delivery")),
         ("workspace_dual_write_pilot_result", "workspace/workspace-dual-write-pilot-result.json", "/workspace/delivery/", "workspace-dual-write-pilot-result.json", "audit", ("coordinator", "review")),
+        ("workspace_consumer_readiness_score", "workspace/workspace-consumer-readiness-score.json", "/workspace/review/", "workspace-consumer-readiness-score.json", "audit", ("coordinator", "review")),
         ("workspace_route", "workspace/route-decision.json", "/workspace/recon/", "route-decision.json", "workspace", ("router",)),
         ("workspace_recon", "workspace/recon-result.json", "/workspace/recon/", "recon-result.json", "workspace", ("web_recon",)),
         ("workspace_network_requests", "workspace/network-requests.json", "/workspace/recon/", "network-requests.json", "network", ("web_recon",)),

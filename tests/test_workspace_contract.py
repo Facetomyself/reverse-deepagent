@@ -98,6 +98,12 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/review-approval-record.json"].future_path, "/workspace/review/review-approval-record.json")
         self.assertEqual(routes["workspace/review-approval-ledger.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-approval-ledger.json"].future_path, "/workspace/review/review-approval-ledger.json")
+        self.assertEqual(routes["workspace/workspace-consumer-readiness-score.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-consumer-readiness-score.json"].future_path,
+            "/workspace/review/workspace-consumer-readiness-score.json",
+        )
+        self.assertEqual(routes["workspace/workspace-consumer-readiness-score.json"].category, "audit")
         self.assertEqual(routes["workspace/paused-session-live-continuation-preflight.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(
             routes["workspace/paused-session-live-continuation-preflight.json"].future_path,

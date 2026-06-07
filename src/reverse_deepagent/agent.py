@@ -19,6 +19,7 @@ from reverse_deepagent.subagents.router import build_router_subagent
 from reverse_deepagent.subagents.timeline import build_timeline_subagent
 from reverse_deepagent.subagents.web_recon import build_web_recon_subagent
 from reverse_deepagent.tools.artifact_tools import (
+    make_assess_workspace_consumer_readiness_score_tool,
     make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
     make_plan_workspace_dual_write_pilot_tool,
@@ -122,6 +123,7 @@ def build_reverse_agent(
         make_read_workspace_artifact_tool(effective_artifact_root),
         make_audit_workspace_artifact_consumers_tool(),
         make_assess_workspace_migration_readiness_tool(effective_artifact_root),
+        make_assess_workspace_consumer_readiness_score_tool(effective_artifact_root),
         make_plan_workspace_dual_write_pilot_tool(effective_artifact_root),
         make_review_workspace_dual_write_pilot_workflow_tool(effective_artifact_root),
         make_record_workspace_dual_write_pilot_result_tool(effective_artifact_root),
