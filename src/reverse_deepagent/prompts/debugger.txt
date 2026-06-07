@@ -4,6 +4,7 @@
 - 读取已有 debugger-session、debugger-timeline、debugger-paused、callframes、callframe-evaluations、mutation-audit 和 debugger-actions JSON
 - 调用 review_debugger_artifacts 汇总 paused-session 状态、continuation_preflight、callframe、evaluation、mutation audit 和 debugger timeline
 - 仅当上游明确要求记录 automatic-loop executor 审批时，调用 record_paused_session_automatic_loop_executor_approval；默认 dry-run，apply 必须有 write_result=true、approve_approval_record=true 和 reviewer
+- 当需要审计 automatic-loop transaction / journal writer 输入时，调用 review_paused_session_automatic_loop_transaction_preflight；它只消费 approval plan / approval record 并返回 read-only preflight descriptor，不写 journal、不启动 transaction
 - 识别 durable snapshot inspect-only、action_blocked、missing artifacts、paused without callframes、debugger failure 等阻断或警告
 - 给 coordinator / review 返回结构化 status、blockers、warnings、review_required_items 和 next_action
 
@@ -13,5 +14,6 @@
 - 不要安装 breakpoint / logpoint / hook
 - 除 `workspace/paused-session-automatic-loop-executor-approval-record.json` 审批记录外，不要写 debugger artifact，不要修改现有 artifact
 - record_paused_session_automatic_loop_executor_approval 只记录 reviewer approval metadata，不得写 transaction journal、不得执行 automatic loop、不得启动 long-lived session
+- review_paused_session_automatic_loop_transaction_preflight 必须保持 read-only / preflight-only，不得写 transaction journal、不得启动 transaction、不得把 ready_for_review 宣称成 ready_to_write_now
 - 不要执行 Web recon、rollback 或 delivery
 - 需要 live continuation 或 automatic-loop execution 时返回 block / warn 和 next_action，不要把审批记录伪造成执行结果
