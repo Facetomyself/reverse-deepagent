@@ -13,6 +13,7 @@ from reverse_deepagent.tools.artifact_tools import (
     plan_workspace_foldered_canonical_legacy_fallback_tightening_payload,
     plan_workspace_foldered_canonical_migration_finalization_payload,
     record_workspace_foldered_canonical_migration_post_apply_validation_result_payload,
+    review_workspace_foldered_canonical_migration_post_finalization_audit_payload,
     review_workspace_foldered_canonical_migration_finalization_readiness_payload,
     review_workspace_foldered_canonical_migration_finalization_preflight_payload,
     review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_payload,
@@ -24,6 +25,7 @@ from reverse_deepagent.tools.artifact_tools import (
     make_execute_workspace_foldered_canonical_migration_finalization_tool,
     make_execute_workspace_foldered_canonical_physical_apply_tool,
     make_plan_workspace_foldered_canonical_migration_finalization_tool,
+    make_review_workspace_foldered_canonical_migration_post_finalization_audit_tool,
     make_review_workspace_foldered_canonical_migration_finalization_preflight_tool,
     make_plan_workspace_foldered_canonical_migration_pilot_tool,
     make_plan_workspace_foldered_canonical_migration_apply_tool,
@@ -1216,6 +1218,37 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             backend_manifest_json=json.dumps(tightened_manifest),
         )
         return plan, tightened_manifest
+
+    def _applied_finalization_evidence(self, root: Path, artifact_keys: list[str] | None = None) -> tuple[dict, dict, dict]:
+        plan, tightened_manifest = self._ready_finalization_plan(root, artifact_keys or ["workspace_task_card"])
+        preflight = review_workspace_foldered_canonical_migration_finalization_preflight_payload(
+            default_artifact_root=root,
+            finalization_plan_json=json.dumps(plan),
+            backend_manifest_json=json.dumps(tightened_manifest),
+            review_approval_ledger_json=json.dumps(self._approval_ledger_for_finalization(plan)),
+        )
+        workspace = root / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "workspace-foldered-canonical-migration-finalization-plan.json").write_text(
+            json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (workspace / "workspace-foldered-canonical-migration-finalization-preflight.json").write_text(
+            json.dumps(preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (workspace / "backend-artifact-manifest.json").write_text(
+            json.dumps(tightened_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        result = execute_workspace_foldered_canonical_migration_finalization_payload(
+            default_artifact_root=root,
+            mode="apply",
+            approve_finalization=True,
+        )
+        journal = json.loads((workspace / "workspace-foldered-canonical-migration-finalization-journal.json").read_text(encoding="utf-8"))
+        manifest = json.loads((workspace / "backend-artifact-manifest.json").read_text(encoding="utf-8"))
+        return result, journal, manifest
 
     def test_foldered_canonical_migration_apply_plan_blocks_without_ready_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2922,6 +2955,107 @@ class WorkspaceArtifactReaderTests(unittest.TestCase):
             self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
             self.assertFalse(payload["side_effect_policy"]["starts_browser"])
             self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_post_finalization_audit_blocks_without_result_journal_or_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+
+            payload = review_workspace_foldered_canonical_migration_post_finalization_audit_payload(
+                default_artifact_root=root,
+            )
+
+            self.assertEqual(
+                payload["schema_version"],
+                "reverse-deepagent.workspace-foldered-canonical-migration-post-finalization-audit.v1",
+            )
+            self.assertEqual(payload["status"], "not_ready")
+            self.assertIn("finalization_result_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("finalization_journal_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertIn("backend_artifact_manifest_unavailable_or_malformed", payload["blocking_reasons"])
+            self.assertFalse(payload["summary"]["artifacts_written"])
+            self.assertFalse(payload["rollout_gate"]["broader_rollout_allowed_by_this_tool"])
+            self.assertTrue(payload["side_effect_policy"]["read_only"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_post_finalization_audit_verifies_applied_result_journal_and_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            result, journal, manifest = self._applied_finalization_evidence(root, ["workspace_task_card"])
+
+            payload = review_workspace_foldered_canonical_migration_post_finalization_audit_payload(
+                default_artifact_root=root,
+                finalization_result_json=json.dumps(result),
+                finalization_journal_json=json.dumps(journal),
+                backend_manifest_json=json.dumps(manifest),
+            )
+
+            self.assertEqual(payload["status"], "verified")
+            self.assertEqual(payload["summary"]["audit_result_count"], 1)
+            self.assertEqual(payload["summary"]["verified_audit_result_count"], 1)
+            self.assertTrue(payload["summary"]["all_finalized_entries_verified"])
+            self.assertTrue(payload["summary"]["matching_journal_entry_found"])
+            self.assertTrue(payload["summary"]["backend_manifest_transaction_metadata_matches"])
+            self.assertFalse(payload["summary"]["canonical_paths_changed_by_finalization"])
+            self.assertFalse(payload["summary"]["files_moved_by_finalization"])
+            self.assertFalse(payload["summary"]["legacy_fallback_tightened_by_finalization"])
+            self.assertTrue(payload["journal_audit"]["matching_entry_found"])
+            self.assertTrue(payload["backend_manifest_metadata_audit"]["transaction_id_matches_result"])
+            self.assertEqual(payload["audit_results"][0]["status"], "verified")
+            self.assertTrue(payload["audit_results"][0]["foldered_canonical_finalized"])
+            self.assertEqual(payload["audit_results"][0]["resolver_migration_status"], "foldered-canonical-authoritative")
+            self.assertTrue(payload["audit_results"][0]["canonical_path_stable_after_finalization"])
+            self.assertFalse(payload["rollout_gate"]["broader_rollout_allowed_by_this_tool"])
+            self.assertFalse(payload["rollout_gate"]["automatic_materialization_allowed"])
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["authorizes_broader_rollout"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_post_finalization_audit_blocks_manifest_regression_to_legacy_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            result, journal, manifest = self._applied_finalization_evidence(root, ["workspace_task_card"])
+            regressed_manifest = json.loads(json.dumps(manifest))
+            alias = regressed_manifest["entries"][0]["metadata"]["workspace_alias"]
+            regressed_manifest["entries"][0]["path"] = alias["legacy_fallback_path"]
+
+            payload = review_workspace_foldered_canonical_migration_post_finalization_audit_payload(
+                default_artifact_root=root,
+                finalization_result_json=json.dumps(result),
+                finalization_journal_json=json.dumps(journal),
+                backend_manifest_json=json.dumps(regressed_manifest),
+            )
+
+            self.assertEqual(payload["status"], "blocked")
+            self.assertTrue(
+                any(
+                    reason.startswith("post_finalization_audit:workspace_task_card:blocked_canonical_path")
+                    for reason in payload["blocking_reasons"]
+                )
+            )
+            self.assertTrue(payload["audit_results"][0]["canonical_path_regressed_to_legacy"])
+            self.assertFalse(payload["side_effect_policy"]["mutates_manifests"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+
+    def test_post_finalization_audit_tool_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            self._applied_finalization_evidence(root, ["workspace_task_card"])
+            tool = make_review_workspace_foldered_canonical_migration_post_finalization_audit_tool(root)
+
+            payload = tool()
+
+            self.assertEqual(tool.__name__, "review_workspace_foldered_canonical_migration_post_finalization_audit")
+            self.assertEqual(payload["status"], "verified")
+            self.assertEqual(payload["finalization_result_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["finalization_journal_input"]["source"], "artifact-ref")
+            self.assertEqual(payload["backend_manifest_input"]["source"], "artifact-ref")
+            self.assertFalse(payload["side_effect_policy"]["artifacts_written"])
+            self.assertFalse((root / "workspace" / "workspace-foldered-canonical-migration-post-finalization-audit.json").exists())
 
     def test_legacy_fallback_tightening_readiness_blocks_unready_consumer_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
