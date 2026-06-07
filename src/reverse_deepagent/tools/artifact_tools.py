@@ -273,6 +273,35 @@ def make_plan_workspace_foldered_canonical_migration_pilot_tool(default_artifact
     return plan_workspace_foldered_canonical_migration_pilot
 
 
+def make_review_workspace_foldered_canonical_migration_preflight_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only preflight reviewer for a foldered-canonical migration pilot."""
+
+    root = Path(default_artifact_root)
+
+    def review_workspace_foldered_canonical_migration_preflight(
+        artifact_root: str | None = None,
+        migration_pilot_plan_json: str | None = None,
+        migration_pilot_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_pilot_plan",
+    ) -> dict[str, Any]:
+        """Inspect pilot candidate files and produce rollback requirements without mutating paths."""
+
+        return review_workspace_foldered_canonical_migration_preflight_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            migration_pilot_plan_json=migration_pilot_plan_json,
+            migration_pilot_plan_artifact_ref=migration_pilot_plan_artifact_ref,
+        )
+
+    review_workspace_foldered_canonical_migration_preflight.__name__ = "review_workspace_foldered_canonical_migration_preflight"
+    review_workspace_foldered_canonical_migration_preflight.__doc__ = (
+        "Read-only execution preflight for a reviewed foldered-canonical migration pilot plan. It inspects existing "
+        "legacy/future candidate files, compares digests, and emits rollback requirements. It does not write artifacts, "
+        "create directories, run pipelines, enable dual-write, migrate paths, change canonical paths, mutate manifests, "
+        "start browsers, call MCP, or touch mobile full runtime chains."
+    )
+    return review_workspace_foldered_canonical_migration_preflight
+
+
 def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only tool for limited workspace dual-write pilot planning."""
 
@@ -1757,6 +1786,246 @@ def _foldered_canonical_migration_pilot_next_actions(blockers: list[str], warnin
         actions.append("prepare_separate_rollback_plan_before_canonical_path_change")
     if "medium_risk_artifacts_selected_for_foldered_canonical_review" in warnings:
         actions.append("review_medium_risk_artifacts_before_foldered_canonical_pilot")
+    return actions
+
+
+def review_workspace_foldered_canonical_migration_preflight_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    migration_pilot_plan_json: str | None = None,
+    migration_pilot_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_pilot_plan",
+) -> dict[str, Any]:
+    """Inspect a foldered-canonical migration pilot plan without mutating files."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    pilot_plan, pilot_plan_error, pilot_plan_input = _load_or_read_workspace_foldered_canonical_migration_pilot_plan(
+        default_artifact_root=effective_root,
+        migration_pilot_plan_json=migration_pilot_plan_json,
+        migration_pilot_plan_artifact_ref=migration_pilot_plan_artifact_ref,
+    )
+    candidates = pilot_plan.get("candidate_artifacts") if isinstance(pilot_plan.get("candidate_artifacts"), list) else []
+    candidate_results: list[dict[str, Any]] = []
+    ready_count = 0
+    missing_legacy_count = 0
+    missing_future_count = 0
+    digest_mismatch_count = 0
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        result = _foldered_canonical_preflight_candidate_result(effective_root, candidate)
+        candidate_results.append(result)
+        status = result["status"]
+        if status == "ready_for_reviewed_execution":
+            ready_count += 1
+        elif status == "missing_legacy":
+            missing_legacy_count += 1
+        elif status == "missing_future":
+            missing_future_count += 1
+        elif status == "digest_mismatch":
+            digest_mismatch_count += 1
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if pilot_plan_error:
+        blockers.append("foldered_canonical_migration_pilot_plan_unavailable_or_malformed")
+    if pilot_plan.get("status") != "ready_for_review":
+        blockers.append("foldered_canonical_migration_pilot_plan_not_ready")
+    for reason in pilot_plan.get("blocking_reasons") or []:
+        blockers.append(f"pilot_plan:{reason}")
+    if not candidate_results:
+        blockers.append("foldered_canonical_migration_pilot_has_no_candidates")
+    if missing_legacy_count:
+        blockers.append("candidate_legacy_files_missing")
+    if missing_future_count:
+        blockers.append("candidate_future_files_missing")
+    if digest_mismatch_count:
+        blockers.append("candidate_digest_mismatch")
+    if any((item.get("risk") or {}).get("risk_level") == "high" for item in candidate_results):
+        blockers.append("high_risk_candidate_present")
+    if any((item.get("risk") or {}).get("risk_level") == "medium" for item in candidate_results):
+        warnings.append("medium_risk_candidate_requires_final_review")
+    if not blockers:
+        warnings.append("execution_still_requires_explicit_review_and_separate_apply_step")
+
+    status = "ready_for_review" if not blockers else "blocked"
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-preflight.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "candidate_count": len(candidate_results),
+            "ready_candidate_count": ready_count,
+            "missing_legacy_count": missing_legacy_count,
+            "missing_future_count": missing_future_count,
+            "digest_mismatch_count": digest_mismatch_count,
+            "pilot_plan_status": pilot_plan.get("status") or "missing",
+            "legacy_canonical_path_remains_authoritative": True,
+            "physical_migration_enabled": False,
+            "canonical_path_change_enabled": False,
+            "review_required": True,
+            "rollback_plan_required": True,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "pilot_plan_summary": _compact_foldered_canonical_migration_pilot_plan(pilot_plan),
+        "pilot_plan_input": pilot_plan_input,
+        "candidate_results": candidate_results,
+        "rollback_plan": _foldered_canonical_preflight_rollback_plan(candidate_results),
+        "execution_gate": {
+            "ready_for_reviewed_execution": status == "ready_for_review",
+            "requires_explicit_review_approval": True,
+            "requires_separate_apply_tool": True,
+            "allows_automatic_execution": False,
+            "allows_manifest_mutation": False,
+            "allows_canonical_path_change_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_preflight_next_actions(blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": True,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_migration_pilot_plan(
+    *,
+    default_artifact_root: Path,
+    migration_pilot_plan_json: str | None,
+    migration_pilot_plan_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(migration_pilot_plan_json, field_name="migration_pilot_plan_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked", "candidate_artifacts": []}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = migration_pilot_plan_artifact_ref or "workspace_foldered_canonical_migration_pilot_plan"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing", "candidate_artifacts": []}, "foldered_canonical_migration_pilot_plan_not_observed", input_summary
+
+
+def _foldered_canonical_preflight_candidate_result(artifact_root: Path, candidate: dict[str, Any]) -> dict[str, Any]:
+    legacy_path = str(candidate.get("current_canonical_path") or candidate.get("legacy_canonical_path") or "")
+    future_path = str(candidate.get("future_canonical_path") or candidate.get("future_path") or "")
+    legacy_file = _artifact_ref_to_filesystem_path(artifact_root, legacy_path) if legacy_path else artifact_root / ""
+    future_file = _artifact_ref_to_filesystem_path(artifact_root, future_path) if future_path else artifact_root / ""
+    legacy_stat = _file_digest_stat(legacy_file) if legacy_path else _missing_file_stat(legacy_file)
+    future_stat = _file_digest_stat(future_file) if future_path else _missing_file_stat(future_file)
+    digest_match = bool(legacy_stat.get("exists") and future_stat.get("exists") and legacy_stat.get("sha256") == future_stat.get("sha256"))
+    if not legacy_stat["exists"]:
+        status = "missing_legacy"
+    elif not future_stat["exists"]:
+        status = "missing_future"
+    elif not digest_match:
+        status = "digest_mismatch"
+    else:
+        status = "ready_for_reviewed_execution"
+    return {
+        "artifact_key": candidate.get("artifact_key") or "",
+        "status": status,
+        "current_canonical_path": legacy_path,
+        "future_canonical_path": future_path,
+        "virtual_uri": candidate.get("virtual_uri") or "",
+        "legacy_file": legacy_stat,
+        "future_file": future_stat,
+        "digest_match": digest_match,
+        "risk": candidate.get("risk") if isinstance(candidate.get("risk"), dict) else {},
+        "rollback_requirement": {
+            "restore_canonical_path": legacy_path,
+            "ignore_or_remove_future_canonical_candidate": future_path,
+            "requires_manifest_alias_review": True,
+            "requires_digest_snapshot": True,
+            "automatic_rollback": False,
+        },
+        "execution_requirement": {
+            "requires_explicit_review_approval": True,
+            "requires_same_digest_before_execution": True,
+            "requires_rollback_plan": True,
+            "execute_in_this_tool": False,
+        },
+    }
+
+
+def _compact_foldered_canonical_migration_pilot_plan(pilot_plan: dict[str, Any]) -> dict[str, Any]:
+    summary = pilot_plan.get("summary") if isinstance(pilot_plan.get("summary"), dict) else {}
+    return {
+        "schema_version": pilot_plan.get("schema_version") or "",
+        "status": pilot_plan.get("status") or "missing",
+        "candidate_count": _safe_int(summary.get("candidate_count")),
+        "verified_expansion_artifact_count": _safe_int(summary.get("verified_expansion_artifact_count")),
+        "readiness_score_status": summary.get("readiness_score_status") or "",
+        "expansion_result_status": summary.get("expansion_result_status") or "",
+        "blocking_reasons": pilot_plan.get("blocking_reasons") if isinstance(pilot_plan.get("blocking_reasons"), list) else [],
+        "warnings": pilot_plan.get("warnings") if isinstance(pilot_plan.get("warnings"), list) else [],
+    }
+
+
+def _foldered_canonical_preflight_rollback_plan(candidate_results: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "plan_only": True,
+        "rollback_required_before_execution": True,
+        "automatic_rollback": False,
+        "canonical_path_restore_strategy": "keep_legacy_flat_path_authoritative_until_separate_apply",
+        "candidate_count": len(candidate_results),
+        "rollback_items": [
+            {
+                "artifact_key": item.get("artifact_key") or "",
+                "restore_canonical_path": item.get("current_canonical_path") or "",
+                "future_canonical_candidate": item.get("future_canonical_path") or "",
+                "legacy_sha256": (item.get("legacy_file") or {}).get("sha256") or "",
+                "future_sha256": (item.get("future_file") or {}).get("sha256") or "",
+                "digest_match": bool(item.get("digest_match")),
+            }
+            for item in candidate_results
+        ],
+    }
+
+
+def _foldered_canonical_preflight_next_actions(blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "foldered_canonical_migration_pilot_plan_unavailable_or_malformed" in blockers:
+        actions.append("create_or_pass_ready_foldered_canonical_migration_pilot_plan")
+    if "foldered_canonical_migration_pilot_plan_not_ready" in blockers:
+        actions.append("resolve_foldered_canonical_migration_pilot_plan_blockers")
+    if "candidate_legacy_files_missing" in blockers or "candidate_future_files_missing" in blockers:
+        actions.append("rerun_or_verify_dual_write_expansion_outputs_before_preflight")
+    if "candidate_digest_mismatch" in blockers:
+        actions.append("compare_legacy_and_future_candidate_artifacts_before_canonical_path_review")
+    if "high_risk_candidate_present" in blockers:
+        actions.append("remove_high_risk_candidates_from_narrow_migration_pilot")
+    if "foldered_canonical_migration_pilot_has_no_candidates" in blockers:
+        actions.append("select_verified_low_risk_candidates_for_migration_preflight")
+    if not blockers:
+        actions.append("review_preflight_and_rollback_plan_before_any_canonical_path_apply")
+        actions.append("prepare_separate_explicit_apply_step_with_manifest_mutation_guard")
+    if "medium_risk_candidate_requires_final_review" in warnings:
+        actions.append("complete_final_review_for_medium_risk_candidates")
     return actions
 
 

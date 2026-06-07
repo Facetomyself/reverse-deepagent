@@ -300,6 +300,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_dual_write_expansion_workflow", "workspace/workspace-dual-write-expansion-workflow.json", "/workspace/review/", "workspace-dual-write-expansion-workflow.json", "triage", ("coordinator", "review")),
         ("workspace_dual_write_expansion_result", "workspace/workspace-dual-write-expansion-result.json", "/workspace/review/", "workspace-dual-write-expansion-result.json", "audit", ("coordinator", "review")),
         ("workspace_foldered_canonical_migration_pilot_plan", "workspace/workspace-foldered-canonical-migration-pilot-plan.json", "/workspace/review/", "workspace-foldered-canonical-migration-pilot-plan.json", "triage", ("coordinator", "review")),
+        ("workspace_foldered_canonical_migration_preflight", "workspace/workspace-foldered-canonical-migration-preflight.json", "/workspace/review/", "workspace-foldered-canonical-migration-preflight.json", "audit", ("coordinator", "review")),
         ("workspace_route", "workspace/route-decision.json", "/workspace/recon/", "route-decision.json", "workspace", ("router",)),
         ("workspace_recon", "workspace/recon-result.json", "/workspace/recon/", "recon-result.json", "workspace", ("web_recon",)),
         ("workspace_network_requests", "workspace/network-requests.json", "/workspace/recon/", "network-requests.json", "network", ("web_recon",)),
