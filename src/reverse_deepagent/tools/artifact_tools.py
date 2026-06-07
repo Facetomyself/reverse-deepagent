@@ -410,6 +410,45 @@ def make_review_workspace_foldered_canonical_migration_manifest_dry_run_tool(def
     return review_workspace_foldered_canonical_migration_manifest_dry_run
 
 
+def make_review_workspace_foldered_canonical_migration_post_apply_validation_tool(default_artifact_root: str | Path) -> ArtifactTool:
+    """Create a read-only post-apply validation reviewer for foldered-canonical migration."""
+
+    root = Path(default_artifact_root)
+
+    def review_workspace_foldered_canonical_migration_post_apply_validation(
+        artifact_root: str | None = None,
+        migration_manifest_dry_run_json: str | None = None,
+        migration_manifest_dry_run_artifact_ref: str | None = "workspace_foldered_canonical_migration_manifest_dry_run",
+        migration_apply_plan_json: str | None = None,
+        migration_apply_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_apply_plan",
+        post_apply_backend_manifest_json: str | None = None,
+        post_apply_backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+    ) -> dict[str, Any]:
+        """Validate observed post-apply manifest state without mutating manifests or paths."""
+
+        return review_workspace_foldered_canonical_migration_post_apply_validation_payload(
+            default_artifact_root=root,
+            artifact_root=artifact_root,
+            migration_manifest_dry_run_json=migration_manifest_dry_run_json,
+            migration_manifest_dry_run_artifact_ref=migration_manifest_dry_run_artifact_ref,
+            migration_apply_plan_json=migration_apply_plan_json,
+            migration_apply_plan_artifact_ref=migration_apply_plan_artifact_ref,
+            post_apply_backend_manifest_json=post_apply_backend_manifest_json,
+            post_apply_backend_manifest_artifact_ref=post_apply_backend_manifest_artifact_ref,
+        )
+
+    review_workspace_foldered_canonical_migration_post_apply_validation.__name__ = "review_workspace_foldered_canonical_migration_post_apply_validation"
+    review_workspace_foldered_canonical_migration_post_apply_validation.__doc__ = (
+        "Read-only foldered-canonical migration post-apply validation descriptor. It consumes a ready manifest dry-run, "
+        "matching apply plan, and observed post-apply backend artifact manifest, then verifies manifest canonical-path "
+        "promotion evidence and legacy fallback requirements for review. It does not write validation artifacts, write "
+        "rollback checkpoints, record approval, write journals, inspect files, create directories, run pipelines, enable "
+        "dual-write, migrate paths, change canonical paths, mutate manifests, start browsers, call MCP, or touch mobile "
+        "full runtime chains."
+    )
+    return review_workspace_foldered_canonical_migration_post_apply_validation
+
+
 def make_plan_workspace_dual_write_pilot_tool(default_artifact_root: str | Path) -> ArtifactTool:
     """Create a read-only tool for limited workspace dual-write pilot planning."""
 
@@ -3036,6 +3075,300 @@ def _foldered_canonical_manifest_dry_run_next_actions(blockers: list[str], warni
         actions.append("revalidate_manifest_dry_run_before_physical_canonical_path_promotion")
     if "rollback_checkpoint_must_be_written_by_separate_apply_executor" in warnings:
         actions.append("ensure_apply_executor_writes_rollback_checkpoint_before_manifest_mutation")
+    return actions
+
+
+def review_workspace_foldered_canonical_migration_post_apply_validation_payload(
+    *,
+    default_artifact_root: str | Path,
+    artifact_root: str | None = None,
+    migration_manifest_dry_run_json: str | None = None,
+    migration_manifest_dry_run_artifact_ref: str | None = "workspace_foldered_canonical_migration_manifest_dry_run",
+    migration_apply_plan_json: str | None = None,
+    migration_apply_plan_artifact_ref: str | None = "workspace_foldered_canonical_migration_apply_plan",
+    post_apply_backend_manifest_json: str | None = None,
+    post_apply_backend_manifest_artifact_ref: str | None = "workspace_backend_artifact_manifest",
+) -> dict[str, Any]:
+    """Return a read-only post-apply validation descriptor for foldered-canonical migration."""
+
+    root = Path(default_artifact_root)
+    effective_root = Path(artifact_root) if artifact_root else root
+    dry_run, dry_run_error, dry_run_input = _load_or_read_workspace_foldered_canonical_migration_manifest_dry_run(
+        default_artifact_root=effective_root,
+        migration_manifest_dry_run_json=migration_manifest_dry_run_json,
+        migration_manifest_dry_run_artifact_ref=migration_manifest_dry_run_artifact_ref,
+    )
+    apply_plan, apply_plan_error, apply_plan_input = _load_or_read_workspace_foldered_canonical_migration_apply_plan(
+        default_artifact_root=effective_root,
+        migration_apply_plan_json=migration_apply_plan_json,
+        migration_apply_plan_artifact_ref=migration_apply_plan_artifact_ref,
+    )
+    post_apply_manifest, post_apply_manifest_error, post_apply_manifest_input = _load_or_read_workspace_backend_artifact_manifest(
+        default_artifact_root=effective_root,
+        backend_manifest_json=post_apply_backend_manifest_json,
+        backend_manifest_artifact_ref=post_apply_backend_manifest_artifact_ref,
+    )
+
+    dry_run_gate = dry_run.get("execution_gate") if isinstance(dry_run.get("execution_gate"), dict) else {}
+    dry_run_manifest = dry_run.get("manifest_dry_run") if isinstance(dry_run.get("manifest_dry_run"), dict) else {}
+    dry_run_digest = dry_run.get("digest_guard") if isinstance(dry_run.get("digest_guard"), dict) else {}
+    planned_changes = dry_run_manifest.get("planned_changes") if isinstance(dry_run_manifest.get("planned_changes"), list) else []
+    valid_changes = [change for change in planned_changes if isinstance(change, dict)]
+    apply_plan_section = apply_plan.get("apply_plan") if isinstance(apply_plan.get("apply_plan"), dict) else {}
+    post_apply_entries = post_apply_manifest.get("entries") if isinstance(post_apply_manifest.get("entries"), list) else []
+    current_apply_plan_digest = _foldered_canonical_apply_plan_digest(apply_plan)
+    dry_run_apply_plan_digest = str(dry_run_digest.get("current_apply_plan_digest") or dry_run_digest.get("approval_apply_plan_digest") or "")
+    validation_results = _foldered_canonical_post_apply_validation_results(valid_changes, post_apply_entries)
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if dry_run_error:
+        blockers.append("foldered_canonical_migration_manifest_dry_run_unavailable_or_malformed")
+    if dry_run.get("status") != "ready_for_review":
+        blockers.append("foldered_canonical_migration_manifest_dry_run_not_ready")
+    if dry_run_gate.get("ready_for_manifest_dry_run_review") is not True:
+        blockers.append("manifest_dry_run_review_gate_not_ready")
+    if apply_plan_error:
+        blockers.append("foldered_canonical_migration_apply_plan_unavailable_or_malformed")
+    if apply_plan.get("status") != "ready_for_review":
+        blockers.append("foldered_canonical_migration_apply_plan_not_ready")
+    if apply_plan_section.get("plan_only") is not True:
+        blockers.append("foldered_canonical_migration_apply_plan_not_plan_only")
+    if dry_run_apply_plan_digest and current_apply_plan_digest and dry_run_apply_plan_digest != current_apply_plan_digest:
+        blockers.append("manifest_dry_run_apply_plan_digest_mismatch")
+    if not dry_run_apply_plan_digest:
+        blockers.append("manifest_dry_run_apply_plan_digest_missing")
+    if post_apply_manifest_error:
+        blockers.append("post_apply_backend_artifact_manifest_unavailable_or_malformed")
+    if not post_apply_entries:
+        blockers.append("post_apply_backend_artifact_manifest_has_no_entries")
+    if not valid_changes:
+        blockers.append("post_apply_validation_has_no_manifest_changes")
+    for result in validation_results:
+        if result.get("status") != "ready_for_post_apply_validation_review":
+            blockers.append(f"post_apply_validation:{result.get('artifact_key') or 'unknown'}:{result.get('status') or 'blocked'}")
+        if result.get("warnings"):
+            warnings.extend(f"post_apply_validation:{result.get('artifact_key') or 'unknown'}:{warning}" for warning in result.get("warnings") or [])
+    if not blockers:
+        warnings.append("post_apply_validation_descriptor_requires_review_before_tightening_legacy_fallback")
+        warnings.append("physical_apply_executor_evidence_must_be_preserved_outside_this_tool")
+
+    status = "ready_for_review" if not blockers else "blocked"
+    ready_count = sum(1 for result in validation_results if result.get("status") == "ready_for_post_apply_validation_review")
+    return {
+        "schema_version": "reverse-deepagent.workspace-foldered-canonical-migration-post-apply-validation.v1",
+        "status": status,
+        "artifact_root": str(effective_root),
+        "summary": {
+            "manifest_dry_run_status": dry_run.get("status") or "missing",
+            "apply_plan_status": apply_plan.get("status") or "missing",
+            "post_apply_manifest_status": "loaded" if not post_apply_manifest_error and post_apply_entries else "missing_or_blocked",
+            "planned_manifest_change_count": len(valid_changes),
+            "validated_manifest_change_count": ready_count if status == "ready_for_review" else 0,
+            "post_apply_validation_written": False,
+            "backend_manifest_mutated_by_this_tool": False,
+            "canonical_path_changed_by_this_tool": False,
+            "observed_canonical_path_promotion_validated": status == "ready_for_review",
+            "legacy_fallback_tightening_allowed": False,
+            "mobile_full_runtime_chains_deferred": True,
+        },
+        "manifest_dry_run_summary": _compact_foldered_canonical_migration_manifest_dry_run(dry_run),
+        "apply_plan_summary": _compact_foldered_canonical_migration_apply_plan(apply_plan),
+        "manifest_dry_run_input": dry_run_input,
+        "apply_plan_input": apply_plan_input,
+        "post_apply_backend_manifest_input": post_apply_manifest_input,
+        "digest_guard": {
+            "manifest_dry_run_apply_plan_digest": dry_run_apply_plan_digest,
+            "current_apply_plan_digest": current_apply_plan_digest,
+            "digest_match": bool(dry_run_apply_plan_digest and current_apply_plan_digest and dry_run_apply_plan_digest == current_apply_plan_digest),
+            "requires_revalidation_by_apply_executor": True,
+        },
+        "post_apply_validation": {
+            "review_required": True,
+            "validation_artifact": "workspace/workspace-foldered-canonical-migration-post-apply-validation.json",
+            "writes_artifact_in_this_tool": False,
+            "source_post_apply_backend_manifest_artifact_ref": post_apply_manifest_input.get("artifact_ref") or "",
+            "source_post_apply_backend_manifest_entry_count": len(post_apply_entries),
+            "validation_results": validation_results,
+        },
+        "compatibility_validation": _foldered_canonical_post_apply_compatibility_validation(validation_results),
+        "execution_gate": {
+            "ready_for_post_apply_validation_review": status == "ready_for_review",
+            "requires_explicit_review_approval": True,
+            "requires_observed_physical_apply_evidence": True,
+            "allows_automatic_execution": False,
+            "allows_manifest_mutation_in_this_tool": False,
+            "allows_canonical_path_change_in_this_tool": False,
+            "allows_legacy_fallback_tightening_in_this_tool": False,
+            "allows_file_move_in_this_tool": False,
+        },
+        "blocking_reasons": list(dict.fromkeys(blockers)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "recommended_next_actions": _foldered_canonical_post_apply_validation_next_actions(blockers, warnings),
+        "side_effect_policy": {
+            "read_only": True,
+            "files_inspected": False,
+            "artifacts_written": False,
+            "creates_directories": False,
+            "runs_pipeline": False,
+            "enables_dual_write": False,
+            "migrates_paths": False,
+            "changes_canonical_paths": False,
+            "mutates_manifests": False,
+            "tightens_legacy_fallback": False,
+            "starts_browser": False,
+            "sends_cdp_commands": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+    }
+
+
+def _load_or_read_workspace_foldered_canonical_migration_manifest_dry_run(
+    *,
+    default_artifact_root: Path,
+    migration_manifest_dry_run_json: str | None,
+    migration_manifest_dry_run_artifact_ref: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    payload, error = _parse_json_object(migration_manifest_dry_run_json, field_name="migration_manifest_dry_run_json")
+    if payload is not None or error:
+        if payload is not None:
+            return payload, "", {"source": "inline-json", "artifact_ref": ""}
+        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
+    artifact_ref = migration_manifest_dry_run_artifact_ref or "workspace_foldered_canonical_migration_manifest_dry_run"
+    read_result = read_workspace_artifact_payload(
+        artifact_ref=artifact_ref,
+        default_artifact_root=default_artifact_root,
+        max_chars=200000,
+    )
+    input_summary = {
+        "source": "artifact-ref",
+        "artifact_ref": artifact_ref,
+        "read_status": read_result.get("status") or "",
+        "resolution_status": read_result.get("resolution_status") or "",
+        "path": read_result.get("path") or "",
+    }
+    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
+        return read_result["json"], "", input_summary
+    return {"schema_version": "missing", "status": "missing"}, "foldered_canonical_migration_manifest_dry_run_not_observed", input_summary
+
+
+def _compact_foldered_canonical_migration_manifest_dry_run(dry_run: dict[str, Any]) -> dict[str, Any]:
+    summary = dry_run.get("summary") if isinstance(dry_run.get("summary"), dict) else {}
+    gate = dry_run.get("execution_gate") if isinstance(dry_run.get("execution_gate"), dict) else {}
+    digest_guard = dry_run.get("digest_guard") if isinstance(dry_run.get("digest_guard"), dict) else {}
+    return {
+        "schema_version": dry_run.get("schema_version") or "",
+        "status": dry_run.get("status") or "missing",
+        "planned_manifest_change_count": _safe_int(summary.get("planned_manifest_change_count")),
+        "planned_apply_step_count": _safe_int(summary.get("planned_apply_step_count")),
+        "ready_for_manifest_dry_run_review": bool(gate.get("ready_for_manifest_dry_run_review")),
+        "digest_match": bool(digest_guard.get("digest_match")),
+        "current_apply_plan_digest": digest_guard.get("current_apply_plan_digest") or "",
+        "blocking_reasons": dry_run.get("blocking_reasons") if isinstance(dry_run.get("blocking_reasons"), list) else [],
+        "warnings": dry_run.get("warnings") if isinstance(dry_run.get("warnings"), list) else [],
+    }
+
+
+def _foldered_canonical_post_apply_validation_results(
+    planned_changes: list[dict[str, Any]],
+    post_apply_manifest_entries: list[Any],
+) -> list[dict[str, Any]]:
+    entries_by_key = {
+        str(entry.get("artifact_key") or ""): entry
+        for entry in post_apply_manifest_entries
+        if isinstance(entry, dict) and entry.get("artifact_key")
+    }
+    results: list[dict[str, Any]] = []
+    for index, change in enumerate(planned_changes):
+        artifact_key = str(change.get("artifact_key") or "")
+        expected_future_path = str(change.get("future_canonical_path") or "")
+        expected_previous_path = str(change.get("current_manifest_path") or change.get("expected_current_canonical_path") or "")
+        entry = entries_by_key.get(artifact_key) or {}
+        observed_path = str(entry.get("path") or "")
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        alias = metadata.get("workspace_alias") if isinstance(metadata.get("workspace_alias"), dict) else {}
+        alias_future_path = str(alias.get("future_path") or "")
+        status = "ready_for_post_apply_validation_review"
+        blockers: list[str] = []
+        warnings: list[str] = []
+        if not artifact_key:
+            status = "blocked_missing_artifact_key"
+            blockers.append("artifact_key_required")
+        if not entry:
+            status = "blocked_manifest_entry_missing"
+            blockers.append("manifest_entry_required")
+        if not expected_future_path:
+            status = "blocked_expected_future_canonical_path_missing"
+            blockers.append("expected_future_canonical_path_required")
+        if observed_path and expected_future_path and observed_path != expected_future_path:
+            status = "blocked_canonical_path_not_promoted"
+            blockers.append("canonical_path_not_promoted_to_future_path")
+        if observed_path and expected_previous_path and observed_path == expected_previous_path:
+            status = "blocked_canonical_path_still_legacy"
+            blockers.append("canonical_path_still_legacy")
+        if alias_future_path and expected_future_path and alias_future_path != expected_future_path:
+            status = "blocked_workspace_alias_future_path_mismatch"
+            blockers.append("workspace_alias_future_path_mismatch")
+        if entry and not alias:
+            warnings.append("workspace_alias_metadata_missing")
+        if alias and alias.get("canonical_path_remains_authoritative") is True:
+            warnings.append("workspace_alias_still_marks_legacy_authoritative")
+        results.append({
+            "validation_index": index,
+            "artifact_key": artifact_key,
+            "status": status,
+            "review_required": True,
+            "expected_previous_canonical_path": expected_previous_path,
+            "expected_promoted_canonical_path": expected_future_path,
+            "observed_manifest_path": observed_path,
+            "observed_workspace_alias_future_path": alias_future_path,
+            "virtual_uri": change.get("virtual_uri") or alias.get("virtual_uri") or "",
+            "canonical_path_promotion_observed": bool(observed_path and expected_future_path and observed_path == expected_future_path),
+            "legacy_fallback_still_required": True,
+            "blockers": blockers,
+            "warnings": warnings,
+            "mutates_manifest_in_this_tool": False,
+        })
+    return results
+
+
+def _foldered_canonical_post_apply_compatibility_validation(validation_results: list[dict[str, Any]]) -> dict[str, Any]:
+    ready_count = sum(1 for result in validation_results if result.get("status") == "ready_for_post_apply_validation_review")
+    return {
+        "review_required": True,
+        "planned_validation_count": len(validation_results),
+        "ready_validation_count": ready_count,
+        "all_promotions_observed": bool(validation_results) and ready_count == len(validation_results),
+        "preserve_legacy_read_fallback": True,
+        "legacy_fallback_tightening_allowed_by_this_tool": False,
+        "requires_workspace_consumer_readiness_recheck": True,
+        "requires_delivery_source_audit_recheck": True,
+        "requires_backend_manifest_alias_review": True,
+        "requires_post_apply_reader_smoke": True,
+        "forbid_source_path_tightening_in_this_tool": True,
+        "forbid_mobile_full_runtime_chain_assumptions": True,
+    }
+
+
+def _foldered_canonical_post_apply_validation_next_actions(blockers: list[str], warnings: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "foldered_canonical_migration_manifest_dry_run_unavailable_or_malformed" in blockers:
+        actions.append("create_or_pass_ready_foldered_canonical_manifest_dry_run")
+    if "foldered_canonical_migration_apply_plan_unavailable_or_malformed" in blockers:
+        actions.append("create_or_pass_matching_foldered_canonical_migration_apply_plan")
+    if "manifest_dry_run_apply_plan_digest_mismatch" in blockers or "manifest_dry_run_apply_plan_digest_missing" in blockers:
+        actions.append("regenerate_manifest_dry_run_from_current_apply_plan_before_validation")
+    if "post_apply_backend_artifact_manifest_unavailable_or_malformed" in blockers or "post_apply_backend_artifact_manifest_has_no_entries" in blockers:
+        actions.append("provide_observed_post_apply_backend_manifest_for_validation")
+    if any(reason.startswith("post_apply_validation:") for reason in blockers):
+        actions.append("rerun_or_fix_physical_apply_executor_before_post_apply_validation")
+    if not blockers:
+        actions.append("review_post_apply_validation_before_tightening_legacy_fallback")
+        actions.append("run_workspace_reader_compatibility_smoke_with_legacy_and_future_refs")
+        actions.append("keep_legacy_fallback_until_delivery_source_audit_and_consumer_readiness_are_rechecked")
+    if any("workspace_alias_metadata_missing" in warning for warning in warnings):
+        actions.append("review_backend_manifest_workspace_alias_metadata_after_apply")
     return actions
 
 
