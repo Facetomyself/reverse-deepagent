@@ -10,6 +10,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapLookupSpec,
     SourceMapConsumerActionPlanManager,
     SourceMapConsumerActionPlanSpec,
+    SourceMapConsumerMaterializationManager,
+    SourceMapConsumerMaterializationSpec,
     SourceMapReadinessManager,
     SourceMapReadinessSpec,
     SourceMapSourceContentManager,
@@ -628,6 +630,162 @@ class SourceMapConsumerActionPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("raw_source_content_export_detected", result.descriptor["blockers"])
         self.assertEqual(result.descriptor["next_action"], "replace_source_content_descriptor_with_metadata_only_version")
+
+
+class SourceMapConsumerMaterializationManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_action_plan() -> dict:
+        plan_spec = SourceMapConsumerActionPlanSpec.from_context(
+            {
+                "source_map_consumer_action_plan": True,
+                "source_map_readiness": {
+                    "status": "ready_for_review",
+                    "readiness": {
+                        "debugger_location_ready": True,
+                        "source_content_metadata_ready": True,
+                        "source_logpoint_planning_ready": True,
+                        "rebuild_source_metadata_ready": True,
+                        "bundler_scope_review_ready": True,
+                        "raw_source_content_exported": False,
+                        "preview_exported": False,
+                    },
+                    "blockers": [],
+                    "warnings": [],
+                },
+                "source_map_lookup": {
+                    "status": "ready_for_review",
+                    "mapping_found": True,
+                    "location": {"strategy": "source_map_generated_exact", "source": "src/sign.ts", "line_number": 0, "column_number": 4},
+                },
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "source_content_available": True,
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": False, "preview_exported": False},
+                },
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "scope_candidate_count": 1,
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                    "hook_readiness": {"source_logpoint_reviewable": True},
+                },
+            }
+        )
+        return SourceMapConsumerActionPlanManager().review(plan_spec).descriptor
+
+    def test_source_map_consumer_materialization_reviews_payloads_without_side_effects(self) -> None:
+        spec = SourceMapConsumerMaterializationSpec.from_context(
+            {
+                "source_map_consumer_materialization": True,
+                "source_map_consumer_action_plan": self._ready_action_plan(),
+                "source_map_lookup": {
+                    "status": "ready_for_review",
+                    "location": {"strategy": "source_map_generated_exact", "source": "src/sign.ts", "line_number": 0, "column_number": 4},
+                },
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": False, "preview_exported": False},
+                },
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "scope_candidate_count": 1,
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                },
+            }
+        )
+
+        result = SourceMapConsumerMaterializationManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-consumer-materialization.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["plan_only"])
+        self.assertEqual(descriptor["blockers"], [])
+        self.assertEqual(descriptor["materialization_count"], 4)
+        kinds = {item["materialization_kind"] for item in descriptor["materializations"]}
+        self.assertEqual(
+            kinds,
+            {
+                "debugger_location_materialization",
+                "source_logpoint_materialization",
+                "rebuild_source_metadata_materialization",
+                "hook_symbol_scope_materialization",
+            },
+        )
+        self.assertTrue(all(item["review_required"] for item in descriptor["materializations"]))
+        self.assertTrue(all(item["execute_automatically"] is False for item in descriptor["materializations"]))
+        rebuild = next(item for item in descriptor["materializations"] if item["consumer"] == "rebuild")
+        self.assertEqual(rebuild["rebuild_source_metadata"]["sha256"], "abc123")
+        self.assertFalse(rebuild["rebuild_source_metadata"]["raw_content_exported"])
+        self.assertFalse(rebuild["rebuild_source_metadata"]["preview_exported"])
+        policy = descriptor["side_effect_policy"]
+        self.assertTrue(policy["read_only"])
+        self.assertTrue(policy["plan_only"])
+        self.assertFalse(policy["fetch_source_map"])
+        self.assertFalse(policy["browser_started"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["debugger_execution_performed"])
+        self.assertFalse(policy["runtime_evaluated"])
+        self.assertFalse(policy["logpoint_installed"])
+        self.assertFalse(policy["hook_installed"])
+        self.assertFalse(policy["rebuild_executed"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
+
+    def test_source_map_consumer_materialization_blocks_missing_action_plan(self) -> None:
+        spec = SourceMapConsumerMaterializationSpec.from_context({"source_map_consumer_materialization": True})
+
+        result = SourceMapConsumerMaterializationManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_consumer_action_plan_missing", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "provide_ready_source_map_consumer_action_plan_descriptor")
+
+    def test_source_map_consumer_materialization_blocks_raw_source_or_preview_leak(self) -> None:
+        action_plan = self._ready_action_plan()
+        action_plan["side_effect_policy"]["raw_source_content_exported"] = True
+        spec = SourceMapConsumerMaterializationSpec.from_context(
+            {
+                "source_map_consumer_materialization": True,
+                "source_map_consumer_action_plan": action_plan,
+            }
+        )
+
+        result = SourceMapConsumerMaterializationManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("raw_source_content_export_detected", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "replace_source_content_descriptor_with_metadata_only_version")
+
+    def test_source_map_consumer_materialization_filters_requested_action_ids(self) -> None:
+        spec = SourceMapConsumerMaterializationSpec.from_context(
+            {
+                "source_map_consumer_materialization": True,
+                "source_map_consumer_action_plan": self._ready_action_plan(),
+                "source_map_materialization_action_ids": ["review-debugger-location-use", "review-rebuild-source-metadata-use"],
+            }
+        )
+
+        result = SourceMapConsumerMaterializationManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.descriptor["materialization_count"], 2)
+        self.assertEqual(result.descriptor["selected_action_ids"], ["review-debugger-location-use", "review-rebuild-source-metadata-use"])
+
+    def test_source_map_consumer_materialization_blocks_unknown_action_id(self) -> None:
+        spec = SourceMapConsumerMaterializationSpec.from_context(
+            {
+                "source_map_consumer_materialization": True,
+                "source_map_consumer_action_plan": self._ready_action_plan(),
+                "source_map_materialization_action_ids": ["missing-action"],
+            }
+        )
+
+        result = SourceMapConsumerMaterializationManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("requested_action_id_not_found:missing-action", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "choose_action_ids_from_source_map_consumer_action_plan")
 
 
 class SourceMapRemapperTests(unittest.TestCase):

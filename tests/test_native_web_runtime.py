@@ -5596,6 +5596,66 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["hook_installed"])
         self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
 
+    def test_native_web_runtime_reviews_source_map_consumer_materialization_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        action_plan = {
+            "schema_version": "reverse-deepagent.source-map-consumer-action-plan.v1",
+            "status": "ready_for_review",
+            "action_plan_count": 2,
+            "action_plans": [
+                {
+                    "action_id": "review-debugger-location-use",
+                    "consumer": "debugger",
+                    "status": "ready_for_review",
+                    "review_required": True,
+                    "plan_only": True,
+                    "execute_automatically": False,
+                    "required_inputs": ["source-map-readiness", "source-map-lookup"],
+                    "evidence": {"mapping_strategy": "source_map_generated_exact", "source": "src/sign.ts", "line_number": 0, "column_number": 4},
+                },
+                {
+                    "action_id": "review-rebuild-source-metadata-use",
+                    "consumer": "rebuild",
+                    "status": "ready_for_review",
+                    "review_required": True,
+                    "plan_only": True,
+                    "execute_automatically": False,
+                    "required_inputs": ["source-map-readiness", "source-map-source-content"],
+                    "evidence": {"sha256": "abc123", "source_content_available": True},
+                },
+            ],
+            "side_effect_policy": {"raw_source_content_exported": False, "preview_exported": False},
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-consumer-materialization",
+            {"source_map_consumer_action_plan": action_plan},
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_consumer_materialization"])
+        self.assertIn("source_map_consumer_materialization_status=ready_for_review", result.verification)
+        self.assertIn("source_map_consumer_materialization_count=2", result.verification)
+        self.assertIn("source_map_consumer_materialization_review_only=True", result.verification)
+        self.assertIn("source_map_consumer_materialization_plan_only=True", result.verification)
+        self.assertIn("source_map_consumer_materialization_fetch_source_map=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_browser_started=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_logpoint_installed=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_hook_installed=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_rebuild_executed=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_calls_mcp=False", result.verification)
+        self.assertIn("source_map_consumer_materialization_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_consumer_materialization_before_debugger_rebuild_logpoint_or_hook_execution")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-consumer-materialization.json")
+        self.assertEqual(result.artifacts[0].metadata["materialization_count"], 2)
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
     def test_native_web_runtime_reviews_source_map_readiness_without_starting_browser(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

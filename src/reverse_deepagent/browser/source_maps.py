@@ -1571,6 +1571,457 @@ class SourceMapConsumerActionPlanManager:
 
 
 @dataclass(slots=True)
+class SourceMapConsumerMaterializationSpec:
+    """Review-only materialization request for Source Map consumer action plans.
+
+    This descriptor consumes a previously reviewed Source Map consumer action
+    plan and turns selected action-plan entries into typed review payloads for
+    debugger, source-logpoint, rebuild, and hook consumers. It still does not
+    execute debugger commands, install logpoints or hooks, run rebuilds, fetch
+    Source Maps, export raw source content, start browsers, evaluate JavaScript,
+    call MCP, or touch mobile runtime chains.
+    """
+
+    source_map_consumer_action_plan: dict[str, Any] = field(default_factory=dict)
+    source_map_readiness: dict[str, Any] = field(default_factory=dict)
+    source_map_lookup: dict[str, Any] = field(default_factory=dict)
+    source_map_source_content: dict[str, Any] = field(default_factory=dict)
+    bundler_symbol_scope: dict[str, Any] = field(default_factory=dict)
+    requested_action_ids: tuple[str, ...] = ()
+    requested_consumers: tuple[str, ...] = ()
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "SourceMapConsumerMaterializationSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "source_map_consumer_materialization",
+                "sourceMapConsumerMaterialization",
+                "source_map_materialization",
+                "sourceMapMaterialization",
+                "source_map_action_materialization",
+                "sourceMapActionMaterialization",
+            )
+        )
+        action_plan = cls._object_alias(
+            context,
+            "source_map_consumer_action_plan",
+            "source-map-consumer-action-plan",
+            "sourceMapConsumerActionPlan",
+            "source_map_action_plan",
+            "sourceMapActionPlan",
+        )
+        readiness = cls._object_alias(context, "source_map_readiness", "source-map-readiness", "sourceMapReadiness")
+        lookup = cls._object_alias(context, "source_map_lookup", "source-map-lookup", "sourceMapLookup")
+        source_content = cls._object_alias(
+            context,
+            "source_map_source_content",
+            "source-map-source-content",
+            "sourceMapSourceContent",
+            "source_map_sources_content",
+            "sourceMapSourcesContent",
+        )
+        symbol_scope = cls._object_alias(context, "bundler_symbol_scope", "bundler-symbol-scope", "bundlerSymbolScope")
+        action_ids = cls._coerce_string_tuple(
+            context.get(
+                "source_map_materialization_action_ids",
+                context.get("sourceMapMaterializationActionIds", context.get("requested_action_ids", context.get("requestedActionIds"))),
+            )
+        )
+        consumers = cls._coerce_consumers(
+            context.get(
+                "source_map_materialization_consumers",
+                context.get("sourceMapMaterializationConsumers", context.get("source_map_consumers", context.get("sourceMapConsumers"))),
+            )
+        )
+        if not requested and not action_plan:
+            return None
+        return cls(
+            source_map_consumer_action_plan=action_plan,
+            source_map_readiness=readiness,
+            source_map_lookup=lookup,
+            source_map_source_content=source_content,
+            bundler_symbol_scope=symbol_scope,
+            requested_action_ids=action_ids,
+            requested_consumers=consumers,
+        )
+
+    @classmethod
+    def _object_alias(cls, payload: dict[str, Any], *keys: str) -> dict[str, Any]:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, dict):
+                return value
+            if isinstance(value, str) and value.strip():
+                try:
+                    parsed = json.loads(value)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict):
+                    return parsed
+        return {}
+
+    @staticmethod
+    def _coerce_string_tuple(payload: Any) -> tuple[str, ...]:
+        if payload is None:
+            return ()
+        if isinstance(payload, str):
+            raw_items = [item.strip() for item in payload.replace(";", ",").split(",")]
+        elif isinstance(payload, (list, tuple, set)):
+            raw_items = [str(item).strip() for item in payload]
+        else:
+            raw_items = []
+        normalized: list[str] = []
+        for item in raw_items:
+            if item and item not in normalized:
+                normalized.append(item)
+        return tuple(normalized)
+
+    @staticmethod
+    def _coerce_consumers(payload: Any) -> tuple[str, ...]:
+        if payload is None:
+            return ()
+        if isinstance(payload, str):
+            raw_items = [item.strip() for item in payload.replace(";", ",").split(",")]
+        elif isinstance(payload, (list, tuple, set)):
+            raw_items = [str(item).strip() for item in payload]
+        else:
+            raw_items = []
+        aliases = {
+            "source_logpoint": "source-logpoint",
+            "source-logpoints": "source-logpoint",
+            "logpoint": "source-logpoint",
+            "logpoints": "source-logpoint",
+            "debugger-location": "debugger",
+            "debugger_location": "debugger",
+            "rebuild-source": "rebuild",
+            "rebuild_source": "rebuild",
+            "symbol-scope": "hook",
+            "symbol_scope": "hook",
+        }
+        normalized: list[str] = []
+        for item in raw_items:
+            key = aliases.get(item.lower().replace(" ", "-"), item.lower().replace(" ", "-"))
+            if key in {"debugger", "source-logpoint", "rebuild", "hook"} and key not in normalized:
+                normalized.append(key)
+        return tuple(normalized)
+
+
+@dataclass(slots=True)
+class SourceMapConsumerMaterializationResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class SourceMapConsumerMaterializationManager:
+    """Materialize Source Map consumer action plans into typed review payloads."""
+
+    def review(self, spec: SourceMapConsumerMaterializationSpec | None) -> SourceMapConsumerMaterializationResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return SourceMapConsumerMaterializationResult(status="unsupported", reason="missing_source_map_consumer_materialization_request", side_effect_policy=policy)
+        try:
+            descriptor = self._descriptor(spec)
+            return SourceMapConsumerMaterializationResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=policy)
+        except Exception as exc:
+            descriptor = self._base_descriptor(status="failed", reason="source_map_consumer_materialization_failed")
+            descriptor["error"] = str(exc)
+            return SourceMapConsumerMaterializationResult(
+                status="failed",
+                descriptor=descriptor,
+                side_effect_policy=policy,
+                reason="source_map_consumer_materialization_failed",
+                error=str(exc),
+            )
+
+    def _descriptor(self, spec: SourceMapConsumerMaterializationSpec) -> dict[str, Any]:
+        action_plan = spec.source_map_consumer_action_plan
+        action_plans = self._action_plans(action_plan)
+        blockers = self._input_blockers(spec, action_plan, action_plans)
+        selected, selection_blockers = self._select_action_plans(spec, action_plans)
+        blockers.extend(selection_blockers)
+        materializations = [] if blockers else [self._materialize(plan, spec) for plan in selected]
+        materialization_blockers = self._materialization_blockers(materializations)
+        blockers.extend(materialization_blockers)
+        warnings = self._warnings(spec, action_plan, selected, materializations)
+        status = "blocked" if blockers else "ready_for_review"
+        return {
+            "schema_version": "reverse-deepagent.source-map-consumer-materialization.v1",
+            "status": status,
+            "review_only": True,
+            "plan_only": True,
+            "requested_action_ids": list(spec.requested_action_ids),
+            "requested_consumers": list(spec.requested_consumers),
+            "source_action_plan_status": self._status(action_plan),
+            "source_action_plan_count": len(action_plans),
+            "selected_action_ids": [str(plan.get("action_id")) for plan in selected],
+            "selected_consumer_count": len({str(item.get("consumer")) for item in selected if item.get("consumer")}),
+            "materializations": materializations,
+            "materialization_count": len(materializations),
+            "blockers": list(dict.fromkeys(blockers)),
+            "warnings": list(dict.fromkeys(warnings)),
+            "next_action": self._next_action(blockers, materializations),
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-consumer-materialization.v1",
+            "status": status,
+            "review_only": True,
+            "plan_only": True,
+            "reason": reason,
+            "requested_action_ids": [],
+            "requested_consumers": [],
+            "source_action_plan_status": "",
+            "source_action_plan_count": 0,
+            "selected_action_ids": [],
+            "selected_consumer_count": 0,
+            "materializations": [],
+            "materialization_count": 0,
+            "blockers": [reason],
+            "warnings": [],
+            "next_action": "provide_ready_source_map_consumer_action_plan_descriptor",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    @classmethod
+    def _input_blockers(cls, spec: SourceMapConsumerMaterializationSpec, action_plan: dict[str, Any], action_plans: list[dict[str, Any]]) -> list[str]:
+        blockers: list[str] = []
+        if not action_plan:
+            blockers.append("source_map_consumer_action_plan_missing")
+        elif cls._status(action_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_consumer_action_plan_not_ready")
+        blockers.extend(f"source_map_consumer_action_plan:{item}" for item in cls._string_list(action_plan.get("blockers")))
+        policy = action_plan.get("side_effect_policy") if isinstance(action_plan.get("side_effect_policy"), dict) else {}
+        evidence_status = action_plan.get("evidence_status") if isinstance(action_plan.get("evidence_status"), dict) else {}
+        readiness = evidence_status.get("readiness") if isinstance(evidence_status.get("readiness"), dict) else {}
+        source_content = evidence_status.get("source_content") if isinstance(evidence_status.get("source_content"), dict) else {}
+        attached_source_content = spec.source_map_source_content
+        if bool(policy.get("raw_source_content_exported")) or bool(readiness.get("raw_source_content_exported")) or bool(source_content.get("raw_content_exported")):
+            blockers.append("raw_source_content_export_detected")
+        if bool(policy.get("preview_exported")) or bool(readiness.get("preview_exported")) or bool(source_content.get("preview_exported")):
+            blockers.append("source_content_preview_export_detected")
+        if bool(attached_source_content.get("raw_content_exported")) or bool(cls._nested_get(attached_source_content, "content_summary", "raw_content_exported")):
+            blockers.append("raw_source_content_export_detected")
+        if bool(attached_source_content.get("preview_exported")) or bool(cls._nested_get(attached_source_content, "content_summary", "preview_exported")):
+            blockers.append("source_content_preview_export_detected")
+        if action_plan and not action_plans:
+            blockers.append("source_map_consumer_action_plan_has_no_actions")
+        return blockers
+
+    @classmethod
+    def _select_action_plans(cls, spec: SourceMapConsumerMaterializationSpec, action_plans: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+        blockers: list[str] = []
+        by_id = {str(item.get("action_id")): item for item in action_plans if isinstance(item, dict) and item.get("action_id")}
+        selected = list(action_plans)
+        if spec.requested_action_ids:
+            missing = [action_id for action_id in spec.requested_action_ids if action_id not in by_id]
+            if missing:
+                blockers.extend(f"requested_action_id_not_found:{action_id}" for action_id in missing)
+            selected = [by_id[action_id] for action_id in spec.requested_action_ids if action_id in by_id]
+        if spec.requested_consumers:
+            requested = set(spec.requested_consumers)
+            selected = [item for item in selected if str(item.get("consumer")) in requested]
+        blocked_selected = [str(item.get("action_id")) for item in selected if cls._status(item) not in {"ready_for_review", "ready"}]
+        blockers.extend(f"selected_action_not_ready:{action_id}" for action_id in blocked_selected)
+        if not selected and not blockers:
+            blockers.append("no_source_map_consumer_action_selected")
+        return selected, blockers
+
+    @classmethod
+    def _materialize(cls, plan: dict[str, Any], spec: SourceMapConsumerMaterializationSpec) -> dict[str, Any]:
+        action_id = str(plan.get("action_id") or "")
+        consumer = str(plan.get("consumer") or "")
+        evidence = plan.get("evidence") if isinstance(plan.get("evidence"), dict) else {}
+        base = {
+            "action_id": action_id,
+            "consumer": consumer,
+            "source_action_status": cls._status(plan),
+            "status": "ready_for_review",
+            "review_required": True,
+            "plan_only": True,
+            "execute_automatically": False,
+            "required_inputs": cls._string_list(plan.get("required_inputs")),
+            "source_next_action": plan.get("next_action") or "",
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+        if consumer == "debugger":
+            base.update(
+                {
+                    "materialization_kind": "debugger_location_materialization",
+                    "debugger_location": {
+                        "source": evidence.get("source") or cls._nested_get(spec.source_map_lookup, "location", "source") or "",
+                        "line_number": evidence.get("line_number") if evidence.get("line_number") is not None else cls._nested_get(spec.source_map_lookup, "location", "line_number"),
+                        "column_number": evidence.get("column_number") if evidence.get("column_number") is not None else cls._nested_get(spec.source_map_lookup, "location", "column_number"),
+                        "mapping_strategy": evidence.get("mapping_strategy") or cls._nested_get(spec.source_map_lookup, "location", "strategy") or "",
+                    },
+                    "cdp_command": None,
+                    "debugger_execution_supported": False,
+                    "next_action": "review_debugger_location_materialization_before_cdp_use",
+                }
+            )
+        elif consumer == "source-logpoint":
+            base.update(
+                {
+                    "materialization_kind": "source_logpoint_materialization",
+                    "source_logpoint_plan": {
+                        "bundler_kind": evidence.get("bundler_kind") or cls._nested_get(spec.bundler_symbol_scope, "bundler_classification", "bundler_kind") or "unknown",
+                        "scope_candidate_count": cls._intish(evidence.get("scope_candidate_count") if evidence.get("scope_candidate_count") is not None else spec.bundler_symbol_scope.get("scope_candidate_count")),
+                        "install_supported": False,
+                        "logpoint_installed": False,
+                    },
+                    "next_action": "review_source_logpoint_materialization_before_installation",
+                }
+            )
+        elif consumer == "rebuild":
+            base.update(
+                {
+                    "materialization_kind": "rebuild_source_metadata_materialization",
+                    "rebuild_source_metadata": {
+                        "source_content_available": bool(evidence.get("source_content_available")),
+                        "sha256": evidence.get("sha256") or cls._nested_get(spec.source_map_source_content, "content_summary", "sha256") or "",
+                        "raw_content_exported": False,
+                        "preview_exported": False,
+                        "rebuild_executed": False,
+                    },
+                    "next_action": "review_rebuild_source_metadata_materialization_before_rebuild_use",
+                }
+            )
+        elif consumer == "hook":
+            base.update(
+                {
+                    "materialization_kind": "hook_symbol_scope_materialization",
+                    "hook_symbol_scope": {
+                        "bundler_kind": evidence.get("bundler_kind") or cls._nested_get(spec.bundler_symbol_scope, "bundler_classification", "bundler_kind") or "unknown",
+                        "scope_candidate_count": cls._intish(evidence.get("scope_candidate_count") if evidence.get("scope_candidate_count") is not None else spec.bundler_symbol_scope.get("scope_candidate_count")),
+                        "hook_installed": False,
+                    },
+                    "next_action": "review_hook_symbol_scope_materialization_before_runtime_hook_planning",
+                }
+            )
+        else:
+            base.update(
+                {
+                    "materialization_kind": "unsupported_consumer_materialization",
+                    "status": "blocked",
+                    "blockers": ["unsupported_consumer"],
+                    "next_action": "choose_supported_source_map_consumer_action",
+                }
+            )
+        return base
+
+    @staticmethod
+    def _materialization_blockers(materializations: list[dict[str, Any]]) -> list[str]:
+        blockers: list[str] = []
+        for item in materializations:
+            if item.get("status") in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append(f"materialization_not_ready:{item.get('action_id')}")
+            policy = item.get("side_effect_policy") if isinstance(item.get("side_effect_policy"), dict) else {}
+            if policy.get("raw_source_content_exported") or policy.get("preview_exported"):
+                blockers.append("unsafe_materialization_source_content_export")
+            if policy.get("cdp_command_sent") or policy.get("runtime_evaluated") or policy.get("logpoint_installed") or policy.get("hook_installed") or policy.get("rebuild_executed"):
+                blockers.append("unsafe_materialization_side_effect_detected")
+        return blockers
+
+    @classmethod
+    def _warnings(cls, spec: SourceMapConsumerMaterializationSpec, action_plan: dict[str, Any], selected: list[dict[str, Any]], materializations: list[dict[str, Any]]) -> list[str]:
+        warnings: list[str] = []
+        warnings.extend(f"source_map_consumer_action_plan:{item}" for item in cls._string_list(action_plan.get("warnings")))
+        if selected:
+            warnings.append("source_map_consumer_materializations_require_explicit_review")
+        if materializations:
+            warnings.append("materialization_does_not_execute_debugger_logpoint_hook_or_rebuild")
+        if not spec.source_map_lookup:
+            warnings.append("source_map_lookup_descriptor_not_attached")
+        if not spec.source_map_source_content:
+            warnings.append("source_map_source_content_descriptor_not_attached")
+        if not spec.bundler_symbol_scope:
+            warnings.append("bundler_symbol_scope_descriptor_not_attached")
+        return warnings
+
+    @staticmethod
+    def _next_action(blockers: list[str], materializations: list[dict[str, Any]]) -> str:
+        if "source_map_consumer_action_plan_missing" in blockers:
+            return "provide_ready_source_map_consumer_action_plan_descriptor"
+        if "source_map_consumer_action_plan_not_ready" in blockers:
+            return "resolve_source_map_consumer_action_plan_blockers"
+        if "raw_source_content_export_detected" in blockers or "source_content_preview_export_detected" in blockers:
+            return "replace_source_content_descriptor_with_metadata_only_version"
+        if any(item.startswith("requested_action_id_not_found:") for item in blockers):
+            return "choose_action_ids_from_source_map_consumer_action_plan"
+        if "no_source_map_consumer_action_selected" in blockers or "source_map_consumer_action_plan_has_no_actions" in blockers:
+            return "provide_ready_source_map_consumer_action_plan_descriptor"
+        return "review_source_map_consumer_materialization_before_debugger_rebuild_logpoint_or_hook_execution"
+
+    @staticmethod
+    def _action_plans(action_plan: dict[str, Any]) -> list[dict[str, Any]]:
+        items = action_plan.get("action_plans") if isinstance(action_plan.get("action_plans"), list) else []
+        return [item for item in items if isinstance(item, dict)]
+
+    @staticmethod
+    def _status(payload: dict[str, Any]) -> str:
+        return str(payload.get("status") or payload.get("state") or "").strip().lower()
+
+    @staticmethod
+    def _string_list(payload: Any) -> list[str]:
+        if not isinstance(payload, list):
+            return []
+        return [str(item) for item in payload if str(item).strip()]
+
+    @staticmethod
+    def _intish(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _nested_get(payload: dict[str, Any], *keys: str) -> Any:
+        current: Any = payload
+        for key in keys:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(key)
+        return current
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "plan_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "debugger_execution_performed": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class BundlerSymbolScopeSpec:
     """Review-only descriptor request for Source Map symbol scope hints.
 

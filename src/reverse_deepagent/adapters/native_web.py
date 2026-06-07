@@ -180,6 +180,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapLookupSpec,
     SourceMapConsumerActionPlanManager,
     SourceMapConsumerActionPlanSpec,
+    SourceMapConsumerMaterializationManager,
+    SourceMapConsumerMaterializationSpec,
     SourceMapReadinessManager,
     SourceMapReadinessSpec,
     SourceMapSourceContentManager,
@@ -603,6 +605,84 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_consumer_materialization_request(protection_name, context):
+            spec = SourceMapConsumerMaterializationSpec.from_context(context)
+            result = SourceMapConsumerMaterializationManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            materializations = descriptor.get("materializations") if isinstance(descriptor.get("materializations"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            consumers = sorted({str(item.get("consumer")) for item in materializations if isinstance(item, dict) and item.get("consumer")})
+            kinds = sorted({str(item.get("materialization_kind")) for item in materializations if isinstance(item, dict) and item.get("materialization_kind")})
+            verification = [
+                f"source_map_consumer_materialization_status={result.status}",
+                f"source_map_consumer_materialization_count={len(materializations)}",
+                f"source_map_consumer_materialization_consumers={','.join(consumers)}",
+                f"source_map_consumer_materialization_kinds={','.join(kinds)}",
+                "source_map_consumer_materialization_review_only=True",
+                "source_map_consumer_materialization_plan_only=True",
+                f"source_map_consumer_materialization_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_consumer_materialization_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_consumer_materialization_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_consumer_materialization_browser_started={policy.get('browser_started', False)}",
+                f"source_map_consumer_materialization_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_consumer_materialization_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_consumer_materialization_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_consumer_materialization_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_consumer_materialization_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_consumer_materialization_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_consumer_materialization_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_consumer_materialization_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_consumer_materialization_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_consumer_materialization_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-consumer-materialization.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map consumer materialization descriptor.",
+                metadata={
+                    "status": result.status,
+                    "materialization_count": len(materializations),
+                    "consumers": consumers,
+                    "materialization_kinds": kinds,
+                    "review_only": True,
+                    "plan_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_consumer_materialization_before_debugger_rebuild_logpoint_or_hook_execution"
+                actions = ["review_source_map_consumer_materialization"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_ready_source_map_consumer_action_plan_descriptor"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_consumer_materialization_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -7780,6 +7860,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapSourcesContent",
                 "review_source_map_source_content",
                 "reviewSourceMapSourceContent",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_consumer_materialization_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-consumer-materialization",
+            "source-map-materialization",
+            "source-map-action-materialization",
+            "review-source-map-consumer-materialization",
+            "materialize-source-map-consumers",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_consumer_materialization",
+                "sourceMapConsumerMaterialization",
+                "source_map_materialization",
+                "sourceMapMaterialization",
+                "source_map_action_materialization",
+                "sourceMapActionMaterialization",
             )
         )
 
