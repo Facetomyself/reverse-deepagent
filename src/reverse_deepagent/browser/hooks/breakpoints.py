@@ -5309,6 +5309,271 @@ class PausedSessionAutomaticLoopExecutionPlanManager:
 
 
 @dataclass(slots=True)
+class PausedSessionAutomaticLoopExecutorPreflightSpec:
+    """Read-only preflight descriptor for a future bounded automatic-loop executor.
+
+    This consumes the automatic-loop execution plan descriptor and verifies that the
+    future executor input can move to manual review. It never executes iterations,
+    sends CDP commands, recovers callFrames, subscribes to paused events, advances
+    queues, or manages a long-lived cross-process session.
+    """
+
+    automatic_loop_execution_plan: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+    require_review_per_iteration: bool = True
+    require_checkpoint_after_each_iteration: bool = True
+    max_preflight_iterations: int = 2
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionAutomaticLoopExecutorPreflightSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_automatic_loop_executor_preflight")
+            or context.get("pausedSessionAutomaticLoopExecutorPreflight")
+            or context.get("paused-session-automatic-loop-executor-preflight")
+            or context.get("preflight_paused_session_automatic_loop_executor")
+            or context.get("preflightPausedSessionAutomaticLoopExecutor")
+            or context.get("automatic_loop_executor_preflight")
+            or context.get("automaticLoopExecutorPreflight")
+        )
+        plan_container = _first_dict(
+            context,
+            "paused_session_automatic_loop_execution_plan",
+            "pausedSessionAutomaticLoopExecutionPlan",
+            "paused-session-automatic-loop-execution-plan",
+            "plan_paused_session_automatic_loop_execution",
+            "planPausedSessionAutomaticLoopExecution",
+            "automatic_loop_execution_plan",
+            "automaticLoopExecutionPlan",
+        )
+        plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        if not requested and not plan:
+            return None
+        default_budget = plan.get("planned_iteration_count") or plan.get("max_planned_iterations") or 2
+        max_raw = context.get("max_preflight_iterations", context.get("maxPreflightIterations", default_budget))
+        try:
+            max_preflight_iterations = int(max_raw)
+        except (TypeError, ValueError):
+            max_preflight_iterations = 2
+        return cls(
+            automatic_loop_execution_plan=plan,
+            reviewer=str(context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or "").strip() or None,
+            require_review_per_iteration=bool(context.get("require_review_per_iteration", context.get("requireReviewPerIteration", True))),
+            require_checkpoint_after_each_iteration=bool(context.get("require_checkpoint_after_each_iteration", context.get("requireCheckpointAfterEachIteration", True))),
+            max_preflight_iterations=max(1, min(max_preflight_iterations, 5)),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopExecutorPreflightResult:
+    status: str
+    preflight: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "preflight": self.preflight,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+        }
+
+
+class PausedSessionAutomaticLoopExecutorPreflightManager:
+    """Review-only executor preflight descriptor for a future bounded automatic loop."""
+
+    def review(self, spec: PausedSessionAutomaticLoopExecutorPreflightSpec | None) -> PausedSessionAutomaticLoopExecutorPreflightResult:
+        blockers = self._blockers(spec)
+        status = "ready_for_review" if not blockers else "blocked"
+        payload = self._payload(spec, status=status, blockers=blockers)
+        return PausedSessionAutomaticLoopExecutorPreflightResult(status=status, preflight=payload, side_effect_policy=self._side_effect_policy(), reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionAutomaticLoopExecutorPreflightSpec | None) -> list[str]:
+        if spec is None:
+            return ["automatic_loop_executor_preflight_request_missing"]
+        plan = spec.automatic_loop_execution_plan
+        blockers: list[str] = []
+        if not plan:
+            blockers.append("automatic_loop_execution_plan_required")
+        elif plan.get("status") != "ready_for_review" or plan.get("execution_plan_ready_for_review") is not True:
+            blockers.append("automatic_loop_execution_plan_not_ready")
+        plan_blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+        if plan_blockers:
+            blockers.append("automatic_loop_execution_plan_has_blockers")
+        future_contract = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+        if not future_contract:
+            blockers.append("future_executor_contract_required")
+        elif future_contract.get("implemented") is True:
+            blockers.append("unexpected_existing_automatic_loop_executor")
+        planned_iterations = plan.get("planned_iterations") if isinstance(plan.get("planned_iterations"), list) else []
+        if not planned_iterations:
+            blockers.append("planned_iterations_required")
+        gates = plan.get("review_gates") if isinstance(plan.get("review_gates"), dict) else {}
+        if spec.require_review_per_iteration is not True or gates.get("requires_review_per_iteration") is not True:
+            blockers.append("review_per_iteration_required")
+        if spec.require_checkpoint_after_each_iteration is not True or gates.get("requires_checkpoint_after_each_iteration") is not True:
+            blockers.append("checkpoint_after_each_iteration_required")
+        policy = plan.get("side_effect_policy") if isinstance(plan.get("side_effect_policy"), dict) else {}
+        if any(
+            policy.get(key) is True
+            for key in (
+                "cdp_command_sent",
+                "debugger_event_subscribed",
+                "paused_event_captured",
+                "callframe_evaluated",
+                "multi_step_continuation_executed",
+                "automatic_multi_step_loop",
+                "automatic_queue_advance",
+                "long_lived_cross_process_session_managed",
+                "calls_mcp",
+                "mobile_runtime_used",
+            )
+        ):
+            blockers.append("execution_plan_side_effect_claim_detected")
+        if spec.max_preflight_iterations < 1:
+            blockers.append("executor_preflight_iteration_budget_required")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionAutomaticLoopExecutorPreflightSpec | None, *, status: str, blockers: list[str]) -> dict[str, Any]:
+        plan = spec.automatic_loop_execution_plan if spec else {}
+        planned_iterations = plan.get("planned_iterations") if isinstance(plan.get("planned_iterations"), list) else []
+        preflight_iterations = [dict(item) for item in planned_iterations if isinstance(item, dict)][: spec.max_preflight_iterations if spec else 0]
+        gates = plan.get("review_gates") if isinstance(plan.get("review_gates"), dict) else {}
+        future_contract = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+        ready = status == "ready_for_review"
+        return {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-executor-preflight.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "executor_preflight_ready_for_review": ready,
+            "preflight_id": f"automatic-loop-executor-preflight:{plan.get('plan_id') or plan.get('loop_id') or 'unbound'}",
+            "plan_id": plan.get("plan_id"),
+            "loop_id": plan.get("loop_id"),
+            "workflow_id": plan.get("workflow_id"),
+            "pause_session_id": plan.get("pause_session_id"),
+            "target_id": plan.get("target_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "source_execution_plan": {
+                "schema_version": plan.get("schema_version"),
+                "status": plan.get("status"),
+                "execution_plan_ready_for_review": bool(plan.get("execution_plan_ready_for_review")),
+                "planned_iteration_count": plan.get("planned_iteration_count", len(planned_iterations)),
+                "max_planned_iterations": plan.get("max_planned_iterations"),
+                "future_executor_implemented": bool(future_contract.get("implemented")),
+                "next_action": plan.get("next_action"),
+            },
+            "preflight_iteration_count": len(preflight_iterations),
+            "max_preflight_iterations": spec.max_preflight_iterations if spec else 0,
+            "preflight_iterations": [
+                {
+                    "iteration_index": item.get("iteration_index"),
+                    "workflow_step_index": item.get("workflow_step_index"),
+                    "method": item.get("method"),
+                    "fingerprint": item.get("fingerprint"),
+                    "preflight_status": "requires_explicit_review",
+                    "would_execute_in_this_preflight": False,
+                    "requires_fresh_live_callframe": True,
+                    "requires_retained_attached_session": True,
+                    "requires_review_approval": True,
+                    "requires_checkpoint_after_iteration": True,
+                }
+                for item in preflight_iterations
+            ],
+            "executor_input_gates": {
+                "requires_ready_execution_plan": True,
+                "requires_matching_plan_id": True,
+                "requires_review_approval_before_any_iteration": True,
+                "requires_review_per_iteration": spec.require_review_per_iteration if spec else True,
+                "requires_checkpoint_after_each_iteration": spec.require_checkpoint_after_each_iteration if spec else True,
+                "requires_fresh_live_callframe_per_iteration": True,
+                "requires_retained_attached_session_per_iteration": True,
+                "requires_bounded_iteration_budget": True,
+                "requires_stop_after_each_checkpoint": True,
+                "ready_to_execute_now": False,
+                "executor_implemented": False,
+            },
+            "future_executor_contract": {
+                "executor_name": future_contract.get("executor_name") or "execute_paused_session_automatic_loop",
+                "implemented": False,
+                "executor_artifact": future_contract.get("executor_artifact") or "workspace/paused-session-automatic-loop-execution.json",
+                "preflight_artifact": "workspace/paused-session-automatic-loop-executor-preflight.json",
+                "plan_artifact": future_contract.get("plan_artifact") or "workspace/paused-session-automatic-loop-execution-plan.json",
+                "would_require_matching_plan_id": True,
+                "would_execute_at_most_preflight_iterations": True,
+                "would_not_run_as_daemon": True,
+                "would_not_manage_long_lived_session": True,
+                "would_not_touch_mobile_runtime_chains": True,
+            },
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "preflight_only": True,
+            "plan_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "debugger_domain_enabled": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "multi_step_continuation_executed": False,
+            "multi_step_loop_iteration_executed": False,
+            "automatic_live_callframe_recovery": False,
+            "automatic_multi_step_loop": False,
+            "automatic_queue_advance": False,
+            "automatic_wrapper_continuation": False,
+            "long_lived_cross_process_session_managed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "automatic_loop_executor_preflight_request_missing": ("request", "No automatic loop executor preflight request was provided.", "request_paused_session_automatic_loop_executor_preflight"),
+            "automatic_loop_execution_plan_required": ("plan", "A ready automatic-loop execution plan descriptor is required.", "plan_paused_session_automatic_loop_execution"),
+            "automatic_loop_execution_plan_not_ready": ("plan", "The automatic-loop execution plan descriptor is not ready.", "resolve_automatic_loop_execution_plan_blockers"),
+            "automatic_loop_execution_plan_has_blockers": ("plan", "The automatic-loop execution plan still has blockers.", "resolve_automatic_loop_execution_plan_blockers"),
+            "future_executor_contract_required": ("contract", "The future executor contract metadata is required.", "regenerate_automatic_loop_execution_plan"),
+            "unexpected_existing_automatic_loop_executor": ("safety", "The plan claims an executor is already implemented and needs separate audit.", "audit_existing_automatic_loop_executor_claim"),
+            "planned_iterations_required": ("plan", "Preflight needs bounded planned iterations.", "provide_execution_plan_with_bounded_iterations"),
+            "review_per_iteration_required": ("review", "The executor preflight must preserve review per iteration.", "restore_review_per_iteration_gate"),
+            "checkpoint_after_each_iteration_required": ("checkpoint", "The executor preflight must require checkpoint after each iteration.", "restore_checkpoint_after_each_iteration_gate"),
+            "execution_plan_side_effect_claim_detected": ("safety", "The execution plan claims side effects and must be audited first.", "audit_execution_plan_side_effect_claim"),
+            "executor_preflight_iteration_budget_required": ("budget", "A bounded preflight iteration budget is required.", "set_automatic_loop_executor_preflight_budget"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_executor_preflight"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_executor_preflight"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_executor_preflight"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if blockers:
+            return "inspect_paused_session_automatic_loop_executor_preflight_blockers"
+        if status == "ready_for_review":
+            return "review_future_bounded_automatic_loop_executor_preflight"
+        return "inspect_paused_session_automatic_loop_executor_preflight"
+
+
+@dataclass(slots=True)
 class PausedSessionMultiStepLoopExecutionSpec:
     """Review-gated one-iteration executor for a reviewed paused-session loop plan.
 

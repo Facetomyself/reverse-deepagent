@@ -903,6 +903,20 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop executor preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_executor_preflight",
+                    details={
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "executor_preflight_ready_for_review": True,
+                        "preflight_iteration_count": 2,
+                        "executor_input_gates": {"ready_to_execute_now": False},
+                        "future_executor_contract": {"implemented": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -960,6 +974,9 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-readiness.json"]["automatic_multi_step_loop_supported"])
         self.assertTrue(payloads["paused-session-automatic-loop-execution-plan.json"]["execution_plan_ready_for_review"])
         self.assertFalse(payloads["paused-session-automatic-loop-execution-plan.json"]["future_executor_contract"]["implemented"])
+        self.assertTrue(payloads["paused-session-automatic-loop-executor-preflight.json"]["executor_preflight_ready_for_review"])
+        self.assertFalse(payloads["paused-session-automatic-loop-executor-preflight.json"]["executor_input_gates"]["ready_to_execute_now"])
+        self.assertFalse(payloads["paused-session-automatic-loop-executor-preflight.json"]["future_executor_contract"]["implemented"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1114,6 +1131,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_multi_step_loop_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_readiness"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_execution_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_executor_preflight"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")

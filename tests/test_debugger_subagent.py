@@ -846,6 +846,53 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(result["summary"]["automatic_loop_execution_plan"]["ready_for_review"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_warns_for_automatic_loop_executor_preflight_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_preflight": {
+                "status": "ready_for_review",
+                "ready_for_review": True,
+                "executor_preflight_ready_for_review": True,
+                "preflight_iteration_count": 2,
+                "max_preflight_iterations": 2,
+                "executor_input_gates": {"ready_to_execute_now": False},
+                "future_executor_contract": {"implemented": False},
+                "next_action": "review_future_bounded_automatic_loop_executor_preflight",
+                "blockers": [],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_executor_preflight_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_bounded_automatic_loop_executor_preflight")
+        preflight = result["summary"]["automatic_loop_executor_preflight"]
+        self.assertTrue(preflight["ready_for_review"])
+        self.assertTrue(preflight["executor_preflight_ready_for_review"])
+        self.assertFalse(preflight["ready_to_execute_now"])
+        self.assertEqual(preflight["preflight_iteration_count"], 2)
+        self.assertFalse(preflight["future_executor_implemented"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_executor_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_preflight": {
+                "status": "blocked",
+                "ready_for_review": False,
+                "blockers": ["automatic_loop_execution_plan_required"],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_executor_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_executor_preflight_blockers")
+        self.assertFalse(result["summary"]["automatic_loop_executor_preflight"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_blocks_multi_step_loop_execution(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

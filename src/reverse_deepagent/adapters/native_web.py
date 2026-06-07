@@ -160,6 +160,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopReadinessSpec,
     PausedSessionAutomaticLoopExecutionPlanManager,
     PausedSessionAutomaticLoopExecutionPlanSpec,
+    PausedSessionAutomaticLoopExecutorPreflightManager,
+    PausedSessionAutomaticLoopExecutorPreflightSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1620,6 +1622,62 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_executor_preflight_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopExecutorPreflightSpec.from_context(context)
+            result = PausedSessionAutomaticLoopExecutorPreflightManager().review(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            gates = preflight.get("executor_input_gates") if isinstance(preflight.get("executor_input_gates"), dict) else {}
+            verification = [
+                f"paused_session_automatic_loop_executor_preflight_status={result.status}",
+                f"paused_session_automatic_loop_executor_preflight_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_executor_preflight_ready_for_review={preflight.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_executor_preflight_executor_implemented={(preflight.get('future_executor_contract') or {}).get('implemented', False) if isinstance(preflight.get('future_executor_contract'), dict) else False}",
+                f"paused_session_automatic_loop_executor_preflight_iteration_count={preflight.get('preflight_iteration_count', 0)}",
+                f"paused_session_automatic_loop_executor_preflight_ready_to_execute_now={gates.get('ready_to_execute_now', False)}",
+                f"paused_session_automatic_loop_executor_preflight_review_per_iteration={gates.get('requires_review_per_iteration', False)}",
+                f"paused_session_automatic_loop_executor_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_executor_preflight_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_executor_preflight_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_executor_preflight_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_automatic_loop_executor_preflight_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_automatic_loop_executor_preflight_automatic_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"paused_session_automatic_loop_executor_preflight_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
+                f"paused_session_automatic_loop_executor_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_executor_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_executor_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-executor-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only paused-session automatic loop executor preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": preflight.get("ready_for_review", False),
+                        "executor_preflight_ready_for_review": preflight.get("executor_preflight_ready_for_review", False),
+                        "future_executor_implemented": (preflight.get("future_executor_contract") or {}).get("implemented", False) if isinstance(preflight.get("future_executor_contract"), dict) else False,
+                        "ready_to_execute_now": gates.get("ready_to_execute_now", False),
+                        "preflight_id": preflight.get("preflight_id"),
+                        "preflight_iteration_count": preflight.get("preflight_iteration_count", 0),
+                        "automatic_multi_step_loop": policy.get("automatic_multi_step_loop", False),
+                        "long_lived_cross_process_session_managed": policy.get("long_lived_cross_process_session_managed", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "inspect_paused_session_automatic_loop_executor_preflight",
+                confidence=ConfidenceLevel.LOW,
             )
         if self._is_paused_session_automatic_loop_execution_plan_request(protection_name, context):
             spec = PausedSessionAutomaticLoopExecutionPlanSpec.from_context(context)
@@ -6725,6 +6783,8 @@ class NativeWebRuntime(WebReverseRuntime):
         if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_automatic_loop_executor_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_automatic_loop_execution_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_automatic_loop_readiness_request(protection_name, context):
@@ -6781,7 +6841,33 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_paused_session_automatic_loop_executor_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-automatic-loop-executor-preflight",
+            "preflight-paused-session-automatic-loop-executor",
+            "review-paused-session-automatic-loop-executor-preflight",
+            "automatic-paused-session-loop-executor-preflight",
+            "paused-session-bounded-automatic-loop-executor-preflight",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_automatic_loop_executor_preflight",
+                "pausedSessionAutomaticLoopExecutorPreflight",
+                "paused-session-automatic-loop-executor-preflight",
+                "preflight_paused_session_automatic_loop_executor",
+                "preflightPausedSessionAutomaticLoopExecutor",
+                "automatic_loop_executor_preflight",
+                "automaticLoopExecutorPreflight",
+            )
+        )
+
+    @staticmethod
     def _is_paused_session_automatic_loop_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_executor_preflight_request(protection_name, context):
+            return False
         normalized = protection_name.strip().lower()
         if normalized in {
             "paused-session-automatic-loop-execution-plan",
