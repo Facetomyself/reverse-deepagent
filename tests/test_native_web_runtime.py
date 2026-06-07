@@ -5536,6 +5536,66 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["fetch_source_map"])
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
 
+    def test_native_web_runtime_reviews_source_map_consumer_action_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-consumer-action-plan",
+            {
+                "source_map_readiness": {
+                    "status": "ready_for_review",
+                    "readiness": {
+                        "debugger_location_ready": True,
+                        "source_content_metadata_ready": True,
+                        "source_logpoint_planning_ready": True,
+                        "rebuild_source_metadata_ready": True,
+                        "bundler_scope_review_ready": True,
+                    },
+                    "blockers": [],
+                },
+                "source_map_lookup": {
+                    "status": "ready_for_review",
+                    "mapping_found": True,
+                    "location": {"strategy": "source_map_generated_exact", "source": "src/sign.ts"},
+                },
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "source_content_available": True,
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": False, "preview_exported": False},
+                },
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "scope_candidate_count": 1,
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                    "hook_readiness": {"source_logpoint_reviewable": True},
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_consumer_action_plan"])
+        self.assertIn("source_map_consumer_action_plan_status=ready_for_review", result.verification)
+        self.assertIn("source_map_consumer_action_plan_count=4", result.verification)
+        self.assertIn("source_map_consumer_action_plan_review_only=True", result.verification)
+        self.assertIn("source_map_consumer_action_plan_plan_only=True", result.verification)
+        self.assertIn("source_map_consumer_action_plan_fetch_source_map=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_browser_started=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_logpoint_installed=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_hook_installed=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_rebuild_executed=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_calls_mcp=False", result.verification)
+        self.assertIn("source_map_consumer_action_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_consumer_action_plan_before_debugger_rebuild_or_logpoint_execution")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-consumer-action-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["action_plan_count"], 4)
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
     def test_native_web_runtime_reviews_source_map_readiness_without_starting_browser(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

@@ -8,6 +8,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFetchSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
+    SourceMapConsumerActionPlanManager,
+    SourceMapConsumerActionPlanSpec,
     SourceMapReadinessManager,
     SourceMapReadinessSpec,
     SourceMapSourceContentManager,
@@ -525,6 +527,103 @@ class SourceMapReadinessManagerTests(unittest.TestCase):
         )
 
         result = SourceMapReadinessManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("raw_source_content_export_detected", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "replace_source_content_descriptor_with_metadata_only_version")
+
+
+class SourceMapConsumerActionPlanManagerTests(unittest.TestCase):
+    def test_source_map_consumer_action_plan_reviews_ready_consumers_without_side_effects(self) -> None:
+        spec = SourceMapConsumerActionPlanSpec.from_context(
+            {
+                "source_map_consumer_action_plan": True,
+                "source_map_readiness": {
+                    "status": "ready_for_review",
+                    "readiness": {
+                        "debugger_location_ready": True,
+                        "source_content_metadata_ready": True,
+                        "source_logpoint_planning_ready": True,
+                        "rebuild_source_metadata_ready": True,
+                        "bundler_scope_review_ready": True,
+                        "raw_source_content_exported": False,
+                        "preview_exported": False,
+                    },
+                    "blockers": [],
+                    "warnings": [],
+                },
+                "source_map_lookup": {
+                    "status": "ready_for_review",
+                    "mapping_found": True,
+                    "location": {"strategy": "source_map_generated_exact", "source": "src/sign.ts", "line_number": 0, "column_number": 4},
+                },
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "source_content_available": True,
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": False, "preview_exported": False},
+                },
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "scope_candidate_count": 1,
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                    "hook_readiness": {"source_logpoint_reviewable": True},
+                },
+            }
+        )
+
+        result = SourceMapConsumerActionPlanManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-consumer-action-plan.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["plan_only"])
+        self.assertEqual(descriptor["blockers"], [])
+        self.assertEqual(descriptor["action_plan_count"], 4)
+        consumers = {item["consumer"] for item in descriptor["action_plans"]}
+        self.assertEqual(consumers, {"debugger", "source-logpoint", "rebuild", "hook"})
+        self.assertTrue(all(item["review_required"] for item in descriptor["action_plans"]))
+        self.assertTrue(all(item["execute_automatically"] is False for item in descriptor["action_plans"]))
+        policy = descriptor["side_effect_policy"]
+        self.assertTrue(policy["read_only"])
+        self.assertTrue(policy["plan_only"])
+        self.assertFalse(policy["fetch_source_map"])
+        self.assertFalse(policy["browser_started"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["debugger_execution_performed"])
+        self.assertFalse(policy["runtime_evaluated"])
+        self.assertFalse(policy["logpoint_installed"])
+        self.assertFalse(policy["hook_installed"])
+        self.assertFalse(policy["rebuild_executed"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
+
+    def test_source_map_consumer_action_plan_blocks_missing_readiness(self) -> None:
+        spec = SourceMapConsumerActionPlanSpec.from_context({"source_map_consumer_action_plan": True})
+
+        result = SourceMapConsumerActionPlanManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_readiness_descriptor_missing", result.descriptor["blockers"])
+        self.assertIn("no_source_map_consumer_action_ready", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "provide_ready_source_map_readiness_descriptor")
+
+    def test_source_map_consumer_action_plan_blocks_raw_source_or_preview_leak(self) -> None:
+        spec = SourceMapConsumerActionPlanSpec.from_context(
+            {
+                "source_map_consumer_action_plan": True,
+                "source_map_readiness": {
+                    "status": "ready_for_review",
+                    "readiness": {
+                        "debugger_location_ready": True,
+                        "raw_source_content_exported": True,
+                        "preview_exported": False,
+                    },
+                },
+            }
+        )
+
+        result = SourceMapConsumerActionPlanManager().review(spec)
 
         self.assertEqual(result.status, "blocked")
         self.assertIn("raw_source_content_export_detected", result.descriptor["blockers"])

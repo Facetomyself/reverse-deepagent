@@ -178,6 +178,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFetchSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
+    SourceMapConsumerActionPlanManager,
+    SourceMapConsumerActionPlanSpec,
     SourceMapReadinessManager,
     SourceMapReadinessSpec,
     SourceMapSourceContentManager,
@@ -601,6 +603,85 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_consumer_action_plan_request(protection_name, context):
+            spec = SourceMapConsumerActionPlanSpec.from_context(context)
+            result = SourceMapConsumerActionPlanManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            evidence_status = descriptor.get("evidence_status") if isinstance(descriptor.get("evidence_status"), dict) else {}
+            readiness = evidence_status.get("readiness") if isinstance(evidence_status.get("readiness"), dict) else {}
+            action_plans = descriptor.get("action_plans") if isinstance(descriptor.get("action_plans"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            consumers = sorted({str(item.get("consumer")) for item in action_plans if isinstance(item, dict) and item.get("consumer")})
+            verification = [
+                f"source_map_consumer_action_plan_status={result.status}",
+                f"source_map_consumer_action_plan_count={len(action_plans)}",
+                f"source_map_consumer_action_plan_consumers={','.join(consumers)}",
+                f"source_map_consumer_action_plan_debugger_location_ready={readiness.get('debugger_location_ready', False)}",
+                f"source_map_consumer_action_plan_rebuild_source_metadata_ready={readiness.get('rebuild_source_metadata_ready', False)}",
+                f"source_map_consumer_action_plan_source_logpoint_planning_ready={readiness.get('source_logpoint_planning_ready', False)}",
+                "source_map_consumer_action_plan_review_only=True",
+                "source_map_consumer_action_plan_plan_only=True",
+                f"source_map_consumer_action_plan_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_consumer_action_plan_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_consumer_action_plan_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_consumer_action_plan_browser_started={policy.get('browser_started', False)}",
+                f"source_map_consumer_action_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_consumer_action_plan_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_consumer_action_plan_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_consumer_action_plan_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_consumer_action_plan_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_consumer_action_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_consumer_action_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_consumer_action_plan_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_consumer_action_plan_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-consumer-action-plan.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map consumer action plan descriptor.",
+                metadata={
+                    "status": result.status,
+                    "action_plan_count": len(action_plans),
+                    "consumers": consumers,
+                    "review_only": True,
+                    "plan_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_consumer_action_plan_before_debugger_rebuild_or_logpoint_execution"
+                actions = ["review_source_map_consumer_action_plan"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_ready_source_map_readiness_descriptor"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_consumer_action_plan_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -7699,6 +7780,29 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapSourcesContent",
                 "review_source_map_source_content",
                 "reviewSourceMapSourceContent",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_consumer_action_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-consumer-action-plan",
+            "source-map-action-plan",
+            "source-map-followup-plan",
+            "review-source-map-consumer-action-plan",
+            "plan-source-map-consumers",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_consumer_action_plan",
+                "sourceMapConsumerActionPlan",
+                "source_map_action_plan",
+                "sourceMapActionPlan",
+                "source_map_followup_plan",
+                "sourceMapFollowupPlan",
             )
         )
 
