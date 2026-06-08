@@ -1763,6 +1763,7 @@ class SourceMapConsumerMaterializationManager:
             "status": status,
             "review_only": True,
             "plan_only": True,
+            "typed_payload_schema_version": "reverse-deepagent.source-map-consumer-typed-review-payload.v1",
             "requested_action_ids": list(spec.requested_action_ids),
             "requested_consumers": list(spec.requested_consumers),
             "source_action_plan_status": self._status(action_plan),
@@ -1771,6 +1772,13 @@ class SourceMapConsumerMaterializationManager:
             "selected_consumer_count": len({str(item.get("consumer")) for item in selected if item.get("consumer")}),
             "materializations": materializations,
             "materialization_count": len(materializations),
+            "typed_review_payloads": [item["typed_review_payload"] for item in materializations if isinstance(item.get("typed_review_payload"), dict)],
+            "typed_review_payload_count": sum(1 for item in materializations if isinstance(item.get("typed_review_payload"), dict)),
+            "typed_review_payload_consumers": [
+                str(item.get("consumer"))
+                for item in materializations
+                if isinstance(item.get("typed_review_payload"), dict) and item.get("consumer")
+            ],
             "blockers": list(dict.fromkeys(blockers)),
             "warnings": list(dict.fromkeys(warnings)),
             "next_action": self._next_action(blockers, materializations),
@@ -1792,6 +1800,10 @@ class SourceMapConsumerMaterializationManager:
             "selected_consumer_count": 0,
             "materializations": [],
             "materialization_count": 0,
+            "typed_payload_schema_version": "reverse-deepagent.source-map-consumer-typed-review-payload.v1",
+            "typed_review_payloads": [],
+            "typed_review_payload_count": 0,
+            "typed_review_payload_consumers": [],
             "blockers": [reason],
             "warnings": [],
             "next_action": "provide_ready_source_map_consumer_action_plan_descriptor",
@@ -1860,56 +1872,105 @@ class SourceMapConsumerMaterializationManager:
             "side_effect_policy": cls._side_effect_policy(),
         }
         if consumer == "debugger":
+            debugger_location = {
+                "source": evidence.get("source") or cls._nested_get(spec.source_map_lookup, "location", "source") or "",
+                "line_number": evidence.get("line_number") if evidence.get("line_number") is not None else cls._nested_get(spec.source_map_lookup, "location", "line_number"),
+                "column_number": evidence.get("column_number") if evidence.get("column_number") is not None else cls._nested_get(spec.source_map_lookup, "location", "column_number"),
+                "mapping_strategy": evidence.get("mapping_strategy") or cls._nested_get(spec.source_map_lookup, "location", "strategy") or "",
+            }
             base.update(
                 {
                     "materialization_kind": "debugger_location_materialization",
-                    "debugger_location": {
-                        "source": evidence.get("source") or cls._nested_get(spec.source_map_lookup, "location", "source") or "",
-                        "line_number": evidence.get("line_number") if evidence.get("line_number") is not None else cls._nested_get(spec.source_map_lookup, "location", "line_number"),
-                        "column_number": evidence.get("column_number") if evidence.get("column_number") is not None else cls._nested_get(spec.source_map_lookup, "location", "column_number"),
-                        "mapping_strategy": evidence.get("mapping_strategy") or cls._nested_get(spec.source_map_lookup, "location", "strategy") or "",
-                    },
+                    "debugger_location": debugger_location,
+                    "typed_review_payload": cls._typed_payload(
+                        action_id=action_id,
+                        consumer=consumer,
+                        payload_kind="debugger-location-review",
+                        executor_input={
+                            "location": debugger_location,
+                            "cdp_command": None,
+                            "requires_review_before_debugger_use": True,
+                        },
+                    ),
                     "cdp_command": None,
                     "debugger_execution_supported": False,
                     "next_action": "review_debugger_location_materialization_before_cdp_use",
                 }
             )
         elif consumer == "source-logpoint":
+            source_logpoint_plan = {
+                "bundler_kind": evidence.get("bundler_kind") or cls._nested_get(spec.bundler_symbol_scope, "bundler_classification", "bundler_kind") or "unknown",
+                "scope_candidate_count": cls._intish(evidence.get("scope_candidate_count") if evidence.get("scope_candidate_count") is not None else spec.bundler_symbol_scope.get("scope_candidate_count")),
+                "install_supported": False,
+                "logpoint_installed": False,
+            }
             base.update(
                 {
                     "materialization_kind": "source_logpoint_materialization",
-                    "source_logpoint_plan": {
-                        "bundler_kind": evidence.get("bundler_kind") or cls._nested_get(spec.bundler_symbol_scope, "bundler_classification", "bundler_kind") or "unknown",
-                        "scope_candidate_count": cls._intish(evidence.get("scope_candidate_count") if evidence.get("scope_candidate_count") is not None else spec.bundler_symbol_scope.get("scope_candidate_count")),
-                        "install_supported": False,
-                        "logpoint_installed": False,
-                    },
+                    "source_logpoint_plan": source_logpoint_plan,
+                    "typed_review_payload": cls._typed_payload(
+                        action_id=action_id,
+                        consumer=consumer,
+                        payload_kind="source-logpoint-plan-review",
+                        executor_input={
+                            "source_logpoint_plan": source_logpoint_plan,
+                            "source_logpoint_spec_input": {
+                                "url_pattern_required": True,
+                                "log_expression_required": True,
+                                "install_supported_now": False,
+                            },
+                        },
+                    ),
                     "next_action": "review_source_logpoint_materialization_before_installation",
                 }
             )
         elif consumer == "rebuild":
+            rebuild_source_metadata = {
+                "source_content_available": bool(evidence.get("source_content_available")),
+                "sha256": evidence.get("sha256") or cls._nested_get(spec.source_map_source_content, "content_summary", "sha256") or "",
+                "raw_content_exported": False,
+                "preview_exported": False,
+                "rebuild_executed": False,
+            }
             base.update(
                 {
                     "materialization_kind": "rebuild_source_metadata_materialization",
-                    "rebuild_source_metadata": {
-                        "source_content_available": bool(evidence.get("source_content_available")),
-                        "sha256": evidence.get("sha256") or cls._nested_get(spec.source_map_source_content, "content_summary", "sha256") or "",
-                        "raw_content_exported": False,
-                        "preview_exported": False,
-                        "rebuild_executed": False,
-                    },
+                    "rebuild_source_metadata": rebuild_source_metadata,
+                    "typed_review_payload": cls._typed_payload(
+                        action_id=action_id,
+                        consumer=consumer,
+                        payload_kind="rebuild-source-metadata-review",
+                        executor_input={
+                            "source_content_digest": rebuild_source_metadata["sha256"],
+                            "source_content_available": rebuild_source_metadata["source_content_available"],
+                            "raw_source_content": None,
+                            "raw_content_exported": False,
+                            "preview_exported": False,
+                        },
+                    ),
                     "next_action": "review_rebuild_source_metadata_materialization_before_rebuild_use",
                 }
             )
         elif consumer == "hook":
+            hook_symbol_scope = {
+                "bundler_kind": evidence.get("bundler_kind") or cls._nested_get(spec.bundler_symbol_scope, "bundler_classification", "bundler_kind") or "unknown",
+                "scope_candidate_count": cls._intish(evidence.get("scope_candidate_count") if evidence.get("scope_candidate_count") is not None else spec.bundler_symbol_scope.get("scope_candidate_count")),
+                "hook_installed": False,
+            }
             base.update(
                 {
                     "materialization_kind": "hook_symbol_scope_materialization",
-                    "hook_symbol_scope": {
-                        "bundler_kind": evidence.get("bundler_kind") or cls._nested_get(spec.bundler_symbol_scope, "bundler_classification", "bundler_kind") or "unknown",
-                        "scope_candidate_count": cls._intish(evidence.get("scope_candidate_count") if evidence.get("scope_candidate_count") is not None else spec.bundler_symbol_scope.get("scope_candidate_count")),
-                        "hook_installed": False,
-                    },
+                    "hook_symbol_scope": hook_symbol_scope,
+                    "typed_review_payload": cls._typed_payload(
+                        action_id=action_id,
+                        consumer=consumer,
+                        payload_kind="hook-symbol-scope-review",
+                        executor_input={
+                            "hook_symbol_scope": hook_symbol_scope,
+                            "hook_candidate_review_required": True,
+                            "hook_install_supported_now": False,
+                        },
+                    ),
                     "next_action": "review_hook_symbol_scope_materialization_before_runtime_hook_planning",
                 }
             )
@@ -1923,6 +1984,34 @@ class SourceMapConsumerMaterializationManager:
                 }
             )
         return base
+
+    @classmethod
+    def _typed_payload(cls, *, action_id: str, consumer: str, payload_kind: str, executor_input: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-consumer-typed-review-payload.v1",
+            "payload_kind": payload_kind,
+            "action_id": action_id,
+            "consumer": consumer,
+            "status": "ready_for_review",
+            "review_required": True,
+            "execute_automatically": False,
+            "executor_input": executor_input,
+            "safety": {
+                "raw_source_content_exported": False,
+                "preview_exported": False,
+                "fetch_source_map": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "debugger_execution_performed": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+            "next_action": f"review_{payload_kind.replace('-', '_')}_before_execution",
+        }
 
     @staticmethod
     def _materialization_blockers(materializations: list[dict[str, Any]]) -> list[str]:

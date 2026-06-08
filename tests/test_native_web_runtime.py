@@ -5637,6 +5637,12 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.applied_actions, ["review_source_map_consumer_materialization"])
         self.assertIn("source_map_consumer_materialization_status=ready_for_review", result.verification)
         self.assertIn("source_map_consumer_materialization_count=2", result.verification)
+        self.assertIn(
+            "source_map_consumer_materialization_typed_payload_schema_version=reverse-deepagent.source-map-consumer-typed-review-payload.v1",
+            result.verification,
+        )
+        self.assertIn("source_map_consumer_materialization_typed_payload_count=2", result.verification)
+        self.assertIn("source_map_consumer_materialization_typed_payload_consumers=debugger,rebuild", result.verification)
         self.assertIn("source_map_consumer_materialization_review_only=True", result.verification)
         self.assertIn("source_map_consumer_materialization_plan_only=True", result.verification)
         self.assertIn("source_map_consumer_materialization_fetch_source_map=False", result.verification)
@@ -5651,6 +5657,12 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.next_action, "review_source_map_consumer_materialization_before_debugger_rebuild_logpoint_or_hook_execution")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-consumer-materialization.json")
         self.assertEqual(result.artifacts[0].metadata["materialization_count"], 2)
+        self.assertEqual(
+            result.artifacts[0].metadata["typed_payload_schema_version"],
+            "reverse-deepagent.source-map-consumer-typed-review-payload.v1",
+        )
+        self.assertEqual(result.artifacts[0].metadata["typed_review_payload_count"], 2)
+        self.assertEqual(result.artifacts[0].metadata["typed_review_payload_consumers"], ["debugger", "rebuild"])
         self.assertTrue(result.artifacts[0].metadata["plan_only"])
         self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
         self.assertFalse(result.artifacts[0].metadata["hook_installed"])

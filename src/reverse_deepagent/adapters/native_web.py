@@ -654,11 +654,26 @@ class NativeWebRuntime(WebReverseRuntime):
                 policy = {}
             consumers = sorted({str(item.get("consumer")) for item in materializations if isinstance(item, dict) and item.get("consumer")})
             kinds = sorted({str(item.get("materialization_kind")) for item in materializations if isinstance(item, dict) and item.get("materialization_kind")})
+            typed_payloads = descriptor.get("typed_review_payloads")
+            if not isinstance(typed_payloads, list):
+                typed_payloads = []
+            typed_payload_count = len([item for item in typed_payloads if isinstance(item, dict)])
+            typed_payload_consumers = sorted(
+                {
+                    str(item.get("consumer"))
+                    for item in typed_payloads
+                    if isinstance(item, dict) and item.get("consumer")
+                }
+            )
+            typed_payload_schema_version = str(descriptor.get("typed_payload_schema_version") or "")
             verification = [
                 f"source_map_consumer_materialization_status={result.status}",
                 f"source_map_consumer_materialization_count={len(materializations)}",
                 f"source_map_consumer_materialization_consumers={','.join(consumers)}",
                 f"source_map_consumer_materialization_kinds={','.join(kinds)}",
+                f"source_map_consumer_materialization_typed_payload_schema_version={typed_payload_schema_version}",
+                f"source_map_consumer_materialization_typed_payload_count={typed_payload_count}",
+                f"source_map_consumer_materialization_typed_payload_consumers={','.join(typed_payload_consumers)}",
                 "source_map_consumer_materialization_review_only=True",
                 "source_map_consumer_materialization_plan_only=True",
                 f"source_map_consumer_materialization_raw_exported={policy.get('raw_source_content_exported', False)}",
@@ -688,6 +703,9 @@ class NativeWebRuntime(WebReverseRuntime):
                     "materialization_count": len(materializations),
                     "consumers": consumers,
                     "materialization_kinds": kinds,
+                    "typed_payload_schema_version": typed_payload_schema_version,
+                    "typed_review_payload_count": typed_payload_count,
+                    "typed_review_payload_consumers": typed_payload_consumers,
                     "review_only": True,
                     "plan_only": True,
                     "raw_source_content_exported": False,

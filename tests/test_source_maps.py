@@ -702,6 +702,9 @@ class SourceMapConsumerMaterializationManagerTests(unittest.TestCase):
         self.assertTrue(descriptor["plan_only"])
         self.assertEqual(descriptor["blockers"], [])
         self.assertEqual(descriptor["materialization_count"], 4)
+        self.assertEqual(descriptor["typed_payload_schema_version"], "reverse-deepagent.source-map-consumer-typed-review-payload.v1")
+        self.assertEqual(descriptor["typed_review_payload_count"], 4)
+        self.assertEqual(set(descriptor["typed_review_payload_consumers"]), {"debugger", "source-logpoint", "rebuild", "hook"})
         kinds = {item["materialization_kind"] for item in descriptor["materializations"]}
         self.assertEqual(
             kinds,
@@ -714,6 +717,29 @@ class SourceMapConsumerMaterializationManagerTests(unittest.TestCase):
         )
         self.assertTrue(all(item["review_required"] for item in descriptor["materializations"]))
         self.assertTrue(all(item["execute_automatically"] is False for item in descriptor["materializations"]))
+        typed_payloads = {item["consumer"]: item["typed_review_payload"] for item in descriptor["materializations"]}
+        self.assertEqual(typed_payloads["debugger"]["payload_kind"], "debugger-location-review")
+        self.assertEqual(typed_payloads["debugger"]["executor_input"]["location"]["source"], "src/sign.ts")
+        self.assertIsNone(typed_payloads["debugger"]["executor_input"]["cdp_command"])
+        self.assertEqual(typed_payloads["source-logpoint"]["payload_kind"], "source-logpoint-plan-review")
+        self.assertFalse(typed_payloads["source-logpoint"]["executor_input"]["source_logpoint_spec_input"]["install_supported_now"])
+        self.assertEqual(typed_payloads["rebuild"]["payload_kind"], "rebuild-source-metadata-review")
+        self.assertIsNone(typed_payloads["rebuild"]["executor_input"]["raw_source_content"])
+        self.assertEqual(typed_payloads["hook"]["payload_kind"], "hook-symbol-scope-review")
+        self.assertTrue(typed_payloads["hook"]["executor_input"]["hook_candidate_review_required"])
+        for payload in typed_payloads.values():
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.source-map-consumer-typed-review-payload.v1")
+            self.assertTrue(payload["review_required"])
+            self.assertFalse(payload["execute_automatically"])
+            self.assertFalse(payload["safety"]["raw_source_content_exported"])
+            self.assertFalse(payload["safety"]["preview_exported"])
+            self.assertFalse(payload["safety"]["cdp_command_sent"])
+            self.assertFalse(payload["safety"]["debugger_execution_performed"])
+            self.assertFalse(payload["safety"]["logpoint_installed"])
+            self.assertFalse(payload["safety"]["hook_installed"])
+            self.assertFalse(payload["safety"]["rebuild_executed"])
+            self.assertFalse(payload["safety"]["calls_mcp"])
+            self.assertFalse(payload["safety"]["mobile_runtime_used"])
         rebuild = next(item for item in descriptor["materializations"] if item["consumer"] == "rebuild")
         self.assertEqual(rebuild["rebuild_source_metadata"]["sha256"], "abc123")
         self.assertFalse(rebuild["rebuild_source_metadata"]["raw_content_exported"])
@@ -770,7 +796,9 @@ class SourceMapConsumerMaterializationManagerTests(unittest.TestCase):
 
         self.assertEqual(result.status, "ready_for_review")
         self.assertEqual(result.descriptor["materialization_count"], 2)
+        self.assertEqual(result.descriptor["typed_review_payload_count"], 2)
         self.assertEqual(result.descriptor["selected_action_ids"], ["review-debugger-location-use", "review-rebuild-source-metadata-use"])
+        self.assertEqual(set(result.descriptor["typed_review_payload_consumers"]), {"debugger", "rebuild"})
 
     def test_source_map_consumer_materialization_blocks_unknown_action_id(self) -> None:
         spec = SourceMapConsumerMaterializationSpec.from_context(
