@@ -7478,6 +7478,102 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_automatic_loop_multi_iteration_execution_plan_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_automatic_loop_multi_iteration_executor_approval_plan_from_native_runtime_is_plan_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+        execution_plan = {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-execution-plan.v1",
+            "status": "ready_for_review",
+            "ready_for_review": True,
+            "execution_plan_ready_for_review": True,
+            "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:automatic-loop-multi-iteration-preflight:automatic-loop-policy:native-policy-tx-1",
+            "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:native-policy-tx-1",
+            "policy_id": "automatic-loop-policy:native-policy-tx-1",
+            "transaction_id": "native-policy-tx-1",
+            "loop_id": "native-policy-loop-1",
+            "workflow_id": "native-policy-workflow-1",
+            "execution_review_gates": {
+                "ready_to_execute_now": False,
+                "execution_plan_only": True,
+                "automatic_multi_iteration_executor_implemented": False,
+                "automatic_multi_iteration_execution_allowed_now": False,
+                "requires_transaction_journal": True,
+                "requires_per_iteration_review_gate": True,
+                "requires_per_iteration_checkpoint_gate": True,
+                "requires_fresh_live_callframe_per_iteration": True,
+                "requires_stop_after_each_checkpoint": True,
+                "requires_retained_attached_session_per_iteration": True,
+                "requires_non_daemon_execution": True,
+                "requires_bounded_iteration_budget": True,
+            },
+            "planned_iteration_count": 3,
+            "max_planned_iterations": 3,
+            "planned_iterations": [
+                {
+                    "iteration_number": index,
+                    "plan_iteration_index": index - 1,
+                    "source_policy_gate_ready": True,
+                    "requires_explicit_review": True,
+                    "requires_transaction_journal": True,
+                    "requires_fresh_live_callframe": True,
+                    "requires_retained_attached_session": True,
+                    "requires_checkpoint_after_iteration": True,
+                    "requires_stop_for_review_after_checkpoint": True,
+                    "would_execute_in_this_descriptor": False,
+                    "would_delegate_to_future_executor_now": False,
+                    "would_write_checkpoint_in_this_descriptor": False,
+                    "would_recover_live_callframe_in_this_descriptor": False,
+                    "would_advance_queue_in_this_descriptor": False,
+                }
+                for index in range(1, 4)
+            ],
+            "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": False},
+            "side_effect_policy": {
+                "automatic_multi_iteration_loop": False,
+                "checkpoint_written": False,
+                "loop_advanced": False,
+                "queue_advanced": False,
+                "long_lived_cross_process_session_managed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+            "blockers": [],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-automatic-loop-multi-iteration-executor-approval-plan",
+            {
+                "paused_session_automatic_loop_multi_iteration_executor_approval_plan": True,
+                "max_approved_iterations": 3,
+                "paused_session_automatic_loop_multi_iteration_execution_plan": {"plan": execution_plan},
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_future_paused_session_automatic_loop_multi_iteration_executor_approval_transaction")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["approved_iteration_count"], 3)
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["approval_recorded"])
+        self.assertFalse(result.artifacts[0].metadata["transaction_started"])
+        self.assertFalse(result.artifacts[0].metadata["journal_written"])
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_approved_iterations=3", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_ready_to_execute_now=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_approval_recorded=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_transaction_started=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_journal_written=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_automatic_multi_iteration_loop=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_multi_step_loop_plan_from_native_runtime_is_review_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

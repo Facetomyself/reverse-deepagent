@@ -1827,6 +1827,91 @@ class DebuggerSubagentTests(unittest.TestCase):
         diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_execution_plan_diagnostics"]
         self.assertIn("multi_iteration_executor_preflight_not_ready", diagnostics["blockers"])
 
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_executor_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_approval_plan": {
+                "approval_plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:ready",
+                    "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+                    "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:ready",
+                    "policy_id": "automatic-loop-policy:ready",
+                    "approved_iteration_count": 3,
+                    "max_approved_iterations": 3,
+                    "source_execution_plan": {"ready_for_review": True},
+                    "executor_input_gates": {
+                        "ready_to_execute_now": False,
+                        "automatic_multi_iteration_executor_implemented": False,
+                        "automatic_multi_iteration_execution_allowed_now": False,
+                        "approval_recorded": False,
+                        "requires_transaction_journal": True,
+                        "requires_per_iteration_review_gate": True,
+                        "requires_per_iteration_checkpoint_gate": True,
+                        "requires_fresh_live_callframe_per_iteration": True,
+                        "requires_stop_after_each_checkpoint": True,
+                    },
+                    "transaction_plan": {"transaction_started": False, "journal_written_now": False},
+                    "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": False},
+                    "side_effect_policy": {
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_executor_approval_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_paused_session_automatic_loop_multi_iteration_executor_approval_transaction")
+        approval = result["summary"]["automatic_loop_multi_iteration_executor_approval_plan"]
+        self.assertEqual(approval["status"], "ready_for_review")
+        self.assertFalse(approval["ready_to_execute_now"])
+        self.assertFalse(approval["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(approval["automatic_multi_iteration_execution_allowed_now"])
+        self.assertFalse(approval["approval_recorded"])
+        self.assertFalse(approval["transaction_started"])
+        self.assertFalse(approval["journal_written"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_approval_plan_diagnostics"]
+        self.assertEqual(diagnostics["approval_plan_id"], "automatic-loop-multi-iteration-executor-approval-plan:ready")
+        self.assertEqual(diagnostics["execution_plan_id"], "automatic-loop-multi-iteration-execution-plan:ready")
+        self.assertFalse(diagnostics["future_executor_implemented"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_executor_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_approval_plan": {
+                "approval_plan": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:blocked",
+                    "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:blocked",
+                    "executor_input_gates": {"ready_to_execute_now": False},
+                    "transaction_plan": {"transaction_started": False, "journal_written_now": False},
+                    "side_effect_policy": {"automatic_multi_iteration_loop": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    "blockers": ["multi_iteration_execution_plan_not_ready"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan_blockers")
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_approval_plan_diagnostics"]
+        self.assertIn("multi_iteration_execution_plan_not_ready", diagnostics["blockers"])
+
     def test_review_debugger_artifacts_blocks_multi_step_loop_execution(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

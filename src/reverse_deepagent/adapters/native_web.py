@@ -182,6 +182,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopMultiIterationExecutorPreflightSpec,
     PausedSessionAutomaticLoopMultiIterationExecutionPlanManager,
     PausedSessionAutomaticLoopMultiIterationExecutionPlanSpec,
+    PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanManager,
+    PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1803,6 +1805,86 @@ class NativeWebRuntime(WebReverseRuntime):
                 status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
                 artifacts=artifact_paths,
                 next_action=plan.get("next_action") or "inspect_paused_session_automatic_loop_following_iteration_plan",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec.from_context(context)
+            result = PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanManager().plan(spec)
+            approval_plan = result.approval_plan if isinstance(result.approval_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = approval_plan.get("blockers") if isinstance(approval_plan.get("blockers"), list) else []
+            source = approval_plan.get("source_execution_plan") if isinstance(approval_plan.get("source_execution_plan"), dict) else {}
+            gates = approval_plan.get("executor_input_gates") if isinstance(approval_plan.get("executor_input_gates"), dict) else {}
+            transaction_plan = approval_plan.get("transaction_plan") if isinstance(approval_plan.get("transaction_plan"), dict) else {}
+            requirements = approval_plan.get("approval_requirements") if isinstance(approval_plan.get("approval_requirements"), dict) else {}
+            future = approval_plan.get("future_executor_contract") if isinstance(approval_plan.get("future_executor_contract"), dict) else {}
+            verification = [
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_status={result.status}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_ready_for_review={approval_plan.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_id={approval_plan.get('approval_plan_id')}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_execution_plan_id={approval_plan.get('execution_plan_id')}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_preflight_id={approval_plan.get('preflight_id')}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_policy_id={approval_plan.get('policy_id')}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_source_execution_plan_ready={source.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_approved_iterations={approval_plan.get('approved_iteration_count', 0)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_ready_to_execute_now={gates.get('ready_to_execute_now', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_executor_implemented={gates.get('automatic_multi_iteration_executor_implemented', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_execution_allowed_now={gates.get('automatic_multi_iteration_execution_allowed_now', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_requires_approval_record={requirements.get('requires_explicit_review_approval', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_approval_recorded={gates.get('approval_recorded', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_transaction_started={transaction_plan.get('transaction_started', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_journal_written={transaction_plan.get('journal_written_now', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_future_executor={future.get('executor_name')}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_future_executor_implemented={future.get('implemented', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_checkpoint_written={policy.get('checkpoint_written', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_automatic_multi_iteration_loop={policy.get('automatic_multi_iteration_loop', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_approval_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only paused-session automatic-loop multi-iteration executor approval and transaction plan descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": approval_plan.get("ready_for_review", False),
+                        "approval_plan_ready_for_review": approval_plan.get("approval_plan_ready_for_review", False),
+                        "approval_plan_id": approval_plan.get("approval_plan_id"),
+                        "execution_plan_id": approval_plan.get("execution_plan_id"),
+                        "preflight_id": approval_plan.get("preflight_id"),
+                        "policy_id": approval_plan.get("policy_id"),
+                        "approved_iteration_count": approval_plan.get("approved_iteration_count", 0),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "ready_to_execute_now": gates.get("ready_to_execute_now", False),
+                        "approval_recorded": gates.get("approval_recorded", False),
+                        "transaction_started": transaction_plan.get("transaction_started", False),
+                        "journal_written": transaction_plan.get("journal_written_now", False),
+                        "automatic_multi_iteration_loop": policy.get("automatic_multi_iteration_loop", False),
+                        "long_lived_cross_process_session_managed": policy.get("long_lived_cross_process_session_managed", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=approval_plan.get("next_action") or "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan",
                 confidence=ConfidenceLevel.LOW,
             )
         if self._is_paused_session_automatic_loop_multi_iteration_execution_plan_request(protection_name, context):
@@ -7509,7 +7591,35 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-automatic-loop-multi-iteration-executor-approval-plan",
+            "plan-paused-session-automatic-loop-multi-iteration-executor-approval",
+            "review-paused-session-automatic-loop-multi-iteration-executor-approval-plan",
+            "paused-session-automatic-loop-bounded-multi-iteration-executor-approval-plan",
+            "automatic-loop-multi-iteration-executor-approval-plan",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_automatic_loop_multi_iteration_executor_approval_plan",
+                "pausedSessionAutomaticLoopMultiIterationExecutorApprovalPlan",
+                "paused-session-automatic-loop-multi-iteration-executor-approval-plan",
+                "plan_paused_session_automatic_loop_multi_iteration_executor_approval",
+                "planPausedSessionAutomaticLoopMultiIterationExecutorApproval",
+                "review_paused_session_automatic_loop_multi_iteration_executor_approval_plan",
+                "reviewPausedSessionAutomaticLoopMultiIterationExecutorApprovalPlan",
+                "automatic_loop_multi_iteration_executor_approval_plan",
+                "automaticLoopMultiIterationExecutorApprovalPlan",
+            )
+        )
+
+    @staticmethod
     def _is_paused_session_automatic_loop_multi_iteration_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request(protection_name, context):
+            return False
         normalized = protection_name.strip().lower()
         if normalized in {
             "paused-session-automatic-loop-multi-iteration-execution-plan",

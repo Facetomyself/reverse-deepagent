@@ -8510,6 +8510,469 @@ class PausedSessionAutomaticLoopMultiIterationExecutionPlanManager:
 
 
 @dataclass(slots=True)
+class PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec:
+    """Review-only approval / transaction plan for a future multi-iteration executor.
+
+    This consumes the Step 258 multi-iteration execution-plan descriptor and
+    prepares manual approval, idempotency, and transaction requirements for a
+    future bounded multi-iteration executor. It is not the executor: it records
+    no approval, writes no journal, executes no iteration, sends no CDP command,
+    recovers no live callFrame, subscribes to no debugger event, advances no
+    queue / loop, manages no long-lived session, calls no MCP, and touches no
+    mobile runtime chain.
+    """
+
+    execution_plan: dict[str, Any] = field(default_factory=dict)
+    expected_execution_plan_id: str | None = None
+    expected_preflight_id: str | None = None
+    expected_policy_id: str | None = None
+    reviewer: str | None = None
+    max_approved_iterations: int = 2
+    require_transaction_journal: bool = True
+    require_review_per_iteration: bool = True
+    require_checkpoint_after_each_iteration: bool = True
+    require_fresh_live_callframe_per_iteration: bool = True
+    require_stop_after_each_checkpoint: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_automatic_loop_multi_iteration_executor_approval_plan")
+            or context.get("pausedSessionAutomaticLoopMultiIterationExecutorApprovalPlan")
+            or context.get("paused-session-automatic-loop-multi-iteration-executor-approval-plan")
+            or context.get("plan_paused_session_automatic_loop_multi_iteration_executor_approval")
+            or context.get("planPausedSessionAutomaticLoopMultiIterationExecutorApproval")
+            or context.get("review_paused_session_automatic_loop_multi_iteration_executor_approval_plan")
+            or context.get("reviewPausedSessionAutomaticLoopMultiIterationExecutorApprovalPlan")
+            or context.get("automatic_loop_multi_iteration_executor_approval_plan")
+            or context.get("automaticLoopMultiIterationExecutorApprovalPlan")
+        )
+        plan_container = _first_dict(
+            context,
+            "paused_session_automatic_loop_multi_iteration_execution_plan",
+            "pausedSessionAutomaticLoopMultiIterationExecutionPlan",
+            "paused-session-automatic-loop-multi-iteration-execution-plan",
+            "plan_paused_session_automatic_loop_multi_iteration_execution",
+            "planPausedSessionAutomaticLoopMultiIterationExecution",
+            "review_paused_session_automatic_loop_multi_iteration_execution_plan",
+            "reviewPausedSessionAutomaticLoopMultiIterationExecutionPlan",
+            "automatic_loop_multi_iteration_execution_plan",
+            "automaticLoopMultiIterationExecutionPlan",
+        )
+        plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        if not requested and not plan:
+            return None
+        default_budget = plan.get("planned_iteration_count") or plan.get("max_planned_iterations") or len(plan.get("planned_iterations") or []) or 2
+        max_raw = context.get("max_approved_iterations", context.get("maxApprovedIterations", default_budget))
+        try:
+            max_approved_iterations = int(max_raw)
+        except (TypeError, ValueError):
+            max_approved_iterations = 2
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or plan.get("reviewer")
+        expected_execution_plan_id = context.get("expected_execution_plan_id") or context.get("expectedExecutionPlanId") or plan.get("execution_plan_id")
+        expected_preflight_id = context.get("expected_preflight_id") or context.get("expectedPreflightId") or plan.get("preflight_id")
+        expected_policy_id = context.get("expected_policy_id") or context.get("expectedPolicyId") or plan.get("policy_id")
+        return cls(
+            execution_plan=plan,
+            expected_execution_plan_id=str(expected_execution_plan_id).strip() if expected_execution_plan_id else None,
+            expected_preflight_id=str(expected_preflight_id).strip() if expected_preflight_id else None,
+            expected_policy_id=str(expected_policy_id).strip() if expected_policy_id else None,
+            reviewer=str(reviewer).strip() if reviewer else None,
+            max_approved_iterations=max(0, min(max_approved_iterations, 10)),
+            require_transaction_journal=bool(context.get("require_transaction_journal", context.get("requireTransactionJournal", True))),
+            require_review_per_iteration=bool(context.get("require_review_per_iteration", context.get("requireReviewPerIteration", True))),
+            require_checkpoint_after_each_iteration=bool(context.get("require_checkpoint_after_each_iteration", context.get("requireCheckpointAfterEachIteration", True))),
+            require_fresh_live_callframe_per_iteration=bool(context.get("require_fresh_live_callframe_per_iteration", context.get("requireFreshLiveCallframePerIteration", True))),
+            require_stop_after_each_checkpoint=bool(context.get("require_stop_after_each_checkpoint", context.get("requireStopAfterEachCheckpoint", True))),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanResult:
+    status: str
+    approval_plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"status": self.status, "approval_plan": self.approval_plan, "side_effect_policy": self.side_effect_policy, "reason": self.reason}
+
+
+class PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanManager:
+    """Review-only approval / transaction plan before any multi-iteration executor."""
+
+    def plan(self, spec: PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec | None) -> PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanResult:
+        blockers = self._blockers(spec)
+        status = "ready_for_review" if not blockers else "blocked"
+        payload = self._payload(spec, status=status, blockers=blockers)
+        return PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanResult(status=status, approval_plan=payload, side_effect_policy=self._side_effect_policy(), reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec | None) -> list[str]:
+        if spec is None:
+            return ["automatic_loop_multi_iteration_executor_approval_plan_request_missing"]
+        plan = spec.execution_plan
+        blockers: list[str] = []
+        if not plan:
+            blockers.append("multi_iteration_execution_plan_required")
+        elif plan.get("status") != "ready_for_review" or plan.get("ready_for_review") is not True or plan.get("execution_plan_ready_for_review") is not True:
+            blockers.append("multi_iteration_execution_plan_not_ready")
+        plan_blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+        if plan_blockers:
+            blockers.append("multi_iteration_execution_plan_has_blockers")
+        execution_plan_id = plan.get("execution_plan_id")
+        preflight_id = plan.get("preflight_id")
+        policy_id = plan.get("policy_id")
+        if spec.expected_execution_plan_id and execution_plan_id != spec.expected_execution_plan_id:
+            blockers.append("multi_iteration_execution_plan_id_mismatch")
+        if spec.expected_preflight_id and preflight_id != spec.expected_preflight_id:
+            blockers.append("multi_iteration_preflight_id_mismatch")
+        if spec.expected_policy_id and policy_id != spec.expected_policy_id:
+            blockers.append("multi_iteration_policy_id_mismatch")
+        gates = plan.get("execution_review_gates") if isinstance(plan.get("execution_review_gates"), dict) else {}
+        if gates.get("ready_to_execute_now") is True:
+            blockers.append("execution_plan_ready_to_execute_now_claim")
+        if gates.get("execution_plan_only") is not True:
+            blockers.append("execution_plan_only_gate_required")
+        if gates.get("automatic_multi_iteration_executor_implemented") is True:
+            blockers.append("execution_plan_executor_already_implemented_claim")
+        if gates.get("automatic_multi_iteration_execution_allowed_now") is True:
+            blockers.append("execution_plan_execution_allowed_now_claim")
+        if spec.require_transaction_journal is not True or gates.get("requires_transaction_journal") is not True:
+            blockers.append("transaction_journal_required")
+        if spec.require_review_per_iteration is not True or gates.get("requires_per_iteration_review_gate") is not True:
+            blockers.append("per_iteration_review_gate_required")
+        if spec.require_checkpoint_after_each_iteration is not True or gates.get("requires_per_iteration_checkpoint_gate") is not True:
+            blockers.append("per_iteration_checkpoint_gate_required")
+        if spec.require_fresh_live_callframe_per_iteration is not True or gates.get("requires_fresh_live_callframe_per_iteration") is not True:
+            blockers.append("fresh_live_callframe_per_iteration_required")
+        if spec.require_stop_after_each_checkpoint is not True or gates.get("requires_stop_after_each_checkpoint") is not True:
+            blockers.append("stop_after_each_checkpoint_required")
+        if gates.get("requires_retained_attached_session_per_iteration") is not True:
+            blockers.append("retained_attached_session_per_iteration_required")
+        if gates.get("requires_non_daemon_execution") is not True:
+            blockers.append("non_daemon_execution_required")
+        if gates.get("requires_bounded_iteration_budget") is not True:
+            blockers.append("bounded_iteration_budget_required")
+        planned_count_raw = plan.get("planned_iteration_count")
+        try:
+            planned_count = int(planned_count_raw)
+        except (TypeError, ValueError):
+            planned_count = 0
+        if planned_count < 2:
+            blockers.append("multi_iteration_execution_plan_iteration_count_invalid")
+        if spec.max_approved_iterations < 2:
+            blockers.append("approval_plan_budget_requires_at_least_two")
+        if planned_count and spec.max_approved_iterations > planned_count:
+            blockers.append("approval_plan_budget_exceeds_execution_plan")
+        future_contract = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+        if not future_contract:
+            blockers.append("future_multi_iteration_executor_contract_required")
+        elif future_contract.get("implemented") is True:
+            blockers.append("future_multi_iteration_executor_already_implemented_claim")
+        if future_contract and future_contract.get("executor_name") not in {None, "execute_paused_session_automatic_loop_multi_iteration"}:
+            blockers.append("future_multi_iteration_executor_name_mismatch")
+        iterations = plan.get("planned_iterations") if isinstance(plan.get("planned_iterations"), list) else []
+        if not iterations:
+            blockers.append("multi_iteration_execution_plan_iterations_required")
+        for item in iterations[: max(spec.max_approved_iterations, 0)]:
+            if not isinstance(item, dict):
+                blockers.append("multi_iteration_execution_plan_iteration_invalid")
+                break
+            if item.get("source_policy_gate_ready") is not True:
+                blockers.append("multi_iteration_execution_plan_iteration_gate_not_ready")
+            if item.get("requires_explicit_review") is not True:
+                blockers.append("per_iteration_review_gate_required")
+            if item.get("requires_transaction_journal") is not True:
+                blockers.append("transaction_journal_required")
+            if item.get("requires_fresh_live_callframe") is not True:
+                blockers.append("fresh_live_callframe_per_iteration_required")
+            if item.get("requires_retained_attached_session") is not True:
+                blockers.append("retained_attached_session_per_iteration_required")
+            if item.get("requires_checkpoint_after_iteration") is not True:
+                blockers.append("per_iteration_checkpoint_gate_required")
+            if item.get("requires_stop_for_review_after_checkpoint") is not True:
+                blockers.append("stop_after_each_checkpoint_required")
+            if item.get("would_execute_in_this_descriptor") is True or item.get("would_delegate_to_future_executor_now") is True:
+                blockers.append("execution_plan_has_execution_side_effects")
+            if item.get("would_write_checkpoint_in_this_descriptor") is True:
+                blockers.append("execution_plan_wrote_checkpoint")
+            if item.get("would_recover_live_callframe_in_this_descriptor") is True:
+                blockers.append("execution_plan_recovered_live_callframe")
+            if item.get("would_advance_queue_in_this_descriptor") is True:
+                blockers.append("execution_plan_advanced_loop_or_queue")
+        side_effect_policy = plan.get("side_effect_policy") if isinstance(plan.get("side_effect_policy"), dict) else {}
+        if any(
+            side_effect_policy.get(key) is True
+            for key in (
+                "cdp_command_sent",
+                "debugger_event_subscribed",
+                "paused_event_captured",
+                "callframe_evaluated",
+                "checkpoint_written",
+                "cross_process_action_executed",
+                "multi_step_continuation_executed",
+                "multi_step_loop_iteration_executed",
+                "automatic_loop_executed",
+                "automatic_multi_iteration_loop",
+                "automatic_live_callframe_recovery",
+            )
+        ):
+            blockers.append("execution_plan_has_execution_side_effects")
+        if side_effect_policy.get("loop_advanced") is True or side_effect_policy.get("queue_advanced") is True:
+            blockers.append("execution_plan_advanced_loop_or_queue")
+        if side_effect_policy.get("long_lived_cross_process_session_managed") is True:
+            blockers.append("execution_plan_managed_long_lived_session")
+        if side_effect_policy.get("calls_mcp") is True:
+            blockers.append("execution_plan_called_mcp")
+        if side_effect_policy.get("mobile_runtime_used") is True:
+            blockers.append("execution_plan_used_mobile_runtime")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec | None, *, status: str, blockers: list[str]) -> dict[str, Any]:
+        plan = spec.execution_plan if spec else {}
+        gates = plan.get("execution_review_gates") if isinstance(plan.get("execution_review_gates"), dict) else {}
+        future_contract = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+        iterations = plan.get("planned_iterations") if isinstance(plan.get("planned_iterations"), list) else []
+        ready = status == "ready_for_review"
+        execution_plan_id = plan.get("execution_plan_id")
+        preflight_id = plan.get("preflight_id")
+        policy_id = plan.get("policy_id")
+        transaction_id = plan.get("transaction_id") or f"automatic-loop-multi-iteration-executor-transaction:{execution_plan_id or preflight_id or policy_id or 'unbound'}"
+        approved_budget = spec.max_approved_iterations if spec else 0
+        approved_iterations = []
+        for index, item in enumerate(iterations[:approved_budget], start=1):
+            gate = item if isinstance(item, dict) else {}
+            approved_iterations.append(
+                {
+                    "iteration_number": gate.get("iteration_number", index),
+                    "plan_iteration_index": gate.get("plan_iteration_index", index - 1),
+                    "approval_status": "requires_explicit_approval_record",
+                    "requires_explicit_review": True,
+                    "requires_transaction_journal": True,
+                    "requires_fresh_live_callframe": True,
+                    "requires_retained_attached_session": True,
+                    "requires_checkpoint_after_iteration": True,
+                    "requires_stop_for_review_after_checkpoint": True,
+                    "would_execute_in_this_plan": False,
+                    "would_delegate_to_future_executor_now": False,
+                    "would_write_checkpoint_in_this_plan": False,
+                    "would_recover_live_callframe_in_this_plan": False,
+                    "would_advance_queue_in_this_plan": False,
+                }
+            )
+        return {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-plan.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "approval_plan_ready_for_review": ready,
+            "approval_plan_id": f"automatic-loop-multi-iteration-executor-approval-plan:{execution_plan_id or preflight_id or policy_id or 'unbound'}",
+            "execution_plan_id": execution_plan_id,
+            "expected_execution_plan_id": spec.expected_execution_plan_id if spec else None,
+            "preflight_id": preflight_id,
+            "expected_preflight_id": spec.expected_preflight_id if spec else None,
+            "policy_id": policy_id,
+            "expected_policy_id": spec.expected_policy_id if spec else None,
+            "transaction_id": transaction_id,
+            "loop_id": plan.get("loop_id"),
+            "workflow_id": plan.get("workflow_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "source_execution_plan": {
+                "schema_version": plan.get("schema_version"),
+                "status": plan.get("status"),
+                "ready_for_review": bool(plan.get("ready_for_review")),
+                "execution_plan_ready_for_review": bool(plan.get("execution_plan_ready_for_review")),
+                "execution_plan_id": execution_plan_id,
+                "preflight_id": preflight_id,
+                "policy_id": policy_id,
+                "planned_iteration_count": plan.get("planned_iteration_count", 0),
+                "max_planned_iterations": plan.get("max_planned_iterations", 0),
+                "ready_to_execute_now": bool(gates.get("ready_to_execute_now")),
+                "automatic_multi_iteration_executor_implemented": bool(gates.get("automatic_multi_iteration_executor_implemented")),
+                "automatic_multi_iteration_execution_allowed_now": bool(gates.get("automatic_multi_iteration_execution_allowed_now")),
+                "future_executor_implemented": bool(future_contract.get("implemented")),
+                "next_action": plan.get("next_action"),
+            },
+            "executor_input_gates": {
+                "ready_to_execute_now": False,
+                "approval_plan_only": True,
+                "transaction_plan_only": True,
+                "automatic_multi_iteration_executor_implemented": False,
+                "automatic_multi_iteration_execution_allowed_now": False,
+                "approval_recorded": False,
+                "transaction_started": False,
+                "journal_written": False,
+                "requires_ready_execution_plan": True,
+                "requires_matching_execution_plan_id": True,
+                "requires_matching_preflight_id": True,
+                "requires_matching_policy_id": True,
+                "requires_approval_record": True,
+                "requires_transaction_journal": spec.require_transaction_journal if spec else True,
+                "requires_per_iteration_review_gate": spec.require_review_per_iteration if spec else True,
+                "requires_per_iteration_checkpoint_gate": spec.require_checkpoint_after_each_iteration if spec else True,
+                "requires_fresh_live_callframe_per_iteration": spec.require_fresh_live_callframe_per_iteration if spec else True,
+                "requires_stop_after_each_checkpoint": spec.require_stop_after_each_checkpoint if spec else True,
+                "requires_retained_attached_session_per_iteration": bool(gates.get("requires_retained_attached_session_per_iteration", True)),
+                "requires_non_daemon_execution": bool(gates.get("requires_non_daemon_execution", True)),
+                "requires_bounded_iteration_budget": bool(gates.get("requires_bounded_iteration_budget", True)),
+            },
+            "approval_requirements": {
+                "requires_explicit_review_approval": True,
+                "requires_non_empty_reviewer_before_recording": True,
+                "requires_matching_execution_plan_id": True,
+                "requires_matching_preflight_id": True,
+                "requires_matching_policy_id": True,
+                "requires_review_per_iteration": True,
+                "requires_checkpoint_after_each_iteration": True,
+                "requires_fresh_live_callframe_per_iteration": True,
+                "requires_retained_attached_session_per_iteration": True,
+                "requires_stop_after_each_checkpoint": True,
+                "approval_recorded_now": False,
+                "approval_record_writer_implemented": False,
+                "approval_record_artifact": "workspace/paused-session-automatic-loop-multi-iteration-executor-approval-record.json",
+            },
+            "approved_iteration_count": len(approved_iterations),
+            "max_approved_iterations": approved_budget,
+            "approved_iterations": approved_iterations,
+            "transaction_plan": {
+                "transaction_id": transaction_id,
+                "idempotency_key": transaction_id,
+                "transaction_started": False,
+                "journal_written_now": False,
+                "journal_artifact": "workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json",
+                "result_artifact": "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
+                "requires_append_only_journal": True,
+                "requires_checkpoint_after_each_iteration": True,
+                "requires_stop_after_each_checkpoint": True,
+                "requires_manual_resume_after_failure": True,
+                "requires_no_daemon": True,
+            },
+            "future_executor_contract": {
+                "executor_name": future_contract.get("executor_name") or "execute_paused_session_automatic_loop_multi_iteration",
+                "implemented": False,
+                "expected_execution_plan_artifact": future_contract.get("expected_execution_plan_artifact") or "workspace/paused-session-automatic-loop-multi-iteration-execution-plan.json",
+                "expected_preflight_artifact": future_contract.get("expected_preflight_artifact") or "workspace/paused-session-automatic-loop-multi-iteration-executor-preflight.json",
+                "expected_policy_artifact": future_contract.get("expected_policy_artifact") or "workspace/paused-session-automatic-loop-multi-iteration-policy.json",
+                "approval_plan_artifact": "workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json",
+                "approval_record_artifact": "workspace/paused-session-automatic-loop-multi-iteration-executor-approval-record.json",
+                "transaction_journal_artifact": "workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json",
+                "expected_result_artifact": future_contract.get("expected_result_artifact") or "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
+                "would_require_matching_execution_plan_id": True,
+                "would_require_matching_preflight_id": True,
+                "would_require_matching_policy_id": True,
+                "would_require_explicit_review_approval": True,
+                "would_require_transaction_journal": True,
+                "would_execute_bounded_iterations_only": True,
+                "would_checkpoint_between_iterations": True,
+                "would_stop_after_each_checkpoint": True,
+                "would_not_run_as_daemon": True,
+                "would_not_auto_recover_live_callframe": True,
+                "would_not_advance_queue_without_review": True,
+                "would_not_manage_long_lived_session": True,
+                "would_not_call_mcp": True,
+                "would_not_touch_mobile_runtime_chains": True,
+            },
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "plan_only": True,
+            "approval_plan_only": True,
+            "transaction_plan_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "approval_recorded": False,
+            "transaction_started": False,
+            "journal_written": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "debugger_domain_enabled": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "checkpoint_written": False,
+            "cross_process_action_executed": False,
+            "multi_step_continuation_executed": False,
+            "multi_step_loop_iteration_executed": False,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_loop": False,
+            "automatic_live_callframe_recovery": False,
+            "loop_advanced": False,
+            "queue_advanced": False,
+            "automatic_queue_advance": False,
+            "automatic_wrapper_continuation": False,
+            "long_lived_cross_process_session_managed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "automatic_loop_multi_iteration_executor_approval_plan_request_missing": ("request", "No automatic-loop multi-iteration executor approval-plan request was provided.", "request_paused_session_automatic_loop_multi_iteration_executor_approval_plan"),
+            "multi_iteration_execution_plan_required": ("execution_plan", "A ready multi-iteration execution-plan descriptor is required.", "review_paused_session_automatic_loop_multi_iteration_execution_plan"),
+            "multi_iteration_execution_plan_not_ready": ("execution_plan", "The multi-iteration execution-plan descriptor is not ready.", "resolve_multi_iteration_execution_plan_blockers"),
+            "multi_iteration_execution_plan_has_blockers": ("execution_plan", "The multi-iteration execution plan still contains blockers.", "resolve_multi_iteration_execution_plan_blockers"),
+            "multi_iteration_execution_plan_id_mismatch": ("execution_plan", "The execution plan id does not match the expected execution plan id.", "refresh_matching_multi_iteration_execution_plan"),
+            "multi_iteration_preflight_id_mismatch": ("preflight", "The preflight id does not match the expected preflight id.", "refresh_matching_multi_iteration_executor_preflight"),
+            "multi_iteration_policy_id_mismatch": ("policy", "The policy id does not match the expected policy id.", "refresh_matching_multi_iteration_policy"),
+            "execution_plan_ready_to_execute_now_claim": ("safety", "The execution plan claims execution is ready now.", "audit_multi_iteration_execution_plan_execution_claim"),
+            "execution_plan_only_gate_required": ("safety", "The execution plan must remain plan-only.", "regenerate_multi_iteration_execution_plan_as_plan_only"),
+            "execution_plan_executor_already_implemented_claim": ("safety", "The execution plan claims the future executor is already implemented.", "audit_multi_iteration_executor_claim"),
+            "execution_plan_execution_allowed_now_claim": ("safety", "The execution plan claims multi-iteration execution is already allowed.", "audit_multi_iteration_execution_allowance"),
+            "transaction_journal_required": ("journal", "A transaction journal gate is required before any future execution.", "restore_multi_iteration_transaction_journal_gate"),
+            "per_iteration_review_gate_required": ("review", "Every approved iteration must preserve explicit review gates.", "restore_multi_iteration_review_gate"),
+            "per_iteration_checkpoint_gate_required": ("checkpoint", "Every approved iteration must preserve checkpoint gates.", "restore_multi_iteration_checkpoint_gate"),
+            "fresh_live_callframe_per_iteration_required": ("callframe", "Every approved iteration must require fresh live callFrame evidence.", "restore_multi_iteration_fresh_callframe_gate"),
+            "stop_after_each_checkpoint_required": ("policy", "The plan must stop for review after every checkpoint.", "restore_stop_after_each_checkpoint_policy"),
+            "retained_attached_session_per_iteration_required": ("session", "Every approved iteration must require a retained attached session.", "restore_retained_session_gate"),
+            "non_daemon_execution_required": ("safety", "The future executor must not run as a daemon.", "restore_non_daemon_execution_gate"),
+            "bounded_iteration_budget_required": ("budget", "The future executor must use a bounded iteration budget.", "restore_bounded_iteration_budget_gate"),
+            "multi_iteration_execution_plan_iteration_count_invalid": ("budget", "The execution plan must cover at least two iterations.", "refresh_multi_iteration_execution_plan"),
+            "approval_plan_budget_requires_at_least_two": ("budget", "The approval plan budget must cover at least two iterations.", "raise_multi_iteration_approval_plan_budget"),
+            "approval_plan_budget_exceeds_execution_plan": ("budget", "The approval plan budget cannot exceed the execution plan budget.", "lower_multi_iteration_approval_plan_budget"),
+            "future_multi_iteration_executor_contract_required": ("contract", "The future multi-iteration executor contract is required.", "refresh_multi_iteration_executor_contract"),
+            "future_multi_iteration_executor_already_implemented_claim": ("safety", "The future executor contract claims implementation and needs audit.", "audit_multi_iteration_executor_claim"),
+            "future_multi_iteration_executor_name_mismatch": ("contract", "The future executor contract name does not match execute_paused_session_automatic_loop_multi_iteration.", "refresh_multi_iteration_executor_contract_name"),
+            "multi_iteration_execution_plan_iterations_required": ("execution_plan", "Planned iteration gates are required.", "refresh_multi_iteration_execution_plan_iterations"),
+            "multi_iteration_execution_plan_iteration_invalid": ("execution_plan", "A planned iteration gate is malformed.", "refresh_multi_iteration_execution_plan_iterations"),
+            "multi_iteration_execution_plan_iteration_gate_not_ready": ("execution_plan", "A planned iteration gate is not ready.", "refresh_multi_iteration_execution_plan_iterations"),
+            "execution_plan_has_execution_side_effects": ("safety", "The execution plan reports execution side effects and must be audited.", "audit_multi_iteration_execution_plan_side_effects"),
+            "execution_plan_wrote_checkpoint": ("safety", "The execution plan reports checkpoint writes.", "audit_multi_iteration_execution_plan_checkpoint_claim"),
+            "execution_plan_recovered_live_callframe": ("safety", "The execution plan reports live callFrame recovery.", "audit_multi_iteration_execution_plan_callframe_claim"),
+            "execution_plan_advanced_loop_or_queue": ("safety", "The execution plan reports loop or queue advancement.", "audit_multi_iteration_execution_plan_loop_state"),
+            "execution_plan_managed_long_lived_session": ("safety", "The execution plan reports long-lived session management.", "remove_long_lived_session_from_execution_plan"),
+            "execution_plan_called_mcp": ("safety", "The execution plan reports MCP usage.", "remove_mcp_from_multi_iteration_execution_plan"),
+            "execution_plan_used_mobile_runtime": ("safety", "The execution plan reports mobile runtime usage.", "remove_mobile_runtime_from_multi_iteration_execution_plan"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if blockers:
+            return "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan_blockers"
+        if status == "ready_for_review":
+            return "review_future_paused_session_automatic_loop_multi_iteration_executor_approval_transaction"
+        return "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan"
+
+
+@dataclass(slots=True)
 class PausedSessionAutomaticLoopNextIterationExecutionSpec:
     """Explicit-review-only executor for one planned automatic-loop next iteration.
 

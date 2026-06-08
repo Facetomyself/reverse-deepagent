@@ -51,6 +51,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopMultiIterationExecutorPreflightSpec,
     PausedSessionAutomaticLoopMultiIterationExecutionPlanManager,
     PausedSessionAutomaticLoopMultiIterationExecutionPlanSpec,
+    PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanManager,
+    PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -2896,6 +2898,125 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["loop_advanced"])
         self.assertFalse(result.side_effect_policy["queue_advanced"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_multi_iteration_executor_approval_plan_reviews_execution_plan_without_execution(self) -> None:
+        execution_plan = {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-execution-plan.v1",
+            "status": "ready_for_review",
+            "ready_for_review": True,
+            "execution_plan_ready_for_review": True,
+            "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:automatic-loop-multi-iteration-preflight:automatic-loop-policy:policy-tx-1",
+            "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:policy-tx-1",
+            "policy_id": "automatic-loop-policy:policy-tx-1",
+            "transaction_id": "policy-tx-1",
+            "loop_id": "policy-loop-1",
+            "workflow_id": "policy-workflow-1",
+            "execution_review_gates": {
+                "ready_to_execute_now": False,
+                "execution_plan_only": True,
+                "automatic_multi_iteration_executor_implemented": False,
+                "automatic_multi_iteration_execution_allowed_now": False,
+                "requires_transaction_journal": True,
+                "requires_per_iteration_review_gate": True,
+                "requires_per_iteration_checkpoint_gate": True,
+                "requires_fresh_live_callframe_per_iteration": True,
+                "requires_stop_after_each_checkpoint": True,
+                "requires_retained_attached_session_per_iteration": True,
+                "requires_non_daemon_execution": True,
+                "requires_bounded_iteration_budget": True,
+            },
+            "planned_iteration_count": 3,
+            "max_planned_iterations": 3,
+            "planned_iterations": [
+                {
+                    "iteration_number": index,
+                    "plan_iteration_index": index - 1,
+                    "source_policy_gate_ready": True,
+                    "requires_explicit_review": True,
+                    "requires_transaction_journal": True,
+                    "requires_fresh_live_callframe": True,
+                    "requires_retained_attached_session": True,
+                    "requires_checkpoint_after_iteration": True,
+                    "requires_stop_for_review_after_checkpoint": True,
+                    "would_execute_in_this_descriptor": False,
+                    "would_delegate_to_future_executor_now": False,
+                    "would_write_checkpoint_in_this_descriptor": False,
+                    "would_recover_live_callframe_in_this_descriptor": False,
+                    "would_advance_queue_in_this_descriptor": False,
+                }
+                for index in range(1, 4)
+            ],
+            "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": False},
+            "side_effect_policy": {
+                "automatic_multi_iteration_loop": False,
+                "checkpoint_written": False,
+                "loop_advanced": False,
+                "queue_advanced": False,
+                "long_lived_cross_process_session_managed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+            "blockers": [],
+        }
+        spec = PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec.from_context(
+            {
+                "paused_session_automatic_loop_multi_iteration_executor_approval_plan": True,
+                "reviewer": "approval-plan-reviewer",
+                "max_approved_iterations": 3,
+                "paused_session_automatic_loop_multi_iteration_execution_plan": {"plan": execution_plan},
+            }
+        )
+
+        result = PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        approval_plan = result.approval_plan
+        self.assertEqual(approval_plan["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-plan.v1")
+        self.assertTrue(approval_plan["ready_for_review"])
+        self.assertTrue(approval_plan["approval_plan_ready_for_review"])
+        self.assertEqual(approval_plan["execution_plan_id"], execution_plan["execution_plan_id"])
+        self.assertEqual(approval_plan["approved_iteration_count"], 3)
+        self.assertFalse(approval_plan["executor_input_gates"]["ready_to_execute_now"])
+        self.assertFalse(approval_plan["executor_input_gates"]["approval_recorded"])
+        self.assertFalse(approval_plan["transaction_plan"]["transaction_started"])
+        self.assertFalse(approval_plan["transaction_plan"]["journal_written_now"])
+        self.assertFalse(approval_plan["future_executor_contract"]["implemented"])
+        self.assertEqual(approval_plan["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertEqual(approval_plan["future_executor_contract"]["approval_plan_artifact"], "workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json")
+        self.assertFalse(approval_plan["approved_iterations"][0]["would_execute_in_this_plan"])
+        self.assertFalse(approval_plan["approved_iterations"][0]["would_write_checkpoint_in_this_plan"])
+        self.assertFalse(approval_plan["approved_iterations"][0]["would_recover_live_callframe_in_this_plan"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_iteration_loop"])
+        self.assertFalse(result.side_effect_policy["checkpoint_written"])
+        self.assertFalse(result.side_effect_policy["loop_advanced"])
+        self.assertFalse(result.side_effect_policy["queue_advanced"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_multi_iteration_executor_approval_plan_blocks_without_ready_execution_plan(self) -> None:
+        spec = PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec.from_context(
+            {
+                "paused_session_automatic_loop_multi_iteration_executor_approval_plan": True,
+                "paused_session_automatic_loop_multi_iteration_execution_plan": {
+                    "plan": {
+                        "status": "blocked",
+                        "ready_for_review": False,
+                        "execution_plan_ready_for_review": False,
+                        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:blocked",
+                        "execution_review_gates": {"ready_to_execute_now": False},
+                        "blockers": ["multi_iteration_executor_preflight_not_ready"],
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("multi_iteration_execution_plan_not_ready", result.approval_plan["blockers"])
+        self.assertIn("multi_iteration_execution_plan_has_blockers", result.approval_plan["blockers"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
 
     def test_multi_step_continuation_execution_requires_review_before_cdp(self) -> None:
