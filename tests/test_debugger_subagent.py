@@ -1827,6 +1827,86 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(diagnostics["calls_mcp"])
         self.assertFalse(diagnostics["mobile_runtime_used"])
 
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_execution_result": {
+                "execution": {
+                    "status": "blocked",
+                    "transaction_id": "automatic-loop-multi-exec:blocked",
+                    "requested_iteration_budget": 2,
+                    "executed_iteration_count": 0,
+                    "checkpoint_required": False,
+                    "automatic_multi_iteration_execution_mvp": True,
+                    "automatic_multi_iteration_executor_implemented": True,
+                    "automatic_multi_iteration_loop": False,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "blockers": ["review_approval_required"],
+                    "side_effect_policy": {"calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_execution_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_execution_blockers")
+        execution = result["summary"]["automatic_loop_multi_iteration_execution_result"]
+        self.assertEqual(execution["status"], "blocked")
+        self.assertEqual(execution["executed_iteration_count"], 0)
+        self.assertTrue(execution["automatic_multi_iteration_execution_mvp"])
+        self.assertTrue(execution["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(execution["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_execution_result_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["review_approval_required"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_execution_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_execution_result": {
+                "execution": {
+                    "status": "partial",
+                    "transaction_id": "automatic-loop-multi-exec:partial",
+                    "journal_id": "automatic-loop-multi-exec:journal",
+                    "requested_iteration_budget": 2,
+                    "selected_step_index": 1,
+                    "executed_iteration_count": 1,
+                    "checkpoint_required": True,
+                    "automatic_multi_iteration_execution_mvp": True,
+                    "automatic_multi_iteration_executor_implemented": True,
+                    "automatic_multi_iteration_loop": False,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "blockers": [],
+                    "side_effect_policy": {"bounded_one_iteration_only": True, "calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_execution_checkpoint_required", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_paused_session_automatic_loop_multi_iteration_execution")
+        execution = result["summary"]["automatic_loop_multi_iteration_execution_result"]
+        self.assertEqual(execution["status"], "partial")
+        self.assertEqual(execution["requested_iteration_budget"], 2)
+        self.assertEqual(execution["executed_iteration_count"], 1)
+        self.assertTrue(execution["checkpoint_required"])
+        self.assertTrue(execution["automatic_multi_iteration_execution_mvp"])
+        self.assertTrue(execution["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(execution["automatic_multi_iteration_loop"])
+        self.assertFalse(execution["loop_advanced"])
+        self.assertFalse(execution["queue_advanced"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_execution_result_diagnostics"]
+        self.assertEqual(diagnostics["executed_iteration_count"], 1)
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+
 
     def test_review_debugger_artifacts_blocks_automatic_loop_next_iteration_followup_checkpoint(self) -> None:
         tool = make_review_debugger_artifacts_tool()

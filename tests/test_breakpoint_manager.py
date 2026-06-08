@@ -53,6 +53,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopMultiIterationExecutionPlanSpec,
     PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanManager,
     PausedSessionAutomaticLoopMultiIterationExecutorApprovalPlanSpec,
+    PausedSessionAutomaticLoopMultiIterationExecutionManager,
+    PausedSessionAutomaticLoopMultiIterationExecutionSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -2521,6 +2523,220 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertTrue(result.side_effect_policy["debugger_event_subscribed"])
         self.assertTrue(result.side_effect_policy["paused_event_captured"])
         self.assertTrue(result.side_effect_policy["bounded_one_iteration_only"])
+        self.assertFalse(result.side_effect_policy["loop_advanced"])
+        self.assertFalse(result.side_effect_policy["queue_advanced"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_multi_iteration_execution_requires_review_before_cdp(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_step=True)
+        page = FakeBreakpointPage(session)
+        spec = PausedSessionAutomaticLoopMultiIterationExecutionSpec.from_context(
+            {
+                "paused_session_automatic_loop_multi_iteration_execution": True,
+                "execute_paused_session_automatic_loop_multi_iteration": True,
+                "review_approved": False,
+                "paused_session_automatic_loop_multi_iteration_bounded_executor_gate": {
+                    "status": "ready_for_review",
+                    "bounded_executor_gate_ready_for_review": True,
+                    "multi_iteration_bounded_executor_gate_ready_for_review": True,
+                    "ready_to_execute_now": False,
+                    "automatic_loop_executed": False,
+                    "automatic_multi_iteration_loop": False,
+                    "automatic_multi_iteration_execution_allowed_now": False,
+                    "transaction_id": "multi-exec-tx-1",
+                    "journal_id": "multi-exec-journal-1",
+                    "planned_iterations": [
+                        {
+                            "iteration_index": 1,
+                            "source_iteration_index": 0,
+                            "workflow_step_index": 1,
+                            "method": "Debugger.stepOver",
+                            "ready_for_future_executor_review": True,
+                            "requires_per_iteration_review_gate": True,
+                            "requires_fresh_live_callframe_before_execution": True,
+                            "requires_checkpoint_after_iteration": True,
+                            "requires_stop_after_checkpoint": True,
+                        }
+                    ],
+                    "bounded_executor_input": {
+                        "max_iterations": 2,
+                        "requires_per_iteration_review": True,
+                        "requires_checkpoint_after_each_iteration": True,
+                        "requires_stop_after_each_checkpoint": True,
+                        "require_fresh_live_callframe": True,
+                        "requires_retained_attached_session": True,
+                        "automatic_queue_advance_allowed": False,
+                        "automatic_loop_advance_allowed": False,
+                        "automatic_live_callframe_recovery_allowed": False,
+                        "long_lived_session_management_allowed": False,
+                    },
+                },
+                "paused_session_automatic_loop_multi_iteration_transaction_journal": {
+                    "status": "written",
+                    "journal_written": True,
+                    "transaction_started": True,
+                    "transaction_id": "multi-exec-tx-1",
+                    "journal_id": "multi-exec-journal-1",
+                    "journal_summary": {"automatic_loop_executed": False, "automatic_multi_iteration_loop": False},
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "multi-exec-loop-1",
+                        "workflow_id": "multi-exec-workflow-1",
+                        "next_iteration": {"available": True, "ready_for_review": True, "workflow_step_index": 1, "method": "Debugger.stepOver"},
+                        "readiness": {"next_loop_iteration_reviewable": True},
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {"status": "ready_for_review", "workflow_id": "multi-exec-workflow-1", "planned_steps": [{"step_index": 1, "method": "Debugger.stepOver"}]}
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {"status": "recovered", "attached_session_id": "attached-session-1", "live_callframe_id": "cf-multi-1", "live_callframe_recovered": True, "target_detached": False}
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "cf-multi-1",
+            }
+        )
+
+        result = PausedSessionAutomaticLoopMultiIterationExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "review_required")
+        self.assertIn("review_approval_required", result.execution["blockers"])
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_multi_iteration_execution_runs_one_reviewed_iteration(self) -> None:
+        session = RecordingCDPSession(emit_pause_on_step=True)
+        page = FakeBreakpointPage(session)
+        spec = PausedSessionAutomaticLoopMultiIterationExecutionSpec.from_context(
+            {
+                "paused_session_automatic_loop_multi_iteration_execution": True,
+                "execute_paused_session_automatic_loop_multi_iteration": True,
+                "review_approved": True,
+                "max_iterations": 2,
+                "paused_session_automatic_loop_multi_iteration_bounded_executor_gate": {
+                    "status": "ready_for_review",
+                    "bounded_executor_gate_ready_for_review": True,
+                    "multi_iteration_bounded_executor_gate_ready_for_review": True,
+                    "ready_to_execute_now": False,
+                    "automatic_loop_executed": False,
+                    "automatic_multi_iteration_loop": False,
+                    "automatic_multi_iteration_execution_allowed_now": False,
+                    "transaction_id": "multi-exec-tx-2",
+                    "journal_id": "multi-exec-journal-2",
+                    "loop_id": "multi-exec-loop-2",
+                    "workflow_id": "multi-exec-workflow-2",
+                    "planned_iterations": [
+                        {
+                            "iteration_index": 1,
+                            "source_iteration_index": 0,
+                            "workflow_step_index": 1,
+                            "method": "Debugger.stepOver",
+                            "fingerprint": "1:Debugger.stepOver:",
+                            "ready_for_future_executor_review": True,
+                            "requires_per_iteration_review_gate": True,
+                            "requires_fresh_live_callframe_before_execution": True,
+                            "requires_checkpoint_after_iteration": True,
+                            "requires_stop_after_checkpoint": True,
+                        },
+                        {
+                            "iteration_index": 2,
+                            "source_iteration_index": 1,
+                            "workflow_step_index": 2,
+                            "method": "Debugger.stepInto",
+                            "ready_for_future_executor_review": True,
+                            "requires_per_iteration_review_gate": True,
+                            "requires_fresh_live_callframe_before_execution": True,
+                            "requires_checkpoint_after_iteration": True,
+                            "requires_stop_after_checkpoint": True,
+                        },
+                    ],
+                    "bounded_executor_input": {
+                        "max_iterations": 2,
+                        "requires_per_iteration_review": True,
+                        "requires_checkpoint_after_each_iteration": True,
+                        "requires_stop_after_each_checkpoint": True,
+                        "require_fresh_live_callframe": True,
+                        "requires_retained_attached_session": True,
+                        "automatic_queue_advance_allowed": False,
+                        "automatic_loop_advance_allowed": False,
+                        "automatic_live_callframe_recovery_allowed": False,
+                        "long_lived_session_management_allowed": False,
+                    },
+                },
+                "paused_session_automatic_loop_multi_iteration_transaction_journal": {
+                    "status": "written",
+                    "journal_written": True,
+                    "transaction_started": True,
+                    "transaction_id": "multi-exec-tx-2",
+                    "journal_id": "multi-exec-journal-2",
+                    "journal_summary": {"automatic_loop_executed": False, "automatic_multi_iteration_loop": False},
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "multi-exec-loop-2",
+                        "workflow_id": "multi-exec-workflow-2",
+                        "pause_session_id": "pause-multi-2",
+                        "target_id": "target-multi-2",
+                        "next_iteration": {"available": True, "ready_for_review": True, "workflow_step_index": 1, "method": "Debugger.stepOver"},
+                        "readiness": {"next_loop_iteration_reviewable": True},
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "multi-exec-workflow-2",
+                        "planned_steps": [{"step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver:"}],
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "pause-multi-2",
+                        "target_id": "target-multi-2",
+                        "attached_session_id": "attached-session-2",
+                        "live_callframe_id": "cf-multi-2",
+                        "live_callframe_recovered": True,
+                        "target_detached": False,
+                    }
+                },
+                "attached_session_id": "attached-session-2",
+                "live_callframe_id": "cf-multi-2",
+                "timeout_ms": 10,
+                "observed_paused_event": {"sessionId": "attached-session-2", "params": {"callFrames": [{"callFrameId": "cf-multi-3"}]}},
+            }
+        )
+
+        result = PausedSessionAutomaticLoopMultiIterationExecutionManager().execute(page, spec)
+
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(session.calls[-1][0], "Debugger.stepOver")
+        execution = result.execution
+        self.assertEqual(execution["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-execution-result.v1")
+        self.assertEqual(execution["transaction_id"], "multi-exec-tx-2")
+        self.assertEqual(execution["requested_iteration_budget"], 2)
+        self.assertEqual(execution["executed_iteration_count"], 1)
+        self.assertTrue(execution["checkpoint_required"])
+        self.assertTrue(execution["automatic_multi_iteration_execution_mvp"])
+        self.assertTrue(execution["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(execution["automatic_multi_iteration_loop"])
+        self.assertFalse(execution["loop_advanced"])
+        self.assertFalse(execution["queue_advanced"])
+        self.assertEqual(execution["iteration_results"][0]["workflow_step_index"], 1)
+        self.assertTrue(execution["iteration_results"][0]["reviewed_before_execution"])
+        self.assertTrue(execution["iteration_results"][0]["fresh_live_callframe_verified"])
+        self.assertTrue(result.side_effect_policy["cdp_command_sent"])
+        self.assertTrue(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertTrue(result.side_effect_policy["paused_event_captured"])
+        self.assertTrue(result.side_effect_policy["bounded_one_iteration_only"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_iteration_loop"])
         self.assertFalse(result.side_effect_policy["loop_advanced"])
         self.assertFalse(result.side_effect_policy["queue_advanced"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])

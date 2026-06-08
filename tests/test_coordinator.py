@@ -1279,6 +1279,32 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop multi-iteration execution result",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_multi_iteration_execution_result",
+                    details={
+                        "status": "partial",
+                        "transaction_id": "automatic-loop-multi-iteration-transaction:coordinator",
+                        "journal_id": "automatic-loop-multi-iteration-transaction-journal:coordinator",
+                        "requested_iteration_budget": 2,
+                        "executed_iteration_count": 1,
+                        "checkpoint_required": True,
+                        "automatic_multi_iteration_execution_mvp": True,
+                        "automatic_multi_iteration_executor_implemented": True,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "side_effect_policy": {
+                            "automatic_multi_iteration_loop": False,
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1464,6 +1490,14 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"]["future_executor_contract"]["implemented"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"]["side_effect_policy"]["automatic_multi_iteration_loop"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"]["side_effect_policy"]["cdp_command_sent"])
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["status"], "partial")
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["executed_iteration_count"], 1)
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["checkpoint_required"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["automatic_multi_iteration_execution_mvp"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["automatic_multi_iteration_loop"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"]["side_effect_policy"]["mobile_runtime_used"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1638,6 +1672,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_transaction_preflight"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_executor_journal"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_bounded_executor_gate"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_execution_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")
