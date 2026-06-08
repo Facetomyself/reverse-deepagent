@@ -40,6 +40,14 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
         module_timeline = _object_alias(payload, "module_hook_timeline", "module-hook-timeline", "moduleHookTimeline")
         generic_timeline = _object_alias(payload, "hook_timeline", "hook-timeline", "hookTimeline")
         source_logpoints = _object_alias(payload, "source_logpoints", "source-logpoints", "sourceLogpoints")
+        source_map_source_logpoint_install_result = _object_alias(
+            payload,
+            "source_map_source_logpoint_install_result",
+            "source-map-source-logpoint-install-result",
+            "sourceMapSourceLogpointInstallResult",
+            "source_map_selected_source_logpoint_install_result",
+            "sourceMapSelectedSourceLogpointInstallResult",
+        )
         closure_wrapper_replacement_plan = _object_alias(
             payload,
             "closure_wrapper_replacement_plan",
@@ -588,6 +596,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 source_map_selected_executor_approval_plan,
                 source_map_selected_executor_approval_record,
                 source_map_selected_executor_apply_preflight,
+                source_map_source_logpoint_install_result,
                 object_graph_diff,
                 closure_wrapper_continuation_readiness,
                 closure_wrapper_continuation_execution_plan,
@@ -629,6 +638,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("source_map_selected_executor_approval_record_blocked")
         if _status(source_map_selected_executor_apply_preflight) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("source_map_selected_executor_apply_preflight_blocked")
+        if _status(source_map_source_logpoint_install_result) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_source_logpoint_install_result_blocked")
         if _status(object_graph_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("object_graph_diff_blocked")
         if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -1011,6 +1022,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("source_map_selected_executor_approval_record_ready_for_apply_preflight")
         if source_map_selected_executor_apply_preflight and _status(source_map_selected_executor_apply_preflight) == "ready_for_review":
             warnings.append("source_map_selected_executor_apply_preflight_ready_for_executor_review")
+        if source_map_source_logpoint_install_result and _status(source_map_source_logpoint_install_result) in {"success", "applied", "installed"}:
+            warnings.append("source_map_source_logpoint_install_result_requires_timeline_review")
         if object_graph_diff and _status(object_graph_diff) == "ready_for_review":
             warnings.append("object_graph_diff_requires_review")
         if missing_count:
@@ -1113,6 +1126,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "source_map_selected_executor_apply_preflight_selected_consumer": source_map_selected_executor_apply_preflight.get("selected_consumer"),
                 "source_map_selected_executor_apply_preflight_ready_for_selected_executor_review": bool(source_map_selected_executor_apply_preflight.get("ready_for_selected_executor_review")),
                 "source_map_selected_executor_apply_preflight_next_action": source_map_selected_executor_apply_preflight.get("next_action"),
+                "source_map_source_logpoint_install_result_status": _status(source_map_source_logpoint_install_result),
+                "source_map_source_logpoint_install_result_breakpoint_count": _intish(source_map_source_logpoint_install_result.get("breakpoint_count")),
+                "source_map_source_logpoint_install_result_event_count": _intish(source_map_source_logpoint_install_result.get("event_count")),
+                "source_map_source_logpoint_install_result_logpoint_installed": bool(source_map_source_logpoint_install_result.get("logpoint_installed")),
                 "object_graph_diff_status": _status(object_graph_diff),
                 "object_graph_diff_change_count": _intish(object_graph_diff.get("change_count") or _nested_get(object_graph_diff, "diff", "change_count")),
                 "object_graph_diff_risk": _nested_get(object_graph_diff, "risk_summary", "risk"),
@@ -2037,6 +2054,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "provide_ready_source_map_selected_executor_approval_plan_descriptor"
     if "source_map_selected_executor_apply_preflight_blocked" in blockers:
         return "provide_matching_source_map_selected_executor_approval_plan_and_record"
+    if "source_map_source_logpoint_install_result_blocked" in blockers:
+        return "inspect_source_map_source_logpoint_install_failure"
     if "object_graph_diff_blocked" in blockers:
         return "provide_before_and_after_object_graph_snapshots"
     if "async_chunk_load_failed" in blockers:
@@ -2073,6 +2092,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_source_map_selected_executor_apply_preflight"
     if "source_map_selected_executor_apply_preflight_ready_for_executor_review" in warnings:
         return "review_source_map_selected_executor_application"
+    if "source_map_source_logpoint_install_result_requires_timeline_review" in warnings:
+        return "inspect_source_map_source_logpoint_events"
     if "object_graph_diff_requires_review" in warnings:
         return "review_object_graph_diff_before_hook_or_replay"
     if "closure_wrapper_strategy_descriptor_plan_only_requires_review" in warnings:

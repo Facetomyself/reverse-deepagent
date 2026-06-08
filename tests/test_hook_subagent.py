@@ -603,6 +603,36 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("source_map_selected_executor_apply_preflight_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "provide_matching_source_map_selected_executor_approval_plan_and_record")
 
+    def test_review_hook_artifacts_warns_for_source_map_source_logpoint_install_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_source_logpoint_install_result": {
+                "status": "success",
+                "selected_consumer": "source-logpoint",
+                "breakpoint_count": 1,
+                "event_count": 1,
+                "logpoint_installed": True,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_source_logpoint_install_result_requires_timeline_review", result["warnings"])
+        self.assertEqual(result["next_action"], "inspect_source_map_source_logpoint_events")
+        self.assertEqual(result["summary"]["source_map_source_logpoint_install_result_status"], "success")
+        self.assertTrue(result["summary"]["source_map_source_logpoint_install_result_logpoint_installed"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_source_logpoint_install_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_source_logpoint_install_result": {"status": "failed", "error": "Debugger.setBreakpointByUrl failed"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_source_logpoint_install_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_source_logpoint_install_failure")
+
     def test_review_hook_artifacts_blocks_failed_source_map_consumer_action_plan_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {"source_map_consumer_action_plan": {"status": "blocked", "reason": "source_map_readiness_descriptor_missing"}}

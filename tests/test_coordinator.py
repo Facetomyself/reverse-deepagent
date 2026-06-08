@@ -1459,6 +1459,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native Source Map source logpoint install result",
+                    kind=EvidenceKind.HOOK,
+                    source="source_map_source_logpoint_install_result",
+                    details={"status": "success", "selected_consumer": "source-logpoint", "logpoint_installed": True, "breakpoint_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native review-approved stitched flow",
                     kind=EvidenceKind.NOTE,
                     source="stitched_flow",
@@ -1764,6 +1771,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payloads["source-map-selected-executor-approval-plan.json"]["approval_plan_ready"])
         self.assertTrue(payloads["source-map-selected-executor-approval-record.json"]["approved_for_apply"])
         self.assertTrue(payloads["source-map-selected-executor-apply-preflight.json"]["ready_for_selected_executor_review"])
+        self.assertTrue(payloads["source-map-source-logpoint-install-result.json"]["logpoint_installed"])
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
         self.assertEqual(payloads["object-root-mutation-audit.json"]["change_count"], 4)
         self.assertEqual(payloads["object-graph-diff.json"]["change_count"], 2)
@@ -1824,6 +1832,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_input_review"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_approval_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_approval_record"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_apply_preflight"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_source_logpoint_install_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_bundler_symbol_scope"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")

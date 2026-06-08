@@ -7,7 +7,7 @@ from reverse_deepagent.tools.hook_tools import make_record_source_map_selected_e
 from reverse_deepagent.tools.artifact_tools import make_read_workspace_artifact_tool
 
 HOOK_SUBAGENT_NAME = "hook"
-HOOK_SUBAGENT_DESCRIPTION = "审计 function / module hook inventory、hook timelines、source-logpoint artifacts 和 Source Map follow-through approval records。"
+HOOK_SUBAGENT_DESCRIPTION = "审计 function / module hook inventory、hook timelines、source-logpoint artifacts、Source Map follow-through approval records 和 reviewed source-logpoint install results。"
 
 
 def load_hook_prompt(prompt_path: str | Path | None = None) -> str:

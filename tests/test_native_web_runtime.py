@@ -6379,6 +6379,134 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(page._cdp_session.last_breakpoint_params["lineNumber"], 1)
         self.assertEqual(page._cdp_session.last_breakpoint_params["columnNumber"], 0)
 
+    @staticmethod
+    def _ready_source_map_source_logpoint_apply_preflight() -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "preflight_only": True,
+            "apply_preflight_only": True,
+            "handoff_only": True,
+            "selected_action_id": "review-source-logpoint-plan",
+            "selected_consumer": "source-logpoint",
+            "selected_followthrough_review_surface": "review_source_logpoint_executor_input",
+            "selected_review_gate": "explicit_source_logpoint_install_review",
+            "approval_record_id": "source-map-selected-executor-approval-record:logpoint",
+            "approval_record_verified": True,
+            "executor_input_ready": True,
+            "ready_for_selected_executor_review": True,
+            "ready_to_apply_now": False,
+            "surface_executor_invoked": False,
+            "source_logpoint_installed": False,
+            "executor_input": {
+                "source_logpoint_plan": {
+                    "bundler_kind": "webpack",
+                    "scope_candidate_count": 1,
+                    "install_supported": False,
+                    "logpoint_installed": False,
+                },
+                "source_logpoint_spec_input": {
+                    "url_pattern_required": True,
+                    "log_expression_required": True,
+                    "install_supported_now": False,
+                },
+            },
+            "future_executor_contract": {
+                "implemented": False,
+                "future_action": "install_reviewed_source_map_source_logpoint",
+                "requires_explicit_executor_approval": True,
+                "requires_apply_mode": True,
+                "requires_write_result": True,
+                "requires_reviewed_apply_preflight": True,
+            },
+            "side_effect_policy": {
+                "read_only": True,
+                "review_only": True,
+                "preflight_only": True,
+                "apply_preflight_only": True,
+                "handoff_only": True,
+                "browser_started": False,
+                "runtime_evaluated": False,
+                "cdp_command_sent": False,
+                "logpoint_installed": False,
+                "surface_executor_invoked": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+    def test_native_web_runtime_applies_reviewed_source_map_source_logpoint_install(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-source-logpoint-install",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_logpoint_install": True,
+                "reviewer": "reviewer-1",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_source_logpoint_apply_preflight(),
+                "source_logpoint_install_input": {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 7,
+                    "column_number": 0,
+                    "log_expression": "window.buildSign('sign', 1700000000000)",
+                    "label": "smoke",
+                    "trigger_expression": "window.buildSign('sign', 1700000000000)",
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 1)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["install_source_map_source_logpoint:.*app\\.js$:7"])
+        self.assertIn("source_map_source_logpoint_application_status=success", result.verification)
+        self.assertIn("source_map_source_logpoint_application_breakpoint_count=1", result.verification)
+        self.assertIn("source_map_source_logpoint_application_event_count=1", result.verification)
+        self.assertIn("source_map_source_logpoint_application_logpoint_installed=True", result.verification)
+        self.assertEqual(result.next_action, "inspect_source_map_source_logpoint_events")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-source-logpoint-install-result.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "source-logpoint")
+        self.assertEqual(result.artifacts[0].metadata["selected_review_gate"], "explicit_source_logpoint_install_review")
+        self.assertTrue(result.artifacts[0].metadata["review_approved"])
+        self.assertTrue(result.artifacts[0].metadata["approve_source_logpoint_install"])
+        self.assertTrue(result.artifacts[0].metadata["browser_started"])
+        self.assertTrue(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertTrue(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertTrue(result.artifacts[0].metadata["logpoint_installed"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+        self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/source-logpoints.json")
+        self.assertEqual(result.artifacts[2].path, "virtual://workspace/source-logpoint-timeline.json")
+        self.assertEqual(result.artifacts[2].metadata["event_count"], 1)
+
+    def test_native_web_runtime_blocks_source_map_source_logpoint_install_without_review_before_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-source-logpoint-install",
+            {
+                "mode": "dry-run",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_source_logpoint_apply_preflight(),
+                "source_logpoint_install_input": {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 7,
+                    "log_expression": "window.buildSign('sign', 1700000000000)",
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("source_map_source_logpoint_application_requires_apply_mode", result.verification[-2])
+        self.assertEqual(result.next_action, "approve_source_map_source_logpoint_install_before_apply")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-source-logpoint-install-result.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "blocked")
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+
     def test_native_web_runtime_apply_minimal_protection_sets_breakpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

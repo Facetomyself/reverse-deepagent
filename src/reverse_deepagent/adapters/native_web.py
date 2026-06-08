@@ -656,6 +656,165 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
+        if self._is_source_map_source_logpoint_application_request(protection_name, context):
+            apply_preflight = self._source_map_source_logpoint_apply_preflight(context)
+            install_input = self._source_map_source_logpoint_install_input(context)
+            blockers = self._source_map_source_logpoint_application_blockers(context, apply_preflight, install_input)
+            spec = SourceLogpointSpec.from_context(install_input)
+            verification = [
+                f"source_map_source_logpoint_application_preflight_status={apply_preflight.get('status', '')}",
+                f"source_map_source_logpoint_application_selected_action_id={apply_preflight.get('selected_action_id', '')}",
+                f"source_map_source_logpoint_application_selected_consumer={apply_preflight.get('selected_consumer', '')}",
+                f"source_map_source_logpoint_application_selected_gate={apply_preflight.get('selected_review_gate', '')}",
+                f"source_map_source_logpoint_application_review_approved={bool(context.get('review_approved', context.get('reviewApproved', False)))}",
+                f"source_map_source_logpoint_application_install_approved={bool(context.get('approve_source_logpoint_install', context.get('approveSourceLogpointInstall', False)))}",
+                f"source_map_source_logpoint_application_mode={context.get('mode', '')}",
+                f"source_map_source_logpoint_application_blockers={','.join(blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if blockers:
+                artifact = ArtifactRef(
+                    path="virtual://workspace/source-map-source-logpoint-install-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime blocked Source Map selected source-logpoint application result.",
+                    metadata={
+                        "status": "blocked",
+                        "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                        "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                        "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                        "review_approved": bool(context.get("review_approved", context.get("reviewApproved", False))),
+                        "approve_source_logpoint_install": bool(context.get("approve_source_logpoint_install", context.get("approveSourceLogpointInstall", False))),
+                        "mode": context.get("mode", ""),
+                        "blockers": blockers,
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "logpoint_installed": False,
+                        "surface_executor_invoked": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=verification,
+                    status=ExecutionStatus.PARTIAL,
+                    artifacts=[artifact],
+                    next_action=self._source_map_source_logpoint_application_next_action(blockers),
+                    confidence=ConfidenceLevel.LOW,
+                )
+            try:
+                session = self._ensure_session()
+                page = session.get_active_page() or session.new_page()
+            except Exception as exc:
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=[f"Native Web browser provider unavailable: {exc}", *verification],
+                    status=ExecutionStatus.FAILED,
+                    artifacts=[],
+                    next_action="ensure_browser_provider",
+                    confidence=ConfidenceLevel.LOW,
+                )
+            result = SourceLogpointManager().install(page, spec)
+            breakpoint_count = len(result.breakpoints)
+            event_count = len(result.events)
+            installed = bool(breakpoint_count and result.status == "success")
+            verification.extend(
+                [
+                    f"source_map_source_logpoint_application_status={result.status}",
+                    f"source_map_source_logpoint_application_breakpoint_count={breakpoint_count}",
+                    f"source_map_source_logpoint_application_event_count={event_count}",
+                    f"source_map_source_logpoint_application_browser_started=True",
+                    f"source_map_source_logpoint_application_runtime_evaluated=True",
+                    f"source_map_source_logpoint_application_cdp_command_sent={bool(breakpoint_count)}",
+                    f"source_map_source_logpoint_application_logpoint_installed={installed}",
+                    "source_map_source_logpoint_application_surface_executor_invoked=True",
+                ]
+            )
+            if spec and spec.remap:
+                verification.append(f"source_map_source_logpoint_application_remap_status={spec.remap.get('status')}")
+                if spec.remap.get("strategy"):
+                    verification.append(f"source_map_source_logpoint_application_remap_strategy={spec.remap['strategy']}")
+            if result.trigger:
+                verification.append(f"source_map_source_logpoint_application_trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"source_map_source_logpoint_application_trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"source_map_source_logpoint_application_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_source_logpoint_application_error={result.error}")
+            artifacts = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-source-logpoint-install-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit-review Source Map selected source-logpoint application result.",
+                    metadata={
+                        "status": "success" if installed else "failed",
+                        "source_logpoint_status": result.status,
+                        "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                        "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                        "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                        "approval_record_id": apply_preflight.get("approval_record_id", ""),
+                        "reviewer": str(context.get("reviewer") or ""),
+                        "review_approved": True,
+                        "approve_source_logpoint_install": True,
+                        "mode": "apply",
+                        "breakpoint_count": breakpoint_count,
+                        "event_count": event_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "label": spec.label if spec else None,
+                        "remap": spec.remap if spec else {},
+                        "browser_started": True,
+                        "runtime_evaluated": True,
+                        "cdp_command_sent": bool(breakpoint_count),
+                        "logpoint_installed": installed,
+                        "hook_installed": False,
+                        "rebuild_executed": False,
+                        "surface_executor_invoked": True,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/source-logpoints.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime source logpoint install result.",
+                    metadata={
+                        "status": result.status,
+                        "breakpoint_count": breakpoint_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "remap": spec.remap if spec else {},
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/source-logpoint-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime source logpoint timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "remap": spec.remap if spec else {},
+                    },
+                ),
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=([f"install_source_map_source_logpoint:{spec.url_pattern}:{spec.line_number}"] if spec and installed else []),
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if installed else ExecutionStatus.FAILED,
+                artifacts=artifacts,
+                next_action="inspect_source_map_source_logpoint_events" if event_count else "trigger_code_path_or_adjust_source_map_source_logpoint",
+                confidence=ConfidenceLevel.MEDIUM if installed else ConfidenceLevel.LOW,
+            )
         if self._is_source_map_selected_executor_apply_preflight_request(protection_name, context):
             spec = SourceMapSelectedExecutorApplyPreflightSpec.from_context(context)
             result = SourceMapSelectedExecutorApplyPreflightManager().review(spec)
@@ -10164,6 +10323,164 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapFollowthroughApplyPreflight",
             )
         )
+
+    @staticmethod
+    def _is_source_map_source_logpoint_application_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-source-logpoint-application",
+            "source-map-source-logpoint-install",
+            "source-map-selected-source-logpoint-application",
+            "source-map-selected-source-logpoint-executor-application",
+            "apply-source-map-source-logpoint",
+            "install-reviewed-source-map-source-logpoint",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_source_logpoint_application",
+                "sourceMapSourceLogpointApplication",
+                "source_map_source_logpoint_install",
+                "sourceMapSourceLogpointInstall",
+                "source_map_selected_source_logpoint_application",
+                "sourceMapSelectedSourceLogpointApplication",
+            )
+        )
+
+    @staticmethod
+    def _source_map_source_logpoint_apply_preflight(context: dict[str, Any]) -> dict[str, Any]:
+        return NativeWebRuntime._dict_alias(
+            context,
+            "source_map_selected_executor_apply_preflight",
+            "sourceMapSelectedExecutorApplyPreflight",
+            "source_map_selected_executor_application_preflight",
+            "sourceMapSelectedExecutorApplicationPreflight",
+            "source_map_source_logpoint_apply_preflight",
+            "sourceMapSourceLogpointApplyPreflight",
+        )
+
+    @staticmethod
+    def _source_map_source_logpoint_install_input(context: dict[str, Any]) -> dict[str, Any]:
+        explicit = NativeWebRuntime._dict_alias(
+            context,
+            "source_logpoint_install_input",
+            "sourceLogpointInstallInput",
+            "reviewed_source_logpoint_input",
+            "reviewedSourceLogpointInput",
+            "source_map_source_logpoint_install_input",
+            "sourceMapSourceLogpointInstallInput",
+        )
+        if explicit:
+            return explicit
+        keys = {
+            "url_pattern",
+            "url",
+            "script_url",
+            "line_number",
+            "lineNumber",
+            "column_number",
+            "columnNumber",
+            "log_expression",
+            "logExpression",
+            "expression",
+            "source_expression",
+            "label",
+            "trigger_expression",
+            "triggerExpression",
+            "wait_after_trigger_ms",
+            "waitAfterTriggerMs",
+            "pause_on_hit",
+            "pauseOnHit",
+            "logpoint_id",
+            "logpointId",
+            "bundle_offset",
+            "bundleOffset",
+            "generated_offset",
+            "generatedOffset",
+            "bundle_source",
+            "bundleSource",
+            "source_map",
+            "sourceMap",
+            "original_source",
+            "originalSource",
+            "original_line",
+            "originalLine",
+            "original_line_number",
+            "originalLineNumber",
+            "original_column",
+            "originalColumn",
+            "original_column_number",
+            "originalColumnNumber",
+        }
+        return {key: value for key, value in context.items() if key in keys}
+
+    @staticmethod
+    def _dict_alias(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, dict):
+                return value
+        return {}
+
+    @staticmethod
+    def _source_map_source_logpoint_application_blockers(context: dict[str, Any], apply_preflight: dict[str, Any], install_input: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        if not apply_preflight:
+            blockers.append("source_map_selected_executor_apply_preflight_missing")
+        else:
+            if apply_preflight.get("schema_version") != "reverse-deepagent.source-map-selected-executor-apply-preflight.v1":
+                blockers.append("source_map_selected_executor_apply_preflight_schema_mismatch")
+            if apply_preflight.get("status") not in {"ready_for_review", "ready"}:
+                blockers.append("source_map_selected_executor_apply_preflight_not_ready")
+            if apply_preflight.get("selected_consumer") != "source-logpoint":
+                blockers.append("source_map_selected_executor_consumer_not_source_logpoint")
+            if apply_preflight.get("selected_review_gate") != "explicit_source_logpoint_install_review":
+                blockers.append("source_map_selected_executor_review_gate_mismatch")
+            if apply_preflight.get("approval_record_verified") is not True:
+                blockers.append("source_map_selected_executor_approval_record_not_verified")
+            if apply_preflight.get("executor_input_ready") is not True or apply_preflight.get("ready_for_selected_executor_review") is not True:
+                blockers.append("source_map_selected_executor_apply_preflight_input_not_ready")
+            if apply_preflight.get("ready_to_apply_now") is True:
+                blockers.append("source_map_selected_executor_apply_preflight_claims_ready_to_apply")
+            if apply_preflight.get("surface_executor_invoked") is True or apply_preflight.get("source_logpoint_installed") is True:
+                blockers.append("source_map_selected_executor_apply_preflight_execution_claim_detected")
+            future = apply_preflight.get("future_executor_contract") if isinstance(apply_preflight.get("future_executor_contract"), dict) else {}
+            if future.get("implemented") is not False:
+                blockers.append("source_map_selected_executor_future_contract_unexpected")
+            executor_input = apply_preflight.get("executor_input") if isinstance(apply_preflight.get("executor_input"), dict) else {}
+            blockers.extend(SourceMapTypedPayloadPreflightManager._source_logpoint_blockers("source-logpoint-plan-review", executor_input))
+        if context.get("mode") != "apply":
+            blockers.append("source_map_source_logpoint_application_requires_apply_mode")
+        if context.get("review_approved", context.get("reviewApproved")) is not True:
+            blockers.append("source_map_source_logpoint_application_review_not_approved")
+        if context.get("approve_source_logpoint_install", context.get("approveSourceLogpointInstall")) is not True:
+            blockers.append("source_map_source_logpoint_install_not_approved")
+        if not str(context.get("reviewer") or "").strip():
+            blockers.append("source_map_source_logpoint_reviewer_missing")
+        if not install_input:
+            blockers.append("source_logpoint_install_input_missing")
+        else:
+            if not (install_input.get("url_pattern") or install_input.get("url") or install_input.get("script_url")):
+                blockers.append("source_logpoint_url_pattern_missing")
+            if not (
+                install_input.get("log_expression")
+                or install_input.get("logExpression")
+                or install_input.get("expression")
+                or install_input.get("source_expression")
+            ):
+                blockers.append("source_logpoint_log_expression_missing")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _source_map_source_logpoint_application_next_action(blockers: list[str]) -> str:
+        if any(item.startswith("source_map_selected_executor_apply_preflight") or item.startswith("source_map_selected_executor_") for item in blockers):
+            return "provide_ready_source_map_selected_executor_apply_preflight"
+        if any("approved" in item or "reviewer" in item or "apply_mode" in item for item in blockers):
+            return "approve_source_map_source_logpoint_install_before_apply"
+        if any(item.startswith("source_logpoint") for item in blockers):
+            return "provide_reviewed_source_logpoint_install_input"
+        return "fix_source_map_source_logpoint_application_inputs"
 
     @staticmethod
     def _is_source_map_selected_executor_approval_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
