@@ -16,6 +16,7 @@ AUTOMATIC_LOOP_MULTI_ITERATION_EXECUTOR_APPROVAL_RECORD_VERSION = "reverse-deepa
 AUTOMATIC_LOOP_TRANSACTION_PREFLIGHT_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-preflight.v1"
 AUTOMATIC_LOOP_MULTI_ITERATION_TRANSACTION_PREFLIGHT_VERSION = "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-preflight.v1"
 AUTOMATIC_LOOP_MULTI_ITERATION_TRANSACTION_JOURNAL_VERSION = "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-journal.v1"
+AUTOMATIC_LOOP_MULTI_ITERATION_BOUNDED_EXECUTOR_GATE_VERSION = "reverse-deepagent.paused-session-automatic-loop-multi-iteration-bounded-executor-gate.v1"
 AUTOMATIC_LOOP_TRANSACTION_JOURNAL_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-journal.v1"
 AUTOMATIC_LOOP_BOUNDED_EXECUTOR_GATE_VERSION = "reverse-deepagent.paused-session-automatic-loop-bounded-executor-gate.v1"
 _LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe"}
@@ -1361,6 +1362,59 @@ def make_record_paused_session_automatic_loop_multi_iteration_transaction_journa
     return record_paused_session_automatic_loop_multi_iteration_transaction_journal
 
 
+def make_review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_tool(default_artifact_root: str | Path | None = None):
+    """Create a read-only final gate reviewer for a future bounded multi-iteration executor.
+
+    The gate consumes a reviewed multi-iteration transaction journal and produces
+    machine-readable executor input checks plus the future result contract. It
+    deliberately does not execute iterations, send CDP commands, recover
+    callFrames, advance queues, manage long-lived sessions, call MCP, or touch
+    mobile runtime chains.
+    """
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate(
+        transaction_journal_json: str | None = None,
+        transaction_journal_ref: str | None = None,
+        expected_journal_id: str | None = None,
+        expected_transaction_id: str | None = None,
+        expected_transaction_preflight_id: str | None = None,
+        expected_approval_record_id: str | None = None,
+        expected_execution_plan_id: str | None = None,
+        expected_preflight_id: str | None = None,
+        expected_policy_id: str | None = None,
+        expected_journal_digest_sha256: str | None = None,
+        max_iterations: int | None = None,
+        require_fresh_live_callframe: bool = True,
+        artifact_root: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Review final bounded multi-iteration executor gates without executing the loop."""
+
+        metadata = _loads_optional_object(metadata_json, field_name="metadata_json")
+        return review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_payload(
+            transaction_journal_json=transaction_journal_json,
+            transaction_journal_ref=transaction_journal_ref,
+            expected_journal_id=expected_journal_id,
+            expected_transaction_id=expected_transaction_id,
+            expected_transaction_preflight_id=expected_transaction_preflight_id,
+            expected_approval_record_id=expected_approval_record_id,
+            expected_execution_plan_id=expected_execution_plan_id,
+            expected_preflight_id=expected_preflight_id,
+            expected_policy_id=expected_policy_id,
+            expected_journal_digest_sha256=expected_journal_digest_sha256,
+            max_iterations=max_iterations,
+            require_fresh_live_callframe=require_fresh_live_callframe,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            metadata=metadata,
+        )
+
+    review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate.__name__ = "review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate"
+    return review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate
+
+
 def make_record_paused_session_automatic_loop_transaction_journal_tool(default_artifact_root: str | Path | None = None):
     """Create an explicit transaction journal writer for automatic-loop execution.
 
@@ -2317,6 +2371,171 @@ def record_paused_session_automatic_loop_multi_iteration_transaction_journal_pay
     return payload
 
 
+def review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_payload(
+    *,
+    transaction_journal_json: str | None = None,
+    transaction_journal_ref: str | None = None,
+    expected_journal_id: str | None = None,
+    expected_transaction_id: str | None = None,
+    expected_transaction_preflight_id: str | None = None,
+    expected_approval_record_id: str | None = None,
+    expected_execution_plan_id: str | None = None,
+    expected_preflight_id: str | None = None,
+    expected_policy_id: str | None = None,
+    expected_journal_digest_sha256: str | None = None,
+    max_iterations: int | None = None,
+    require_fresh_live_callframe: bool = True,
+    artifact_root: str | None = None,
+    default_artifact_root: str | Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a read-only final gate descriptor for a future bounded multi-iteration executor."""
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+    loaded, artifact_read = _loads_object_or_artifact(
+        transaction_journal_json,
+        artifact_ref=transaction_journal_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=root,
+        field_name="transaction_journal_json",
+        artifact_field_name="transaction_journal_ref",
+    )
+    transaction_journal = _first_object(loaded.get("transaction_journal"), loaded)
+    journal_digest = _stable_json_digest(transaction_journal) if transaction_journal else None
+    journal_entries = transaction_journal.get("journal_entries") if isinstance(transaction_journal.get("journal_entries"), list) else []
+    planned_iteration_entries = [item for item in journal_entries if isinstance(item, dict) and item.get("entry_kind") == "planned_multi_iteration_step_journaled"]
+    effective_max_iterations = max_iterations if isinstance(max_iterations, int) and max_iterations > 0 else len(planned_iteration_entries)
+    checks = _automatic_loop_multi_iteration_bounded_executor_gate_checks(
+        transaction_journal=transaction_journal,
+        expected_journal_id=expected_journal_id,
+        expected_transaction_id=expected_transaction_id,
+        expected_transaction_preflight_id=expected_transaction_preflight_id,
+        expected_approval_record_id=expected_approval_record_id,
+        expected_execution_plan_id=expected_execution_plan_id,
+        expected_preflight_id=expected_preflight_id,
+        expected_policy_id=expected_policy_id,
+        expected_journal_digest_sha256=expected_journal_digest_sha256,
+        journal_digest=journal_digest,
+        max_iterations=max_iterations,
+        planned_iteration_count=len(planned_iteration_entries),
+    )
+    blockers = [check["name"] for check in checks if not check["passed"]]
+    ready_for_executor_review = not blockers
+    status = "ready_for_review" if ready_for_executor_review else "blocked"
+    result_contract = {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-execution-result.v1",
+        "artifact": "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
+        "future_path": "/workspace/debugger/paused-session-automatic-loop-multi-iteration-execution-result.json",
+        "required_fields": [
+            "schema_version",
+            "status",
+            "transaction_id",
+            "journal_id",
+            "requested_iteration_budget",
+            "executed_iteration_count",
+            "iteration_results",
+            "checkpoint_required",
+            "side_effect_policy",
+        ],
+        "per_iteration_required_fields": [
+            "iteration_index",
+            "source_iteration_index",
+            "workflow_step_index",
+            "method",
+            "reviewed_before_execution",
+            "fresh_live_callframe_verified",
+            "executed",
+            "checkpoint_required",
+            "stop_after_checkpoint",
+        ],
+        "allowed_terminal_statuses": ["not_run", "partial", "completed", "blocked", "failed"],
+        "must_record_checkpoint_after_each_iteration": True,
+        "must_stop_after_each_checkpoint": True,
+        "must_not_auto_advance_queue_after_result": True,
+        "must_not_auto_recover_live_callframe": True,
+    }
+    payload: dict[str, Any] = {
+        "schema_version": AUTOMATIC_LOOP_MULTI_ITERATION_BOUNDED_EXECUTOR_GATE_VERSION,
+        "status": status,
+        "bounded_executor_gate_ready_for_review": ready_for_executor_review,
+        "multi_iteration_bounded_executor_gate_ready_for_review": ready_for_executor_review,
+        "ready_to_execute_now": False,
+        "automatic_loop_executed": False,
+        "automatic_multi_iteration_loop": False,
+        "automatic_multi_iteration_executor_implemented": False,
+        "automatic_multi_iteration_execution_allowed_now": False,
+        "journal_id": transaction_journal.get("journal_id"),
+        "transaction_id": transaction_journal.get("transaction_id"),
+        "transaction_preflight_id": transaction_journal.get("transaction_preflight_id"),
+        "approval_record_id": transaction_journal.get("approval_record_id"),
+        "approval_plan_id": transaction_journal.get("approval_plan_id"),
+        "execution_plan_id": transaction_journal.get("execution_plan_id"),
+        "preflight_id": transaction_journal.get("preflight_id"),
+        "policy_id": transaction_journal.get("policy_id"),
+        "transaction_journal_digest_sha256": journal_digest,
+        "expected_journal_digest_sha256": expected_journal_digest_sha256,
+        "source_journal_summary": {
+            "schema_version": transaction_journal.get("schema_version"),
+            "status": transaction_journal.get("status"),
+            "journal_written": _boolish(transaction_journal.get("journal_written")),
+            "transaction_started": _boolish(transaction_journal.get("transaction_started")),
+            "automatic_loop_executed": _boolish(transaction_journal.get("automatic_loop_executed") or _nested_get(transaction_journal, "journal_summary", "automatic_loop_executed")),
+            "automatic_multi_iteration_loop": _boolish(transaction_journal.get("automatic_multi_iteration_loop") or _nested_get(transaction_journal, "journal_summary", "automatic_multi_iteration_loop")),
+            "entry_count": _nested_get(transaction_journal, "journal_summary", "entry_count"),
+            "planned_entry_count": _nested_get(transaction_journal, "journal_summary", "planned_entry_count"),
+            "planned_iteration_count": _nested_get(transaction_journal, "journal_summary", "planned_iteration_count"),
+            "ready_to_execute_now": _boolish(_nested_get(transaction_journal, "executor_input_gates", "ready_to_execute_now")),
+        },
+        "bounded_executor_input": {
+            "max_iterations": effective_max_iterations,
+            "planned_iteration_count": len(planned_iteration_entries),
+            "require_fresh_live_callframe": require_fresh_live_callframe,
+            "requires_retained_attached_session": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_stop_after_each_checkpoint": True,
+            "requires_per_iteration_review": True,
+            "automatic_queue_advance_allowed": False,
+            "automatic_loop_advance_allowed": False,
+            "automatic_live_callframe_recovery_allowed": False,
+            "long_lived_session_management_allowed": False,
+        },
+        "planned_iterations": [
+            {
+                "iteration_index": item.get("iteration_index"),
+                "source_iteration_index": item.get("source_iteration_index"),
+                "workflow_step_index": item.get("workflow_step_index"),
+                "method": item.get("method"),
+                "fingerprint": item.get("fingerprint"),
+                "ready_for_future_executor_review": ready_for_executor_review,
+                "executed_now": False,
+                "requires_per_iteration_review_gate": True,
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_checkpoint_after_iteration": True,
+                "requires_stop_after_checkpoint": True,
+            }
+            for item in planned_iteration_entries
+        ],
+        "future_executor_contract": {
+            "executor_name": "execute_paused_session_automatic_loop_multi_iteration",
+            "implemented": False,
+            "contract_ready_for_review": ready_for_executor_review,
+            "result_contract": result_contract,
+        },
+        "checks": checks,
+        "blockers": blockers,
+        "next_action": _automatic_loop_multi_iteration_bounded_executor_gate_next_action(blockers=blockers),
+        "metadata": {
+            **(metadata or {}),
+            "tool": "review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate",
+            "artifact_read": artifact_read,
+            "legacy_path": "workspace/paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json",
+            "future_path": "/workspace/debugger/paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json",
+        },
+        "side_effect_policy": _automatic_loop_multi_iteration_bounded_executor_gate_side_effect_policy(),
+    }
+    return payload
+
+
 def review_paused_session_automatic_loop_bounded_executor_gate_payload(
     *,
     transaction_journal_json: str | None = None,
@@ -2996,6 +3215,73 @@ def _automatic_loop_multi_iteration_transaction_journal_id(*, transaction_prefli
 
 def _automatic_loop_multi_iteration_transaction_journal_side_effect_policy(*, written: bool) -> dict[str, Any]:
     policy = _automatic_loop_transaction_journal_side_effect_policy(written=written)
+    policy.update({
+        "automatic_multi_iteration_loop": False,
+        "automatic_multi_iteration_executor_implemented": False,
+        "automatic_multi_iteration_execution_allowed_now": False,
+        "per_iteration_review_gate_required": True,
+        "checkpoint_after_each_iteration_required": True,
+        "fresh_live_callframe_per_iteration_required": True,
+        "stop_after_each_checkpoint_required": True,
+    })
+    return policy
+
+
+def _automatic_loop_multi_iteration_bounded_executor_gate_checks(
+    *,
+    transaction_journal: dict[str, Any],
+    expected_journal_id: str | None,
+    expected_transaction_id: str | None,
+    expected_transaction_preflight_id: str | None,
+    expected_approval_record_id: str | None,
+    expected_execution_plan_id: str | None,
+    expected_preflight_id: str | None,
+    expected_policy_id: str | None,
+    expected_journal_digest_sha256: str | None,
+    journal_digest: str | None,
+    max_iterations: int | None,
+    planned_iteration_count: int,
+) -> list[dict[str, Any]]:
+    gates = transaction_journal.get("executor_input_gates") if isinstance(transaction_journal.get("executor_input_gates"), dict) else {}
+    summary = transaction_journal.get("journal_summary") if isinstance(transaction_journal.get("journal_summary"), dict) else {}
+    policy = transaction_journal.get("side_effect_policy") if isinstance(transaction_journal.get("side_effect_policy"), dict) else {}
+    blockers = transaction_journal.get("blockers") if isinstance(transaction_journal.get("blockers"), list) else []
+    return [
+        {"name": "transaction_journal_available", "passed": bool(transaction_journal), "details": {"journal_id": transaction_journal.get("journal_id")}},
+        {"name": "transaction_journal_written", "passed": transaction_journal.get("status") == "written" and transaction_journal.get("journal_written") is True, "details": {"status": transaction_journal.get("status"), "journal_written": transaction_journal.get("journal_written")}},
+        {"name": "transaction_started", "passed": transaction_journal.get("transaction_started") is True and summary.get("transaction_started") is True, "details": {"transaction_started": transaction_journal.get("transaction_started"), "summary_transaction_started": summary.get("transaction_started")}},
+        {"name": "journal_has_no_blockers", "passed": not blockers, "details": {"blockers": blockers}},
+        {"name": "expected_journal_id_matches", "passed": not expected_journal_id or transaction_journal.get("journal_id") == expected_journal_id, "details": {"expected_journal_id": expected_journal_id, "journal_id": transaction_journal.get("journal_id")}},
+        {"name": "expected_transaction_id_matches", "passed": not expected_transaction_id or transaction_journal.get("transaction_id") == expected_transaction_id, "details": {"expected_transaction_id": expected_transaction_id, "transaction_id": transaction_journal.get("transaction_id")}},
+        {"name": "expected_transaction_preflight_id_matches", "passed": not expected_transaction_preflight_id or transaction_journal.get("transaction_preflight_id") == expected_transaction_preflight_id, "details": {"expected_transaction_preflight_id": expected_transaction_preflight_id, "transaction_preflight_id": transaction_journal.get("transaction_preflight_id")}},
+        {"name": "expected_approval_record_id_matches", "passed": not expected_approval_record_id or transaction_journal.get("approval_record_id") == expected_approval_record_id, "details": {"expected_approval_record_id": expected_approval_record_id, "approval_record_id": transaction_journal.get("approval_record_id")}},
+        {"name": "expected_execution_plan_id_matches", "passed": not expected_execution_plan_id or transaction_journal.get("execution_plan_id") == expected_execution_plan_id, "details": {"expected_execution_plan_id": expected_execution_plan_id, "execution_plan_id": transaction_journal.get("execution_plan_id")}},
+        {"name": "expected_preflight_id_matches", "passed": not expected_preflight_id or transaction_journal.get("preflight_id") == expected_preflight_id, "details": {"expected_preflight_id": expected_preflight_id, "preflight_id": transaction_journal.get("preflight_id")}},
+        {"name": "expected_policy_id_matches", "passed": not expected_policy_id or transaction_journal.get("policy_id") == expected_policy_id, "details": {"expected_policy_id": expected_policy_id, "policy_id": transaction_journal.get("policy_id")}},
+        {"name": "expected_journal_digest_matches", "passed": not expected_journal_digest_sha256 or expected_journal_digest_sha256 == journal_digest, "details": {"expected_journal_digest_sha256": expected_journal_digest_sha256, "transaction_journal_digest_sha256": journal_digest}},
+        {"name": "journal_not_already_executed", "passed": summary.get("automatic_loop_executed") is not True and summary.get("automatic_multi_iteration_loop") is not True and gates.get("automatic_loop_executed") is not True and gates.get("automatic_multi_iteration_loop") is not True and policy.get("automatic_loop_executed") is not True and policy.get("automatic_multi_iteration_loop") is not True, "details": {"summary_automatic_loop_executed": summary.get("automatic_loop_executed"), "summary_automatic_multi_iteration_loop": summary.get("automatic_multi_iteration_loop"), "gate_automatic_loop_executed": gates.get("automatic_loop_executed"), "gate_automatic_multi_iteration_loop": gates.get("automatic_multi_iteration_loop"), "policy_automatic_loop_executed": policy.get("automatic_loop_executed"), "policy_automatic_multi_iteration_loop": policy.get("automatic_multi_iteration_loop")}},
+        {"name": "journal_does_not_claim_ready_to_execute_now", "passed": gates.get("ready_to_execute_now") is not True, "details": {"ready_to_execute_now": gates.get("ready_to_execute_now")}},
+        {"name": "multi_iteration_executor_not_implemented_yet", "passed": gates.get("automatic_multi_iteration_executor_implemented") is not True and gates.get("automatic_multi_iteration_execution_allowed_now") is not True and policy.get("automatic_multi_iteration_executor_implemented") is not True and policy.get("automatic_multi_iteration_execution_allowed_now") is not True, "details": {"gate_executor_implemented": gates.get("automatic_multi_iteration_executor_implemented"), "gate_execution_allowed_now": gates.get("automatic_multi_iteration_execution_allowed_now"), "policy_executor_implemented": policy.get("automatic_multi_iteration_executor_implemented"), "policy_execution_allowed_now": policy.get("automatic_multi_iteration_execution_allowed_now")}},
+        {"name": "per_iteration_review_gate_required", "passed": gates.get("requires_per_iteration_review_gate") is True and policy.get("per_iteration_review_gate_required") is True, "details": {"gate_requires_per_iteration_review_gate": gates.get("requires_per_iteration_review_gate"), "policy_per_iteration_review_gate_required": policy.get("per_iteration_review_gate_required")}},
+        {"name": "checkpoint_after_each_iteration_required", "passed": gates.get("requires_checkpoint_after_each_iteration") is True and policy.get("checkpoint_after_each_iteration_required") is True, "details": {"gate_requires_checkpoint_after_each_iteration": gates.get("requires_checkpoint_after_each_iteration"), "policy_checkpoint_after_each_iteration_required": policy.get("checkpoint_after_each_iteration_required")}},
+        {"name": "fresh_live_callframe_per_iteration_required", "passed": gates.get("requires_fresh_live_callframe_per_iteration") is True and policy.get("fresh_live_callframe_per_iteration_required") is True, "details": {"gate_requires_fresh_live_callframe_per_iteration": gates.get("requires_fresh_live_callframe_per_iteration"), "policy_fresh_live_callframe_per_iteration_required": policy.get("fresh_live_callframe_per_iteration_required")}},
+        {"name": "stop_after_each_checkpoint_required", "passed": gates.get("requires_stop_after_each_checkpoint") is True and policy.get("stop_after_each_checkpoint_required") is True, "details": {"gate_requires_stop_after_each_checkpoint": gates.get("requires_stop_after_each_checkpoint"), "policy_stop_after_each_checkpoint_required": policy.get("stop_after_each_checkpoint_required")}},
+        {"name": "journal_has_planned_iterations", "passed": planned_iteration_count > 0, "details": {"planned_iteration_count": planned_iteration_count}},
+        {"name": "max_iterations_positive_if_provided", "passed": max_iterations is None or max_iterations > 0, "details": {"max_iterations": max_iterations}},
+        {"name": "max_iterations_within_planned_entries", "passed": max_iterations is None or planned_iteration_count == 0 or max_iterations <= planned_iteration_count, "details": {"max_iterations": max_iterations, "planned_iteration_count": planned_iteration_count}},
+        {"name": "journal_did_not_send_cdp", "passed": policy.get("cdp_command_sent") is not True and policy.get("cdp_target_attached") is not True and policy.get("debugger_event_subscribed") is not True, "details": {"cdp_command_sent": policy.get("cdp_command_sent"), "cdp_target_attached": policy.get("cdp_target_attached"), "debugger_event_subscribed": policy.get("debugger_event_subscribed")}},
+        {"name": "journal_did_not_call_mcp_or_mobile", "passed": policy.get("calls_mcp") is not True and policy.get("mobile_runtime_used") is not True, "details": {"calls_mcp": policy.get("calls_mcp"), "mobile_runtime_used": policy.get("mobile_runtime_used")}},
+    ]
+
+
+def _automatic_loop_multi_iteration_bounded_executor_gate_next_action(*, blockers: list[str]) -> str:
+    if blockers:
+        return "fix_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_blockers"
+    return "review_future_bounded_paused_session_automatic_loop_multi_iteration_executor_mvp"
+
+
+def _automatic_loop_multi_iteration_bounded_executor_gate_side_effect_policy() -> dict[str, Any]:
+    policy = _automatic_loop_bounded_executor_gate_side_effect_policy()
     policy.update({
         "automatic_multi_iteration_loop": False,
         "automatic_multi_iteration_executor_implemented": False,
