@@ -3455,3 +3455,15 @@ Status: implemented as a read-only / review-only / preflight-only descriptor aft
 Boundary: this closes only the executor-input preflight layer after typed materialization. It does not execute debugger commands, install source-logpoints or hooks, run rebuilds, export raw source or previews, fetch Source Maps, start browsers, evaluate JavaScript, send CDP, call MCP, or touch Android / iOS / mini-program full runtime chains.
 
 Tests cover manager-level ready / filtered / unsafe-payload blockers, native-web route metadata and no-browser-start verification, workspace route aliasing, coordinator payload/category mapping, hook-subagent warning / blocker wiring, compileall, and source-map / native-web / workspace / coordinator / hook regressions.
+
+### Step 272：Source Map typed payload follow-through review surface descriptor baseline
+
+Status: implemented as a read-only / review-only / handoff-only descriptor after the Step 271 typed payload preflight descriptor. This is not automatic debugger execution, source-logpoint installation, hook installation, rebuild execution, Source Map fetching, browser launch, MCP integration, or an Android / iOS / mini-program full runtime chain.
+
+`SourceMapFollowthroughReviewManager` consumes a ready `source-map-typed-payload-preflight` descriptor or explicit preflight payloads, validates that selected debugger / source-logpoint / rebuild / hook payloads are ready for explicit review, and emits `reverse-deepagent.source-map-followthrough-review.v1` with per-surface review prompts, executor inputs, `explicit_review_required=true`, `execute_automatically=false`, `executor_invoked=false`, blocker details, and a fixed no-side-effect policy.
+
+`native-web` exposes this through `source-map-followthrough-review` / `source-map-typed-payload-followthrough-review` / `source-map-consumer-followthrough-review` / `review-source-map-followthrough` / `review-source-map-typed-payload-followthrough` / `source-map-followthrough-review-surface` protection names before browser session acquisition and returns `virtual://workspace/source-map-followthrough-review.json`. The workspace contract indexes `workspace/source-map-followthrough-review.json` with future alias `/workspace/debugger/source-map-followthrough-review.json` and category `triage`; coordinator extraction / artifact category mapping classify the optional evidence source as `triage`; hook review warns when ready and blocks blocked descriptors.
+
+Boundary: this closes only the review handoff surface after typed-payload preflight. It executes no debugger command, installs no source-logpoint or hook, runs no rebuild, exports no raw source or preview, fetches no Source Map, starts no browser, evaluates no JavaScript, sends no CDP, calls no MCP, and touches no Android / iOS / mini-program full runtime chain.
+
+Tests cover manager-level ready / filtered / unsafe-preflight blockers, native-web route metadata and no-browser-start verification, workspace route aliasing, coordinator payload/category mapping, hook-subagent warning / blocker wiring, compileall, and source-map / native-web / workspace / coordinator / hook regressions.

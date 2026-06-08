@@ -218,6 +218,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerActionPlanSpec,
     SourceMapConsumerMaterializationManager,
     SourceMapConsumerMaterializationSpec,
+    SourceMapFollowthroughReviewManager,
+    SourceMapFollowthroughReviewSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
@@ -643,6 +645,92 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_review_request(protection_name, context):
+            spec = SourceMapFollowthroughReviewSpec.from_context(context)
+            result = SourceMapFollowthroughReviewManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            reviews = descriptor.get("followthrough_reviews") if isinstance(descriptor.get("followthrough_reviews"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            consumers = sorted({str(item.get("consumer")) for item in reviews if isinstance(item, dict) and item.get("consumer")})
+            surfaces = sorted({str(item.get("followthrough_review_surface")) for item in reviews if isinstance(item, dict) and item.get("followthrough_review_surface")})
+            verification = [
+                f"source_map_followthrough_review_status={result.status}",
+                f"source_map_followthrough_review_count={len(reviews)}",
+                f"source_map_followthrough_review_ready_count={descriptor.get('ready_followthrough_review_count', 0)}",
+                f"source_map_followthrough_review_consumers={','.join(consumers)}",
+                f"source_map_followthrough_review_surfaces={','.join(surfaces)}",
+                f"source_map_followthrough_review_schema_version={descriptor.get('typed_payload_schema_version', '')}",
+                f"source_map_followthrough_review_ready_for_explicit_review={descriptor.get('ready_for_explicit_review', False)}",
+                "source_map_followthrough_review_review_only=True",
+                "source_map_followthrough_review_plan_only=True",
+                "source_map_followthrough_review_handoff_only=True",
+                f"source_map_followthrough_review_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_followthrough_review_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_followthrough_review_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_followthrough_review_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_review_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_review_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_followthrough_review_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_review_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_followthrough_review_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_review_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_review_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_review_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_review_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_review_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-review.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map follow-through review surface descriptor.",
+                metadata={
+                    "status": result.status,
+                    "typed_payload_schema_version": descriptor.get("typed_payload_schema_version", ""),
+                    "followthrough_review_count": len(reviews),
+                    "ready_followthrough_review_count": descriptor.get("ready_followthrough_review_count", 0),
+                    "consumers": consumers,
+                    "followthrough_review_surfaces": surfaces,
+                    "ready_for_explicit_review": bool(descriptor.get("ready_for_explicit_review", False)),
+                    "review_only": True,
+                    "plan_only": True,
+                    "handoff_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "choose_explicit_source_map_followthrough_review_surface"
+                actions = ["review_source_map_followthrough_review"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_ready_source_map_typed_payload_preflight_descriptor"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_review_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -9627,6 +9715,32 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapConsumerTypedPayloadPreflight",
                 "source_map_followthrough_preflight",
                 "sourceMapFollowthroughPreflight",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_followthrough_review_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-followthrough-review",
+            "source-map-typed-payload-followthrough-review",
+            "source-map-consumer-followthrough-review",
+            "review-source-map-followthrough",
+            "review-source-map-typed-payload-followthrough",
+            "source-map-followthrough-review-surface",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_followthrough_review",
+                "sourceMapFollowthroughReview",
+                "source_map_typed_payload_followthrough_review",
+                "sourceMapTypedPayloadFollowthroughReview",
+                "source_map_followthrough_review_surface",
+                "sourceMapFollowthroughReviewSurface",
+                "source_map_consumer_followthrough_review",
+                "sourceMapConsumerFollowthroughReview",
             )
         )
 

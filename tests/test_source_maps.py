@@ -12,6 +12,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerActionPlanSpec,
     SourceMapConsumerMaterializationManager,
     SourceMapConsumerMaterializationSpec,
+    SourceMapFollowthroughReviewManager,
+    SourceMapFollowthroughReviewSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
@@ -920,6 +922,103 @@ class SourceMapTypedPayloadPreflightManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("typed_payload_preflight_not_ready:review-debugger-location-use", result.descriptor["blockers"])
         self.assertFalse(result.descriptor["ready_for_followthrough_review"])
+
+
+class SourceMapFollowthroughReviewManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_preflight() -> dict:
+        spec = SourceMapTypedPayloadPreflightSpec.from_context(
+            {
+                "source_map_typed_payload_preflight": True,
+                "source_map_consumer_materialization": SourceMapTypedPayloadPreflightManagerTests._ready_materialization(),
+            }
+        )
+        return SourceMapTypedPayloadPreflightManager().review(spec).descriptor
+
+    def test_source_map_followthrough_review_groups_surfaces_without_side_effects(self) -> None:
+        preflight = self._ready_preflight()
+        spec = SourceMapFollowthroughReviewSpec.from_context(
+            {
+                "source_map_followthrough_review": True,
+                "source_map_typed_payload_preflight": preflight,
+            }
+        )
+
+        result = SourceMapFollowthroughReviewManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-followthrough-review.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["plan_only"])
+        self.assertTrue(descriptor["handoff_only"])
+        self.assertEqual(descriptor["source_preflight_schema_version"], "reverse-deepagent.source-map-typed-payload-preflight.v1")
+        self.assertEqual(descriptor["source_preflight_status"], "ready_for_review")
+        self.assertEqual(descriptor["typed_payload_schema_version"], "reverse-deepagent.source-map-consumer-typed-review-payload.v1")
+        self.assertEqual(descriptor["followthrough_review_count"], 4)
+        self.assertEqual(descriptor["ready_followthrough_review_count"], 4)
+        self.assertTrue(descriptor["ready_for_explicit_review"])
+        self.assertFalse(descriptor["followthrough_executor_invoked"])
+        surfaces = {item["consumer"]: item["followthrough_review_surface"] for item in descriptor["followthrough_reviews"]}
+        self.assertEqual(surfaces["debugger"], "review_debugger_location_executor_input")
+        self.assertEqual(surfaces["source-logpoint"], "review_source_logpoint_executor_input")
+        self.assertEqual(surfaces["rebuild"], "review_rebuild_source_metadata_executor_input")
+        self.assertEqual(surfaces["hook"], "review_hook_symbol_scope_executor_input")
+        prompts = {item["consumer"]: item["review_prompt"] for item in descriptor["followthrough_reviews"]}
+        self.assertIn("CDP Debugger command", prompts["debugger"])
+        self.assertIn("before installation", prompts["source-logpoint"])
+        self.assertIn("digest-only rebuild metadata", prompts["rebuild"])
+        self.assertIn("before runtime hook installation", prompts["hook"])
+        for item in descriptor["followthrough_reviews"]:
+            self.assertEqual(item["status"], "ready_for_review")
+            self.assertTrue(item["explicit_review_required"])
+            self.assertTrue(item["handoff_only"])
+            self.assertFalse(item["execute_automatically"])
+            self.assertFalse(item["executor_invoked"])
+            self.assertFalse(item["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(item["side_effect_policy"]["logpoint_installed"])
+            self.assertFalse(item["side_effect_policy"]["hook_installed"])
+            self.assertFalse(item["side_effect_policy"]["rebuild_executed"])
+            self.assertFalse(item["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(item["side_effect_policy"]["mobile_runtime_used"])
+        self.assertEqual(descriptor["next_action"], "choose_explicit_source_map_followthrough_review_surface")
+        self.assertFalse(result.side_effect_policy["debugger_execution_performed"])
+        self.assertFalse(result.side_effect_policy["runtime_evaluated"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_source_map_followthrough_review_filters_requested_consumers(self) -> None:
+        spec = SourceMapFollowthroughReviewSpec.from_context(
+            {
+                "source_map_followthrough_review": True,
+                "source_map_typed_payload_preflight": self._ready_preflight(),
+                "source_map_followthrough_consumers": ["debugger", "hook"],
+            }
+        )
+
+        result = SourceMapFollowthroughReviewManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.descriptor["followthrough_review_count"], 2)
+        self.assertEqual(result.descriptor["selected_consumers"], ["debugger", "hook"])
+
+    def test_source_map_followthrough_review_blocks_unsafe_preflight(self) -> None:
+        preflight = self._ready_preflight()
+        preflight["side_effect_policy"] = dict(preflight["side_effect_policy"])
+        preflight["side_effect_policy"]["cdp_command_sent"] = True
+        spec = SourceMapFollowthroughReviewSpec.from_context(
+            {
+                "source_map_followthrough_review": True,
+                "source_map_typed_payload_preflight": preflight,
+            }
+        )
+
+        result = SourceMapFollowthroughReviewManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_typed_payload_preflight_cdp_command_detected", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["ready_for_explicit_review"])
+        self.assertEqual(result.descriptor["next_action"], "resolve_source_map_typed_payload_preflight_blockers")
 
 
 class SourceMapRemapperTests(unittest.TestCase):
