@@ -5,12 +5,72 @@ from pathlib import Path
 
 from reverse_deepagent.agent import build_reverse_agent
 from reverse_deepagent.subagents.hook import HOOK_SUBAGENT_DESCRIPTION, HOOK_SUBAGENT_NAME, build_hook_subagent, load_hook_prompt
-from reverse_deepagent.tools.hook_tools import make_review_hook_artifacts_tool
+from reverse_deepagent.tools.hook_tools import make_record_source_map_selected_executor_approval_tool, make_review_hook_artifacts_tool
 
 
 class ToolFriendlyFakeModel:
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):  # noqa: D401, ANN001
         return self
+
+
+def _ready_source_map_selected_executor_approval_plan() -> dict:
+    side_effect_policy = {
+        "approval_recorded": False,
+        "fetch_source_map": False,
+        "browser_started": False,
+        "cdp_command_sent": False,
+        "debugger_execution_performed": False,
+        "runtime_evaluated": False,
+        "logpoint_installed": False,
+        "hook_installed": False,
+        "rebuild_executed": False,
+        "surface_executor_invoked": False,
+        "executor_invoked": False,
+        "calls_mcp": False,
+        "mobile_runtime_used": False,
+    }
+    return {
+        "schema_version": "reverse-deepagent.source-map-selected-executor-approval-plan.v1",
+        "status": "ready_for_review",
+        "selected_action_id": "review-debugger-location-use",
+        "selected_consumer": "debugger",
+        "selected_review_gate": "explicit_debugger_location_review",
+        "approval_plan_ready": True,
+        "apply_plan_ready_for_review": True,
+        "approval_recorded": False,
+        "ready_to_apply_now": False,
+        "surface_executor_invoked": False,
+        "blockers": [],
+        "approval_requirements": {
+            "approval_schema_version": "reverse-deepagent.source-map-selected-executor-approval.v1",
+            "approval_required": True,
+            "approval_recorded": False,
+            "required_approval_flag": "review_approved",
+            "approval_record_artifact": "workspace/source-map-selected-executor-approval-record.json",
+            "approval_scope": {
+                "action_id": "review-debugger-location-use",
+                "consumer": "debugger",
+                "review_gate": "explicit_debugger_location_review",
+            },
+        },
+        "apply_plan": {
+            "apply_plan_schema_version": "reverse-deepagent.source-map-selected-executor-apply-plan.v1",
+            "consumer": "debugger",
+            "future_action": "execute_reviewed_source_map_debugger_location_action",
+            "review_gate": "explicit_debugger_location_review",
+            "requires_approval_record": True,
+            "expected_approval_record_artifact": "workspace/source-map-selected-executor-approval-record.json",
+            "future_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "mode_required": "apply",
+            "write_result_required": True,
+            "ready_to_apply_now": False,
+            "executor_implemented_now": False,
+            "surface_executor_invoked": False,
+            "side_effect_policy": side_effect_policy,
+        },
+        "side_effect_policy": side_effect_policy,
+        "next_action": "record_review_approval_for_source_map_debugger_executor",
+    }
 
 
 class HookSubagentTests(unittest.TestCase):
@@ -402,6 +462,115 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(result["status"], "block")
         self.assertIn("source_map_selected_executor_approval_plan_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "provide_ready_source_map_selected_executor_input_review_descriptor")
+
+    def test_record_source_map_selected_executor_approval_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_source_map_selected_executor_approval_tool(artifact_root)
+
+            result = tool(
+                approval_plan_json=json.dumps(_ready_source_map_selected_executor_approval_plan()),
+                reviewer="alice",
+                reason="Reviewed selected debugger executor input.",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["approval_recorded"])
+            self.assertFalse((artifact_root / "workspace" / "source-map-selected-executor-approval-record.json").exists())
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(result["side_effect_policy"]["debugger_execution_performed"])
+            self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+
+    def test_record_source_map_selected_executor_approval_apply_requires_explicit_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_source_map_selected_executor_approval_tool(artifact_root)
+
+            result = tool(
+                approval_plan_json=json.dumps(_ready_source_map_selected_executor_approval_plan()),
+                mode="apply",
+                write_result=True,
+                approve_approval_record=False,
+            )
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("reviewer_present", result["blockers"])
+            self.assertIn("apply_requires_explicit_approval_record", result["blockers"])
+            self.assertFalse((artifact_root / "workspace" / "source-map-selected-executor-approval-record.json").exists())
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+
+    def test_record_source_map_selected_executor_approval_apply_writes_record_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_source_map_selected_executor_approval_tool(artifact_root)
+
+            result = tool(
+                approval_plan_json=json.dumps(_ready_source_map_selected_executor_approval_plan()),
+                reviewer="alice",
+                decision="approved",
+                reason="Approved selected debugger executor apply preflight input.",
+                mode="apply",
+                write_result=True,
+                approve_approval_record=True,
+                expected_action_id="review-debugger-location-use",
+                expected_consumer="debugger",
+                expected_gate="explicit_debugger_location_review",
+                metadata_json=json.dumps({"ticket": "SMAP-1"}),
+            )
+
+            record_path = artifact_root / "workspace" / "source-map-selected-executor-approval-record.json"
+            self.assertEqual(result["status"], "written")
+            self.assertTrue(result["approval_recorded"])
+            self.assertTrue(result["approved_for_apply"])
+            self.assertTrue(record_path.exists())
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["schema_version"], "reverse-deepagent.source-map-selected-executor-approval-record.v1")
+            self.assertEqual(record["selected_consumer"], "debugger")
+            self.assertEqual(record["selected_review_gate"], "explicit_debugger_location_review")
+            self.assertTrue(record["executor_input_gates"]["approval_recorded"])
+            self.assertFalse(record["executor_input_gates"]["ready_to_apply_now"])
+            self.assertFalse(record["executor_input_gates"]["surface_executor_invoked"])
+            self.assertFalse(record["executor_input_gates"]["debugger_executed"])
+            self.assertEqual(record["metadata"]["ticket"], "SMAP-1")
+            self.assertTrue(record["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(record["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(record["side_effect_policy"]["runtime_evaluated"])
+            self.assertFalse(record["side_effect_policy"]["logpoint_installed"])
+            self.assertFalse(record["side_effect_policy"]["hook_installed"])
+            self.assertFalse(record["side_effect_policy"]["rebuild_executed"])
+            self.assertFalse(record["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(record["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_hook_artifacts_warns_for_source_map_selected_executor_approval_record(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_selected_executor_approval_record": {
+                "schema_version": "reverse-deepagent.source-map-selected-executor-approval-record.v1",
+                "status": "written",
+                "selected_consumer": "debugger",
+                "approved_for_apply": True,
+                "next_action": "review_source_map_selected_executor_apply_preflight",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_selected_executor_approval_record_ready_for_apply_preflight", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_apply_preflight")
+        self.assertEqual(result["summary"]["source_map_selected_executor_approval_record_status"], "written")
+        self.assertTrue(result["summary"]["source_map_selected_executor_approval_record_approved_for_apply"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_selected_executor_approval_record(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_selected_executor_approval_record": {"status": "blocked", "reason": "approval_plan_missing"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_selected_executor_approval_record_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_ready_source_map_selected_executor_approval_plan_descriptor")
 
     def test_review_hook_artifacts_blocks_failed_source_map_consumer_action_plan_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
@@ -2111,11 +2280,14 @@ class HookSubagentTests(unittest.TestCase):
         self.assertEqual(subagent["name"], HOOK_SUBAGENT_NAME)
         self.assertEqual(subagent["description"], HOOK_SUBAGENT_DESCRIPTION)
         self.assertIn("Hook Subagent", subagent["system_prompt"])
-        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"read_workspace_artifact", "review_hook_artifacts"})
+        self.assertEqual(
+            {tool.__name__ for tool in subagent["tools"]},
+            {"read_workspace_artifact", "review_hook_artifacts", "record_source_map_selected_executor_approval"},
+        )
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/hook.txt"
-        self.assertIn("read-only hook artifact review", load_hook_prompt(path))
+        self.assertIn("record_source_map_selected_executor_approval", load_hook_prompt(path))
 
     def test_default_agent_includes_hook_before_timeline(self) -> None:
         captured = {}

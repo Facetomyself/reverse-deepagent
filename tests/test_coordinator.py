@@ -821,6 +821,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native source map selected executor approval record",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_selected_executor_approval_record",
+                    details={"status": "written", "selected_consumer": "debugger", "approved_for_apply": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native object-root mutation audit",
                     kind=EvidenceKind.DYNAMIC,
                     source="object_root_mutation_audit",
@@ -1748,6 +1755,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["source-map-followthrough-surface-selection.json"]["selected_consumer"], "debugger")
         self.assertTrue(payloads["source-map-selected-executor-input-review.json"]["ready_for_executor_review"])
         self.assertTrue(payloads["source-map-selected-executor-approval-plan.json"]["approval_plan_ready"])
+        self.assertTrue(payloads["source-map-selected-executor-approval-record.json"]["approved_for_apply"])
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
         self.assertEqual(payloads["object-root-mutation-audit.json"]["change_count"], 4)
         self.assertEqual(payloads["object-graph-diff.json"]["change_count"], 2)
@@ -1807,6 +1815,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_surface_selection"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_input_review"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_approval_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_approval_record"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_bundler_symbol_scope"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")

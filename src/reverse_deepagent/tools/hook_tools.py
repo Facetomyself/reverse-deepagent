@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,7 @@ from reverse_deepagent.tools.artifact_tools import load_workspace_artifact_json_
 
 
 HOOK_ARTIFACT_REVIEW_VERSION = "2026-06-01.hook-artifact-review-v2"
+SOURCE_MAP_SELECTED_EXECUTOR_APPROVAL_RECORD_VERSION = "reverse-deepagent.source-map-selected-executor-approval-record.v1"
 
 
 def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = None):
@@ -468,6 +471,15 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "source-map-followthrough-approval-plan",
             "sourceMapFollowthroughApprovalPlan",
         )
+        source_map_selected_executor_approval_record = _object_alias(
+            payload,
+            "source_map_selected_executor_approval_record",
+            "source-map-selected-executor-approval-record",
+            "sourceMapSelectedExecutorApprovalRecord",
+            "source_map_selected_executor_apply_approval_record",
+            "source-map-selected-executor-apply-approval-record",
+            "sourceMapSelectedExecutorApplyApprovalRecord",
+        )
         object_graph_diff = _object_alias(
             payload,
             "object_graph_diff",
@@ -562,6 +574,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 source_map_followthrough_surface_selection,
                 source_map_selected_executor_input_review,
                 source_map_selected_executor_approval_plan,
+                source_map_selected_executor_approval_record,
                 object_graph_diff,
                 closure_wrapper_continuation_readiness,
                 closure_wrapper_continuation_execution_plan,
@@ -599,6 +612,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("source_map_selected_executor_input_review_blocked")
         if _status(source_map_selected_executor_approval_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("source_map_selected_executor_approval_plan_blocked")
+        if _status(source_map_selected_executor_approval_record) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_selected_executor_approval_record_blocked")
         if _status(object_graph_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("object_graph_diff_blocked")
         if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -977,6 +992,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("source_map_selected_executor_input_review_requires_review")
         if source_map_selected_executor_approval_plan and _status(source_map_selected_executor_approval_plan) == "ready_for_review":
             warnings.append("source_map_selected_executor_approval_plan_requires_review")
+        if source_map_selected_executor_approval_record and _status(source_map_selected_executor_approval_record) == "written" and source_map_selected_executor_approval_record.get("approved_for_apply") is True:
+            warnings.append("source_map_selected_executor_approval_record_ready_for_apply_preflight")
         if object_graph_diff and _status(object_graph_diff) == "ready_for_review":
             warnings.append("object_graph_diff_requires_review")
         if missing_count:
@@ -1071,6 +1088,10 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "source_map_selected_executor_approval_plan_status": _status(source_map_selected_executor_approval_plan),
                 "source_map_selected_executor_approval_plan_selected_consumer": source_map_selected_executor_approval_plan.get("selected_consumer"),
                 "source_map_selected_executor_approval_plan_next_action": source_map_selected_executor_approval_plan.get("next_action"),
+                "source_map_selected_executor_approval_record_status": _status(source_map_selected_executor_approval_record),
+                "source_map_selected_executor_approval_record_selected_consumer": source_map_selected_executor_approval_record.get("selected_consumer"),
+                "source_map_selected_executor_approval_record_approved_for_apply": bool(source_map_selected_executor_approval_record.get("approved_for_apply")),
+                "source_map_selected_executor_approval_record_next_action": source_map_selected_executor_approval_record.get("next_action"),
                 "object_graph_diff_status": _status(object_graph_diff),
                 "object_graph_diff_change_count": _intish(object_graph_diff.get("change_count") or _nested_get(object_graph_diff, "diff", "change_count")),
                 "object_graph_diff_risk": _nested_get(object_graph_diff, "risk_summary", "risk"),
@@ -1365,6 +1386,200 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
     return review_hook_artifacts
 
 
+def make_record_source_map_selected_executor_approval_tool(default_artifact_root: str | Path | None = None):
+    """Create an explicit Source Map selected-executor approval-record writer.
+
+    The tool records reviewer approval metadata for a ready
+    source-map-selected-executor approval/apply plan. It does not apply the
+    selected executor, send CDP commands, install source-logpoints or hooks,
+    run rebuilds, fetch Source Maps, start browsers, call MCP, or touch mobile
+    runtime chains.
+    """
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def record_source_map_selected_executor_approval(
+        approval_plan_json: str | None = None,
+        approval_plan_ref: str | None = None,
+        reviewer: str | None = None,
+        decision: str = "approved",
+        reason: str | None = None,
+        mode: str = "dry-run",
+        write_result: bool = False,
+        approve_approval_record: bool = False,
+        expected_action_id: str | None = None,
+        expected_consumer: str | None = None,
+        expected_gate: str | None = None,
+        expected_plan_digest_sha256: str | None = None,
+        artifact_root: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Record reviewer approval for a ready Source Map selected executor plan."""
+
+        metadata = _loads_optional_object(metadata_json, field_name="metadata_json")
+        return record_source_map_selected_executor_approval_payload(
+            approval_plan_json=approval_plan_json,
+            approval_plan_ref=approval_plan_ref,
+            reviewer=reviewer,
+            decision=decision,
+            reason=reason,
+            mode=mode,
+            write_result=write_result,
+            approve_approval_record=approve_approval_record,
+            expected_action_id=expected_action_id,
+            expected_consumer=expected_consumer,
+            expected_gate=expected_gate,
+            expected_plan_digest_sha256=expected_plan_digest_sha256,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            metadata=metadata,
+        )
+
+    record_source_map_selected_executor_approval.__name__ = "record_source_map_selected_executor_approval"
+    return record_source_map_selected_executor_approval
+
+
+def record_source_map_selected_executor_approval_payload(
+    *,
+    approval_plan_json: str | None = None,
+    approval_plan_ref: str | None = None,
+    reviewer: str | None = None,
+    decision: str = "approved",
+    reason: str | None = None,
+    mode: str = "dry-run",
+    write_result: bool = False,
+    approve_approval_record: bool = False,
+    expected_action_id: str | None = None,
+    expected_consumer: str | None = None,
+    expected_gate: str | None = None,
+    expected_plan_digest_sha256: str | None = None,
+    artifact_root: str | None = None,
+    default_artifact_root: str | Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build or write the Source Map selected-executor approval record payload."""
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+    loaded, artifact_read = _loads_object_or_artifact(
+        approval_plan_json,
+        artifact_ref=approval_plan_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=root,
+        field_name="approval_plan_json",
+        artifact_field_name="approval_plan_ref",
+    )
+    approval_plan = _first_object(loaded.get("approval_plan"), loaded)
+    effective_root = Path(artifact_root) if artifact_root else root
+    effective_root = effective_root.expanduser().resolve()
+    result_path = effective_root / "workspace" / "source-map-selected-executor-approval-record.json"
+    plan_digest = _stable_json_digest(approval_plan) if approval_plan else None
+    checks = _source_map_selected_executor_approval_record_checks(
+        approval_plan=approval_plan,
+        reviewer=reviewer,
+        decision=decision,
+        mode=mode,
+        write_result=write_result,
+        approve_approval_record=approve_approval_record,
+        expected_action_id=expected_action_id,
+        expected_consumer=expected_consumer,
+        expected_gate=expected_gate,
+        expected_plan_digest_sha256=expected_plan_digest_sha256,
+        plan_digest=plan_digest,
+        result_path=result_path,
+    )
+    blockers = [check["name"] for check in checks if not check["passed"]]
+    written = not blockers and mode == "apply" and write_result and approve_approval_record
+    approved_for_apply = written and decision == "approved"
+    status = "blocked" if blockers else "written" if written else "planned"
+    created_at = datetime.now(timezone.utc).isoformat()
+    selected_action_id = str(approval_plan.get("selected_action_id") or "")
+    selected_consumer = str(approval_plan.get("selected_consumer") or "")
+    selected_gate = str(approval_plan.get("selected_review_gate") or "")
+    approval_requirements = approval_plan.get("approval_requirements") if isinstance(approval_plan.get("approval_requirements"), dict) else {}
+    apply_plan = approval_plan.get("apply_plan") if isinstance(approval_plan.get("apply_plan"), dict) else {}
+    approval_record_id = _source_map_selected_executor_approval_record_id(
+        selected_action_id=selected_action_id,
+        selected_consumer=selected_consumer,
+        selected_gate=selected_gate,
+        decision=decision,
+        reviewer=reviewer,
+        created_at=created_at,
+    )
+    payload: dict[str, Any] = {
+        "schema_version": SOURCE_MAP_SELECTED_EXECUTOR_APPROVAL_RECORD_VERSION,
+        "status": status,
+        "approval_recorded": written,
+        "approved_for_apply": approved_for_apply,
+        "dry_run": not written,
+        "mode": mode,
+        "write_result": write_result,
+        "approval_record_id": approval_record_id,
+        "selected_action_id": selected_action_id or None,
+        "selected_consumer": selected_consumer or None,
+        "selected_review_gate": selected_gate or None,
+        "decision": decision,
+        "reviewer": reviewer,
+        "reason": reason,
+        "created_at": created_at,
+        "approval_plan_digest_sha256": plan_digest,
+        "expected_plan_digest_sha256": expected_plan_digest_sha256,
+        "source_approval_plan_summary": {
+            "schema_version": approval_plan.get("schema_version"),
+            "status": approval_plan.get("status"),
+            "approval_plan_ready": _boolish(approval_plan.get("approval_plan_ready")),
+            "apply_plan_ready_for_review": _boolish(approval_plan.get("apply_plan_ready_for_review")),
+            "approval_recorded": _boolish(approval_plan.get("approval_recorded")),
+            "ready_to_apply_now": _boolish(approval_plan.get("ready_to_apply_now")),
+            "surface_executor_invoked": _boolish(approval_plan.get("surface_executor_invoked")),
+            "next_action": approval_plan.get("next_action"),
+        },
+        "approval_scope": {
+            **(_object_alias(approval_requirements, "approval_scope") if approval_requirements else {}),
+            "action_id": selected_action_id or None,
+            "consumer": selected_consumer or None,
+            "review_gate": selected_gate or None,
+        },
+        "apply_plan_summary": {
+            "schema_version": apply_plan.get("apply_plan_schema_version"),
+            "consumer": apply_plan.get("consumer"),
+            "future_action": apply_plan.get("future_action"),
+            "future_result_artifact": apply_plan.get("future_result_artifact"),
+            "requires_approval_record": _boolish(apply_plan.get("requires_approval_record")),
+            "mode_required": apply_plan.get("mode_required"),
+            "write_result_required": _boolish(apply_plan.get("write_result_required")),
+            "ready_to_apply_now": _boolish(apply_plan.get("ready_to_apply_now")),
+            "executor_implemented_now": _boolish(apply_plan.get("executor_implemented_now")),
+            "surface_executor_invoked": _boolish(apply_plan.get("surface_executor_invoked")),
+        },
+        "executor_input_gates": {
+            "approval_recorded": written,
+            "approved_for_apply": approved_for_apply,
+            "ready_to_apply_now": False,
+            "surface_executor_invoked": False,
+            "debugger_executed": False,
+            "source_logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "requires_apply_preflight_followup": True,
+        },
+        "checks": checks,
+        "blockers": blockers,
+        "next_action": _source_map_selected_executor_approval_record_next_action(status=status, decision=decision, blockers=blockers),
+        "metadata": {
+            **(metadata or {}),
+            "tool": "record_source_map_selected_executor_approval",
+            "artifact_read": artifact_read,
+            "legacy_path": "workspace/source-map-selected-executor-approval-record.json",
+            "future_path": "/workspace/debugger/source-map-selected-executor-approval-record.json",
+            "path": str(result_path),
+        },
+        "side_effect_policy": _source_map_selected_executor_approval_record_side_effect_policy(written=written),
+    }
+    if written:
+        _write_json(result_path, payload)
+    return payload
+
+
 def _loads_object_or_artifact(
     payload: str | None,
     *,
@@ -1397,12 +1612,188 @@ def _loads_object(payload: str, *, field_name: str) -> dict[str, Any]:
     return value
 
 
+def _loads_optional_object(payload: str | None, *, field_name: str) -> dict[str, Any]:
+    if payload is None or payload == "":
+        return {}
+    return _loads_object(payload, field_name=field_name)
+
+
+def _first_object(*items: Any) -> dict[str, Any]:
+    for item in items:
+        if isinstance(item, dict):
+            return item
+    return {}
+
+
 def _object_alias(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
     for key in keys:
         value = payload.get(key)
         if isinstance(value, dict):
             return value
     return {}
+
+
+def _stable_json_digest(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _boolish(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _source_map_selected_executor_approval_record_checks(
+    *,
+    approval_plan: dict[str, Any],
+    reviewer: str | None,
+    decision: str,
+    mode: str,
+    write_result: bool,
+    approve_approval_record: bool,
+    expected_action_id: str | None,
+    expected_consumer: str | None,
+    expected_gate: str | None,
+    expected_plan_digest_sha256: str | None,
+    plan_digest: str | None,
+    result_path: Path,
+) -> list[dict[str, Any]]:
+    plan_blockers = approval_plan.get("blockers") if isinstance(approval_plan.get("blockers"), list) else []
+    plan_policy = approval_plan.get("side_effect_policy") if isinstance(approval_plan.get("side_effect_policy"), dict) else {}
+    apply_plan = approval_plan.get("apply_plan") if isinstance(approval_plan.get("apply_plan"), dict) else {}
+    approval_requirements = approval_plan.get("approval_requirements") if isinstance(approval_plan.get("approval_requirements"), dict) else {}
+    return [
+        {"name": "approval_plan_available", "passed": bool(approval_plan), "details": {"selected_action_id": approval_plan.get("selected_action_id")}},
+        {
+            "name": "approval_plan_schema_matches",
+            "passed": approval_plan.get("schema_version") == "reverse-deepagent.source-map-selected-executor-approval-plan.v1",
+            "details": {"schema_version": approval_plan.get("schema_version")},
+        },
+        {
+            "name": "approval_plan_ready_for_review",
+            "passed": approval_plan.get("status") == "ready_for_review" and approval_plan.get("approval_plan_ready") is True and approval_plan.get("apply_plan_ready_for_review") is True,
+            "details": {
+                "status": approval_plan.get("status"),
+                "approval_plan_ready": approval_plan.get("approval_plan_ready"),
+                "apply_plan_ready_for_review": approval_plan.get("apply_plan_ready_for_review"),
+            },
+        },
+        {"name": "approval_plan_has_no_blockers", "passed": not plan_blockers, "details": {"blockers": plan_blockers}},
+        {"name": "approval_not_already_recorded", "passed": approval_plan.get("approval_recorded") is not True, "details": {"approval_recorded": approval_plan.get("approval_recorded")}},
+        {"name": "approval_plan_not_ready_to_apply_now", "passed": approval_plan.get("ready_to_apply_now") is not True, "details": {"ready_to_apply_now": approval_plan.get("ready_to_apply_now")}},
+        {"name": "surface_executor_not_invoked", "passed": approval_plan.get("surface_executor_invoked") is not True, "details": {"surface_executor_invoked": approval_plan.get("surface_executor_invoked")}},
+        {
+            "name": "selected_consumer_supported",
+            "passed": approval_plan.get("selected_consumer") in {"debugger", "source-logpoint", "rebuild", "hook"},
+            "details": {"selected_consumer": approval_plan.get("selected_consumer")},
+        },
+        {
+            "name": "approval_record_artifact_matches",
+            "passed": approval_requirements.get("approval_record_artifact") in {None, "", "workspace/source-map-selected-executor-approval-record.json"},
+            "details": {"approval_record_artifact": approval_requirements.get("approval_record_artifact")},
+        },
+        {
+            "name": "apply_plan_requires_approval_record",
+            "passed": apply_plan.get("requires_approval_record") is True and apply_plan.get("expected_approval_record_artifact") in {None, "", "workspace/source-map-selected-executor-approval-record.json"},
+            "details": {
+                "requires_approval_record": apply_plan.get("requires_approval_record"),
+                "expected_approval_record_artifact": apply_plan.get("expected_approval_record_artifact"),
+            },
+        },
+        {
+            "name": "apply_plan_is_not_execution",
+            "passed": apply_plan.get("ready_to_apply_now") is not True and apply_plan.get("surface_executor_invoked") is not True and apply_plan.get("executor_implemented_now") is not True,
+            "details": {
+                "ready_to_apply_now": apply_plan.get("ready_to_apply_now"),
+                "surface_executor_invoked": apply_plan.get("surface_executor_invoked"),
+                "executor_implemented_now": apply_plan.get("executor_implemented_now"),
+            },
+        },
+        {"name": "reviewer_present", "passed": bool((reviewer or "").strip()), "details": {"reviewer": reviewer}},
+        {"name": "decision_supported", "passed": decision in {"approved", "rejected", "needs_changes"}, "details": {"decision": decision}},
+        {"name": "mode_supported", "passed": mode in {"dry-run", "apply"}, "details": {"mode": mode}},
+        {"name": "apply_requires_write_result", "passed": mode != "apply" or bool(write_result), "details": {"write_result": write_result}},
+        {"name": "apply_requires_explicit_approval_record", "passed": mode != "apply" or bool(approve_approval_record), "details": {"approve_approval_record": approve_approval_record}},
+        {
+            "name": "expected_action_id_matches",
+            "passed": not expected_action_id or approval_plan.get("selected_action_id") == expected_action_id,
+            "details": {"expected_action_id": expected_action_id, "selected_action_id": approval_plan.get("selected_action_id")},
+        },
+        {
+            "name": "expected_consumer_matches",
+            "passed": not expected_consumer or approval_plan.get("selected_consumer") == expected_consumer,
+            "details": {"expected_consumer": expected_consumer, "selected_consumer": approval_plan.get("selected_consumer")},
+        },
+        {
+            "name": "expected_gate_matches",
+            "passed": not expected_gate or approval_plan.get("selected_review_gate") == expected_gate,
+            "details": {"expected_gate": expected_gate, "selected_review_gate": approval_plan.get("selected_review_gate")},
+        },
+        {
+            "name": "expected_plan_digest_matches",
+            "passed": not expected_plan_digest_sha256 or expected_plan_digest_sha256 == plan_digest,
+            "details": {"expected_plan_digest_sha256": expected_plan_digest_sha256, "approval_plan_digest_sha256": plan_digest},
+        },
+        {"name": "result_path_not_already_written", "passed": mode != "apply" or not result_path.exists(), "details": {"path": str(result_path), "exists": result_path.exists()}},
+        {"name": "approval_plan_no_cdp", "passed": plan_policy.get("cdp_command_sent") is not True, "details": {"cdp_command_sent": plan_policy.get("cdp_command_sent")}},
+        {"name": "approval_plan_no_runtime_eval", "passed": plan_policy.get("runtime_evaluated") is not True, "details": {"runtime_evaluated": plan_policy.get("runtime_evaluated")}},
+        {"name": "approval_plan_no_surface_execution", "passed": plan_policy.get("surface_executor_invoked") is not True, "details": {"surface_executor_invoked": plan_policy.get("surface_executor_invoked")}},
+        {"name": "approval_plan_no_mcp", "passed": plan_policy.get("calls_mcp") is not True, "details": {"calls_mcp": plan_policy.get("calls_mcp")}},
+        {"name": "approval_plan_no_mobile_runtime", "passed": plan_policy.get("mobile_runtime_used") is not True, "details": {"mobile_runtime_used": plan_policy.get("mobile_runtime_used")}},
+    ]
+
+
+def _source_map_selected_executor_approval_record_next_action(*, status: str, decision: str, blockers: list[str]) -> str:
+    if blockers:
+        return "fix_source_map_selected_executor_approval_record_blockers"
+    if status == "planned":
+        return "review_source_map_selected_executor_approval_record_before_apply_write"
+    if decision == "approved":
+        return "review_source_map_selected_executor_apply_preflight"
+    return "revise_source_map_selected_executor_review_before_apply"
+
+
+def _source_map_selected_executor_approval_record_side_effect_policy(*, written: bool) -> dict[str, Any]:
+    return {
+        "approval_record_writer": True,
+        "dry_run_is_read_only": True,
+        "files_mutated": written,
+        "artifacts_written": written,
+        "writes_approval_record": written,
+        "approval_recorded": written,
+        "ready_to_apply_now": False,
+        "surface_executor_invoked": False,
+        "debugger_execution_performed": False,
+        "runtime_evaluated": False,
+        "logpoint_installed": False,
+        "hook_installed": False,
+        "rebuild_executed": False,
+        "fetch_source_map": False,
+        "browser_started": False,
+        "cdp_command_sent": False,
+        "calls_mcp": False,
+        "mobile_runtime_used": False,
+    }
+
+
+def _source_map_selected_executor_approval_record_id(
+    *,
+    selected_action_id: str,
+    selected_consumer: str,
+    selected_gate: str,
+    decision: str,
+    reviewer: str | None,
+    created_at: str,
+) -> str:
+    digest = hashlib.sha256(f"{selected_action_id}\0{selected_consumer}\0{selected_gate}\0{decision}\0{reviewer or ''}\0{created_at}".encode("utf-8")).hexdigest()[:16]
+    return f"source-map-selected-executor-approval-record:{digest}"
 
 
 def _records_alias(payload: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
@@ -1621,6 +2012,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "provide_ready_source_map_followthrough_surface_selection_descriptor"
     if "source_map_selected_executor_approval_plan_blocked" in blockers:
         return "provide_ready_source_map_selected_executor_input_review_descriptor"
+    if "source_map_selected_executor_approval_record_blocked" in blockers:
+        return "provide_ready_source_map_selected_executor_approval_plan_descriptor"
     if "object_graph_diff_blocked" in blockers:
         return "provide_before_and_after_object_graph_snapshots"
     if "async_chunk_load_failed" in blockers:
@@ -1653,6 +2046,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_source_map_selected_executor_input_before_surface_execution"
     if "source_map_selected_executor_approval_plan_requires_review" in warnings:
         return "review_source_map_selected_executor_approval_plan_before_apply"
+    if "source_map_selected_executor_approval_record_ready_for_apply_preflight" in warnings:
+        return "review_source_map_selected_executor_apply_preflight"
     if "object_graph_diff_requires_review" in warnings:
         return "review_object_graph_diff_before_hook_or_replay"
     if "closure_wrapper_strategy_descriptor_plan_only_requires_review" in warnings:
