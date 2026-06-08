@@ -633,6 +633,40 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("source_map_source_logpoint_install_result_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "inspect_source_map_source_logpoint_install_failure")
 
+    def test_review_hook_artifacts_warns_for_source_map_rebuild_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_rebuild_result": {
+                "status": "success",
+                "selected_consumer": "rebuild",
+                "source_content_digest": "abc123",
+                "metadata_only": True,
+                "rebuild_metadata_applied": True,
+                "rebuild_executed": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_rebuild_result_requires_rebuild_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_rebuild_metadata_before_rebuild_generation")
+        self.assertEqual(result["summary"]["source_map_rebuild_result_status"], "success")
+        self.assertEqual(result["summary"]["source_map_rebuild_result_digest"], "abc123")
+        self.assertTrue(result["summary"]["source_map_rebuild_result_metadata_only"])
+        self.assertTrue(result["summary"]["source_map_rebuild_result_rebuild_metadata_applied"])
+        self.assertFalse(result["summary"]["source_map_rebuild_result_rebuild_executed"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_rebuild_result(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_rebuild_result": {"status": "blocked", "blockers": ["source_map_rebuild_metadata_not_approved"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_rebuild_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_rebuild_metadata_application_failure")
+
     def test_review_hook_artifacts_blocks_failed_source_map_consumer_action_plan_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {"source_map_consumer_action_plan": {"status": "blocked", "reason": "source_map_readiness_descriptor_missing"}}

@@ -987,6 +987,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_source_map_selected_executor_approval_record": "audit",
     "workspace_source_map_selected_executor_apply_preflight": "audit",
     "workspace_source_map_source_logpoint_install_result": "audit",
+    "workspace_source_map_rebuild_result": "audit",
     "workspace_bundler_symbol_scope": "triage",
     "workspace_source_logpoints": "trace",
     "workspace_source_logpoint_timeline": "trace",
@@ -1952,6 +1953,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-map-selected-executor-apply-preflight.json"] = evidence.details
         elif evidence.source == "source_map_source_logpoint_install_result":
             payloads["source-map-source-logpoint-install-result.json"] = evidence.details
+        elif evidence.source == "source_map_rebuild_result":
+            payloads["source-map-rebuild-result.json"] = evidence.details
         elif evidence.source == "bundler_symbol_scope":
             payloads["bundler-symbol-scope.json"] = evidence.details
         elif evidence.source == "source_logpoints":

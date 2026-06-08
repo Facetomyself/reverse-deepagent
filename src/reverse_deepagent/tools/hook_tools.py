@@ -48,6 +48,16 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             "source_map_selected_source_logpoint_install_result",
             "sourceMapSelectedSourceLogpointInstallResult",
         )
+        source_map_rebuild_result = _object_alias(
+            payload,
+            "source_map_rebuild_result",
+            "source-map-rebuild-result",
+            "sourceMapRebuildResult",
+            "source_map_selected_rebuild_result",
+            "sourceMapSelectedRebuildResult",
+            "source_map_rebuild_metadata_result",
+            "sourceMapRebuildMetadataResult",
+        )
         closure_wrapper_replacement_plan = _object_alias(
             payload,
             "closure_wrapper_replacement_plan",
@@ -597,6 +607,7 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 source_map_selected_executor_approval_record,
                 source_map_selected_executor_apply_preflight,
                 source_map_source_logpoint_install_result,
+                source_map_rebuild_result,
                 object_graph_diff,
                 closure_wrapper_continuation_readiness,
                 closure_wrapper_continuation_execution_plan,
@@ -640,6 +651,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             blockers.append("source_map_selected_executor_apply_preflight_blocked")
         if _status(source_map_source_logpoint_install_result) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("source_map_source_logpoint_install_result_blocked")
+        if _status(source_map_rebuild_result) in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_rebuild_result_blocked")
         if _status(object_graph_diff) in {"blocked", "failed", "failure", "error", "unsupported"}:
             blockers.append("object_graph_diff_blocked")
         if _status(closure_wrapper_replacement_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
@@ -1024,6 +1037,8 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
             warnings.append("source_map_selected_executor_apply_preflight_ready_for_executor_review")
         if source_map_source_logpoint_install_result and _status(source_map_source_logpoint_install_result) in {"success", "applied", "installed"}:
             warnings.append("source_map_source_logpoint_install_result_requires_timeline_review")
+        if source_map_rebuild_result and _status(source_map_rebuild_result) in {"success", "applied", "ready_for_rebuild_review"}:
+            warnings.append("source_map_rebuild_result_requires_rebuild_review")
         if object_graph_diff and _status(object_graph_diff) == "ready_for_review":
             warnings.append("object_graph_diff_requires_review")
         if missing_count:
@@ -1130,6 +1145,11 @@ def make_review_hook_artifacts_tool(default_artifact_root: str | Path | None = N
                 "source_map_source_logpoint_install_result_breakpoint_count": _intish(source_map_source_logpoint_install_result.get("breakpoint_count")),
                 "source_map_source_logpoint_install_result_event_count": _intish(source_map_source_logpoint_install_result.get("event_count")),
                 "source_map_source_logpoint_install_result_logpoint_installed": bool(source_map_source_logpoint_install_result.get("logpoint_installed")),
+                "source_map_rebuild_result_status": _status(source_map_rebuild_result),
+                "source_map_rebuild_result_digest": source_map_rebuild_result.get("source_content_digest"),
+                "source_map_rebuild_result_metadata_only": bool(source_map_rebuild_result.get("metadata_only")),
+                "source_map_rebuild_result_rebuild_metadata_applied": bool(source_map_rebuild_result.get("rebuild_metadata_applied")),
+                "source_map_rebuild_result_rebuild_executed": bool(source_map_rebuild_result.get("rebuild_executed")),
                 "object_graph_diff_status": _status(object_graph_diff),
                 "object_graph_diff_change_count": _intish(object_graph_diff.get("change_count") or _nested_get(object_graph_diff, "diff", "change_count")),
                 "object_graph_diff_risk": _nested_get(object_graph_diff, "risk_summary", "risk"),
@@ -2056,6 +2076,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "provide_matching_source_map_selected_executor_approval_plan_and_record"
     if "source_map_source_logpoint_install_result_blocked" in blockers:
         return "inspect_source_map_source_logpoint_install_failure"
+    if "source_map_rebuild_result_blocked" in blockers:
+        return "inspect_source_map_rebuild_metadata_application_failure"
     if "object_graph_diff_blocked" in blockers:
         return "provide_before_and_after_object_graph_snapshots"
     if "async_chunk_load_failed" in blockers:
@@ -2094,6 +2116,8 @@ def _next_action(blockers: list[str], warnings: list[str]) -> str:
         return "review_source_map_selected_executor_application"
     if "source_map_source_logpoint_install_result_requires_timeline_review" in warnings:
         return "inspect_source_map_source_logpoint_events"
+    if "source_map_rebuild_result_requires_rebuild_review" in warnings:
+        return "review_source_map_rebuild_metadata_before_rebuild_generation"
     if "object_graph_diff_requires_review" in warnings:
         return "review_object_graph_diff_before_hook_or_replay"
     if "closure_wrapper_strategy_descriptor_plan_only_requires_review" in warnings:

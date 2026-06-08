@@ -656,6 +656,127 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
+        if self._is_source_map_rebuild_metadata_application_request(protection_name, context):
+            apply_preflight = self._source_map_rebuild_metadata_apply_preflight(context)
+            metadata_input = self._source_map_rebuild_metadata_input(context, apply_preflight)
+            blockers = self._source_map_rebuild_metadata_application_blockers(context, apply_preflight, metadata_input)
+            digest = str(metadata_input.get("source_content_digest") or metadata_input.get("sha256") or "")
+            source_content_available = bool(metadata_input.get("source_content_available", metadata_input.get("sourceContentAvailable", False)))
+            verification = [
+                f"source_map_rebuild_metadata_application_preflight_status={apply_preflight.get('status', '')}",
+                f"source_map_rebuild_metadata_application_selected_action_id={apply_preflight.get('selected_action_id', '')}",
+                f"source_map_rebuild_metadata_application_selected_consumer={apply_preflight.get('selected_consumer', '')}",
+                f"source_map_rebuild_metadata_application_selected_gate={apply_preflight.get('selected_review_gate', '')}",
+                f"source_map_rebuild_metadata_application_review_approved={bool(context.get('review_approved', context.get('reviewApproved', False)))}",
+                f"source_map_rebuild_metadata_application_approved={bool(context.get('approve_source_map_rebuild_metadata', context.get('approveSourceMapRebuildMetadata', context.get('approve_rebuild_source_metadata', context.get('approveRebuildSourceMetadata', False)))))}",
+                f"source_map_rebuild_metadata_application_mode={context.get('mode', '')}",
+                f"source_map_rebuild_metadata_application_digest={digest}",
+                f"source_map_rebuild_metadata_application_blockers={','.join(blockers)}",
+                "source_map_rebuild_metadata_application_browser_started=False",
+                "source_map_rebuild_metadata_application_cdp_command_sent=False",
+                "source_map_rebuild_metadata_application_runtime_evaluated=False",
+                "source_map_rebuild_metadata_application_raw_exported=False",
+                "source_map_rebuild_metadata_application_preview_exported=False",
+                "source_map_rebuild_metadata_application_rebuild_bundle_generated=False",
+                "source_map_rebuild_metadata_application_calls_mcp=False",
+                "source_map_rebuild_metadata_application_mobile_runtime_used=False",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if blockers:
+                artifact = ArtifactRef(
+                    path="virtual://workspace/source-map-rebuild-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime blocked Source Map selected rebuild metadata application result.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-rebuild-result.v1",
+                        "status": "blocked",
+                        "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                        "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                        "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                        "review_approved": bool(context.get("review_approved", context.get("reviewApproved", False))),
+                        "approve_source_map_rebuild_metadata": bool(
+                            context.get(
+                                "approve_source_map_rebuild_metadata",
+                                context.get("approveSourceMapRebuildMetadata", context.get("approve_rebuild_source_metadata", context.get("approveRebuildSourceMetadata", False))),
+                            )
+                        ),
+                        "mode": context.get("mode", ""),
+                        "source_content_digest": digest,
+                        "source_content_available": source_content_available,
+                        "blockers": blockers,
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "raw_source_content_exported": False,
+                        "preview_exported": False,
+                        "rebuild_metadata_applied": False,
+                        "rebuild_bundle_generated": False,
+                        "rebuild_executed": False,
+                        "surface_executor_invoked": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=verification,
+                    status=ExecutionStatus.PARTIAL,
+                    artifacts=[artifact],
+                    next_action=self._source_map_rebuild_metadata_application_next_action(blockers),
+                    confidence=ConfidenceLevel.LOW,
+                )
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-rebuild-result.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime explicit-review Source Map selected rebuild metadata application result.",
+                metadata={
+                    "schema_version": "reverse-deepagent.source-map-rebuild-result.v1",
+                    "status": "success",
+                    "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                    "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                    "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                    "approval_record_id": apply_preflight.get("approval_record_id", ""),
+                    "reviewer": str(context.get("reviewer") or ""),
+                    "review_approved": True,
+                    "approve_source_map_rebuild_metadata": True,
+                    "mode": "apply",
+                    "source_content_digest": digest,
+                    "source_content_available": source_content_available,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "raw_source_content_included": False,
+                    "metadata_only": True,
+                    "browser_started": False,
+                    "runtime_evaluated": False,
+                    "cdp_command_sent": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_metadata_applied": True,
+                    "rebuild_bundle_generated": False,
+                    "rebuild_executed": False,
+                    "surface_executor_invoked": True,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            verification.extend(
+                [
+                    "source_map_rebuild_metadata_application_status=success",
+                    "source_map_rebuild_metadata_application_metadata_only=True",
+                    "source_map_rebuild_metadata_application_rebuild_metadata_applied=True",
+                    "source_map_rebuild_metadata_application_surface_executor_invoked=True",
+                ]
+            )
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[f"apply_source_map_rebuild_metadata:{digest}"],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS,
+                artifacts=[artifact],
+                next_action="review_source_map_rebuild_metadata_result_before_rebuild_generation",
+                confidence=ConfidenceLevel.MEDIUM,
+            )
         if self._is_source_map_source_logpoint_application_request(protection_name, context):
             apply_preflight = self._source_map_source_logpoint_apply_preflight(context)
             install_input = self._source_map_source_logpoint_install_input(context)
@@ -10349,6 +10470,89 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_source_map_rebuild_metadata_application_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-rebuild-application",
+            "source-map-rebuild-metadata-application",
+            "source-map-rebuild-result",
+            "source-map-selected-rebuild-application",
+            "source-map-selected-rebuild-executor-application",
+            "apply-source-map-rebuild-metadata",
+            "run-reviewed-source-map-rebuild-metadata-generation",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_rebuild_application",
+                "sourceMapRebuildApplication",
+                "source_map_rebuild_metadata_application",
+                "sourceMapRebuildMetadataApplication",
+                "source_map_selected_rebuild_application",
+                "sourceMapSelectedRebuildApplication",
+            )
+        )
+
+    @staticmethod
+    def _source_map_rebuild_metadata_apply_preflight(context: dict[str, Any]) -> dict[str, Any]:
+        return NativeWebRuntime._dict_alias(
+            context,
+            "source_map_selected_executor_apply_preflight",
+            "sourceMapSelectedExecutorApplyPreflight",
+            "source_map_selected_executor_application_preflight",
+            "sourceMapSelectedExecutorApplicationPreflight",
+            "source_map_rebuild_apply_preflight",
+            "sourceMapRebuildApplyPreflight",
+            "source_map_rebuild_metadata_apply_preflight",
+            "sourceMapRebuildMetadataApplyPreflight",
+        )
+
+    @staticmethod
+    def _source_map_rebuild_metadata_input(context: dict[str, Any], apply_preflight: dict[str, Any] | None = None) -> dict[str, Any]:
+        explicit = NativeWebRuntime._dict_alias(
+            context,
+            "rebuild_source_metadata_input",
+            "rebuildSourceMetadataInput",
+            "reviewed_rebuild_source_metadata",
+            "reviewedRebuildSourceMetadata",
+            "source_map_rebuild_metadata_input",
+            "sourceMapRebuildMetadataInput",
+        )
+        if not explicit:
+            keys = {
+                "source_content_digest",
+                "sourceContentDigest",
+                "sha256",
+                "source_content_available",
+                "sourceContentAvailable",
+                "raw_source_content",
+                "rawSourceContent",
+                "raw_content_exported",
+                "rawContentExported",
+                "preview_exported",
+                "previewExported",
+            }
+            explicit = {key: value for key, value in context.items() if key in keys}
+        if not explicit and isinstance(apply_preflight, dict):
+            executor_input = apply_preflight.get("executor_input")
+            if isinstance(executor_input, dict):
+                explicit = dict(executor_input)
+        if explicit.get("sha256") and not explicit.get("source_content_digest"):
+            explicit["source_content_digest"] = explicit["sha256"]
+        if explicit.get("sourceContentDigest") and not explicit.get("source_content_digest"):
+            explicit["source_content_digest"] = explicit["sourceContentDigest"]
+        if explicit.get("sourceContentAvailable") is not None and explicit.get("source_content_available") is None:
+            explicit["source_content_available"] = explicit["sourceContentAvailable"]
+        if explicit.get("rawSourceContent") is not None and explicit.get("raw_source_content") is None:
+            explicit["raw_source_content"] = explicit["rawSourceContent"]
+        if explicit.get("rawContentExported") is not None and explicit.get("raw_content_exported") is None:
+            explicit["raw_content_exported"] = explicit["rawContentExported"]
+        if explicit.get("previewExported") is not None and explicit.get("preview_exported") is None:
+            explicit["preview_exported"] = explicit["previewExported"]
+        return explicit
+
+    @staticmethod
     def _source_map_source_logpoint_apply_preflight(context: dict[str, Any]) -> dict[str, Any]:
         return NativeWebRuntime._dict_alias(
             context,
@@ -10422,6 +10626,72 @@ class NativeWebRuntime(WebReverseRuntime):
             if isinstance(value, dict):
                 return value
         return {}
+
+    @staticmethod
+    def _source_map_rebuild_metadata_application_blockers(context: dict[str, Any], apply_preflight: dict[str, Any], metadata_input: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        if not apply_preflight:
+            blockers.append("source_map_selected_executor_apply_preflight_missing")
+        else:
+            if apply_preflight.get("schema_version") != "reverse-deepagent.source-map-selected-executor-apply-preflight.v1":
+                blockers.append("source_map_selected_executor_apply_preflight_schema_mismatch")
+            if apply_preflight.get("status") not in {"ready_for_review", "ready"}:
+                blockers.append("source_map_selected_executor_apply_preflight_not_ready")
+            if apply_preflight.get("selected_consumer") != "rebuild":
+                blockers.append("source_map_selected_executor_consumer_not_rebuild")
+            if apply_preflight.get("selected_review_gate") != "explicit_rebuild_source_metadata_review":
+                blockers.append("source_map_selected_executor_review_gate_mismatch")
+            if apply_preflight.get("approval_record_verified") is not True:
+                blockers.append("source_map_selected_executor_approval_record_not_verified")
+            if apply_preflight.get("executor_input_ready") is not True or apply_preflight.get("ready_for_selected_executor_review") is not True:
+                blockers.append("source_map_selected_executor_apply_preflight_input_not_ready")
+            if apply_preflight.get("ready_to_apply_now") is True:
+                blockers.append("source_map_selected_executor_apply_preflight_claims_ready_to_apply")
+            if (
+                apply_preflight.get("surface_executor_invoked") is True
+                or apply_preflight.get("rebuild_executed") is True
+                or apply_preflight.get("raw_source_content_exported") is True
+                or apply_preflight.get("preview_exported") is True
+            ):
+                blockers.append("source_map_selected_executor_apply_preflight_execution_claim_detected")
+            future = apply_preflight.get("future_executor_contract") if isinstance(apply_preflight.get("future_executor_contract"), dict) else {}
+            if future.get("implemented") is not False:
+                blockers.append("source_map_selected_executor_future_contract_unexpected")
+            executor_input = apply_preflight.get("executor_input") if isinstance(apply_preflight.get("executor_input"), dict) else {}
+            blockers.extend(SourceMapTypedPayloadPreflightManager._rebuild_blockers("rebuild-source-metadata-review", executor_input))
+            digest = str(metadata_input.get("source_content_digest") or metadata_input.get("sha256") or "")
+            expected_digest = str(executor_input.get("source_content_digest") or executor_input.get("sha256") or "")
+            if digest and expected_digest and digest != expected_digest:
+                blockers.append("source_map_rebuild_metadata_digest_mismatch")
+        if context.get("mode") != "apply":
+            blockers.append("source_map_rebuild_metadata_application_requires_apply_mode")
+        if context.get("review_approved", context.get("reviewApproved")) is not True:
+            blockers.append("source_map_rebuild_metadata_application_review_not_approved")
+        if (
+            context.get(
+                "approve_source_map_rebuild_metadata",
+                context.get("approveSourceMapRebuildMetadata", context.get("approve_rebuild_source_metadata", context.get("approveRebuildSourceMetadata"))),
+            )
+            is not True
+        ):
+            blockers.append("source_map_rebuild_metadata_not_approved")
+        if not str(context.get("reviewer") or "").strip():
+            blockers.append("source_map_rebuild_metadata_reviewer_missing")
+        if not metadata_input:
+            blockers.append("source_map_rebuild_metadata_input_missing")
+        else:
+            blockers.extend(SourceMapTypedPayloadPreflightManager._rebuild_blockers("rebuild-source-metadata-review", metadata_input))
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _source_map_rebuild_metadata_application_next_action(blockers: list[str]) -> str:
+        if any(item.startswith("source_map_selected_executor_apply_preflight") or item.startswith("source_map_selected_executor_") for item in blockers):
+            return "provide_ready_source_map_selected_executor_apply_preflight"
+        if any("approved" in item or "reviewer" in item or "apply_mode" in item for item in blockers):
+            return "approve_source_map_rebuild_metadata_before_apply"
+        if any(item.startswith("source_map_rebuild_metadata") or item.startswith("rebuild_") for item in blockers):
+            return "provide_reviewed_source_map_rebuild_metadata_input"
+        return "fix_source_map_rebuild_metadata_application_inputs"
 
     @staticmethod
     def _source_map_source_logpoint_application_blockers(context: dict[str, Any], apply_preflight: dict[str, Any], install_input: dict[str, Any]) -> list[str]:

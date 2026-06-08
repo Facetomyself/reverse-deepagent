@@ -6436,6 +6436,138 @@ class NativeWebRuntimeTests(unittest.TestCase):
             },
         }
 
+    @staticmethod
+    def _ready_source_map_rebuild_apply_preflight() -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "preflight_only": True,
+            "apply_preflight_only": True,
+            "handoff_only": True,
+            "selected_action_id": "review-rebuild-source-metadata-use",
+            "selected_consumer": "rebuild",
+            "selected_followthrough_review_surface": "review_rebuild_source_metadata_executor_input",
+            "selected_review_gate": "explicit_rebuild_source_metadata_review",
+            "approval_record_id": "source-map-selected-executor-approval-record:rebuild",
+            "approval_record_verified": True,
+            "executor_input_ready": True,
+            "ready_for_selected_executor_review": True,
+            "ready_to_apply_now": False,
+            "surface_executor_invoked": False,
+            "rebuild_executed": False,
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "executor_input": {
+                "source_content_digest": "abc123",
+                "source_content_available": True,
+                "raw_source_content": None,
+                "raw_content_exported": False,
+                "preview_exported": False,
+            },
+            "future_executor_contract": {
+                "implemented": False,
+                "future_action": "run_reviewed_source_map_rebuild_metadata_generation",
+                "requires_explicit_executor_approval": True,
+                "requires_apply_mode": True,
+                "requires_write_result": True,
+                "requires_reviewed_apply_preflight": True,
+            },
+            "side_effect_policy": {
+                "read_only": True,
+                "review_only": True,
+                "preflight_only": True,
+                "apply_preflight_only": True,
+                "handoff_only": True,
+                "browser_started": False,
+                "runtime_evaluated": False,
+                "cdp_command_sent": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "surface_executor_invoked": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+    def test_native_web_runtime_applies_reviewed_source_map_rebuild_metadata(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-rebuild-metadata-application",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_map_rebuild_metadata": True,
+                "reviewer": "reviewer-1",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_rebuild_apply_preflight(),
+                "rebuild_source_metadata_input": {
+                    "source_content_digest": "abc123",
+                    "source_content_available": True,
+                    "raw_source_content": None,
+                    "raw_content_exported": False,
+                    "preview_exported": False,
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["apply_source_map_rebuild_metadata:abc123"])
+        self.assertIn("source_map_rebuild_metadata_application_status=success", result.verification)
+        self.assertIn("source_map_rebuild_metadata_application_metadata_only=True", result.verification)
+        self.assertIn("source_map_rebuild_metadata_application_rebuild_metadata_applied=True", result.verification)
+        self.assertIn("source_map_rebuild_metadata_application_browser_started=False", result.verification)
+        self.assertIn("source_map_rebuild_metadata_application_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_rebuild_metadata_application_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_rebuild_metadata_application_rebuild_bundle_generated=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_rebuild_metadata_result_before_rebuild_generation")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-rebuild-result.json")
+        self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-rebuild-result.v1")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "rebuild")
+        self.assertEqual(result.artifacts[0].metadata["selected_review_gate"], "explicit_rebuild_source_metadata_review")
+        self.assertEqual(result.artifacts[0].metadata["source_content_digest"], "abc123")
+        self.assertTrue(result.artifacts[0].metadata["review_approved"])
+        self.assertTrue(result.artifacts[0].metadata["approve_source_map_rebuild_metadata"])
+        self.assertTrue(result.artifacts[0].metadata["metadata_only"])
+        self.assertTrue(result.artifacts[0].metadata["rebuild_metadata_applied"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["raw_source_content_exported"])
+        self.assertFalse(result.artifacts[0].metadata["preview_exported"])
+        self.assertFalse(result.artifacts[0].metadata["raw_source_content_included"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_bundle_generated"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+        self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+
+    def test_native_web_runtime_blocks_source_map_rebuild_metadata_without_review_before_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-rebuild-metadata-application",
+            {
+                "mode": "dry-run",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_rebuild_apply_preflight(),
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertTrue(
+            any("source_map_rebuild_metadata_application_requires_apply_mode" in item for item in result.verification)
+        )
+        self.assertEqual(result.next_action, "approve_source_map_rebuild_metadata_before_apply")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-rebuild-result.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "blocked")
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["surface_executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+        self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+
     def test_native_web_runtime_applies_reviewed_source_map_source_logpoint_install(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
