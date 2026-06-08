@@ -1,4 +1,5 @@
 import hashlib
+import json
 import unittest
 
 from reverse_deepagent.browser.source_maps import (
@@ -16,6 +17,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughReviewSpec,
     SourceMapFollowthroughSurfaceSelectionManager,
     SourceMapFollowthroughSurfaceSelectionSpec,
+    SourceMapSelectedExecutorApplyPreflightManager,
+    SourceMapSelectedExecutorApplyPreflightSpec,
     SourceMapSelectedExecutorApprovalPlanManager,
     SourceMapSelectedExecutorApprovalPlanSpec,
     SourceMapSelectedExecutorInputReviewManager,
@@ -1304,6 +1307,133 @@ class SourceMapSelectedExecutorApprovalPlanManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("selected_review_gate_mismatch", result.descriptor["blockers"])
         self.assertFalse(result.descriptor["apply_plan_ready_for_review"])
+
+
+class SourceMapSelectedExecutorApplyPreflightManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_approval_plan() -> dict:
+        input_review = SourceMapSelectedExecutorApprovalPlanManagerTests._ready_input_review()
+        spec = SourceMapSelectedExecutorApprovalPlanSpec.from_context(
+            {
+                "source_map_selected_executor_approval_plan": True,
+                "source_map_selected_executor_input_review": input_review,
+                "expected_consumer": "debugger",
+            }
+        )
+        return SourceMapSelectedExecutorApprovalPlanManager().review(spec).descriptor
+
+    @staticmethod
+    def _approval_record(approval_plan: dict, *, digest: str | None = None, status: str = "written", approved: bool = True) -> dict:
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-approval-record.v1",
+            "status": status,
+            "approval_recorded": status == "written",
+            "approved_for_apply": approved,
+            "approval_record_id": "source-map-selected-executor-approval-record:test",
+            "selected_action_id": approval_plan["selected_action_id"],
+            "selected_consumer": approval_plan["selected_consumer"],
+            "selected_review_gate": approval_plan["selected_review_gate"],
+            "decision": "approved" if approved else "rejected",
+            "reviewer": "reviewer-1",
+            "approval_plan_digest_sha256": digest if digest is not None else hashlib.sha256(json.dumps(approval_plan, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest(),
+            "blockers": [],
+            "executor_input_gates": {
+                "approval_recorded": status == "written",
+                "approved_for_apply": approved,
+                "ready_to_apply_now": False,
+                "surface_executor_invoked": False,
+                "requires_apply_preflight_followup": True,
+            },
+            "side_effect_policy": {
+                "read_only": False,
+                "review_only": False,
+                "approval_record_writer_only": True,
+                "files_mutated": status == "written",
+                "approval_recorded": status == "written",
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "surface_executor_invoked": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+    def test_source_map_selected_executor_apply_preflight_reviews_approved_record_without_side_effects(self) -> None:
+        approval_plan = self._ready_approval_plan()
+        approval_record = self._approval_record(approval_plan)
+        spec = SourceMapSelectedExecutorApplyPreflightSpec.from_context(
+            {
+                "source_map_selected_executor_apply_preflight": True,
+                "source_map_selected_executor_approval_plan": approval_plan,
+                "source_map_selected_executor_approval_record": approval_record,
+                "expected_consumer": "debugger",
+                "expected_gate": "explicit_debugger_location_review",
+            }
+        )
+
+        result = SourceMapSelectedExecutorApplyPreflightManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-selected-executor-apply-preflight.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["preflight_only"])
+        self.assertTrue(descriptor["apply_preflight_only"])
+        self.assertEqual(descriptor["source_approval_plan_schema_version"], "reverse-deepagent.source-map-selected-executor-approval-plan.v1")
+        self.assertEqual(descriptor["source_approval_record_schema_version"], "reverse-deepagent.source-map-selected-executor-approval-record.v1")
+        self.assertEqual(descriptor["selected_action_id"], "review-debugger-location-use")
+        self.assertEqual(descriptor["selected_consumer"], "debugger")
+        self.assertEqual(descriptor["selected_review_gate"], "explicit_debugger_location_review")
+        self.assertEqual(descriptor["approval_record_id"], "source-map-selected-executor-approval-record:test")
+        self.assertTrue(descriptor["approval_record_verified"])
+        self.assertTrue(descriptor["executor_input_ready"])
+        self.assertTrue(descriptor["ready_for_selected_executor_review"])
+        self.assertFalse(descriptor["ready_to_apply_now"])
+        self.assertFalse(descriptor["future_executor_contract"]["implemented"])
+        self.assertEqual(descriptor["future_action"], "execute_reviewed_source_map_debugger_location_action")
+        self.assertEqual(descriptor["next_action"], "review_source_map_debugger_executor_application")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_evaluated"])
+        self.assertFalse(result.side_effect_policy["logpoint_installed"])
+        self.assertFalse(result.side_effect_policy["hook_installed"])
+        self.assertFalse(result.side_effect_policy["rebuild_executed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_source_map_selected_executor_apply_preflight_blocks_missing_approval_record(self) -> None:
+        approval_plan = self._ready_approval_plan()
+        spec = SourceMapSelectedExecutorApplyPreflightSpec.from_context(
+            {
+                "source_map_selected_executor_apply_preflight": True,
+                "source_map_selected_executor_approval_plan": approval_plan,
+            }
+        )
+
+        result = SourceMapSelectedExecutorApplyPreflightManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_selected_executor_approval_record_missing", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "provide_source_map_selected_executor_approval_plan_and_record")
+
+    def test_source_map_selected_executor_apply_preflight_blocks_digest_mismatch(self) -> None:
+        approval_plan = self._ready_approval_plan()
+        approval_record = self._approval_record(approval_plan, digest="bad-digest")
+        spec = SourceMapSelectedExecutorApplyPreflightSpec.from_context(
+            {
+                "source_map_selected_executor_apply_preflight": True,
+                "source_map_selected_executor_approval_plan": approval_plan,
+                "source_map_selected_executor_approval_record": approval_record,
+            }
+        )
+
+        result = SourceMapSelectedExecutorApplyPreflightManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("approval_record_plan_digest_mismatch", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "record_or_refresh_source_map_selected_executor_approval")
 
 
 class SourceMapRemapperTests(unittest.TestCase):

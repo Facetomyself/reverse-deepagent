@@ -572,6 +572,37 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("source_map_selected_executor_approval_record_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "provide_ready_source_map_selected_executor_approval_plan_descriptor")
 
+
+    def test_review_hook_artifacts_warns_for_source_map_selected_executor_apply_preflight(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_selected_executor_apply_preflight": {
+                "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "ready_for_selected_executor_review": True,
+                "next_action": "review_source_map_debugger_executor_application",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_selected_executor_apply_preflight_ready_for_executor_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_application")
+        self.assertEqual(result["summary"]["source_map_selected_executor_apply_preflight_status"], "ready_for_review")
+        self.assertTrue(result["summary"]["source_map_selected_executor_apply_preflight_ready_for_selected_executor_review"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_selected_executor_apply_preflight(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_selected_executor_apply_preflight": {"status": "blocked", "reason": "approval_record_plan_digest_mismatch"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_selected_executor_apply_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_matching_source_map_selected_executor_approval_plan_and_record")
+
     def test_review_hook_artifacts_blocks_failed_source_map_consumer_action_plan_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {"source_map_consumer_action_plan": {"status": "blocked", "reason": "source_map_readiness_descriptor_missing"}}

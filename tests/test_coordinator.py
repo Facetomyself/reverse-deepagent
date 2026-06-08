@@ -828,6 +828,13 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native source map selected executor apply preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_selected_executor_apply_preflight",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "ready_for_selected_executor_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native object-root mutation audit",
                     kind=EvidenceKind.DYNAMIC,
                     source="object_root_mutation_audit",
@@ -1756,6 +1763,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payloads["source-map-selected-executor-input-review.json"]["ready_for_executor_review"])
         self.assertTrue(payloads["source-map-selected-executor-approval-plan.json"]["approval_plan_ready"])
         self.assertTrue(payloads["source-map-selected-executor-approval-record.json"]["approved_for_apply"])
+        self.assertTrue(payloads["source-map-selected-executor-apply-preflight.json"]["ready_for_selected_executor_review"])
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
         self.assertEqual(payloads["object-root-mutation-audit.json"]["change_count"], 4)
         self.assertEqual(payloads["object-graph-diff.json"]["change_count"], 2)

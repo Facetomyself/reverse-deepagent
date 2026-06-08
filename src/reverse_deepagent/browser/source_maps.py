@@ -4559,6 +4559,421 @@ class SourceMapSelectedExecutorApprovalPlanManager:
         }
 
 
+@dataclass(slots=True)
+class SourceMapSelectedExecutorApplyPreflightSpec:
+    """Read-only apply preflight for a reviewed Source Map selected executor.
+
+    This consumes the Step 275 approval/apply plan and the Step 276 explicit
+    approval record. It verifies the selected executor scope, approval record,
+    and digest gates before any future executor surface is considered. It never
+    invokes debugger, source-logpoint, hook, rebuild, browser, CDP, MCP, or
+    mobile runtime chains.
+    """
+
+    source_map_selected_executor_approval_plan: dict[str, Any] = field(default_factory=dict)
+    source_map_selected_executor_approval_record: dict[str, Any] = field(default_factory=dict)
+    expected_action_id: str = ""
+    expected_consumer: str = ""
+    expected_gate: str = ""
+    expected_approval_record_id: str = ""
+    expected_plan_digest_sha256: str = ""
+    reviewer: str = ""
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "SourceMapSelectedExecutorApplyPreflightSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "source_map_selected_executor_apply_preflight",
+                "sourceMapSelectedExecutorApplyPreflight",
+                "source_map_selected_executor_application_preflight",
+                "sourceMapSelectedExecutorApplicationPreflight",
+                "source_map_followthrough_apply_preflight",
+                "sourceMapFollowthroughApplyPreflight",
+            )
+        )
+        approval_plan = cls._object_alias(
+            context,
+            "source_map_selected_executor_approval_plan",
+            "source-map-selected-executor-approval-plan",
+            "sourceMapSelectedExecutorApprovalPlan",
+            "source_map_selected_executor_apply_plan",
+            "source-map-selected-executor-apply-plan",
+            "sourceMapSelectedExecutorApplyPlan",
+        )
+        approval_record = cls._object_alias(
+            context,
+            "source_map_selected_executor_approval_record",
+            "source-map-selected-executor-approval-record",
+            "sourceMapSelectedExecutorApprovalRecord",
+            "source_map_selected_executor_apply_approval_record",
+            "source-map-selected-executor-apply-approval-record",
+            "sourceMapSelectedExecutorApplyApprovalRecord",
+        )
+        if not requested and not approval_plan and not approval_record:
+            return None
+        return cls(
+            source_map_selected_executor_approval_plan=approval_plan,
+            source_map_selected_executor_approval_record=approval_record,
+            expected_action_id=str(context.get("expected_action_id", context.get("expectedActionId", context.get("source_map_selected_action_id", context.get("sourceMapSelectedActionId", "")))) or ""),
+            expected_consumer=str(context.get("expected_consumer", context.get("expectedConsumer", context.get("source_map_selected_consumer", context.get("sourceMapSelectedConsumer", "")))) or ""),
+            expected_gate=str(context.get("expected_gate", context.get("expectedGate", context.get("source_map_selected_executor_gate", context.get("sourceMapSelectedExecutorGate", "")))) or ""),
+            expected_approval_record_id=str(context.get("expected_approval_record_id", context.get("expectedApprovalRecordId", "")) or ""),
+            expected_plan_digest_sha256=str(context.get("expected_plan_digest_sha256", context.get("expectedPlanDigestSha256", "")) or ""),
+            reviewer=str(context.get("reviewer", context.get("reviewer_id", context.get("reviewerId", ""))) or ""),
+        )
+
+    _object_alias = staticmethod(SourceMapTypedPayloadPreflightSpec._object_alias)
+
+
+@dataclass(slots=True)
+class SourceMapSelectedExecutorApplyPreflightResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class SourceMapSelectedExecutorApplyPreflightManager:
+    """Review the apply inputs after explicit Source Map executor approval."""
+
+    def review(self, spec: SourceMapSelectedExecutorApplyPreflightSpec | None) -> SourceMapSelectedExecutorApplyPreflightResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return SourceMapSelectedExecutorApplyPreflightResult(status="unsupported", reason="missing_source_map_selected_executor_apply_preflight_request", side_effect_policy=policy)
+        try:
+            descriptor = self._descriptor(spec)
+            return SourceMapSelectedExecutorApplyPreflightResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=policy)
+        except Exception as exc:
+            descriptor = self._base_descriptor(status="failed", reason="source_map_selected_executor_apply_preflight_failed")
+            descriptor["error"] = str(exc)
+            return SourceMapSelectedExecutorApplyPreflightResult(
+                status="failed",
+                descriptor=descriptor,
+                side_effect_policy=policy,
+                reason="source_map_selected_executor_apply_preflight_failed",
+                error=str(exc),
+            )
+
+    def _descriptor(self, spec: SourceMapSelectedExecutorApplyPreflightSpec) -> dict[str, Any]:
+        approval_plan = spec.source_map_selected_executor_approval_plan
+        approval_record = spec.source_map_selected_executor_approval_record
+        apply_plan = approval_plan.get("apply_plan") if isinstance(approval_plan.get("apply_plan"), dict) else {}
+        package = approval_plan.get("executor_review_package") if isinstance(approval_plan.get("executor_review_package"), dict) else {}
+        executor_input = apply_plan.get("executor_input") if isinstance(apply_plan.get("executor_input"), dict) else package.get("executor_input") if isinstance(package.get("executor_input"), dict) else {}
+        blockers = self._input_blockers(approval_plan, approval_record, apply_plan, package)
+        blockers.extend(self._expectation_blockers(spec, approval_plan, approval_record))
+        blockers.extend(self._digest_blockers(spec, approval_plan, approval_record))
+        blockers.extend(self._scope_blockers(approval_plan, approval_record, apply_plan, package))
+        blockers.extend(self._executor_input_blockers(str(approval_plan.get("selected_consumer") or apply_plan.get("consumer") or ""), executor_input))
+        warnings = self._warnings(approval_plan, approval_record, apply_plan)
+        status = "blocked" if blockers else "ready_for_review"
+        consumer = str(approval_plan.get("selected_consumer") or apply_plan.get("consumer") or approval_record.get("selected_consumer") or "")
+        action_id = str(approval_plan.get("selected_action_id") or approval_record.get("selected_action_id") or "")
+        gate = str(approval_plan.get("selected_review_gate") or approval_record.get("selected_review_gate") or apply_plan.get("review_gate") or "")
+        future_action = str(apply_plan.get("future_action") or self._future_action(consumer))
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+            "status": status,
+            "review_only": True,
+            "preflight_only": True,
+            "apply_preflight_only": True,
+            "handoff_only": True,
+            "source_approval_plan_schema_version": str(approval_plan.get("schema_version") or ""),
+            "source_approval_plan_status": self._status(approval_plan),
+            "source_approval_record_schema_version": str(approval_record.get("schema_version") or ""),
+            "source_approval_record_status": self._status(approval_record),
+            "selected_action_id": action_id,
+            "selected_consumer": consumer,
+            "selected_followthrough_review_surface": str(approval_plan.get("selected_followthrough_review_surface") or ""),
+            "selected_review_gate": gate,
+            "expected_action_id": spec.expected_action_id,
+            "expected_consumer": spec.expected_consumer,
+            "expected_gate": spec.expected_gate,
+            "expected_approval_record_id": spec.expected_approval_record_id,
+            "expected_plan_digest_sha256": spec.expected_plan_digest_sha256,
+            "reviewer": spec.reviewer,
+            "approval_record_id": str(approval_record.get("approval_record_id") or ""),
+            "approval_plan_digest_sha256": self._stable_json_digest(approval_plan) if approval_plan else "",
+            "approval_record_plan_digest_sha256": str(approval_record.get("approval_plan_digest_sha256") or ""),
+            "executor_review_package": package,
+            "apply_plan": apply_plan,
+            "executor_input": executor_input,
+            "future_action": future_action,
+            "future_result_artifact": str(apply_plan.get("future_result_artifact") or self._future_result_artifact(consumer)),
+            "approval_record_verified": not blockers and bool(approval_record),
+            "executor_input_ready": bool(executor_input) and not blockers,
+            "ready_for_selected_executor_review": not blockers,
+            "ready_to_apply_now": False,
+            "future_executor_contract": {
+                "implemented": False,
+                "future_action": future_action,
+                "requires_explicit_executor_approval": True,
+                "requires_apply_mode": True,
+                "requires_write_result": True,
+                "requires_reviewed_apply_preflight": True,
+            },
+            "surface_executor_invoked": False,
+            "debugger_executed": False,
+            "source_logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "blockers": list(dict.fromkeys(blockers)),
+            "warnings": list(dict.fromkeys(warnings)),
+            "next_action": self._next_action(blockers, consumer),
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+            "status": status,
+            "review_only": True,
+            "preflight_only": True,
+            "apply_preflight_only": True,
+            "handoff_only": True,
+            "reason": reason,
+            "source_approval_plan_schema_version": "",
+            "source_approval_plan_status": "",
+            "source_approval_record_schema_version": "",
+            "source_approval_record_status": "",
+            "selected_action_id": "",
+            "selected_consumer": "",
+            "selected_followthrough_review_surface": "",
+            "selected_review_gate": "",
+            "expected_action_id": "",
+            "expected_consumer": "",
+            "expected_gate": "",
+            "expected_approval_record_id": "",
+            "expected_plan_digest_sha256": "",
+            "reviewer": "",
+            "approval_record_id": "",
+            "approval_plan_digest_sha256": "",
+            "approval_record_plan_digest_sha256": "",
+            "executor_review_package": {},
+            "apply_plan": {},
+            "executor_input": {},
+            "future_action": "",
+            "future_result_artifact": "",
+            "approval_record_verified": False,
+            "executor_input_ready": False,
+            "ready_for_selected_executor_review": False,
+            "ready_to_apply_now": False,
+            "future_executor_contract": {"implemented": False},
+            "surface_executor_invoked": False,
+            "debugger_executed": False,
+            "source_logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "blockers": [reason],
+            "warnings": [],
+            "next_action": "provide_source_map_selected_executor_approval_plan_and_record",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    @classmethod
+    def _input_blockers(cls, approval_plan: dict[str, Any], approval_record: dict[str, Any], apply_plan: dict[str, Any], package: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        if not approval_plan:
+            blockers.append("source_map_selected_executor_approval_plan_missing")
+        else:
+            if approval_plan.get("schema_version") not in {None, "", "reverse-deepagent.source-map-selected-executor-approval-plan.v1"}:
+                blockers.append("source_map_selected_executor_approval_plan_schema_mismatch")
+            if cls._status(approval_plan) in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("source_map_selected_executor_approval_plan_not_ready")
+            if approval_plan.get("approval_plan_ready") is not True:
+                blockers.append("source_map_selected_executor_approval_plan_not_ready_for_apply_preflight")
+            if approval_plan.get("apply_plan_ready_for_review") is not True:
+                blockers.append("source_map_selected_executor_apply_plan_not_ready_for_preflight")
+            if approval_plan.get("surface_executor_invoked") is True or approval_plan.get("ready_to_apply_now") is True:
+                blockers.append("source_map_selected_executor_approval_plan_execution_claim_detected")
+            blockers.extend(f"source_map_selected_executor_approval_plan:{item}" for item in cls._string_list(approval_plan.get("blockers")))
+            blockers.extend(cls._side_effect_blockers(approval_plan.get("side_effect_policy") if isinstance(approval_plan.get("side_effect_policy"), dict) else {}, prefix="source_map_selected_executor_approval_plan"))
+        if not approval_record:
+            blockers.append("source_map_selected_executor_approval_record_missing")
+        else:
+            if approval_record.get("schema_version") not in {None, "", "reverse-deepagent.source-map-selected-executor-approval-record.v1"}:
+                blockers.append("source_map_selected_executor_approval_record_schema_mismatch")
+            if cls._status(approval_record) != "written":
+                blockers.append("source_map_selected_executor_approval_record_not_written")
+            if approval_record.get("approval_recorded") is not True:
+                blockers.append("source_map_selected_executor_approval_record_not_recorded")
+            if approval_record.get("approved_for_apply") is not True or approval_record.get("decision") != "approved":
+                blockers.append("source_map_selected_executor_approval_record_not_approved")
+            blockers.extend(f"source_map_selected_executor_approval_record:{item}" for item in cls._string_list(approval_record.get("blockers")))
+            blockers.extend(cls._side_effect_blockers(approval_record.get("side_effect_policy") if isinstance(approval_record.get("side_effect_policy"), dict) else {}, prefix="source_map_selected_executor_approval_record"))
+        if not apply_plan:
+            blockers.append("source_map_selected_executor_apply_plan_missing")
+        else:
+            if apply_plan.get("apply_plan_schema_version") not in {None, "", "reverse-deepagent.source-map-selected-executor-apply-plan.v1"}:
+                blockers.append("source_map_selected_executor_apply_plan_schema_mismatch")
+            if apply_plan.get("requires_approval_record") is not True:
+                blockers.append("source_map_selected_executor_apply_plan_approval_record_not_required")
+            if apply_plan.get("ready_to_apply_now") is True or apply_plan.get("surface_executor_invoked") is True:
+                blockers.append("source_map_selected_executor_apply_plan_execution_claim_detected")
+            blockers.extend(cls._side_effect_blockers(apply_plan.get("side_effect_policy") if isinstance(apply_plan.get("side_effect_policy"), dict) else {}, prefix="source_map_selected_executor_apply_plan"))
+        if not package:
+            blockers.append("executor_review_package_missing")
+        return blockers
+
+    @staticmethod
+    def _expectation_blockers(spec: SourceMapSelectedExecutorApplyPreflightSpec, approval_plan: dict[str, Any], approval_record: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        action_id = str(approval_plan.get("selected_action_id") or approval_record.get("selected_action_id") or "")
+        consumer = str(approval_plan.get("selected_consumer") or approval_record.get("selected_consumer") or "")
+        gate = str(approval_plan.get("selected_review_gate") or approval_record.get("selected_review_gate") or "")
+        record_id = str(approval_record.get("approval_record_id") or "")
+        if spec.expected_action_id and action_id and spec.expected_action_id != action_id:
+            blockers.append("selected_action_id_mismatch")
+        if spec.expected_consumer and consumer and spec.expected_consumer != consumer:
+            blockers.append("selected_consumer_mismatch")
+        if spec.expected_gate and gate and spec.expected_gate != gate:
+            blockers.append("selected_review_gate_mismatch")
+        if spec.expected_approval_record_id and record_id and spec.expected_approval_record_id != record_id:
+            blockers.append("approval_record_id_mismatch")
+        return blockers
+
+    @classmethod
+    def _digest_blockers(cls, spec: SourceMapSelectedExecutorApplyPreflightSpec, approval_plan: dict[str, Any], approval_record: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        if not approval_plan or not approval_record:
+            return blockers
+        plan_digest = cls._stable_json_digest(approval_plan)
+        record_digest = str(approval_record.get("approval_plan_digest_sha256") or "")
+        if not record_digest:
+            blockers.append("approval_record_plan_digest_missing")
+        elif record_digest != plan_digest:
+            blockers.append("approval_record_plan_digest_mismatch")
+        if spec.expected_plan_digest_sha256 and spec.expected_plan_digest_sha256 != plan_digest:
+            blockers.append("expected_plan_digest_mismatch")
+        return blockers
+
+    @staticmethod
+    def _scope_blockers(approval_plan: dict[str, Any], approval_record: dict[str, Any], apply_plan: dict[str, Any], package: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        action_id = str(approval_plan.get("selected_action_id") or "")
+        consumer = str(approval_plan.get("selected_consumer") or "")
+        gate = str(approval_plan.get("selected_review_gate") or "")
+        if approval_record:
+            if str(approval_record.get("selected_action_id") or "") != action_id:
+                blockers.append("approval_record_action_id_mismatch")
+            if str(approval_record.get("selected_consumer") or "") != consumer:
+                blockers.append("approval_record_consumer_mismatch")
+            if str(approval_record.get("selected_review_gate") or "") != gate:
+                blockers.append("approval_record_gate_mismatch")
+        if apply_plan:
+            if str(apply_plan.get("consumer") or "") != consumer:
+                blockers.append("apply_plan_consumer_mismatch")
+            if str(apply_plan.get("review_gate") or "") != gate:
+                blockers.append("apply_plan_gate_mismatch")
+        if package:
+            if str(package.get("action_id") or "") != action_id:
+                blockers.append("executor_review_package_action_id_mismatch")
+            if str(package.get("consumer") or "") != consumer:
+                blockers.append("executor_review_package_consumer_mismatch")
+        return blockers
+
+    @staticmethod
+    def _executor_input_blockers(consumer: str, executor_input: dict[str, Any]) -> list[str]:
+        if consumer == "debugger":
+            return SourceMapTypedPayloadPreflightManager._debugger_blockers("debugger-location-review", executor_input)
+        if consumer == "source-logpoint":
+            return SourceMapTypedPayloadPreflightManager._source_logpoint_blockers("source-logpoint-plan-review", executor_input)
+        if consumer == "rebuild":
+            return SourceMapTypedPayloadPreflightManager._rebuild_blockers("rebuild-source-metadata-review", executor_input)
+        if consumer == "hook":
+            return SourceMapTypedPayloadPreflightManager._hook_blockers("hook-symbol-scope-review", executor_input)
+        return ["selected_consumer_unsupported"] if consumer else []
+
+    @classmethod
+    def _warnings(cls, approval_plan: dict[str, Any], approval_record: dict[str, Any], apply_plan: dict[str, Any]) -> list[str]:
+        warnings: list[str] = []
+        warnings.extend(f"source_map_selected_executor_approval_plan:{item}" for item in cls._string_list(approval_plan.get("warnings")))
+        if approval_record:
+            warnings.append("source_map_selected_executor_approval_record_requires_apply_preflight_review")
+        if apply_plan:
+            warnings.append("source_map_selected_executor_apply_preflight_does_not_execute_surface")
+        return warnings
+
+    @staticmethod
+    def _next_action(blockers: list[str], consumer: str) -> str:
+        if "source_map_selected_executor_approval_plan_missing" in blockers or "source_map_selected_executor_approval_record_missing" in blockers:
+            return "provide_source_map_selected_executor_approval_plan_and_record"
+        if any(item.startswith("source_map_selected_executor_approval_plan") for item in blockers):
+            return "resolve_source_map_selected_executor_approval_plan_blockers"
+        if any(item.startswith("source_map_selected_executor_approval_record") or item.startswith("approval_record") for item in blockers):
+            return "record_or_refresh_source_map_selected_executor_approval"
+        if any(item.endswith("_mismatch") for item in blockers):
+            return "refresh_matching_source_map_selected_executor_approval_inputs"
+        if blockers:
+            return "fix_source_map_selected_executor_apply_preflight_inputs"
+        return f"review_source_map_{consumer.replace('-', '_')}_executor_application" if consumer else "review_source_map_selected_executor_application"
+
+    @staticmethod
+    def _future_action(consumer: str) -> str:
+        return {
+            "debugger": "execute_reviewed_source_map_debugger_location_action",
+            "source-logpoint": "install_reviewed_source_map_source_logpoint",
+            "rebuild": "run_reviewed_source_map_rebuild_metadata_generation",
+            "hook": "install_reviewed_source_map_hook_symbol_scope",
+        }.get(consumer, "choose_supported_source_map_executor")
+
+    @staticmethod
+    def _future_result_artifact(consumer: str) -> str:
+        return {
+            "debugger": "workspace/source-map-debugger-execution-result.json",
+            "source-logpoint": "workspace/source-map-source-logpoint-install-result.json",
+            "rebuild": "workspace/source-map-rebuild-result.json",
+            "hook": "workspace/source-map-hook-install-result.json",
+        }.get(consumer, "workspace/source-map-selected-executor-result.json")
+
+    @staticmethod
+    def _stable_json_digest(payload: dict[str, Any]) -> str:
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    _status = staticmethod(SourceMapTypedPayloadPreflightManager._status)
+    _string_list = staticmethod(SourceMapTypedPayloadPreflightManager._string_list)
+    _side_effect_blockers = staticmethod(SourceMapTypedPayloadPreflightManager._side_effect_blockers)
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "preflight_only": True,
+            "apply_preflight_only": True,
+            "handoff_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "approval_recorded": False,
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "debugger_execution_performed": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "surface_executor_invoked": False,
+            "executor_invoked": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
 class SourceMapRemapper:
     """Small Source Map v3 and generated-bundle offset remapper.
 

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -6135,6 +6136,130 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertTrue(result.artifacts[0].metadata["approval_plan_ready"])
         self.assertTrue(result.artifacts[0].metadata["apply_plan_ready_for_review"])
         self.assertFalse(result.artifacts[0].metadata["approval_recorded"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_apply_now"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
+
+    def test_native_web_runtime_reviews_source_map_selected_executor_apply_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        side_effect_policy = {
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "debugger_execution_performed": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "surface_executor_invoked": False,
+            "executor_invoked": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+        approval_plan = {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-approval-plan.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "plan_only": True,
+            "approval_plan_only": True,
+            "apply_plan_only": True,
+            "handoff_only": True,
+            "approval_plan_ready": True,
+            "apply_plan_ready_for_review": True,
+            "approval_recorded": False,
+            "ready_to_apply_now": False,
+            "surface_executor_invoked": False,
+            "selected_action_id": "review-rebuild-source-metadata-use",
+            "selected_consumer": "rebuild",
+            "selected_followthrough_review_surface": "review_rebuild_source_metadata_executor_input",
+            "selected_review_gate": "explicit_rebuild_source_metadata_review",
+            "executor_review_package": {
+                "package_version": "reverse-deepagent.source-map-selected-executor-input-review.package.v1",
+                "action_id": "review-rebuild-source-metadata-use",
+                "consumer": "rebuild",
+                "followthrough_review_surface": "review_rebuild_source_metadata_executor_input",
+                "executor_input": {"source_content_digest": "abc123", "raw_source_content": None, "raw_content_exported": False, "preview_exported": False},
+                "review_gate": {"gate": "explicit_rebuild_source_metadata_review", "required_approval_flag": "review_approved"},
+                "requires_explicit_review": True,
+                "ready_for_downstream_review": True,
+                "execute_automatically": False,
+                "executor_invoked": False,
+                "side_effect_policy": side_effect_policy,
+            },
+            "apply_plan": {
+                "apply_plan_schema_version": "reverse-deepagent.source-map-selected-executor-apply-plan.v1",
+                "consumer": "rebuild",
+                "future_action": "run_reviewed_source_map_rebuild_metadata_generation",
+                "review_gate": "explicit_rebuild_source_metadata_review",
+                "executor_input": {"source_content_digest": "abc123", "raw_source_content": None, "raw_content_exported": False, "preview_exported": False},
+                "requires_approval_record": True,
+                "future_result_artifact": "workspace/source-map-rebuild-result.json",
+                "ready_to_apply_now": False,
+                "surface_executor_invoked": False,
+                "side_effect_policy": side_effect_policy,
+            },
+            "blockers": [],
+            "warnings": [],
+            "side_effect_policy": side_effect_policy,
+        }
+        approval_record = {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-approval-record.v1",
+            "status": "written",
+            "approval_recorded": True,
+            "approved_for_apply": True,
+            "approval_record_id": "source-map-selected-executor-approval-record:native-web",
+            "selected_action_id": "review-rebuild-source-metadata-use",
+            "selected_consumer": "rebuild",
+            "selected_review_gate": "explicit_rebuild_source_metadata_review",
+            "decision": "approved",
+            "reviewer": "reviewer-1",
+            "approval_plan_digest_sha256": hashlib.sha256(json.dumps(approval_plan, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest(),
+            "blockers": [],
+            "side_effect_policy": {**side_effect_policy, "approval_recorded": True, "files_mutated": True, "approval_record_writer_only": True},
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-selected-executor-apply-preflight",
+            {
+                "source_map_selected_executor_approval_plan": approval_plan,
+                "source_map_selected_executor_approval_record": approval_record,
+                "expected_consumer": "rebuild",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_selected_executor_apply_preflight"])
+        self.assertIn("source_map_selected_executor_apply_preflight_status=ready_for_review", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_selected_action_id=review-rebuild-source-metadata-use", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_selected_consumer=rebuild", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_selected_gate=explicit_rebuild_source_metadata_review", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_approval_record_verified=True", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_executor_input_ready=True", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_ready_for_selected_executor_review=True", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_ready_to_apply_now=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_future_executor_implemented=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_browser_started=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_logpoint_installed=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_hook_installed=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_rebuild_executed=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_calls_mcp=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_rebuild_executor_application")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-selected-executor-apply-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "rebuild")
+        self.assertEqual(result.artifacts[0].metadata["selected_review_gate"], "explicit_rebuild_source_metadata_review")
+        self.assertTrue(result.artifacts[0].metadata["approval_record_verified"])
+        self.assertTrue(result.artifacts[0].metadata["executor_input_ready"])
         self.assertFalse(result.artifacts[0].metadata["ready_to_apply_now"])
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
         self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
