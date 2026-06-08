@@ -3738,6 +3738,438 @@ class BundlerSymbolScopeManager:
             "mobile_runtime_used": False,
         }
 
+@dataclass(slots=True)
+class SourceMapSelectedExecutorInputReviewSpec:
+    """Review-only package for one selected Source Map follow-through executor input.
+
+    This consumes the Step 273 surface-selection descriptor and turns the chosen
+    debugger / source-logpoint / rebuild / hook executor input into a stable
+    downstream review package.  It does not invoke that executor.
+    """
+
+    source_map_followthrough_surface_selection: dict[str, Any] = field(default_factory=dict)
+    selected_review: dict[str, Any] = field(default_factory=dict)
+    selected_executor_input: dict[str, Any] = field(default_factory=dict)
+    expected_action_id: str = ""
+    expected_consumer: str = ""
+    expected_surface: str = ""
+    reviewer: str = ""
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "SourceMapSelectedExecutorInputReviewSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "source_map_selected_executor_input_review",
+                "sourceMapSelectedExecutorInputReview",
+                "source_map_followthrough_executor_input_review",
+                "sourceMapFollowthroughExecutorInputReview",
+                "source_map_selected_followthrough_review",
+                "sourceMapSelectedFollowthroughReview",
+            )
+        )
+        selection = cls._object_alias(
+            context,
+            "source_map_followthrough_surface_selection",
+            "source-map-followthrough-surface-selection",
+            "sourceMapFollowthroughSurfaceSelection",
+            "source_map_followthrough_surface_review",
+            "source-map-followthrough-surface-review",
+            "sourceMapFollowthroughSurfaceReview",
+            "source_map_selected_surface_selection",
+            "sourceMapSelectedSurfaceSelection",
+        )
+        selected_review = cls._object_alias(context, "selected_review", "selectedReview", "source_map_selected_review", "sourceMapSelectedReview")
+        executor_input = cls._object_alias(
+            context,
+            "selected_executor_input",
+            "selectedExecutorInput",
+            "source_map_selected_executor_input",
+            "sourceMapSelectedExecutorInput",
+            "executor_input",
+            "executorInput",
+        )
+        if not selected_review and selection:
+            value = selection.get("selected_review")
+            selected_review = value if isinstance(value, dict) else {}
+        if not executor_input and selection:
+            value = selection.get("selected_executor_input")
+            executor_input = value if isinstance(value, dict) else {}
+        if not requested and not selection and not selected_review and not executor_input:
+            return None
+        return cls(
+            source_map_followthrough_surface_selection=selection,
+            selected_review=selected_review,
+            selected_executor_input=executor_input,
+            expected_action_id=str(
+                context.get(
+                    "source_map_selected_action_id",
+                    context.get("sourceMapSelectedActionId", context.get("expected_action_id", context.get("expectedActionId", ""))),
+                )
+                or ""
+            ),
+            expected_consumer=str(
+                context.get(
+                    "source_map_selected_consumer",
+                    context.get("sourceMapSelectedConsumer", context.get("expected_consumer", context.get("expectedConsumer", ""))),
+                )
+                or ""
+            ),
+            expected_surface=str(
+                context.get(
+                    "source_map_selected_surface",
+                    context.get("sourceMapSelectedSurface", context.get("expected_surface", context.get("expectedSurface", ""))),
+                )
+                or ""
+            ),
+            reviewer=str(context.get("reviewer", context.get("reviewer_id", context.get("reviewerId", ""))) or ""),
+        )
+
+    _object_alias = staticmethod(SourceMapTypedPayloadPreflightSpec._object_alias)
+
+
+@dataclass(slots=True)
+class SourceMapSelectedExecutorInputReviewResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class SourceMapSelectedExecutorInputReviewManager:
+    """Preflight one selected Source Map follow-through executor input for review."""
+
+    def review(self, spec: SourceMapSelectedExecutorInputReviewSpec | None) -> SourceMapSelectedExecutorInputReviewResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return SourceMapSelectedExecutorInputReviewResult(status="unsupported", reason="missing_source_map_selected_executor_input_review_request", side_effect_policy=policy)
+        try:
+            descriptor = self._descriptor(spec)
+            return SourceMapSelectedExecutorInputReviewResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=policy)
+        except Exception as exc:
+            descriptor = self._base_descriptor(status="failed", reason="source_map_selected_executor_input_review_failed")
+            descriptor["error"] = str(exc)
+            return SourceMapSelectedExecutorInputReviewResult(
+                status="failed",
+                descriptor=descriptor,
+                side_effect_policy=policy,
+                reason="source_map_selected_executor_input_review_failed",
+                error=str(exc),
+            )
+
+    def _descriptor(self, spec: SourceMapSelectedExecutorInputReviewSpec) -> dict[str, Any]:
+        selection = spec.source_map_followthrough_surface_selection
+        selected_review = dict(spec.selected_review) if isinstance(spec.selected_review, dict) else {}
+        executor_input = dict(spec.selected_executor_input) if isinstance(spec.selected_executor_input, dict) else {}
+        blockers = self._input_blockers(selection, selected_review, executor_input)
+        blockers.extend(self._expectation_blockers(spec, selected_review, selection))
+        if selected_review:
+            blockers.extend(self._selected_review_blockers(selected_review, executor_input))
+        package = {} if blockers else self._executor_review_package(selection, selected_review, executor_input, spec)
+        blockers.extend(self._package_blockers(package))
+        warnings = self._warnings(selection, selected_review, package)
+        status = "blocked" if blockers else "ready_for_review"
+        consumer = str(selected_review.get("consumer") or selection.get("selected_consumer") or "")
+        surface = str(selected_review.get("followthrough_review_surface") or selection.get("selected_followthrough_review_surface") or "")
+        action_id = str(selected_review.get("action_id") or selection.get("selected_action_id") or "")
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-input-review.v1",
+            "status": status,
+            "review_only": True,
+            "plan_only": True,
+            "preflight_only": True,
+            "executor_input_review_only": True,
+            "handoff_only": True,
+            "source_surface_selection_schema_version": str(selection.get("schema_version") or ""),
+            "source_surface_selection_status": self._status(selection),
+            "selected_action_id": action_id,
+            "selected_consumer": consumer,
+            "selected_followthrough_review_surface": surface,
+            "expected_action_id": spec.expected_action_id,
+            "expected_consumer": spec.expected_consumer,
+            "expected_surface": spec.expected_surface,
+            "reviewer": spec.reviewer,
+            "selected_review": selected_review,
+            "selected_executor_input": executor_input,
+            "executor_review_package": package,
+            "executor_review_package_ready": bool(package) and not blockers,
+            "downstream_review_prompt": str(package.get("review_prompt") or selected_review.get("review_prompt") or selection.get("downstream_review_prompt") or ""),
+            "downstream_next_action": str(package.get("next_action") or selected_review.get("next_action") or selection.get("downstream_next_action") or ""),
+            "ready_for_executor_review": bool(package) and not blockers,
+            "surface_executor_invoked": False,
+            "debugger_executed": False,
+            "source_logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "blockers": list(dict.fromkeys(blockers)),
+            "warnings": list(dict.fromkeys(warnings)),
+            "next_action": self._next_action(blockers, package, consumer),
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-input-review.v1",
+            "status": status,
+            "review_only": True,
+            "plan_only": True,
+            "preflight_only": True,
+            "executor_input_review_only": True,
+            "handoff_only": True,
+            "reason": reason,
+            "source_surface_selection_schema_version": "",
+            "source_surface_selection_status": "",
+            "selected_action_id": "",
+            "selected_consumer": "",
+            "selected_followthrough_review_surface": "",
+            "expected_action_id": "",
+            "expected_consumer": "",
+            "expected_surface": "",
+            "reviewer": "",
+            "selected_review": {},
+            "selected_executor_input": {},
+            "executor_review_package": {},
+            "executor_review_package_ready": False,
+            "downstream_review_prompt": "",
+            "downstream_next_action": "",
+            "ready_for_executor_review": False,
+            "surface_executor_invoked": False,
+            "debugger_executed": False,
+            "source_logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "blockers": [reason],
+            "warnings": [],
+            "next_action": "provide_ready_source_map_followthrough_surface_selection_descriptor",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    @classmethod
+    def _input_blockers(cls, selection: dict[str, Any], selected_review: dict[str, Any], executor_input: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        if not selection and not selected_review and not executor_input:
+            blockers.append("source_map_followthrough_surface_selection_missing")
+        if selection:
+            if selection.get("schema_version") not in {None, "", "reverse-deepagent.source-map-followthrough-surface-selection.v1"}:
+                blockers.append("source_map_followthrough_surface_selection_schema_mismatch")
+            if cls._status(selection) in {"blocked", "failed", "failure", "error", "unsupported"}:
+                blockers.append("source_map_followthrough_surface_selection_not_ready")
+            if selection.get("ready_for_surface_review") is not True:
+                blockers.append("source_map_followthrough_surface_selection_not_ready_for_executor_review")
+            if selection.get("surface_executor_invoked") is True:
+                blockers.append("source_map_followthrough_surface_selection_executor_invoked")
+            blockers.extend(f"source_map_followthrough_surface_selection:{item}" for item in cls._string_list(selection.get("blockers")))
+            policy = selection.get("side_effect_policy") if isinstance(selection.get("side_effect_policy"), dict) else {}
+            blockers.extend(cls._side_effect_blockers(policy, prefix="source_map_followthrough_surface_selection"))
+        if not selected_review:
+            blockers.append("selected_followthrough_review_missing")
+        if not executor_input:
+            blockers.append("selected_executor_input_missing")
+        return blockers
+
+    @staticmethod
+    def _expectation_blockers(spec: SourceMapSelectedExecutorInputReviewSpec, selected_review: dict[str, Any], selection: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        action_id = str(selected_review.get("action_id") or selection.get("selected_action_id") or "")
+        consumer = str(selected_review.get("consumer") or selection.get("selected_consumer") or "")
+        surface = str(selected_review.get("followthrough_review_surface") or selection.get("selected_followthrough_review_surface") or "")
+        if spec.expected_action_id and action_id and spec.expected_action_id != action_id:
+            blockers.append("selected_action_id_mismatch")
+        if spec.expected_consumer and consumer and spec.expected_consumer != consumer:
+            blockers.append("selected_consumer_mismatch")
+        if spec.expected_surface and surface and spec.expected_surface != surface:
+            blockers.append("selected_followthrough_surface_mismatch")
+        return blockers
+
+    @classmethod
+    def _selected_review_blockers(cls, selected_review: dict[str, Any], executor_input: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        consumer = str(selected_review.get("consumer") or "")
+        surface = str(selected_review.get("followthrough_review_surface") or "")
+        if cls._status(selected_review) not in {"ready_for_review", "ready"}:
+            blockers.append("selected_followthrough_review_not_ready")
+        if selected_review.get("explicit_review_required") is not True:
+            blockers.append("selected_followthrough_explicit_review_required_missing")
+        if selected_review.get("review_required") is not True:
+            blockers.append("selected_followthrough_review_required_missing")
+        if selected_review.get("execute_automatically") is True:
+            blockers.append("selected_followthrough_auto_execution_claim_detected")
+        if selected_review.get("executor_invoked") is True:
+            blockers.append("selected_followthrough_executor_invoked")
+        blockers.extend(cls._side_effect_blockers(selected_review.get("side_effect_policy") if isinstance(selected_review.get("side_effect_policy"), dict) else {}, prefix="selected_followthrough_review"))
+        if selected_review.get("executor_input") and selected_review.get("executor_input") != executor_input:
+            blockers.append("selected_executor_input_mismatch")
+        if consumer not in {"debugger", "source-logpoint", "rebuild", "hook"}:
+            blockers.append("selected_consumer_unsupported")
+        expected_surface = {
+            "debugger": "review_debugger_location_executor_input",
+            "source-logpoint": "review_source_logpoint_executor_input",
+            "rebuild": "review_rebuild_source_metadata_executor_input",
+            "hook": "review_hook_symbol_scope_executor_input",
+        }.get(consumer)
+        if expected_surface and surface != expected_surface:
+            blockers.append("selected_followthrough_surface_consumer_mismatch")
+        blockers.extend(cls._consumer_executor_input_blockers(consumer, executor_input))
+        return blockers
+
+    @staticmethod
+    def _consumer_executor_input_blockers(consumer: str, executor_input: dict[str, Any]) -> list[str]:
+        if consumer == "debugger":
+            return SourceMapTypedPayloadPreflightManager._debugger_blockers("debugger-location-review", executor_input)
+        if consumer == "source-logpoint":
+            return SourceMapTypedPayloadPreflightManager._source_logpoint_blockers("source-logpoint-plan-review", executor_input)
+        if consumer == "rebuild":
+            return SourceMapTypedPayloadPreflightManager._rebuild_blockers("rebuild-source-metadata-review", executor_input)
+        if consumer == "hook":
+            return SourceMapTypedPayloadPreflightManager._hook_blockers("hook-symbol-scope-review", executor_input)
+        return []
+
+    @classmethod
+    def _executor_review_package(cls, selection: dict[str, Any], selected_review: dict[str, Any], executor_input: dict[str, Any], spec: SourceMapSelectedExecutorInputReviewSpec) -> dict[str, Any]:
+        consumer = str(selected_review.get("consumer") or selection.get("selected_consumer") or "")
+        surface = str(selected_review.get("followthrough_review_surface") or selection.get("selected_followthrough_review_surface") or "")
+        action_id = str(selected_review.get("action_id") or selection.get("selected_action_id") or "")
+        gate = cls._review_gate(consumer)
+        return {
+            "package_version": "reverse-deepagent.source-map-selected-executor-input-review.package.v1",
+            "action_id": action_id,
+            "consumer": consumer,
+            "followthrough_review_surface": surface,
+            "review_prompt": str(selected_review.get("review_prompt") or selection.get("downstream_review_prompt") or gate.get("review_prompt") or ""),
+            "next_action": str(selected_review.get("next_action") or selection.get("downstream_next_action") or gate.get("next_action") or ""),
+            "executor_input": executor_input,
+            "review_gate": gate,
+            "reviewer": spec.reviewer,
+            "requires_explicit_review": True,
+            "ready_for_downstream_review": True,
+            "execute_automatically": False,
+            "executor_invoked": False,
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _review_gate(consumer: str) -> dict[str, Any]:
+        gates = {
+            "debugger": {
+                "gate": "explicit_debugger_location_review",
+                "required_approval_flag": "review_approved",
+                "forbidden_without_review": ["Debugger.resume", "Debugger.stepOver", "Debugger.stepInto", "Debugger.stepOut", "Debugger.evaluateOnCallFrame"],
+                "next_action": "review_debugger_location_before_cdp_command",
+                "review_prompt": "Review debugger location executor input before any CDP Debugger command.",
+            },
+            "source-logpoint": {
+                "gate": "explicit_source_logpoint_install_review",
+                "required_approval_flag": "review_approved",
+                "forbidden_without_review": ["source_logpoint_install", "Runtime.evaluate", "Debugger.setBreakpoint"],
+                "next_action": "review_source_logpoint_plan_before_installation",
+                "review_prompt": "Review source-logpoint plan before installation.",
+            },
+            "rebuild": {
+                "gate": "explicit_rebuild_source_metadata_review",
+                "required_approval_flag": "review_approved",
+                "forbidden_without_review": ["rebuild_generation", "raw_source_export"],
+                "next_action": "review_rebuild_source_metadata_before_generation",
+                "review_prompt": "Review digest-only rebuild metadata before generation.",
+            },
+            "hook": {
+                "gate": "explicit_hook_symbol_scope_review",
+                "required_approval_flag": "review_approved",
+                "forbidden_without_review": ["runtime_hook_install", "Runtime.evaluate", "Debugger.evaluateOnCallFrame"],
+                "next_action": "review_hook_symbol_scope_before_runtime_hook",
+                "review_prompt": "Review hook symbol scope candidate before runtime hook installation.",
+            },
+        }
+        return gates.get(consumer, {"gate": "unsupported_source_map_followthrough_consumer", "required_approval_flag": "review_approved", "forbidden_without_review": [], "next_action": "choose_supported_source_map_followthrough_consumer", "review_prompt": "Choose a supported Source Map follow-through consumer."})
+
+    @classmethod
+    def _package_blockers(cls, package: dict[str, Any]) -> list[str]:
+        blockers: list[str] = []
+        if not package:
+            return blockers
+        if package.get("requires_explicit_review") is not True:
+            blockers.append("executor_review_package_explicit_review_missing")
+        if package.get("execute_automatically") is True or package.get("executor_invoked") is True:
+            blockers.append("executor_review_package_execution_claim_detected")
+        blockers.extend(cls._side_effect_blockers(package.get("side_effect_policy") if isinstance(package.get("side_effect_policy"), dict) else {}, prefix="executor_review_package"))
+        if not isinstance(package.get("executor_input"), dict) or not package.get("executor_input"):
+            blockers.append("executor_review_package_input_missing")
+        if not isinstance(package.get("review_gate"), dict) or not package.get("review_gate"):
+            blockers.append("executor_review_package_gate_missing")
+        return blockers
+
+    @classmethod
+    def _warnings(cls, selection: dict[str, Any], selected_review: dict[str, Any], package: dict[str, Any]) -> list[str]:
+        warnings: list[str] = []
+        warnings.extend(f"source_map_followthrough_surface_selection:{item}" for item in cls._string_list(selection.get("warnings")))
+        if selected_review:
+            warnings.append("selected_source_map_executor_input_requires_explicit_review")
+        if package:
+            warnings.append("selected_executor_input_review_does_not_execute_surface")
+        return warnings
+
+    @staticmethod
+    def _next_action(blockers: list[str], package: dict[str, Any], consumer: str) -> str:
+        if "source_map_followthrough_surface_selection_missing" in blockers:
+            return "provide_ready_source_map_followthrough_surface_selection_descriptor"
+        if (
+            "source_map_followthrough_surface_selection_not_ready" in blockers
+            or "source_map_followthrough_surface_selection_not_ready_for_executor_review" in blockers
+            or any(item.startswith("source_map_followthrough_surface_selection") for item in blockers)
+        ):
+            return "resolve_source_map_followthrough_surface_selection_blockers"
+        if "selected_followthrough_review_missing" in blockers or "selected_executor_input_missing" in blockers:
+            return "provide_selected_followthrough_review_and_executor_input"
+        if any(item.endswith("_mismatch") for item in blockers) or "selected_consumer_unsupported" in blockers:
+            return "refresh_selected_source_map_followthrough_surface"
+        if blockers:
+            return "fix_selected_source_map_executor_input_before_review"
+        if package:
+            return str((package.get("review_gate") or {}).get("next_action") or package.get("next_action") or "review_selected_source_map_executor_input")
+        return "provide_ready_source_map_followthrough_surface_selection_descriptor"
+
+    _status = staticmethod(SourceMapTypedPayloadPreflightManager._status)
+    _string_list = staticmethod(SourceMapTypedPayloadPreflightManager._string_list)
+    _side_effect_blockers = staticmethod(SourceMapTypedPayloadPreflightManager._side_effect_blockers)
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "plan_only": True,
+            "preflight_only": True,
+            "executor_input_review_only": True,
+            "handoff_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "debugger_execution_performed": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "surface_executor_invoked": False,
+            "executor_invoked": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
 class SourceMapRemapper:
     """Small Source Map v3 and generated-bundle offset remapper.
 

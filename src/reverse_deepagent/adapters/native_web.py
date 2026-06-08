@@ -222,6 +222,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughReviewSpec,
     SourceMapFollowthroughSurfaceSelectionManager,
     SourceMapFollowthroughSurfaceSelectionSpec,
+    SourceMapSelectedExecutorInputReviewManager,
+    SourceMapSelectedExecutorInputReviewSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
@@ -647,6 +649,93 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_selected_executor_input_review_request(protection_name, context):
+            spec = SourceMapSelectedExecutorInputReviewSpec.from_context(context)
+            result = SourceMapSelectedExecutorInputReviewManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            package = descriptor.get("executor_review_package") if isinstance(descriptor.get("executor_review_package"), dict) else {}
+            gate = package.get("review_gate") if isinstance(package.get("review_gate"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_selected_executor_input_review_status={result.status}",
+                f"source_map_selected_executor_input_review_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_selected_executor_input_review_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_selected_executor_input_review_selected_surface={descriptor.get('selected_followthrough_review_surface', '')}",
+                f"source_map_selected_executor_input_review_package_ready={descriptor.get('executor_review_package_ready', False)}",
+                f"source_map_selected_executor_input_review_ready_for_executor_review={descriptor.get('ready_for_executor_review', False)}",
+                f"source_map_selected_executor_input_review_gate={gate.get('gate', '')}",
+                "source_map_selected_executor_input_review_review_only=True",
+                "source_map_selected_executor_input_review_plan_only=True",
+                "source_map_selected_executor_input_review_preflight_only=True",
+                "source_map_selected_executor_input_review_handoff_only=True",
+                f"source_map_selected_executor_input_review_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_selected_executor_input_review_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_selected_executor_input_review_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_selected_executor_input_review_browser_started={policy.get('browser_started', False)}",
+                f"source_map_selected_executor_input_review_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_selected_executor_input_review_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_selected_executor_input_review_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_selected_executor_input_review_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_selected_executor_input_review_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_selected_executor_input_review_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_selected_executor_input_review_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_selected_executor_input_review_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_selected_executor_input_review_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_selected_executor_input_review_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-selected-executor-input-review.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map selected executor-input review descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""),
+                    "executor_review_package_ready": bool(descriptor.get("executor_review_package_ready", False)),
+                    "ready_for_executor_review": bool(descriptor.get("ready_for_executor_review", False)),
+                    "review_gate": gate.get("gate", ""),
+                    "review_only": True,
+                    "plan_only": True,
+                    "preflight_only": True,
+                    "handoff_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_selected_source_map_executor_input_before_execution"
+                actions = ["review_source_map_selected_executor_input"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_ready_source_map_followthrough_surface_selection_descriptor"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_selected_executor_input_review_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -9828,6 +9917,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapFollowthroughReviewSurface",
                 "source_map_consumer_followthrough_review",
                 "sourceMapConsumerFollowthroughReview",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_selected_executor_input_review_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-selected-executor-input-review",
+            "source-map-followthrough-executor-input-review",
+            "source-map-selected-followthrough-review",
+            "review-source-map-selected-executor-input",
+            "review-selected-source-map-executor-input",
+            "preflight-selected-source-map-followthrough-executor-input",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_selected_executor_input_review",
+                "sourceMapSelectedExecutorInputReview",
+                "source_map_followthrough_executor_input_review",
+                "sourceMapFollowthroughExecutorInputReview",
+                "source_map_selected_followthrough_review",
+                "sourceMapSelectedFollowthroughReview",
             )
         )
 

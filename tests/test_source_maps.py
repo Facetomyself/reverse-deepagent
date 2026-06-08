@@ -16,6 +16,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughReviewSpec,
     SourceMapFollowthroughSurfaceSelectionManager,
     SourceMapFollowthroughSurfaceSelectionSpec,
+    SourceMapSelectedExecutorInputReviewManager,
+    SourceMapSelectedExecutorInputReviewSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
@@ -1108,6 +1110,98 @@ class SourceMapFollowthroughSurfaceSelectionManagerTests(unittest.TestCase):
         self.assertIn("selected_followthrough_review_cdp_command_detected", result.descriptor["blockers"])
         self.assertFalse(result.descriptor["ready_for_surface_review"])
         self.assertEqual(result.descriptor["next_action"], "fix_selected_source_map_followthrough_surface_before_review")
+
+
+class SourceMapSelectedExecutorInputReviewManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_surface_selection() -> dict:
+        spec = SourceMapFollowthroughSurfaceSelectionSpec.from_context(
+            {
+                "source_map_followthrough_surface_selection": True,
+                "source_map_followthrough_review": SourceMapFollowthroughSurfaceSelectionManagerTests._ready_followthrough_review(),
+                "source_map_followthrough_surface_consumers": ["debugger"],
+            }
+        )
+        return SourceMapFollowthroughSurfaceSelectionManager().review(spec).descriptor
+
+    def test_source_map_selected_executor_input_review_packages_selected_surface_without_side_effects(self) -> None:
+        selection = self._ready_surface_selection()
+        spec = SourceMapSelectedExecutorInputReviewSpec.from_context(
+            {
+                "source_map_selected_executor_input_review": True,
+                "source_map_followthrough_surface_selection": selection,
+                "expected_consumer": "debugger",
+            }
+        )
+
+        result = SourceMapSelectedExecutorInputReviewManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-selected-executor-input-review.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["plan_only"])
+        self.assertTrue(descriptor["preflight_only"])
+        self.assertTrue(descriptor["executor_input_review_only"])
+        self.assertTrue(descriptor["handoff_only"])
+        self.assertEqual(descriptor["source_surface_selection_schema_version"], "reverse-deepagent.source-map-followthrough-surface-selection.v1")
+        self.assertEqual(descriptor["source_surface_selection_status"], "ready_for_review")
+        self.assertEqual(descriptor["selected_action_id"], "review-debugger-location-use")
+        self.assertEqual(descriptor["selected_consumer"], "debugger")
+        self.assertEqual(descriptor["selected_followthrough_review_surface"], "review_debugger_location_executor_input")
+        self.assertTrue(descriptor["executor_review_package_ready"])
+        self.assertTrue(descriptor["ready_for_executor_review"])
+        package = descriptor["executor_review_package"]
+        self.assertEqual(package["package_version"], "reverse-deepagent.source-map-selected-executor-input-review.package.v1")
+        self.assertEqual(package["review_gate"]["gate"], "explicit_debugger_location_review")
+        self.assertEqual(package["review_gate"]["required_approval_flag"], "review_approved")
+        self.assertFalse(package["execute_automatically"])
+        self.assertFalse(package["executor_invoked"])
+        self.assertFalse(descriptor["surface_executor_invoked"])
+        self.assertFalse(descriptor["debugger_executed"])
+        self.assertFalse(descriptor["source_logpoint_installed"])
+        self.assertFalse(descriptor["hook_installed"])
+        self.assertFalse(descriptor["rebuild_executed"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_evaluated"])
+        self.assertFalse(result.side_effect_policy["surface_executor_invoked"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        self.assertEqual(descriptor["next_action"], "review_debugger_location_before_cdp_command")
+
+    def test_source_map_selected_executor_input_review_blocks_unready_selection(self) -> None:
+        selection = self._ready_surface_selection()
+        selection["status"] = "blocked"
+        selection["ready_for_surface_review"] = False
+        spec = SourceMapSelectedExecutorInputReviewSpec.from_context(
+            {
+                "source_map_selected_executor_input_review": True,
+                "source_map_followthrough_surface_selection": selection,
+            }
+        )
+
+        result = SourceMapSelectedExecutorInputReviewManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_followthrough_surface_selection_not_ready", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["ready_for_executor_review"])
+        self.assertEqual(result.descriptor["next_action"], "resolve_source_map_followthrough_surface_selection_blockers")
+
+    def test_source_map_selected_executor_input_review_blocks_executor_input_mismatch(self) -> None:
+        selection = self._ready_surface_selection()
+        spec = SourceMapSelectedExecutorInputReviewSpec.from_context(
+            {
+                "source_map_selected_executor_input_review": True,
+                "source_map_followthrough_surface_selection": selection,
+                "selected_executor_input": {"unexpected": True},
+            }
+        )
+
+        result = SourceMapSelectedExecutorInputReviewManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("selected_executor_input_mismatch", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["executor_review_package_ready"])
 
 
 class SourceMapRemapperTests(unittest.TestCase):
