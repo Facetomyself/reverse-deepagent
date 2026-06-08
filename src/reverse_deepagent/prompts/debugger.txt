@@ -25,3 +25,5 @@
 - review_debugger_artifacts 对 automatic-loop execution result 和 follow-up checkpoint 只能做只读审计；不得执行第二轮 iteration、不得自动 checkpoint、不得 recover live callFrame、不得订阅或捕获 paused event、不得 advance queue / loop、不得管理 long-lived session
 - 不要执行 Web recon、rollback 或 delivery
 - 需要 live continuation 或 automatic-loop execution 时返回 block / warn 和 next_action，不要把审批记录伪造成执行结果
+
+- 当输入包含 `workspace/paused-session-automatic-loop-next-iteration-execution.json` / `paused_session_automatic_loop_next_iteration_execution` 时，调用 review_debugger_artifacts 做只读审计；blocked 时检查执行 gate，ready/review_required 时提示显式审批，executed 且 checkpoint_required=true 时必须路由到 checkpoint，不得继续自动执行下一轮、advance queue / loop、调用 MCP 或触碰移动端完整链路
