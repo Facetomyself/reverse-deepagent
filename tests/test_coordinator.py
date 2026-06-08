@@ -1227,6 +1227,27 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop multi-iteration transaction journal",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_multi_iteration_transaction_journal",
+                    details={
+                        "status": "written",
+                        "journal_written": True,
+                        "transaction_started": True,
+                        "journal_id": "automatic-loop-multi-iteration-transaction-journal:coordinator",
+                        "transaction_preflight_id": "automatic-loop-multi-iteration-transaction-preflight:coordinator",
+                        "approval_record_id": "automatic-loop-multi-iteration-executor-approval-record:coordinator",
+                        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:automatic-loop-multi-iteration-preflight:automatic-loop-policy:tx-follow-coordinator-1",
+                        "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:tx-follow-coordinator-1",
+                        "policy_id": "automatic-loop-policy:tx-follow-coordinator-1",
+                        "transaction_id": "automatic-loop-multi-iteration-transaction:coordinator",
+                        "journal_summary": {"entry_count": 3, "planned_entry_count": 3, "journal_written": True, "automatic_loop_executed": False, "automatic_multi_iteration_loop": False},
+                        "executor_input_gates": {"ready_to_execute_now": False, "transaction_started": True, "journal_written": True, "automatic_multi_iteration_loop": False},
+                        "side_effect_policy": {"writes_transaction_journal": True, "transaction_started": True, "journal_written": True, "automatic_multi_iteration_loop": False, "automatic_loop_executed": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1397,6 +1418,14 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"]["transaction_plan"]["ready_to_write_now"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"]["journal_writer_input_gates"]["journal_written"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"]["side_effect_policy"]["automatic_multi_iteration_loop"])
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["status"], "written")
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["journal_written"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["transaction_started"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["executor_input_gates"]["ready_to_execute_now"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["executor_input_gates"]["automatic_multi_iteration_loop"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["side_effect_policy"]["writes_transaction_journal"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["side_effect_policy"]["automatic_multi_iteration_loop"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"]["side_effect_policy"]["cdp_command_sent"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1569,6 +1598,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_executor_approval_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_executor_approval_record"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_transaction_preflight"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_executor_journal"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")
