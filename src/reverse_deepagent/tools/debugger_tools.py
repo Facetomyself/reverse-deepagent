@@ -225,6 +225,18 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "automatic_loop_executor_approval_plan",
             "automaticLoopExecutorApprovalPlan",
         )
+        automatic_loop_execution_result = _object_alias(
+            payload,
+            "paused_session_automatic_loop_execution_result",
+            "paused-session-automatic-loop-execution-result",
+            "pausedSessionAutomaticLoopExecutionResult",
+            "paused_session_automatic_loop_execution",
+            "pausedSessionAutomaticLoopExecution",
+            "execute_paused_session_automatic_loop",
+            "executePausedSessionAutomaticLoop",
+            "automatic_loop_execution_result",
+            "automaticLoopExecutionResult",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -264,11 +276,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         automatic_loop_execution = _first_object(automatic_loop_execution_plan.get("plan"), automatic_loop_execution_plan)
         automatic_loop_preflight = _first_object(automatic_loop_executor_preflight.get("preflight"), automatic_loop_executor_preflight)
         automatic_loop_approval = _first_object(automatic_loop_executor_approval_plan.get("approval_plan"), automatic_loop_executor_approval_plan)
+        automatic_loop_result = _first_object(automatic_loop_execution_result.get("execution"), automatic_loop_execution_result)
         execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness, automatic_loop_execution_plan, automatic_loop_executor_preflight, automatic_loop_executor_approval_plan)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness, automatic_loop_execution_plan, automatic_loop_executor_preflight, automatic_loop_executor_approval_plan, automatic_loop_execution_result)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -416,6 +429,18 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             blockers.append("paused_session_automatic_loop_executor_approval_plan_blocked")
         if automatic_loop_executor_approval_plan_status == "ready_for_review":
             warnings.append("automatic_loop_executor_approval_plan_requires_review")
+        automatic_loop_result_status = _string(automatic_loop_result.get("status"))
+        if automatic_loop_result_status in {"blocked", "failed", "timed_out"}:
+            blockers.append("paused_session_automatic_loop_execution_result_blocked")
+        if automatic_loop_result_status == "ready_for_review":
+            warnings.append("automatic_loop_execution_requires_review")
+        if automatic_loop_result_status == "review_required":
+            warnings.append("automatic_loop_execution_review_required")
+        if automatic_loop_result_status == "executed":
+            if _boolish(automatic_loop_result.get("checkpoint_required")) and not continuation_checkpoint:
+                warnings.append("automatic_loop_execution_checkpoint_required")
+            else:
+                warnings.append("automatic_loop_execution_review_result")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -718,10 +743,25 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "next_action": _string(automatic_loop_approval.get("next_action")),
                     "blockers": automatic_loop_approval.get("blockers") if isinstance(automatic_loop_approval.get("blockers"), list) else [],
                 },
+                "automatic_loop_execution_result": {
+                    "status": _string(automatic_loop_result.get("status") or "unknown"),
+                    "transaction_id": _string(automatic_loop_result.get("transaction_id")),
+                    "journal_id": _string(automatic_loop_result.get("journal_id")),
+                    "executed_iteration_count": automatic_loop_result.get("executed_iteration_count", 0),
+                    "checkpoint_required": _boolish(automatic_loop_result.get("checkpoint_required")),
+                    "automatic_loop_executed": _boolish(automatic_loop_result.get("automatic_loop_executed")),
+                    "automatic_loop_one_iteration_executed": _boolish(automatic_loop_result.get("automatic_loop_one_iteration_executed")),
+                    "loop_advanced": _boolish(automatic_loop_result.get("loop_advanced")),
+                    "queue_advanced": _boolish(automatic_loop_result.get("queue_advanced")),
+                    "long_lived_session_managed": _boolish(automatic_loop_result.get("long_lived_session_managed")),
+                    "calls_mcp": _boolish(_nested_get(automatic_loop_result, "side_effect_policy", "calls_mcp")),
+                    "mobile_runtime_used": _boolish(_nested_get(automatic_loop_result, "side_effect_policy", "mobile_runtime_used")),
+                    "blockers": automatic_loop_result.get("blockers") if isinstance(automatic_loop_result.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, session_lifecycle, attach_probe, callframe_recovery_artifact, one_action_execution, pre_action_orchestration, next_capture_execution, continuation_checkpoint, multi_step_workflow, multi_step_execution, multi_step_loop, multi_step_loop_exec, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, session_lifecycle, attach_probe, callframe_recovery_artifact, one_action_execution, pre_action_orchestration, next_capture_execution, continuation_checkpoint, multi_step_workflow, multi_step_execution, multi_step_loop, multi_step_loop_exec, automatic_loop_result, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -2063,6 +2103,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_paused_session_automatic_loop_executor_preflight_blockers"
     if "paused_session_automatic_loop_executor_approval_plan_blocked" in blockers:
         return "inspect_paused_session_automatic_loop_executor_approval_plan_blockers"
+    if "paused_session_automatic_loop_execution_result_blocked" in blockers:
+        return "inspect_paused_session_automatic_loop_execution_result_blockers"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
@@ -2115,6 +2157,12 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "review_future_bounded_automatic_loop_executor_preflight"
     if "automatic_loop_executor_approval_plan_requires_review" in warnings:
         return "review_future_bounded_automatic_loop_executor_approval_transaction"
+    if "automatic_loop_execution_requires_review" in warnings or "automatic_loop_execution_review_required" in warnings:
+        return "approve_paused_session_automatic_loop_execution"
+    if "automatic_loop_execution_checkpoint_required" in warnings:
+        return "checkpoint_paused_session_automatic_loop_execution"
+    if "automatic_loop_execution_review_result" in warnings:
+        return "review_paused_session_automatic_loop_execution_result"
     if "multi_step_continuation_workflow_requires_review" in warnings:
         return "approve_multi_step_continuation_workflow"
     if "cross_process_continuation_checkpoint_ready_for_next_action_review" in warnings:
@@ -2157,6 +2205,7 @@ def _review_required_items(
     multi_step_execution: dict[str, Any],
     multi_step_loop: dict[str, Any],
     multi_step_loop_execution: dict[str, Any],
+    automatic_loop_execution_result: dict[str, Any],
     session: dict[str, Any],
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -2175,6 +2224,7 @@ def _review_required_items(
     multi_step_execution_diagnostics = _multi_step_continuation_execution_diagnostics_for_review(multi_step_execution)
     multi_step_loop_diagnostics = _multi_step_loop_plan_diagnostics_for_review(multi_step_loop)
     multi_step_loop_execution_diagnostics = _multi_step_loop_execution_diagnostics_for_review(multi_step_loop_execution)
+    automatic_loop_execution_diagnostics = _automatic_loop_execution_result_diagnostics_for_review(automatic_loop_execution_result)
     for code in blockers:
         items.append(
             {
@@ -2197,6 +2247,7 @@ def _review_required_items(
                 "multi_step_continuation_execution_diagnostics": multi_step_execution_diagnostics,
                 "multi_step_loop_plan_diagnostics": multi_step_loop_diagnostics,
                 "multi_step_loop_execution_diagnostics": multi_step_loop_execution_diagnostics,
+                "automatic_loop_execution_result_diagnostics": automatic_loop_execution_diagnostics,
             }
         )
     for code in warnings:
@@ -2236,6 +2287,10 @@ def _review_required_items(
             "multi_step_loop_execution_checkpoint_not_observed",
             "multi_step_loop_execution_review_result",
             "cross_process_session_lifecycle_requires_review",
+            "automatic_loop_execution_requires_review",
+            "automatic_loop_execution_review_required",
+            "automatic_loop_execution_checkpoint_required",
+            "automatic_loop_execution_review_result",
         }:
             items.append(
                 {
@@ -2252,11 +2307,12 @@ def _review_required_items(
                     "live_callframe_recovery_diagnostics": live_callframe_recovery_diagnostics,
                     "cross_process_one_action_diagnostics": one_action_diagnostics,
                     "next_paused_event_capture_execution_diagnostics": next_capture_diagnostics,
-                "continuation_checkpoint_diagnostics": continuation_checkpoint_diagnostics,
-                "multi_step_continuation_workflow_diagnostics": multi_step_workflow_diagnostics,
-                "multi_step_continuation_execution_diagnostics": multi_step_execution_diagnostics,
-                "multi_step_loop_plan_diagnostics": multi_step_loop_diagnostics,
-                "multi_step_loop_execution_diagnostics": multi_step_loop_execution_diagnostics,
+                    "continuation_checkpoint_diagnostics": continuation_checkpoint_diagnostics,
+                    "multi_step_continuation_workflow_diagnostics": multi_step_workflow_diagnostics,
+                    "multi_step_continuation_execution_diagnostics": multi_step_execution_diagnostics,
+                    "multi_step_loop_plan_diagnostics": multi_step_loop_diagnostics,
+                    "multi_step_loop_execution_diagnostics": multi_step_loop_execution_diagnostics,
+                    "automatic_loop_execution_result_diagnostics": automatic_loop_execution_diagnostics,
                 }
             )
     return items
@@ -2498,6 +2554,25 @@ def _multi_step_loop_execution_diagnostics_for_review(execution: dict[str, Any])
         "queue_advanced": _boolish(execution.get("queue_advanced")),
         "automatic_multi_step_loop": _boolish(execution.get("automatic_multi_step_loop")),
         "automatic_wrapper_continuation": _boolish(execution.get("automatic_wrapper_continuation")),
+        "blockers": execution.get("blockers") if isinstance(execution.get("blockers"), list) else [],
+    }
+
+
+def _automatic_loop_execution_result_diagnostics_for_review(execution: dict[str, Any]) -> dict[str, Any]:
+    policy = execution.get("side_effect_policy") if isinstance(execution.get("side_effect_policy"), dict) else {}
+    return {
+        "status": _string(execution.get("status") or "unknown"),
+        "transaction_id": _string(execution.get("transaction_id")),
+        "journal_id": _string(execution.get("journal_id")),
+        "automatic_loop_executed": _boolish(execution.get("automatic_loop_executed")),
+        "automatic_loop_one_iteration_executed": _boolish(execution.get("automatic_loop_one_iteration_executed")),
+        "executed_iteration_count": execution.get("executed_iteration_count", 0),
+        "checkpoint_required": _boolish(execution.get("checkpoint_required")),
+        "loop_advanced": _boolish(execution.get("loop_advanced")),
+        "queue_advanced": _boolish(execution.get("queue_advanced")),
+        "long_lived_session_managed": _boolish(execution.get("long_lived_session_managed")),
+        "calls_mcp": _boolish(policy.get("calls_mcp")),
+        "mobile_runtime_used": _boolish(policy.get("mobile_runtime_used")),
         "blockers": execution.get("blockers") if isinstance(execution.get("blockers"), list) else [],
     }
 

@@ -6729,6 +6729,122 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_automatic_loop_executor_approval_plan_mobile_runtime_used=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_automatic_loop_execution_from_native_runtime_runs_one_reviewed_iteration(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "execute-paused-session-automatic-loop",
+            {
+                "paused_session_automatic_loop_execution": True,
+                "execute_paused_session_automatic_loop": True,
+                "review_approved": True,
+                "paused_session_automatic_loop_bounded_executor_gate": {
+                    "status": "ready_for_review",
+                    "bounded_executor_gate_ready_for_review": True,
+                    "ready_to_execute_now": False,
+                    "automatic_loop_executed": False,
+                    "transaction_id": "native-auto-tx-1",
+                    "journal_id": "native-auto-journal-1",
+                    "loop_id": "native-auto-exec-loop-1",
+                    "workflow_id": "native-auto-exec-workflow-1",
+                },
+                "paused_session_automatic_loop_transaction_journal": {
+                    "status": "written",
+                    "journal_written": True,
+                    "transaction_started": True,
+                    "transaction_id": "native-auto-tx-1",
+                    "journal_id": "native-auto-journal-1",
+                    "journal_summary": {"automatic_loop_executed": False},
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "native-auto-exec-loop-1",
+                        "workflow_id": "native-auto-exec-workflow-1",
+                        "pause_session_id": "native-auto-exec-pause-1",
+                        "target_id": "native-auto-exec-target-1",
+                        "next_iteration": {
+                            "available": True,
+                            "ready_for_review": True,
+                            "workflow_step_index": 1,
+                            "method": "Debugger.stepOver",
+                        },
+                        "readiness": {
+                            "next_loop_iteration_reviewable": True,
+                            "automatic_multi_step_loop_supported": False,
+                            "automatic_queue_advance_supported": False,
+                            "automatic_live_callframe_recovery_supported": False,
+                            "automatic_wrapper_continuation_supported": False,
+                        },
+                    }
+                },
+                "paused_session_multi_step_continuation_workflow": {
+                    "workflow": {
+                        "status": "ready_for_review",
+                        "workflow_id": "native-auto-exec-workflow-1",
+                        "pause_session_id": "native-auto-exec-pause-1",
+                        "target_id": "native-auto-exec-target-1",
+                        "planned_steps": [{"step_index": 1, "method": "Debugger.stepOver", "fingerprint": "1:Debugger.stepOver:"}],
+                    }
+                },
+                "paused_session_live_callframe_recovery": {
+                    "recovery": {
+                        "status": "recovered",
+                        "pause_session_id": "native-auto-exec-pause-1",
+                        "target_id": "native-auto-exec-target-1",
+                        "attached_session_id": "attached-session-1",
+                        "live_callframe_id": "native-auto-cf-1",
+                        "live_callframe_recovered": True,
+                        "target_detached": False,
+                    }
+                },
+                "attached_session_id": "attached-session-1",
+                "live_callframe_id": "native-auto-cf-1",
+                "timeout_ms": 10,
+                "observed_paused_event": {
+                    "sessionId": "attached-session-1",
+                    "params": {
+                        "reason": "step",
+                        "callFrames": [
+                            {
+                                "callFrameId": "native-auto-cf-2",
+                                "functionName": "buildSign",
+                                "location": {"scriptId": "script-1", "lineNumber": 10, "columnNumber": 0},
+                                "url": "https://example.test/assets/app.js",
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["paused_session_automatic_loop_one_iteration"])
+        self.assertEqual(result.next_action, "checkpoint_automatic_loop_iteration_captured_pause")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-automatic-loop-execution-result.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "executed")
+        self.assertEqual(result.artifacts[0].metadata["executed_iteration_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["checkpoint_required"])
+        self.assertFalse(result.artifacts[0].metadata["loop_advanced"])
+        self.assertFalse(result.artifacts[0].metadata["queue_advanced"])
+        self.assertFalse(result.artifacts[0].metadata["long_lived_session_managed"])
+        self.assertIn("paused_session_automatic_loop_execution_status=executed", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_cdp_command_sent=True", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_event_subscribed=True", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_paused_event_captured=True", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_bounded_one_iteration_only=True", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_loop_advanced=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_queue_advanced=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_long_lived_session=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_execution_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count + 1)
+        self.assertEqual(page._cdp_session.calls[-1][0], "Debugger.stepOver")
+
     def test_paused_session_multi_step_loop_plan_from_native_runtime_is_review_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

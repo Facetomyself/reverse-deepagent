@@ -6258,6 +6258,421 @@ class PausedSessionMultiStepLoopExecutionManager:
         return "inspect_paused_session_loop_execution"
 
 
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopExecutionSpec:
+    """Explicit-review-only bounded automatic-loop executor MVP.
+
+    This is the first executable layer after the automatic-loop transaction journal
+    and bounded executor gate descriptors. The MVP deliberately delegates at most
+    one reviewed iteration to ``PausedSessionMultiStepLoopExecutionManager`` and
+    then requires the existing checkpoint / loop-plan review chain before any
+    further iteration. It is not a daemon, queue advancer, live callFrame recovery
+    loop, long-lived session manager, MCP bridge, or mobile runtime chain.
+    """
+
+    bounded_executor_gate: dict[str, Any] = field(default_factory=dict)
+    transaction_journal: dict[str, Any] = field(default_factory=dict)
+    loop_plan: dict[str, Any] = field(default_factory=dict)
+    multi_step_workflow: dict[str, Any] = field(default_factory=dict)
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    cross_process_attach_probe: dict[str, Any] = field(default_factory=dict)
+    execute_automatic_loop: bool = False
+    review_approved: bool = False
+    selected_step_index: int | None = None
+    max_iterations: int = 1
+    pause_session_id: str | None = None
+    target_id: str | None = None
+    attached_session_id: str | None = None
+    live_callframe_id: str | None = None
+    timeout_ms: int = 5000
+    observed_paused_event: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+    require_matching_session_id: bool = True
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionAutomaticLoopExecutionSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_automatic_loop_execution")
+            or context.get("pausedSessionAutomaticLoopExecution")
+            or context.get("paused-session-automatic-loop-execution")
+            or context.get("execute_paused_session_automatic_loop")
+            or context.get("executePausedSessionAutomaticLoop")
+            or context.get("execute_bounded_paused_session_automatic_loop")
+            or context.get("executeBoundedPausedSessionAutomaticLoop")
+        )
+        gate_container = _first_dict(
+            context,
+            "paused_session_automatic_loop_bounded_executor_gate",
+            "pausedSessionAutomaticLoopBoundedExecutorGate",
+            "paused-session-automatic-loop-bounded-executor-gate",
+            "automatic_loop_bounded_executor_gate",
+            "automaticLoopBoundedExecutorGate",
+            "bounded_executor_gate",
+            "boundedExecutorGate",
+        )
+        gate = dict(gate_container.get("gate")) if isinstance(gate_container.get("gate"), dict) else gate_container
+        journal_container = _first_dict(
+            context,
+            "paused_session_automatic_loop_transaction_journal",
+            "pausedSessionAutomaticLoopTransactionJournal",
+            "paused-session-automatic-loop-transaction-journal",
+            "paused_session_automatic_loop_executor_journal",
+            "pausedSessionAutomaticLoopExecutorJournal",
+            "automatic_loop_transaction_journal",
+            "automaticLoopTransactionJournal",
+            "transaction_journal",
+            "transactionJournal",
+        )
+        journal = dict(journal_container.get("journal")) if isinstance(journal_container.get("journal"), dict) else journal_container
+        loop_container = _first_dict(
+            context,
+            "paused_session_multi_step_loop_plan",
+            "pausedSessionMultiStepLoopPlan",
+            "paused-session-multi-step-loop-plan",
+            "multi_step_loop_plan",
+            "multiStepLoopPlan",
+            "loop_plan",
+            "loopPlan",
+        )
+        loop_plan = dict(loop_container.get("loop_plan")) if isinstance(loop_container.get("loop_plan"), dict) else loop_container
+        workflow_container = _first_dict(
+            context,
+            "paused_session_multi_step_continuation_workflow",
+            "pausedSessionMultiStepContinuationWorkflow",
+            "paused-session-multi-step-continuation-workflow",
+            "multi_step_continuation_workflow",
+            "multiStepContinuationWorkflow",
+            "continuation_workflow",
+            "continuationWorkflow",
+        )
+        workflow = dict(workflow_container.get("workflow")) if isinstance(workflow_container.get("workflow"), dict) else workflow_container
+        recovery_container = _first_dict(
+            context,
+            "paused_session_live_callframe_recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "paused-session-live-callframe-recovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+        )
+        recovery = dict(recovery_container.get("recovery")) if isinstance(recovery_container.get("recovery"), dict) else recovery_container
+        attach_container = _first_dict(
+            context,
+            "paused_session_cross_process_attach_probe",
+            "pausedSessionCrossProcessAttachProbe",
+            "paused-session-cross-process-attach-probe",
+            "cross_process_attach_probe",
+            "crossProcessAttachProbe",
+        )
+        attach_probe = dict(attach_container.get("probe")) if isinstance(attach_container.get("probe"), dict) else attach_container
+        if not requested and not any((gate, journal, loop_plan)):
+            return None
+        next_iteration = loop_plan.get("next_iteration") if isinstance(loop_plan.get("next_iteration"), dict) else {}
+        selected_raw = context.get(
+            "selected_step_index",
+            context.get("selectedStepIndex", context.get("step_index", context.get("stepIndex", next_iteration.get("workflow_step_index")))),
+        )
+        try:
+            selected_step_index = int(selected_raw) if selected_raw is not None else None
+        except (TypeError, ValueError):
+            selected_step_index = None
+        max_raw = context.get("max_iterations", context.get("maxIterations", context.get("max_automatic_iterations", context.get("maxAutomaticIterations", 1))))
+        try:
+            max_iterations = int(max_raw)
+        except (TypeError, ValueError):
+            max_iterations = 1
+        timeout_raw = context.get("timeout_ms", context.get("timeoutMs", 5000))
+        try:
+            timeout_ms = int(timeout_raw)
+        except (TypeError, ValueError):
+            timeout_ms = 5000
+        execute_raw = context.get(
+            "execute_paused_session_automatic_loop",
+            context.get(
+                "executePausedSessionAutomaticLoop",
+                context.get("execute_bounded_paused_session_automatic_loop", context.get("execute_automatic_loop", context.get("executeAutomaticLoop", False))),
+            ),
+        )
+        approved_raw = context.get("review_approved", context.get("reviewApproved", context.get("approved", False)))
+        event = _first_dict(context, "observed_paused_event", "observedPausedEvent", "debugger_paused_event", "debuggerPausedEvent", "paused_event", "pausedEvent")
+        attached_session_id = context.get("attached_session_id") or context.get("attachedSessionId") or recovery.get("attached_session_id") or attach_probe.get("attached_session_id")
+        live_callframe_id = context.get("live_callframe_id") or context.get("liveCallframeId") or context.get("callFrameId") or recovery.get("live_callframe_id")
+        pause_session_id = context.get("pause_session_id") or context.get("pauseSessionId") or loop_plan.get("pause_session_id") or workflow.get("pause_session_id") or recovery.get("pause_session_id") or gate.get("pause_session_id")
+        target_id = context.get("target_id") or context.get("targetId") or loop_plan.get("target_id") or workflow.get("target_id") or recovery.get("target_id") or gate.get("target_id")
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or loop_plan.get("reviewer") or gate.get("reviewer")
+        match_raw = context.get("require_matching_session_id", context.get("requireMatchingSessionId", True))
+        return cls(
+            bounded_executor_gate=gate,
+            transaction_journal=journal,
+            loop_plan=loop_plan,
+            multi_step_workflow=workflow,
+            live_callframe_recovery=recovery,
+            cross_process_attach_probe=attach_probe,
+            execute_automatic_loop=bool(execute_raw),
+            review_approved=bool(approved_raw),
+            selected_step_index=max(1, selected_step_index) if selected_step_index is not None else None,
+            max_iterations=max(1, min(max_iterations, 1)),
+            pause_session_id=str(pause_session_id).strip() if pause_session_id else None,
+            target_id=str(target_id).strip() if target_id else None,
+            attached_session_id=str(attached_session_id).strip() if attached_session_id else None,
+            live_callframe_id=str(live_callframe_id).strip() if live_callframe_id else None,
+            timeout_ms=max(10, timeout_ms),
+            observed_paused_event=event,
+            reviewer=str(reviewer).strip() if reviewer else None,
+            require_matching_session_id=bool(match_raw),
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopExecutionResult:
+    status: str
+    execution: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "execution": self.execution,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class PausedSessionAutomaticLoopExecutionManager:
+    """Execute at most one reviewed automatic-loop iteration through the loop executor."""
+
+    def execute(self, page: BrowserPage | None, spec: PausedSessionAutomaticLoopExecutionSpec | None) -> PausedSessionAutomaticLoopExecutionResult:
+        blockers = self._blockers(spec)
+        if blockers:
+            payload = self._payload(spec, status="blocked", blockers=blockers)
+            return PausedSessionAutomaticLoopExecutionResult(status="blocked", execution=payload, side_effect_policy=self._side_effect_policy({}), reason=blockers[0])
+        if spec and not spec.execute_automatic_loop:
+            payload = self._payload(spec, status="ready_for_review", blockers=[])
+            return PausedSessionAutomaticLoopExecutionResult(status="ready_for_review", execution=payload, side_effect_policy=self._side_effect_policy({}))
+        if spec and not spec.review_approved:
+            payload = self._payload(spec, status="review_required", blockers=["review_approval_required"])
+            return PausedSessionAutomaticLoopExecutionResult(status="review_required", execution=payload, side_effect_policy=self._side_effect_policy({}), reason="review_approval_required")
+        assert spec is not None
+        loop_spec = PausedSessionMultiStepLoopExecutionSpec(
+            loop_plan=spec.loop_plan,
+            multi_step_workflow=spec.multi_step_workflow,
+            live_callframe_recovery=spec.live_callframe_recovery,
+            cross_process_attach_probe=spec.cross_process_attach_probe,
+            execute_loop_iteration=True,
+            review_approved=True,
+            selected_step_index=self._selected_step_index(spec),
+            pause_session_id=spec.pause_session_id,
+            target_id=spec.target_id,
+            attached_session_id=spec.attached_session_id,
+            live_callframe_id=spec.live_callframe_id,
+            timeout_ms=spec.timeout_ms,
+            observed_paused_event=spec.observed_paused_event,
+            reviewer=spec.reviewer,
+            require_matching_session_id=spec.require_matching_session_id,
+        )
+        result = PausedSessionMultiStepLoopExecutionManager().execute(page, loop_spec)
+        inner = result.execution if isinstance(result.execution, dict) else {}
+        inner_policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+        status = "executed" if result.status == "executed" else result.status
+        blockers_after = [] if status == "executed" else [result.reason or "automatic_loop_iteration_execution_failed"]
+        payload = self._payload(spec, status=status, blockers=blockers_after, inner_result=inner, inner_policy=inner_policy, error=result.error)
+        return PausedSessionAutomaticLoopExecutionResult(
+            status=status,
+            execution=payload,
+            side_effect_policy=self._side_effect_policy(inner_policy),
+            reason=blockers_after[0] if blockers_after else None,
+            error=result.error,
+        )
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionAutomaticLoopExecutionSpec | None) -> list[str]:
+        if spec is None:
+            return ["automatic_loop_execution_request_missing"]
+        blockers: list[str] = []
+        gate = spec.bounded_executor_gate
+        journal = spec.transaction_journal
+        if not gate:
+            blockers.append("bounded_executor_gate_required")
+        elif gate.get("status") != "ready_for_review" or gate.get("bounded_executor_gate_ready_for_review") is not True:
+            blockers.append("bounded_executor_gate_not_ready")
+        if gate and gate.get("automatic_loop_executed") is True:
+            blockers.append("bounded_executor_gate_already_executed")
+        if gate and gate.get("ready_to_execute_now") is True:
+            blockers.append("bounded_executor_gate_ready_to_execute_claim_detected")
+        if not journal:
+            blockers.append("transaction_journal_required")
+        elif journal.get("status") != "written" or journal.get("journal_written") is not True:
+            blockers.append("transaction_journal_not_written")
+        journal_summary = journal.get("journal_summary") if isinstance(journal.get("journal_summary"), dict) else {}
+        if journal and (journal.get("automatic_loop_executed") is True or journal_summary.get("automatic_loop_executed") is True):
+            blockers.append("transaction_journal_already_executed")
+        if gate and journal and gate.get("transaction_id") and journal.get("transaction_id") and gate.get("transaction_id") != journal.get("transaction_id"):
+            blockers.append("transaction_id_mismatch")
+        if gate and journal and gate.get("journal_id") and journal.get("journal_id") and gate.get("journal_id") != journal.get("journal_id"):
+            blockers.append("journal_id_mismatch")
+        if spec.max_iterations != 1:
+            blockers.append("automatic_loop_mvp_allows_one_iteration_only")
+        blockers.extend(PausedSessionMultiStepLoopExecutionManager._blockers(cls._loop_spec(spec)))
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _loop_spec(cls, spec: PausedSessionAutomaticLoopExecutionSpec | None) -> PausedSessionMultiStepLoopExecutionSpec | None:
+        if spec is None:
+            return None
+        return PausedSessionMultiStepLoopExecutionSpec(
+            loop_plan=spec.loop_plan,
+            multi_step_workflow=spec.multi_step_workflow,
+            live_callframe_recovery=spec.live_callframe_recovery,
+            cross_process_attach_probe=spec.cross_process_attach_probe,
+            execute_loop_iteration=False,
+            review_approved=False,
+            selected_step_index=cls._selected_step_index(spec),
+            pause_session_id=spec.pause_session_id,
+            target_id=spec.target_id,
+            attached_session_id=spec.attached_session_id,
+            live_callframe_id=spec.live_callframe_id,
+            timeout_ms=spec.timeout_ms,
+            observed_paused_event=spec.observed_paused_event,
+            reviewer=spec.reviewer,
+            require_matching_session_id=spec.require_matching_session_id,
+        )
+
+    @classmethod
+    def _selected_step_index(cls, spec: PausedSessionAutomaticLoopExecutionSpec | None) -> int:
+        if spec is None:
+            return 0
+        if spec.selected_step_index is not None:
+            return spec.selected_step_index
+        loop_spec = cls._loop_spec_without_selected(spec)
+        return PausedSessionMultiStepLoopExecutionManager._selected_step_index(loop_spec)
+
+    @staticmethod
+    def _loop_spec_without_selected(spec: PausedSessionAutomaticLoopExecutionSpec) -> PausedSessionMultiStepLoopExecutionSpec:
+        return PausedSessionMultiStepLoopExecutionSpec(
+            loop_plan=spec.loop_plan,
+            multi_step_workflow=spec.multi_step_workflow,
+            live_callframe_recovery=spec.live_callframe_recovery,
+            cross_process_attach_probe=spec.cross_process_attach_probe,
+            pause_session_id=spec.pause_session_id,
+            target_id=spec.target_id,
+            attached_session_id=spec.attached_session_id,
+            live_callframe_id=spec.live_callframe_id,
+        )
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: PausedSessionAutomaticLoopExecutionSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        inner_result: dict[str, Any] | None = None,
+        inner_policy: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        gate = spec.bounded_executor_gate if spec else {}
+        journal = spec.transaction_journal if spec else {}
+        inner = inner_result or {}
+        policy = inner_policy or {}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-execution-result.v1",
+            "status": status,
+            "transaction_id": journal.get("transaction_id") or gate.get("transaction_id"),
+            "journal_id": journal.get("journal_id") or gate.get("journal_id"),
+            "gate_status": gate.get("status"),
+            "loop_id": gate.get("loop_id") or (spec.loop_plan.get("loop_id") if spec else None),
+            "workflow_id": gate.get("workflow_id") or (spec.multi_step_workflow.get("workflow_id") if spec else None),
+            "pause_session_id": spec.pause_session_id if spec else gate.get("pause_session_id"),
+            "target_id": spec.target_id if spec else gate.get("target_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "execute_automatic_loop_requested": bool(spec and spec.execute_automatic_loop),
+            "review_approved": bool(spec and spec.review_approved),
+            "bounded_one_iteration_only": True,
+            "max_iterations": spec.max_iterations if spec else 1,
+            "selected_step_index": cls._selected_step_index(spec),
+            "executed_iteration_count": 1 if status == "executed" else 0,
+            "iteration_results": [inner] if inner else [],
+            "delegated_executor_artifact": "workspace/paused-session-multi-step-loop-execution.json",
+            "delegated_executor_status": inner.get("status"),
+            "checkpoint_required": status == "executed",
+            "expected_followup_checkpoint": "workspace/paused-session-cross-process-continuation-checkpoint.json",
+            "expected_followup_loop_plan": "workspace/paused-session-multi-step-loop-plan.json",
+            "automatic_loop_executed": status == "executed",
+            "automatic_loop_one_iteration_executed": status == "executed",
+            "loop_advanced": False,
+            "queue_advanced": False,
+            "long_lived_session_managed": False,
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers, inner=inner),
+            "side_effect_policy": cls._side_effect_policy(policy),
+            "error": error,
+        }
+
+    @staticmethod
+    def _side_effect_policy(inner_policy: dict[str, Any]) -> dict[str, Any]:
+        policy = PausedSessionMultiStepLoopExecutionManager._side_effect_policy(inner_policy)
+        policy.update(
+            {
+                "automatic_loop_executor": True,
+                "automatic_loop_one_iteration_executed": bool(policy.get("multi_step_loop_iteration_executed")),
+                "automatic_multi_step_loop": False,
+                "bounded_one_iteration_only": True,
+                "automatic_queue_advance": False,
+                "loop_advanced": False,
+                "queue_advanced": False,
+                "long_lived_cross_process_session_managed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            }
+        )
+        return policy
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "automatic_loop_execution_request_missing": ("request", "No automatic-loop execution request was provided.", "request_paused_session_automatic_loop_execution"),
+            "bounded_executor_gate_required": ("gate", "A ready bounded executor gate descriptor is required.", "review_paused_session_automatic_loop_bounded_executor_gate"),
+            "bounded_executor_gate_not_ready": ("gate", "The bounded executor gate is not ready for review.", "resolve_bounded_executor_gate_blockers"),
+            "bounded_executor_gate_already_executed": ("gate", "The bounded executor gate claims the automatic loop already executed.", "audit_automatic_loop_execution_state"),
+            "bounded_executor_gate_ready_to_execute_claim_detected": ("safety", "The gate unexpectedly claims ready_to_execute_now; execution must stay explicit.", "audit_bounded_executor_gate_ready_claim"),
+            "transaction_journal_required": ("journal", "A written automatic-loop transaction journal is required.", "record_paused_session_automatic_loop_transaction_journal"),
+            "transaction_journal_not_written": ("journal", "The automatic-loop transaction journal has not been written.", "write_reviewed_transaction_journal"),
+            "transaction_journal_already_executed": ("journal", "The transaction journal claims the automatic loop already executed.", "audit_automatic_loop_transaction_journal"),
+            "transaction_id_mismatch": ("transaction", "Gate and journal transaction ids do not match.", "refresh_matching_gate_and_journal"),
+            "journal_id_mismatch": ("journal", "Gate and journal ids do not match.", "refresh_matching_gate_and_journal"),
+            "automatic_loop_mvp_allows_one_iteration_only": ("budget", "The current automatic-loop executor MVP allows exactly one iteration.", "reduce_automatic_loop_iteration_budget_to_one"),
+            "review_approval_required": ("review", "Executing automatic-loop iteration requires explicit review approval.", "approve_paused_session_automatic_loop_execution"),
+            "automatic_loop_iteration_execution_failed": ("runtime", "The delegated one-iteration loop executor failed.", "inspect_automatic_loop_execution_result"),
+        }
+        fallback = PausedSessionMultiStepLoopExecutionManager._blocker_details(blockers)
+        mapped: list[dict[str, Any]] = []
+        fallback_by_code = {item.get("code"): item for item in fallback}
+        for blocker in blockers:
+            if blocker in catalog:
+                category, explanation, next_action = catalog[blocker]
+                mapped.append({"code": blocker, "category": category, "explanation": explanation, "next_action": next_action})
+            else:
+                mapped.append(fallback_by_code.get(blocker, {"code": blocker, "category": "unknown", "explanation": blocker, "next_action": "inspect_automatic_loop_execution_result"}))
+        return mapped
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str], inner: dict[str, Any]) -> str:
+        if blockers:
+            return "inspect_paused_session_automatic_loop_execution_blockers"
+        if status in {"ready_for_review", "review_required"}:
+            return "approve_paused_session_automatic_loop_execution"
+        if status == "executed" and inner.get("paused_event_captured"):
+            return "checkpoint_automatic_loop_iteration_captured_pause"
+        if status == "executed":
+            return "review_paused_session_automatic_loop_execution_result"
+        return "inspect_paused_session_automatic_loop_execution"
+
+
 class PausedSessionLiveContinuationPreflightManager:
     """Inspect whether a paused session can be live-continued without sending CDP commands."""
 

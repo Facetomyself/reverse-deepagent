@@ -164,6 +164,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopExecutorPreflightSpec,
     PausedSessionAutomaticLoopExecutorApprovalPlanManager,
     PausedSessionAutomaticLoopExecutorApprovalPlanSpec,
+    PausedSessionAutomaticLoopExecutionManager,
+    PausedSessionAutomaticLoopExecutionSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1624,6 +1626,67 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_execution_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopExecutionSpec.from_context(context)
+            result = PausedSessionAutomaticLoopExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_automatic_loop_execution_status={result.status}",
+                f"paused_session_automatic_loop_execution_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_execution_transaction_id={execution.get('transaction_id')}",
+                f"paused_session_automatic_loop_execution_journal_id={execution.get('journal_id')}",
+                f"paused_session_automatic_loop_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"paused_session_automatic_loop_execution_execute_requested={execution.get('execute_automatic_loop_requested', False)}",
+                f"paused_session_automatic_loop_execution_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_automatic_loop_execution_executed_iterations={execution.get('executed_iteration_count', 0)}",
+                f"paused_session_automatic_loop_execution_checkpoint_required={execution.get('checkpoint_required', False)}",
+                f"paused_session_automatic_loop_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_automatic_loop_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_automatic_loop_execution_bounded_one_iteration_only={policy.get('bounded_one_iteration_only', False)}",
+                f"paused_session_automatic_loop_execution_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_execution_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_execution_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
+                f"paused_session_automatic_loop_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-execution-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit-review-only bounded paused-session automatic-loop execution result.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "transaction_id": execution.get("transaction_id"),
+                        "journal_id": execution.get("journal_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "executed_iteration_count": execution.get("executed_iteration_count", 0),
+                        "checkpoint_required": execution.get("checkpoint_required", False),
+                        "delegated_executor_artifact": execution.get("delegated_executor_artifact"),
+                        "loop_advanced": execution.get("loop_advanced", False),
+                        "queue_advanced": execution.get("queue_advanced", False),
+                        "long_lived_session_managed": execution.get("long_lived_session_managed", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["paused_session_automatic_loop_one_iteration"] if execution.get("automatic_loop_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_paused_session_automatic_loop_execution_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
             )
         if self._is_paused_session_automatic_loop_executor_approval_plan_request(protection_name, context):
             spec = PausedSessionAutomaticLoopExecutorApprovalPlanSpec.from_context(context)
@@ -6849,6 +6912,8 @@ class NativeWebRuntime(WebReverseRuntime):
         if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
             return False
         normalized = protection_name.strip().lower()
+        if NativeWebRuntime._is_paused_session_automatic_loop_execution_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_automatic_loop_executor_approval_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_automatic_loop_executor_preflight_request(protection_name, context):
@@ -6905,6 +6970,32 @@ class NativeWebRuntime(WebReverseRuntime):
                 "debugger_session_action",
                 "debuggerSessionAction",
                 "session_action",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_automatic_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_execution_plan_request(protection_name, context):
+            return False
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-automatic-loop-execution",
+            "execute-paused-session-automatic-loop",
+            "execute-bounded-paused-session-automatic-loop",
+            "paused-session-bounded-automatic-loop-execution",
+            "reviewed-paused-session-automatic-loop-execution",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_automatic_loop_execution",
+                "pausedSessionAutomaticLoopExecution",
+                "paused-session-automatic-loop-execution",
+                "execute_paused_session_automatic_loop",
+                "executePausedSessionAutomaticLoop",
+                "execute_bounded_paused_session_automatic_loop",
+                "executeBoundedPausedSessionAutomaticLoop",
             )
         )
 
