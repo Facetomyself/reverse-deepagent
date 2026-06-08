@@ -12,6 +12,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerActionPlanSpec,
     SourceMapConsumerMaterializationManager,
     SourceMapConsumerMaterializationSpec,
+    SourceMapTypedPayloadPreflightManager,
+    SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
     SourceMapReadinessSpec,
     SourceMapSourceContentManager,
@@ -814,6 +816,110 @@ class SourceMapConsumerMaterializationManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("requested_action_id_not_found:missing-action", result.descriptor["blockers"])
         self.assertEqual(result.descriptor["next_action"], "choose_action_ids_from_source_map_consumer_action_plan")
+
+
+class SourceMapTypedPayloadPreflightManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_materialization() -> dict:
+        spec = SourceMapConsumerMaterializationSpec.from_context(
+            {
+                "source_map_consumer_materialization": True,
+                "source_map_consumer_action_plan": SourceMapConsumerMaterializationManagerTests._ready_action_plan(),
+                "source_map_lookup": {
+                    "status": "ready_for_review",
+                    "location": {"strategy": "source_map_generated_exact", "source": "src/sign.ts", "line_number": 0, "column_number": 4},
+                },
+                "source_map_source_content": {
+                    "status": "ready_for_review",
+                    "content_summary": {"sha256": "abc123", "raw_content_exported": False, "preview_exported": False},
+                },
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "scope_candidate_count": 1,
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                },
+            }
+        )
+        return SourceMapConsumerMaterializationManager().review(spec).descriptor
+
+    def test_source_map_typed_payload_preflight_reviews_executor_inputs_without_side_effects(self) -> None:
+        materialization = self._ready_materialization()
+        spec = SourceMapTypedPayloadPreflightSpec.from_context(
+            {
+                "source_map_typed_payload_preflight": True,
+                "source_map_consumer_materialization": materialization,
+            }
+        )
+
+        result = SourceMapTypedPayloadPreflightManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-typed-payload-preflight.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["plan_only"])
+        self.assertTrue(descriptor["preflight_only"])
+        self.assertEqual(descriptor["typed_payload_schema_version"], "reverse-deepagent.source-map-consumer-typed-review-payload.v1")
+        self.assertEqual(descriptor["source_materialization_status"], "ready_for_review")
+        self.assertEqual(descriptor["typed_payload_count"], 4)
+        self.assertEqual(descriptor["preflight_payload_count"], 4)
+        self.assertTrue(descriptor["ready_for_followthrough_review"])
+        self.assertFalse(descriptor["followthrough_executor_invoked"])
+        surfaces = {item["consumer"]: item["followthrough_review_surface"] for item in descriptor["preflight_payloads"]}
+        self.assertEqual(surfaces["debugger"], "review_debugger_location_executor_input")
+        self.assertEqual(surfaces["source-logpoint"], "review_source_logpoint_executor_input")
+        self.assertEqual(surfaces["rebuild"], "review_rebuild_source_metadata_executor_input")
+        self.assertEqual(surfaces["hook"], "review_hook_symbol_scope_executor_input")
+        for item in descriptor["preflight_payloads"]:
+            self.assertEqual(item["status"], "ready_for_review")
+            self.assertTrue(item["ready_for_followthrough_review"])
+            self.assertFalse(item["execute_automatically"])
+            self.assertFalse(item["executor_invoked"])
+            self.assertFalse(item["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(item["side_effect_policy"]["logpoint_installed"])
+            self.assertFalse(item["side_effect_policy"]["hook_installed"])
+            self.assertFalse(item["side_effect_policy"]["rebuild_executed"])
+            self.assertFalse(item["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(item["side_effect_policy"]["mobile_runtime_used"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_evaluated"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        self.assertEqual(descriptor["next_action"], "review_source_map_typed_payload_preflight_before_explicit_debugger_logpoint_rebuild_or_hook_execution")
+
+    def test_source_map_typed_payload_preflight_filters_requested_consumers(self) -> None:
+        materialization = self._ready_materialization()
+        spec = SourceMapTypedPayloadPreflightSpec.from_context(
+            {
+                "source_map_typed_payload_preflight": True,
+                "source_map_consumer_materialization": materialization,
+                "source_map_typed_payload_consumers": ["debugger", "rebuild"],
+            }
+        )
+
+        result = SourceMapTypedPayloadPreflightManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.descriptor["preflight_payload_count"], 2)
+        self.assertEqual(result.descriptor["selected_consumers"], ["debugger", "rebuild"])
+
+    def test_source_map_typed_payload_preflight_blocks_unsafe_payload_claims(self) -> None:
+        materialization = self._ready_materialization()
+        payload = dict(materialization["typed_review_payloads"][0])
+        payload["safety"] = dict(payload["safety"])
+        payload["safety"]["cdp_command_sent"] = True
+        spec = SourceMapTypedPayloadPreflightSpec.from_context(
+            {
+                "source_map_typed_payload_preflight": True,
+                "typed_review_payloads": [payload],
+            }
+        )
+
+        result = SourceMapTypedPayloadPreflightManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("typed_payload_preflight_not_ready:review-debugger-location-use", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["ready_for_followthrough_review"])
 
 
 class SourceMapRemapperTests(unittest.TestCase):

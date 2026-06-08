@@ -979,6 +979,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_source_map_readiness": "triage",
     "workspace_source_map_consumer_action_plan": "triage",
     "workspace_source_map_consumer_materialization": "triage",
+    "workspace_source_map_typed_payload_preflight": "triage",
     "workspace_bundler_symbol_scope": "triage",
     "workspace_source_logpoints": "trace",
     "workspace_source_logpoint_timeline": "trace",
@@ -1928,6 +1929,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-map-consumer-action-plan.json"] = evidence.details
         elif evidence.source == "source_map_consumer_materialization":
             payloads["source-map-consumer-materialization.json"] = evidence.details
+        elif evidence.source == "source_map_typed_payload_preflight":
+            payloads["source-map-typed-payload-preflight.json"] = evidence.details
         elif evidence.source == "bundler_symbol_scope":
             payloads["bundler-symbol-scope.json"] = evidence.details
         elif evidence.source == "source_logpoints":

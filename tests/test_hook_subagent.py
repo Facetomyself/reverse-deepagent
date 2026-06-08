@@ -248,6 +248,37 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("source_map_consumer_materialization_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "provide_ready_source_map_consumer_action_plan_descriptor")
 
+    def test_review_hook_artifacts_warns_for_source_map_typed_payload_preflight_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_typed_payload_preflight": {
+                "status": "ready_for_review",
+                "preflight_payload_count": 2,
+                "next_action": "review_source_map_typed_payload_preflight_before_explicit_debugger_logpoint_rebuild_or_hook_execution",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_typed_payload_preflight_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_typed_payload_preflight_before_explicit_debugger_logpoint_rebuild_or_hook_execution")
+        self.assertEqual(result["summary"]["source_map_typed_payload_preflight_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["source_map_typed_payload_preflight_count"], 2)
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["hook_installed"])
+        self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_typed_payload_preflight_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_typed_payload_preflight": {"status": "blocked", "reason": "typed_review_payloads_missing"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_typed_payload_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_source_map_consumer_materialization_with_typed_payloads")
+
     def test_review_hook_artifacts_blocks_failed_source_map_consumer_action_plan_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {"source_map_consumer_action_plan": {"status": "blocked", "reason": "source_map_readiness_descriptor_missing"}}

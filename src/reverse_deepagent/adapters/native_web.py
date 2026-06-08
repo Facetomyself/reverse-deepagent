@@ -218,6 +218,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerActionPlanSpec,
     SourceMapConsumerMaterializationManager,
     SourceMapConsumerMaterializationSpec,
+    SourceMapTypedPayloadPreflightManager,
+    SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
     SourceMapReadinessSpec,
     SourceMapSourceContentManager,
@@ -641,6 +643,90 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_typed_payload_preflight_request(protection_name, context):
+            spec = SourceMapTypedPayloadPreflightSpec.from_context(context)
+            result = SourceMapTypedPayloadPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            preflights = descriptor.get("preflight_payloads") if isinstance(descriptor.get("preflight_payloads"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            consumers = sorted({str(item.get("consumer")) for item in preflights if isinstance(item, dict) and item.get("consumer")})
+            surfaces = sorted({str(item.get("followthrough_review_surface")) for item in preflights if isinstance(item, dict) and item.get("followthrough_review_surface")})
+            verification = [
+                f"source_map_typed_payload_preflight_status={result.status}",
+                f"source_map_typed_payload_preflight_count={len(preflights)}",
+                f"source_map_typed_payload_preflight_consumers={','.join(consumers)}",
+                f"source_map_typed_payload_preflight_surfaces={','.join(surfaces)}",
+                f"source_map_typed_payload_preflight_schema_version={descriptor.get('typed_payload_schema_version', '')}",
+                f"source_map_typed_payload_preflight_ready_for_followthrough_review={descriptor.get('ready_for_followthrough_review', False)}",
+                "source_map_typed_payload_preflight_review_only=True",
+                "source_map_typed_payload_preflight_plan_only=True",
+                "source_map_typed_payload_preflight_preflight_only=True",
+                f"source_map_typed_payload_preflight_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_typed_payload_preflight_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_typed_payload_preflight_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_typed_payload_preflight_browser_started={policy.get('browser_started', False)}",
+                f"source_map_typed_payload_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_typed_payload_preflight_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_typed_payload_preflight_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_typed_payload_preflight_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_typed_payload_preflight_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_typed_payload_preflight_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_typed_payload_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_typed_payload_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_typed_payload_preflight_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_typed_payload_preflight_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-typed-payload-preflight.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map typed payload follow-through preflight descriptor.",
+                metadata={
+                    "status": result.status,
+                    "typed_payload_schema_version": descriptor.get("typed_payload_schema_version", ""),
+                    "preflight_payload_count": len(preflights),
+                    "consumers": consumers,
+                    "followthrough_review_surfaces": surfaces,
+                    "ready_for_followthrough_review": bool(descriptor.get("ready_for_followthrough_review", False)),
+                    "review_only": True,
+                    "plan_only": True,
+                    "preflight_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_typed_payload_preflight_before_explicit_debugger_logpoint_rebuild_or_hook_execution"
+                actions = ["review_source_map_typed_payload_preflight"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_consumer_materialization_with_typed_payloads"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_typed_payload_preflight_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -9517,6 +9603,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapSourcesContent",
                 "review_source_map_source_content",
                 "reviewSourceMapSourceContent",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_typed_payload_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-typed-payload-preflight",
+            "source-map-consumer-typed-payload-preflight",
+            "source-map-followthrough-preflight",
+            "source-map-follow-through-preflight",
+            "review-source-map-typed-payload-preflight",
+            "preflight-source-map-typed-payloads",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_typed_payload_preflight",
+                "sourceMapTypedPayloadPreflight",
+                "source_map_consumer_typed_payload_preflight",
+                "sourceMapConsumerTypedPayloadPreflight",
+                "source_map_followthrough_preflight",
+                "sourceMapFollowthroughPreflight",
             )
         )
 

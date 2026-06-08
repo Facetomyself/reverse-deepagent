@@ -2876,3 +2876,15 @@ Status: implemented as a review-only typed payload hardening layer after the Ste
 Boundary: this closes only the stable typed review payload contract between reviewed Source Map consumer action plans and future explicit debugger / source-logpoint / rebuild / hook review surfaces. It does not implement automatic debugger / rebuild / source-logpoint follow-through, complete bundler lexical scope resolution, credentialed browser Source Map fetch, raw-source-aware rebuild workflows, or any mobile full runtime chain.
 
 Tests cover typed payload schema / count / consumer metadata, consumer-specific executor inputs, no-side-effect safety booleans, requested action id filtering, native-web verification / artifact metadata propagation, compileall, and source-map / native-web regressions.
+
+### Step 271：Source Map typed payload follow-through preflight descriptor baseline
+
+Status: implemented as a read-only / review-only / preflight-only descriptor after the Step 270 typed review payload metadata hardening. This is not automatic debugger execution, source-logpoint installation, hook installation, rebuild execution, Source Map fetching, browser launch, MCP integration, or an Android / iOS / mini-program full runtime chain.
+
+`SourceMapTypedPayloadPreflightManager` consumes `source-map-consumer-materialization` or explicit `typed_review_payloads`, validates the `reverse-deepagent.source-map-consumer-typed-review-payload.v1` executor inputs for debugger, source-logpoint, rebuild, and hook consumers, then emits `reverse-deepagent.source-map-typed-payload-preflight.v1` with per-payload follow-through review surfaces and fixed no-side-effect policy.
+
+`native-web` exposes this through `source-map-typed-payload-preflight` / `source-map-consumer-typed-payload-preflight` / `source-map-followthrough-preflight` / `source-map-follow-through-preflight` / `review-source-map-typed-payload-preflight` / `preflight-source-map-typed-payloads` protection names before browser session acquisition and returns `virtual://workspace/source-map-typed-payload-preflight.json`. The workspace contract indexes `workspace/source-map-typed-payload-preflight.json` with future alias `/workspace/debugger/source-map-typed-payload-preflight.json` and category `triage`; coordinator extraction / artifact category mapping classify the optional evidence source as `triage`; hook review warns when ready and blocks blocked descriptors.
+
+Boundary: this closes only the executor-input preflight layer after typed materialization. It does not execute debugger commands, install source-logpoints or hooks, run rebuilds, export raw source or previews, fetch Source Maps, start browsers, evaluate JavaScript, send CDP, call MCP, or touch Android / iOS / mini-program full runtime chains.
+
+Tests cover manager-level ready / filtered / unsafe-payload blockers, native-web route metadata and no-browser-start verification, workspace route aliasing, coordinator payload/category mapping, hook-subagent warning / blocker wiring, compileall, and source-map / native-web / workspace / coordinator / hook regressions.
