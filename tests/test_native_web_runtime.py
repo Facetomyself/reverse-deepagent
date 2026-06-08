@@ -5881,6 +5881,102 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["hook_installed"])
         self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
 
+    def test_native_web_runtime_selects_source_map_followthrough_surface_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        followthrough_review = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-review.v1",
+            "status": "ready_for_review",
+            "ready_for_explicit_review": True,
+            "followthrough_reviews": [
+                {
+                    "action_id": "review-debugger-location-use",
+                    "consumer": "debugger",
+                    "payload_kind": "debugger-location-review",
+                    "status": "ready_for_review",
+                    "explicit_review_required": True,
+                    "execute_automatically": False,
+                    "followthrough_review_surface": "review_debugger_location_executor_input",
+                    "review_prompt": "Review debugger location executor input before any CDP Debugger command.",
+                    "next_action": "review_debugger_location_before_cdp_command",
+                    "executor_input": {"location": {"url": "https://example.test/app.js", "line_number": 10, "column_number": 4}},
+                    "executor_invoked": False,
+                    "side_effect_policy": {"cdp_command_sent": False, "debugger_execution_performed": False},
+                },
+                {
+                    "action_id": "review-rebuild-source-metadata-use",
+                    "consumer": "rebuild",
+                    "payload_kind": "rebuild-source-metadata-review",
+                    "status": "ready_for_review",
+                    "explicit_review_required": True,
+                    "execute_automatically": False,
+                    "followthrough_review_surface": "review_rebuild_source_metadata_executor_input",
+                    "review_prompt": "Review digest-only rebuild metadata before generation.",
+                    "next_action": "review_rebuild_source_metadata_before_generation",
+                    "executor_input": {"source_content_digest": "abc123", "raw_source_content": None, "raw_content_exported": False, "preview_exported": False},
+                    "executor_invoked": False,
+                    "side_effect_policy": {"raw_source_content_exported": False, "preview_exported": False, "rebuild_executed": False},
+                },
+            ],
+            "followthrough_executor_invoked": False,
+            "side_effect_policy": {
+                "raw_source_content_exported": False,
+                "preview_exported": False,
+                "fetch_source_map": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "debugger_execution_performed": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-surface-selection",
+            {
+                "source_map_followthrough_review": followthrough_review,
+                "source_map_followthrough_surface_consumers": ["rebuild"],
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["select_source_map_followthrough_surface"])
+        self.assertIn("source_map_followthrough_surface_selection_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_candidate_count=2", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_selected_action_id=review-rebuild-source-metadata-use", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_selected_consumer=rebuild", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_selected_surface=review_rebuild_source_metadata_executor_input", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_ready_for_surface_review=True", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_review_only=True", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_plan_only=True", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_selection_only=True", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_handoff_only=True", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_logpoint_installed=False", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_hook_installed=False", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_rebuild_executed=False", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_surface_selection_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_rebuild_source_metadata_before_generation")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-surface-selection.json")
+        self.assertEqual(result.artifacts[0].metadata["candidate_review_count"], 2)
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "rebuild")
+        self.assertEqual(result.artifacts[0].metadata["selected_payload_kind"], "rebuild-source-metadata-review")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_surface_review"])
+        self.assertTrue(result.artifacts[0].metadata["selection_only"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
     def test_native_web_runtime_reviews_source_map_readiness_without_starting_browser(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

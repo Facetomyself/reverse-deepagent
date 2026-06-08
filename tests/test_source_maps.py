@@ -14,6 +14,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerMaterializationSpec,
     SourceMapFollowthroughReviewManager,
     SourceMapFollowthroughReviewSpec,
+    SourceMapFollowthroughSurfaceSelectionManager,
+    SourceMapFollowthroughSurfaceSelectionSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
@@ -1019,6 +1021,93 @@ class SourceMapFollowthroughReviewManagerTests(unittest.TestCase):
         self.assertIn("source_map_typed_payload_preflight_cdp_command_detected", result.descriptor["blockers"])
         self.assertFalse(result.descriptor["ready_for_explicit_review"])
         self.assertEqual(result.descriptor["next_action"], "resolve_source_map_typed_payload_preflight_blockers")
+
+
+class SourceMapFollowthroughSurfaceSelectionManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_followthrough_review() -> dict:
+        spec = SourceMapFollowthroughReviewSpec.from_context(
+            {
+                "source_map_followthrough_review": True,
+                "source_map_typed_payload_preflight": SourceMapFollowthroughReviewManagerTests._ready_preflight(),
+            }
+        )
+        return SourceMapFollowthroughReviewManager().review(spec).descriptor
+
+    def test_source_map_followthrough_surface_selection_selects_one_surface_without_side_effects(self) -> None:
+        spec = SourceMapFollowthroughSurfaceSelectionSpec.from_context(
+            {
+                "source_map_followthrough_surface_selection": True,
+                "source_map_followthrough_review": self._ready_followthrough_review(),
+                "source_map_followthrough_surface_consumers": ["debugger"],
+            }
+        )
+
+        result = SourceMapFollowthroughSurfaceSelectionManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-followthrough-surface-selection.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["plan_only"])
+        self.assertTrue(descriptor["selection_only"])
+        self.assertTrue(descriptor["handoff_only"])
+        self.assertEqual(descriptor["source_followthrough_review_schema_version"], "reverse-deepagent.source-map-followthrough-review.v1")
+        self.assertEqual(descriptor["source_followthrough_review_status"], "ready_for_review")
+        self.assertEqual(descriptor["candidate_review_count"], 4)
+        self.assertEqual(descriptor["selected_consumer"], "debugger")
+        self.assertEqual(descriptor["selected_action_id"], "review-debugger-location-use")
+        self.assertEqual(descriptor["selected_followthrough_review_surface"], "review_debugger_location_executor_input")
+        self.assertEqual(descriptor["selected_review"]["payload_kind"], "debugger-location-review")
+        self.assertTrue(descriptor["ready_for_surface_review"])
+        self.assertFalse(descriptor["surface_executor_invoked"])
+        self.assertFalse(descriptor["debugger_executed"])
+        self.assertFalse(descriptor["source_logpoint_installed"])
+        self.assertFalse(descriptor["hook_installed"])
+        self.assertFalse(descriptor["rebuild_executed"])
+        self.assertIn("CDP Debugger command", descriptor["downstream_review_prompt"])
+        self.assertEqual(descriptor["downstream_next_action"], "review_debugger_location_before_cdp_command")
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_evaluated"])
+        self.assertFalse(result.side_effect_policy["surface_executor_invoked"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        self.assertEqual(descriptor["next_action"], "review_debugger_location_before_cdp_command")
+
+    def test_source_map_followthrough_surface_selection_blocks_ambiguous_selection(self) -> None:
+        spec = SourceMapFollowthroughSurfaceSelectionSpec.from_context(
+            {
+                "source_map_followthrough_surface_selection": True,
+                "source_map_followthrough_review": self._ready_followthrough_review(),
+            }
+        )
+
+        result = SourceMapFollowthroughSurfaceSelectionManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_followthrough_surface_selector_missing", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["ready_for_surface_review"])
+        self.assertEqual(result.descriptor["next_action"], "choose_one_source_map_followthrough_surface")
+
+    def test_source_map_followthrough_surface_selection_blocks_unsafe_selected_review(self) -> None:
+        review = self._ready_followthrough_review()
+        selected = next(item for item in review["followthrough_reviews"] if item["consumer"] == "debugger")
+        selected["side_effect_policy"] = dict(selected["side_effect_policy"])
+        selected["side_effect_policy"]["cdp_command_sent"] = True
+        spec = SourceMapFollowthroughSurfaceSelectionSpec.from_context(
+            {
+                "source_map_followthrough_surface_selection": True,
+                "source_map_followthrough_review": review,
+                "source_map_followthrough_surface_consumers": ["debugger"],
+            }
+        )
+
+        result = SourceMapFollowthroughSurfaceSelectionManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("selected_followthrough_review_cdp_command_detected", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["ready_for_surface_review"])
+        self.assertEqual(result.descriptor["next_action"], "fix_selected_source_map_followthrough_surface_before_review")
 
 
 class SourceMapRemapperTests(unittest.TestCase):

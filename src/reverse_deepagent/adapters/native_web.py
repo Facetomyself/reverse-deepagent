@@ -220,6 +220,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerMaterializationSpec,
     SourceMapFollowthroughReviewManager,
     SourceMapFollowthroughReviewSpec,
+    SourceMapFollowthroughSurfaceSelectionManager,
+    SourceMapFollowthroughSurfaceSelectionSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
     SourceMapReadinessManager,
@@ -645,6 +647,91 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_surface_selection_request(protection_name, context):
+            spec = SourceMapFollowthroughSurfaceSelectionSpec.from_context(context)
+            result = SourceMapFollowthroughSurfaceSelectionManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            selected_review = descriptor.get("selected_review") if isinstance(descriptor.get("selected_review"), dict) else {}
+            verification = [
+                f"source_map_followthrough_surface_selection_status={result.status}",
+                f"source_map_followthrough_surface_selection_candidate_count={descriptor.get('candidate_review_count', 0)}",
+                f"source_map_followthrough_surface_selection_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_followthrough_surface_selection_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_surface_selection_selected_surface={descriptor.get('selected_followthrough_review_surface', '')}",
+                f"source_map_followthrough_surface_selection_ready_for_surface_review={descriptor.get('ready_for_surface_review', False)}",
+                "source_map_followthrough_surface_selection_review_only=True",
+                "source_map_followthrough_surface_selection_plan_only=True",
+                "source_map_followthrough_surface_selection_selection_only=True",
+                "source_map_followthrough_surface_selection_handoff_only=True",
+                f"source_map_followthrough_surface_selection_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_followthrough_surface_selection_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_followthrough_surface_selection_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_followthrough_surface_selection_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_surface_selection_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_surface_selection_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_followthrough_surface_selection_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_surface_selection_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_followthrough_surface_selection_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_surface_selection_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_surface_selection_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_surface_selection_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_surface_selection_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_surface_selection_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-surface-selection.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map follow-through single-surface selection descriptor.",
+                metadata={
+                    "status": result.status,
+                    "candidate_review_count": descriptor.get("candidate_review_count", 0),
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""),
+                    "selected_payload_kind": selected_review.get("payload_kind", ""),
+                    "ready_for_surface_review": bool(descriptor.get("ready_for_surface_review", False)),
+                    "review_only": True,
+                    "plan_only": True,
+                    "selection_only": True,
+                    "handoff_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_selected_source_map_followthrough_surface_before_execution"
+                actions = ["select_source_map_followthrough_surface"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_ready_source_map_followthrough_review_descriptor"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_surface_selection_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -9741,6 +9828,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapFollowthroughReviewSurface",
                 "source_map_consumer_followthrough_review",
                 "sourceMapConsumerFollowthroughReview",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_followthrough_surface_selection_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-followthrough-surface-selection",
+            "source-map-followthrough-surface-review",
+            "source-map-followthrough-surface-selector",
+            "select-source-map-followthrough-surface",
+            "review-source-map-followthrough-surface-selection",
+            "review-selected-source-map-followthrough-surface",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_followthrough_surface_selection",
+                "sourceMapFollowthroughSurfaceSelection",
+                "source_map_followthrough_surface_review",
+                "sourceMapFollowthroughSurfaceReview",
+                "source_map_followthrough_surface_selector",
+                "sourceMapFollowthroughSurfaceSelector",
             )
         )
 

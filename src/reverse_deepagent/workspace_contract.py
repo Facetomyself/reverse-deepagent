@@ -469,6 +469,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_source_map_consumer_materialization", "workspace/source-map-consumer-materialization.json", "/workspace/debugger/", "source-map-consumer-materialization.json", "triage", ("debugger", "hook", "review", "rebuild")),
         ("workspace_source_map_typed_payload_preflight", "workspace/source-map-typed-payload-preflight.json", "/workspace/debugger/", "source-map-typed-payload-preflight.json", "triage", ("debugger", "hook", "review", "rebuild")),
         ("workspace_source_map_followthrough_review", "workspace/source-map-followthrough-review.json", "/workspace/debugger/", "source-map-followthrough-review.json", "triage", ("debugger", "hook", "review", "rebuild")),
+        ("workspace_source_map_followthrough_surface_selection", "workspace/source-map-followthrough-surface-selection.json", "/workspace/debugger/", "source-map-followthrough-surface-selection.json", "triage", ("debugger", "hook", "review", "rebuild")),
         ("workspace_bundler_symbol_scope", "workspace/bundler-symbol-scope.json", "/workspace/hooks/", "bundler-symbol-scope.json", "triage", ("hook", "debugger", "review")),
         ("workspace_source_logpoints", "workspace/source-logpoints.json", "/workspace/debugger/", "source-logpoints.json", "trace", ("debugger", "hook")),
         ("workspace_source_logpoint_timeline", "workspace/source-logpoint-timeline.json", "/workspace/timeline/", "source-logpoint-timeline.json", "trace", ("timeline", "debugger")),
