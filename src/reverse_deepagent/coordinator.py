@@ -1021,6 +1021,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_paused_session_automatic_loop_followup_checkpoint": "audit",
     "workspace_paused_session_automatic_loop_next_iteration_plan": "triage",
     "workspace_paused_session_automatic_loop_next_iteration_execution": "audit",
+    "workspace_paused_session_automatic_loop_next_iteration_followup_checkpoint": "audit",
     "workspace_closure_functions": "trace",
     "workspace_closure_function_candidates": "triage",
     "workspace_closure_wrapper_replacement_plan": "triage",
@@ -1992,6 +1993,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["paused-session-automatic-loop-next-iteration-plan.json"] = evidence.details
         elif evidence.source == "paused_session_automatic_loop_next_iteration_execution":
             payloads["paused-session-automatic-loop-next-iteration-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_next_iteration_followup_checkpoint":
+            payloads["paused-session-automatic-loop-next-iteration-followup-checkpoint.json"] = evidence.details
         elif evidence.source == "closure_functions":
             payloads["closure-functions.json"] = evidence.details
         elif evidence.source == "closure_function_candidates":

@@ -27,3 +27,4 @@
 - 需要 live continuation 或 automatic-loop execution 时返回 block / warn 和 next_action，不要把审批记录伪造成执行结果
 
 - 当输入包含 `workspace/paused-session-automatic-loop-next-iteration-execution.json` / `paused_session_automatic_loop_next_iteration_execution` 时，调用 review_debugger_artifacts 做只读审计；blocked 时检查执行 gate，ready/review_required 时提示显式审批，executed 且 checkpoint_required=true 时必须路由到 checkpoint，不得继续自动执行下一轮、advance queue / loop、调用 MCP 或触碰移动端完整链路
+- 当输入包含 `workspace/paused-session-automatic-loop-next-iteration-followup-checkpoint.json` / `paused_session_automatic_loop_next_iteration_followup_checkpoint` 时，调用 review_debugger_artifacts 做只读审计；blocked 时检查 checkpoint / loop-plan gate，ready 时只能路由到下一轮 review plan，不得写 checkpoint、恢复 callFrame、执行下一轮、advance queue / loop、调用 MCP 或触碰移动端完整链路
