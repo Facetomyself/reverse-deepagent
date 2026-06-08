@@ -47,6 +47,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopFollowingIterationPlanSpec,
     PausedSessionAutomaticLoopMultiIterationPolicyManager,
     PausedSessionAutomaticLoopMultiIterationPolicySpec,
+    PausedSessionAutomaticLoopMultiIterationExecutorPreflightManager,
+    PausedSessionAutomaticLoopMultiIterationExecutorPreflightSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -2723,6 +2725,81 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertTrue(policy["per_iteration_gates"][0]["requires_explicit_review"])
         self.assertFalse(policy["per_iteration_gates"][0]["would_execute_in_this_descriptor"])
         self.assertFalse(result.side_effect_policy["automatic_multi_iteration_loop"])
+        self.assertFalse(result.side_effect_policy["loop_advanced"])
+        self.assertFalse(result.side_effect_policy["queue_advanced"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_multi_iteration_executor_preflight_reviews_policy_without_execution(self) -> None:
+        policy = {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-policy.v1",
+            "status": "ready_for_review",
+            "ready_for_review": True,
+            "policy_id": "automatic-loop-policy:policy-tx-1",
+            "transaction_id": "policy-tx-1",
+            "loop_id": "policy-loop-1",
+            "workflow_id": "policy-workflow-1",
+            "budget_policy": {
+                "max_policy_iterations": 3,
+                "automatic_multi_iteration_executor_implemented": False,
+                "automatic_multi_iteration_execution_allowed_now": False,
+                "requires_review_per_iteration": True,
+                "requires_checkpoint_after_each_iteration": True,
+                "requires_fresh_live_callframe_per_iteration": True,
+                "stop_after_each_checkpoint": True,
+            },
+            "per_iteration_gates": [
+                {
+                    "iteration_number": index,
+                    "requires_explicit_review": True,
+                    "requires_checkpoint_after_iteration": True,
+                    "requires_fresh_live_callframe": True,
+                    "requires_stop_for_review_after_checkpoint": True,
+                    "would_execute_in_this_descriptor": False,
+                    "would_advance_queue_in_this_descriptor": False,
+                }
+                for index in range(1, 4)
+            ],
+            "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": False},
+            "side_effect_policy": {
+                "automatic_multi_iteration_loop": False,
+                "loop_advanced": False,
+                "queue_advanced": False,
+                "long_lived_cross_process_session_managed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+            "blockers": [],
+        }
+        spec = PausedSessionAutomaticLoopMultiIterationExecutorPreflightSpec.from_context(
+            {
+                "paused_session_automatic_loop_multi_iteration_executor_preflight": True,
+                "reviewer": "preflight-reviewer",
+                "max_preflight_iterations": 3,
+                "paused_session_automatic_loop_multi_iteration_policy": {"policy": policy},
+            }
+        )
+
+        result = PausedSessionAutomaticLoopMultiIterationExecutorPreflightManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        preflight = result.preflight
+        self.assertEqual(preflight["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-preflight.v1")
+        self.assertTrue(preflight["ready_for_review"])
+        self.assertEqual(preflight["policy_id"], "automatic-loop-policy:policy-tx-1")
+        self.assertEqual(preflight["preflight_id"], "automatic-loop-multi-iteration-preflight:automatic-loop-policy:policy-tx-1")
+        self.assertEqual(preflight["preflight_iteration_count"], 3)
+        self.assertEqual(preflight["policy_iteration_budget"], 3)
+        self.assertFalse(preflight["executor_input_gates"]["ready_to_execute_now"])
+        self.assertFalse(preflight["executor_input_gates"]["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(preflight["executor_input_gates"]["automatic_multi_iteration_execution_allowed_now"])
+        self.assertEqual(preflight["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertFalse(preflight["future_executor_contract"]["implemented"])
+        self.assertFalse(preflight["preflight_iterations"][0]["would_execute_in_this_descriptor"])
+        self.assertFalse(preflight["preflight_iterations"][0]["would_write_checkpoint_in_this_descriptor"])
+        self.assertFalse(preflight["preflight_iterations"][0]["would_recover_live_callframe_in_this_descriptor"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_iteration_loop"])
+        self.assertFalse(result.side_effect_policy["checkpoint_written"])
         self.assertFalse(result.side_effect_policy["loop_advanced"])
         self.assertFalse(result.side_effect_policy["queue_advanced"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
