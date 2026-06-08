@@ -1360,6 +1360,49 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop multi-iteration executor input preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_multi_iteration_executor_input_preflight",
+                    details={
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "ready_for_execution_review": True,
+                        "ready_to_execute_now": False,
+                        "preflight_id": "automatic-loop-multi-iteration-executor-input-preflight:coordinator",
+                        "transaction_id": "automatic-loop-multi-iteration-transaction:coordinator",
+                        "journal_id": "automatic-loop-multi-iteration-transaction-journal:coordinator",
+                        "executor_input_checks": {
+                            "next_step_plan_ready": True,
+                            "bounded_executor_gate_ready": True,
+                            "transaction_journal_written": True,
+                            "loop_plan_ready": True,
+                            "workflow_ready": True,
+                            "fresh_live_callframe_recovered": True,
+                            "retained_attached_session_available": True,
+                            "selected_iteration_ready_for_executor_review": True,
+                        },
+                        "expected_executor": {
+                            "name": "execute_paused_session_automatic_loop_multi_iteration",
+                            "implemented": True,
+                            "step264_executor_mvp": True,
+                            "bounded_one_iteration_only": True,
+                        },
+                        "side_effect_policy": {
+                            "read_only": True,
+                            "executor_input_preflight_only": True,
+                            "would_execute_multi_iteration": False,
+                            "automatic_multi_iteration_loop": False,
+                            "cdp_command_sent": False,
+                            "checkpoint_written": False,
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1578,6 +1621,18 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["queue_advanced"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["calls_mcp"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["mobile_runtime_used"])
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["ready_for_execution_review"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["ready_to_execute_now"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["executor_input_checks"]["next_step_plan_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["executor_input_checks"]["bounded_executor_gate_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["executor_input_checks"]["transaction_journal_written"])
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["expected_executor"]["name"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["expected_executor"]["step264_executor_mvp"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["side_effect_policy"]["would_execute_multi_iteration"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["side_effect_policy"]["automatic_multi_iteration_loop"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"]["side_effect_policy"]["mobile_runtime_used"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1755,6 +1810,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_execution_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_followup_checkpoint"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_next_step_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_executor_input_preflight"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")

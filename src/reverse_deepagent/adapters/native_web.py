@@ -190,6 +190,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopMultiIterationFollowupCheckpointSpec,
     PausedSessionAutomaticLoopMultiIterationNextStepPlanManager,
     PausedSessionAutomaticLoopMultiIterationNextStepPlanSpec,
+    PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightManager,
+    PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -2079,6 +2081,84 @@ class NativeWebRuntime(WebReverseRuntime):
                 status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
                 artifacts=artifact_paths,
                 next_action=plan.get("next_action") or "inspect_paused_session_automatic_loop_multi_iteration_next_step_plan",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightSpec.from_context(context)
+            result = PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightManager().review(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            checks = preflight.get("executor_input_checks") if isinstance(preflight.get("executor_input_checks"), dict) else {}
+            next_step = preflight.get("next_step_plan_review") if isinstance(preflight.get("next_step_plan_review"), dict) else {}
+            expected = preflight.get("expected_executor") if isinstance(preflight.get("expected_executor"), dict) else {}
+            verification = [
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_status={result.status}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_ready_for_review={preflight.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_ready_for_execution_review={preflight.get('ready_for_execution_review', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_ready_to_execute_now={preflight.get('ready_to_execute_now', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_id={preflight.get('preflight_id')}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_next_step_ready={checks.get('next_step_plan_ready', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_gate_ready={checks.get('bounded_executor_gate_ready', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_journal_written={checks.get('transaction_journal_written', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_loop_plan_ready={checks.get('loop_plan_ready', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_workflow_ready={checks.get('workflow_ready', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_fresh_live_callframe_recovered={checks.get('fresh_live_callframe_recovered', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_retained_session={checks.get('retained_attached_session_available', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_selected_iteration_ready={checks.get('selected_iteration_ready_for_executor_review', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_next_step_followup_ready={next_step.get('multi_iteration_followup_checkpoint_ready', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_expected_executor={expected.get('name')}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_step264_executor_mvp={expected.get('step264_executor_mvp', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_would_execute_multi_iteration={policy.get('would_execute_multi_iteration', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_checkpoint_written={policy.get('checkpoint_written', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_live_callframe_recovered={policy.get('live_callframe_recovered', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_automatic_multi_iteration_loop={policy.get('automatic_multi_iteration_loop', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_multi_iteration_executor_input_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only paused-session automatic-loop multi-iteration executor-input preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": preflight.get("ready_for_review", False),
+                        "ready_for_execution_review": preflight.get("ready_for_execution_review", False),
+                        "ready_to_execute_now": preflight.get("ready_to_execute_now", False),
+                        "preflight_id": preflight.get("preflight_id"),
+                        "transaction_id": preflight.get("transaction_id"),
+                        "journal_id": preflight.get("journal_id"),
+                        "next_step_plan_ready": checks.get("next_step_plan_ready", False),
+                        "bounded_executor_gate_ready": checks.get("bounded_executor_gate_ready", False),
+                        "transaction_journal_written": checks.get("transaction_journal_written", False),
+                        "loop_plan_ready": checks.get("loop_plan_ready", False),
+                        "workflow_ready": checks.get("workflow_ready", False),
+                        "fresh_live_callframe_recovered": checks.get("fresh_live_callframe_recovered", False),
+                        "retained_attached_session_available": checks.get("retained_attached_session_available", False),
+                        "expected_executor": expected.get("name"),
+                        "step264_executor_mvp": expected.get("step264_executor_mvp", False),
+                        "automatic_multi_iteration_loop": policy.get("automatic_multi_iteration_loop", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "inspect_paused_session_automatic_loop_multi_iteration_executor_input_preflight",
                 confidence=ConfidenceLevel.LOW,
             )
         if self._is_paused_session_automatic_loop_multi_iteration_execution_plan_request(protection_name, context):
@@ -7864,6 +7944,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_automatic_loop_multi_iteration_next_step_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request(protection_name, context):
+            return False
         normalized = protection_name.strip().lower()
         if normalized in {
             "paused-session-automatic-loop-multi-iteration-next-step-plan",
@@ -7887,7 +7969,33 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-automatic-loop-multi-iteration-executor-input-preflight",
+            "review-paused-session-automatic-loop-multi-iteration-executor-input-preflight",
+            "preflight-paused-session-automatic-loop-multi-iteration-executor-input",
+            "review-next-paused-session-automatic-loop-multi-iteration-executor-input",
+            "paused-session-automatic-loop-multi-iteration-executor-input-review",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_automatic_loop_multi_iteration_executor_input_preflight",
+                "pausedSessionAutomaticLoopMultiIterationExecutorInputPreflight",
+                "paused-session-automatic-loop-multi-iteration-executor-input-preflight",
+                "preflight_paused_session_automatic_loop_multi_iteration_executor_input",
+                "preflightPausedSessionAutomaticLoopMultiIterationExecutorInput",
+                "review_next_paused_session_automatic_loop_multi_iteration_executor_input",
+                "reviewNextPausedSessionAutomaticLoopMultiIterationExecutorInput",
+            )
+        )
+
+    @staticmethod
     def _is_paused_session_automatic_loop_multi_iteration_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_next_step_plan_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request(protection_name, context):

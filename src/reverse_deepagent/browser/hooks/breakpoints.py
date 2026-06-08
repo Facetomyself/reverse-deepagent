@@ -10060,6 +10060,289 @@ class PausedSessionAutomaticLoopMultiIterationNextStepPlanManager:
 
 
 @dataclass(slots=True)
+class PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightSpec:
+    """Read-only Step 267 executor-input preflight after Step 266.
+
+    This descriptor consumes the Step 266 next-step plan plus the actual Step 264
+    executor inputs and verifies that the next explicit reviewed Step 264 call can
+    enter execution review. It never delegates to the executor, sends CDP, captures
+    events, writes checkpoints, recovers callFrames, advances queues / loops,
+    manages long-lived sessions, calls MCP, or touches mobile runtime chains.
+    """
+
+    next_step_plan: dict[str, Any] = field(default_factory=dict)
+    execution_spec: PausedSessionAutomaticLoopMultiIterationExecutionSpec = field(default_factory=PausedSessionAutomaticLoopMultiIterationExecutionSpec)
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_automatic_loop_multi_iteration_executor_input_preflight")
+            or context.get("pausedSessionAutomaticLoopMultiIterationExecutorInputPreflight")
+            or context.get("paused-session-automatic-loop-multi-iteration-executor-input-preflight")
+            or context.get("preflight_paused_session_automatic_loop_multi_iteration_executor_input")
+            or context.get("preflightPausedSessionAutomaticLoopMultiIterationExecutorInput")
+            or context.get("review_next_paused_session_automatic_loop_multi_iteration_executor_input")
+            or context.get("reviewNextPausedSessionAutomaticLoopMultiIterationExecutorInput")
+        )
+        plan_container = _first_dict(
+            context,
+            "paused_session_automatic_loop_multi_iteration_next_step_plan",
+            "pausedSessionAutomaticLoopMultiIterationNextStepPlan",
+            "paused-session-automatic-loop-multi-iteration-next-step-plan",
+            "plan_next_paused_session_automatic_loop_multi_iteration_step",
+            "planNextPausedSessionAutomaticLoopMultiIterationStep",
+            "review_next_paused_session_automatic_loop_multi_iteration_step",
+            "reviewNextPausedSessionAutomaticLoopMultiIterationStep",
+            "automatic_loop_multi_iteration_next_step_plan",
+            "automaticLoopMultiIterationNextStepPlan",
+            "next_step_plan",
+            "nextStepPlan",
+        )
+        plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        if not requested and not plan:
+            return None
+        execution_context = dict(context)
+        execution_context["paused_session_automatic_loop_multi_iteration_execution"] = True
+        execution_context["execute_paused_session_automatic_loop_multi_iteration"] = False
+        execution_context["execute_multi_iteration"] = False
+        execution_context["review_approved"] = False
+        execution_spec = PausedSessionAutomaticLoopMultiIterationExecutionSpec.from_context(execution_context) or PausedSessionAutomaticLoopMultiIterationExecutionSpec()
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or plan.get("reviewer") or execution_spec.reviewer
+        return cls(next_step_plan=plan, execution_spec=execution_spec, reviewer=str(reviewer).strip() if reviewer else None)
+
+
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightResult:
+    status: str
+    preflight: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"status": self.status, "preflight": self.preflight, "side_effect_policy": self.side_effect_policy, "reason": self.reason}
+
+
+class PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightManager:
+    """Read-only input gate between Step 266 and the next reviewed Step 264 call."""
+
+    def review(self, spec: PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightSpec | None) -> PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightResult:
+        blockers = self._blockers(spec)
+        status = "ready_for_review" if not blockers else "blocked"
+        policy = self._side_effect_policy()
+        payload = self._payload(spec, status=status, blockers=blockers, policy=policy)
+        return PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightResult(status=status, preflight=payload, side_effect_policy=policy, reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightSpec | None) -> list[str]:
+        if spec is None:
+            return ["multi_iteration_executor_input_preflight_request_missing"]
+        blockers: list[str] = []
+        plan = spec.next_step_plan
+        if not plan:
+            blockers.append("multi_iteration_next_step_plan_required")
+        else:
+            if plan.get("status") != "ready_for_review" or plan.get("ready_for_review") is not True:
+                blockers.append("multi_iteration_next_step_plan_not_ready")
+            if plan.get("blockers"):
+                blockers.append("multi_iteration_next_step_plan_has_blockers")
+            expected = plan.get("expected_executor") if isinstance(plan.get("expected_executor"), dict) else {}
+            if expected and expected.get("name") not in {None, "execute_paused_session_automatic_loop_multi_iteration"}:
+                blockers.append("multi_iteration_next_step_executor_name_mismatch")
+            if expected and expected.get("step264_executor_mvp") is False:
+                blockers.append("multi_iteration_next_step_missing_step264_executor_mvp")
+            next_iteration = plan.get("next_iteration") if isinstance(plan.get("next_iteration"), dict) else {}
+            if next_iteration and next_iteration.get("next_loop_plan_ready") is not True:
+                blockers.append("multi_iteration_next_step_loop_plan_not_ready")
+            if next_iteration and next_iteration.get("next_iteration_reviewable") is not True:
+                blockers.append("multi_iteration_next_step_iteration_not_reviewable")
+            if next_iteration and next_iteration.get("fresh_live_callframe_recovered") is not True:
+                blockers.append("fresh_live_callframe_required")
+            policy = plan.get("side_effect_policy") if isinstance(plan.get("side_effect_policy"), dict) else {}
+            for key, blocker in (
+                ("cdp_command_sent", "next_step_plan_sent_cdp"),
+                ("debugger_event_subscribed", "next_step_plan_subscribed_debugger_event"),
+                ("paused_event_captured", "next_step_plan_captured_paused_event"),
+                ("checkpoint_written", "next_step_plan_wrote_checkpoint"),
+                ("live_callframe_recovered", "next_step_plan_recovered_live_callframe"),
+                ("loop_advanced", "next_step_plan_advanced_loop_or_queue"),
+                ("queue_advanced", "next_step_plan_advanced_loop_or_queue"),
+                ("long_lived_cross_process_session_managed", "next_step_plan_managed_long_lived_session"),
+                ("calls_mcp", "mcp_call_claim_detected"),
+                ("mobile_runtime_used", "mobile_runtime_claim_detected"),
+            ):
+                if policy.get(key) is True:
+                    blockers.append(blocker)
+            if next_iteration.get("would_execute_multi_iteration") is True or policy.get("would_execute_multi_iteration") is True:
+                blockers.append("next_step_plan_execution_claim_detected")
+            if next_iteration.get("automatic_multi_iteration_loop") is True or policy.get("automatic_multi_iteration_loop") is True:
+                blockers.append("next_step_plan_automatic_loop_claim_detected")
+        execution_blockers = PausedSessionAutomaticLoopMultiIterationExecutionManager._blockers(spec.execution_spec)
+        blockers.extend(execution_blockers)
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(
+        cls,
+        spec: PausedSessionAutomaticLoopMultiIterationExecutorInputPreflightSpec | None,
+        *,
+        status: str,
+        blockers: list[str],
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        execution_spec = spec.execution_spec if spec else PausedSessionAutomaticLoopMultiIterationExecutionSpec()
+        plan = spec.next_step_plan if spec else {}
+        gate = execution_spec.bounded_executor_gate
+        journal = execution_spec.transaction_journal
+        loop_plan = execution_spec.loop_plan
+        workflow = execution_spec.multi_step_workflow
+        recovery = execution_spec.live_callframe_recovery
+        planned_iterations = gate.get("planned_iterations") if isinstance(gate.get("planned_iterations"), list) else []
+        selected_step = PausedSessionAutomaticLoopMultiIterationExecutionManager._selected_step_index(execution_spec)
+        selected = next((item for item in planned_iterations if isinstance(item, dict) and int(item.get("workflow_step_index") or 0) == selected_step), {})
+        ready = status == "ready_for_review"
+        next_iteration = plan.get("next_iteration") if isinstance(plan.get("next_iteration"), dict) else {}
+        checkpoint_review = plan.get("checkpoint_review") if isinstance(plan.get("checkpoint_review"), dict) else {}
+        bounded_input = gate.get("bounded_executor_input") if isinstance(gate.get("bounded_executor_input"), dict) else {}
+        return {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-input-preflight.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "ready_for_execution_review": ready,
+            "ready_to_execute_now": False,
+            "ready_to_execute_after_approval": False,
+            "executor_input_preflight_only": True,
+            "preflight_id": f"automatic-loop-multi-iteration-executor-input-preflight:{journal.get('journal_id') or gate.get('journal_id') or plan.get('transaction_id') or 'unbound'}",
+            "source_next_step_plan": "workspace/paused-session-automatic-loop-multi-iteration-next-step-plan.json",
+            "source_bounded_executor_gate": "workspace/paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json",
+            "source_transaction_journal": "workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json",
+            "target_execution_artifact": "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
+            "transaction_id": journal.get("transaction_id") or gate.get("transaction_id") or plan.get("transaction_id"),
+            "journal_id": journal.get("journal_id") or gate.get("journal_id"),
+            "execution_plan_id": journal.get("execution_plan_id") or gate.get("execution_plan_id"),
+            "policy_id": journal.get("policy_id") or gate.get("policy_id"),
+            "loop_id": gate.get("loop_id") or loop_plan.get("loop_id"),
+            "workflow_id": gate.get("workflow_id") or workflow.get("workflow_id"),
+            "selected_step_index": selected_step or None,
+            "reviewer": spec.reviewer if spec else execution_spec.reviewer,
+            "next_step_plan_review": {
+                "status": plan.get("status"),
+                "ready_for_review": bool(plan.get("ready_for_review")),
+                "multi_iteration_followup_checkpoint_ready": bool(checkpoint_review.get("multi_iteration_followup_checkpoint_ready")),
+                "continuation_checkpoint_ready": bool(checkpoint_review.get("continuation_checkpoint_ready")),
+                "next_loop_plan_ready": bool(next_iteration.get("next_loop_plan_ready")),
+                "next_iteration_reviewable": bool(next_iteration.get("next_iteration_reviewable")),
+                "fresh_live_callframe_recovered": bool(next_iteration.get("fresh_live_callframe_recovered")),
+                "would_execute_multi_iteration": False,
+            },
+            "executor_input_checks": {
+                "next_step_plan_ready": bool(plan.get("status") == "ready_for_review" and plan.get("ready_for_review") is True and not plan.get("blockers")),
+                "bounded_executor_gate_ready": bool(gate.get("status") == "ready_for_review" and gate.get("bounded_executor_gate_ready_for_review") is True and gate.get("multi_iteration_bounded_executor_gate_ready_for_review") is True),
+                "transaction_journal_written": bool(journal.get("status") == "written" and journal.get("journal_written") is True),
+                "transaction_journal_started": bool(journal.get("transaction_started") is True),
+                "loop_plan_ready": bool(loop_plan.get("status") == "ready_for_review" and loop_plan.get("ready_for_review") is True),
+                "workflow_ready": bool(workflow.get("status") == "ready_for_review" and workflow.get("ready_for_review") is True),
+                "fresh_live_callframe_recovered": bool(recovery.get("live_callframe_recovered") is True),
+                "retained_attached_session_available": bool(execution_spec.attached_session_id),
+                "selected_iteration_in_gate": bool(selected),
+                "selected_iteration_ready_for_executor_review": bool(selected.get("ready_for_future_executor_review") is True),
+                "requires_per_iteration_review": bool(bounded_input.get("requires_per_iteration_review") is True or selected.get("requires_per_iteration_review_gate") is True),
+                "requires_checkpoint_after_iteration": bool(bounded_input.get("requires_checkpoint_after_each_iteration") is True or selected.get("requires_checkpoint_after_iteration") is True),
+                "requires_fresh_live_callframe": bool(bounded_input.get("require_fresh_live_callframe") is True or selected.get("requires_fresh_live_callframe_before_execution") is True),
+                "requires_retained_attached_session": bool(bounded_input.get("requires_retained_attached_session") is True),
+                "stop_after_checkpoint": bool(bounded_input.get("requires_stop_after_each_checkpoint") is True or selected.get("requires_stop_after_checkpoint") is True),
+                "review_approval_required_for_execution": True,
+                "step264_executor_mvp": True,
+            },
+            "expected_executor": {
+                "name": "execute_paused_session_automatic_loop_multi_iteration",
+                "implemented": True,
+                "step264_executor_mvp": True,
+                "bounded_one_iteration_only": True,
+                "requires_explicit_review_approval": True,
+                "delegates_to": "workspace/paused-session-multi-step-loop-execution.json",
+                "result_artifact": "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
+            },
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(blockers),
+            "side_effect_policy": policy,
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "preflight_only": True,
+            "executor_input_preflight_only": True,
+            "would_execute_multi_iteration": False,
+            "automatic_multi_iteration_loop": False,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_executor_called": False,
+            "cdp_command_sent": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "checkpoint_written": False,
+            "live_callframe_recovered": False,
+            "automatic_live_callframe_recovery": False,
+            "loop_advanced": False,
+            "queue_advanced": False,
+            "long_lived_cross_process_session_managed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "multi_iteration_executor_input_preflight_request_missing": ("request", "No multi-iteration executor-input preflight request was provided.", "request_paused_session_automatic_loop_multi_iteration_executor_input_preflight"),
+            "multi_iteration_next_step_plan_required": ("next_step_plan", "A ready Step 266 multi-iteration next-step plan is required.", "review_paused_session_automatic_loop_multi_iteration_next_step_plan"),
+            "multi_iteration_next_step_plan_not_ready": ("next_step_plan", "The Step 266 next-step plan is not ready for executor review.", "resolve_multi_iteration_next_step_plan_blockers"),
+            "multi_iteration_next_step_plan_has_blockers": ("next_step_plan", "The Step 266 next-step plan still contains blockers.", "resolve_multi_iteration_next_step_plan_blockers"),
+            "multi_iteration_next_step_executor_name_mismatch": ("next_step_plan", "The next-step plan points at an unexpected executor.", "refresh_multi_iteration_next_step_plan_executor_contract"),
+            "multi_iteration_next_step_missing_step264_executor_mvp": ("next_step_plan", "The next-step plan must acknowledge the Step 264 executor MVP.", "refresh_multi_iteration_next_step_plan_executor_contract"),
+            "multi_iteration_next_step_loop_plan_not_ready": ("loop_plan", "The next-step plan has not proven the next loop plan is ready.", "refresh_next_loop_plan_for_multi_iteration_executor_input"),
+            "multi_iteration_next_step_iteration_not_reviewable": ("loop_plan", "The next-step plan has not proven a reviewable next iteration.", "refresh_next_loop_iteration_review_gate"),
+            "fresh_live_callframe_required": ("callframe", "Fresh live callFrame evidence is required before executor review.", "recover_live_callframe_from_captured_pause"),
+            "next_step_plan_sent_cdp": ("safety", "The next-step plan claims a CDP command was sent.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_subscribed_debugger_event": ("safety", "The next-step plan claims Debugger event subscription.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_captured_paused_event": ("safety", "The next-step plan claims paused-event capture.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_wrote_checkpoint": ("safety", "The next-step plan claims checkpoint writes.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_recovered_live_callframe": ("safety", "The next-step plan claims live callFrame recovery.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_advanced_loop_or_queue": ("safety", "The next-step plan claims loop or queue advancement.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_managed_long_lived_session": ("safety", "The next-step plan claims long-lived session management.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_execution_claim_detected": ("safety", "The next-step plan claims execution, but this preflight must remain read-only.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "next_step_plan_automatic_loop_claim_detected": ("safety", "The next-step plan claims automatic multi-iteration looping.", "audit_multi_iteration_next_step_plan_side_effects"),
+            "mcp_call_claim_detected": ("safety", "The next-step plan claims MCP usage.", "remove_mcp_from_multi_iteration_executor_input_preflight"),
+            "mobile_runtime_claim_detected": ("safety", "The next-step plan claims mobile runtime usage, which is deferred.", "remove_mobile_runtime_from_multi_iteration_executor_input_preflight"),
+        }
+        execution_catalog = {item["code"]: item for item in PausedSessionAutomaticLoopMultiIterationExecutionManager._blocker_details(blockers)}
+        details = []
+        for blocker in blockers:
+            if blocker in catalog:
+                category, explanation, next_action = catalog[blocker]
+                details.append({"code": blocker, "category": category, "explanation": explanation, "next_action": next_action})
+            elif blocker in execution_catalog:
+                details.append(dict(execution_catalog[blocker]))
+            else:
+                details.append({"code": blocker, "category": "unknown", "explanation": blocker, "next_action": "inspect_paused_session_automatic_loop_multi_iteration_executor_input_preflight"})
+        return details
+
+    @staticmethod
+    def _next_action(blockers: list[str]) -> str:
+        if any(str(item).startswith("multi_iteration_next_step") for item in blockers):
+            return "review_paused_session_automatic_loop_multi_iteration_next_step_plan"
+        if "fresh_live_callframe_required" in blockers:
+            return "recover_live_callframe_from_captured_pause"
+        if blockers:
+            return "inspect_paused_session_automatic_loop_multi_iteration_executor_input_preflight_blockers"
+        return "review_paused_session_automatic_loop_multi_iteration_execution"
+
+
+@dataclass(slots=True)
 class PausedSessionAutomaticLoopNextIterationExecutionSpec:
     """Explicit-review-only executor for one planned automatic-loop next iteration.
 

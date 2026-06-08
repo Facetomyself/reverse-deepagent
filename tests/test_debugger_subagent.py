@@ -2121,6 +2121,126 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(diagnostics["mobile_runtime_used"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_executor_input_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_input_preflight": {
+                "preflight": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "ready_for_execution_review": False,
+                    "ready_to_execute_now": False,
+                    "preflight_id": "automatic-loop-multi-input:blocked",
+                    "executor_input_checks": {
+                        "next_step_plan_ready": False,
+                        "bounded_executor_gate_ready": False,
+                        "transaction_journal_written": False,
+                    },
+                    "expected_executor": {"name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": True, "step264_executor_mvp": True},
+                    "blockers": ["multi_iteration_next_step_plan_required"],
+                    "side_effect_policy": {
+                        "would_execute_multi_iteration": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_input_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_executor_input_preflight_blockers")
+        preflight = result["summary"]["automatic_loop_multi_iteration_executor_input_preflight"]
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertFalse(preflight["ready_for_review"])
+        self.assertFalse(preflight["ready_for_execution_review"])
+        self.assertFalse(preflight["ready_to_execute_now"])
+        self.assertFalse(preflight["next_step_plan_ready"])
+        self.assertFalse(preflight["bounded_executor_gate_ready"])
+        self.assertFalse(preflight["transaction_journal_written"])
+        self.assertFalse(preflight["would_execute_multi_iteration"])
+        self.assertFalse(preflight["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_input_preflight_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["multi_iteration_next_step_plan_required"])
+        self.assertFalse(diagnostics["ready_for_execution_review"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_executor_input_preflight_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_input_preflight": {
+                "preflight": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "ready_for_execution_review": True,
+                    "ready_to_execute_now": False,
+                    "preflight_id": "automatic-loop-multi-input:ready",
+                    "transaction_id": "automatic-loop-multi-input-tx",
+                    "journal_id": "automatic-loop-multi-input-journal",
+                    "next_step_plan_review": {"multi_iteration_followup_checkpoint_ready": True},
+                    "executor_input_checks": {
+                        "next_step_plan_ready": True,
+                        "bounded_executor_gate_ready": True,
+                        "transaction_journal_written": True,
+                        "loop_plan_ready": True,
+                        "workflow_ready": True,
+                        "fresh_live_callframe_recovered": True,
+                        "retained_attached_session_available": True,
+                        "selected_iteration_ready_for_executor_review": True,
+                    },
+                    "expected_executor": {"name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": True, "step264_executor_mvp": True, "bounded_one_iteration_only": True},
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "would_execute_multi_iteration": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_executor_input_preflight_requires_execution_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_automatic_loop_multi_iteration_execution")
+        preflight = result["summary"]["automatic_loop_multi_iteration_executor_input_preflight"]
+        self.assertEqual(preflight["status"], "ready_for_review")
+        self.assertTrue(preflight["ready_for_execution_review"])
+        self.assertFalse(preflight["ready_to_execute_now"])
+        self.assertTrue(preflight["next_step_plan_ready"])
+        self.assertTrue(preflight["bounded_executor_gate_ready"])
+        self.assertTrue(preflight["transaction_journal_written"])
+        self.assertTrue(preflight["loop_plan_ready"])
+        self.assertTrue(preflight["workflow_ready"])
+        self.assertTrue(preflight["fresh_live_callframe_recovered"])
+        self.assertTrue(preflight["retained_attached_session_available"])
+        self.assertEqual(preflight["expected_executor"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertTrue(preflight["step264_executor_mvp"])
+        self.assertFalse(preflight["would_execute_multi_iteration"])
+        self.assertFalse(preflight["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_input_preflight_diagnostics"]
+        self.assertTrue(diagnostics["ready_for_execution_review"])
+        self.assertTrue(diagnostics["next_step_plan_ready"])
+        self.assertTrue(diagnostics["bounded_executor_gate_ready"])
+        self.assertTrue(diagnostics["transaction_journal_written"])
+        self.assertTrue(diagnostics["fresh_live_callframe_recovered"])
+        self.assertFalse(diagnostics["would_execute_multi_iteration"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_blocks_automatic_loop_next_iteration_followup_checkpoint(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

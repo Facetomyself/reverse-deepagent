@@ -758,6 +758,12 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-next-step-plan.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-next-step-plan.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-next-step-plan.json")
         self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-next-step-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"].category, "triage")
         self.assertEqual(routes["workspace/source-map-fetch-plan.json"].virtual_folder, "/workspace/debugger/")
         self.assertEqual(routes["workspace/source-map-fetch-plan.json"].future_path, "/workspace/debugger/source-map-fetch-plan.json")
         self.assertEqual(routes["workspace/source-map-fetch-result.json"].virtual_folder, "/workspace/debugger/")
