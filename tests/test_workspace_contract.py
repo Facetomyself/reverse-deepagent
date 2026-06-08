@@ -476,6 +476,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "/workspace/debugger/paused-session-automatic-loop-execution-result.json",
         )
         self.assertEqual(routes["workspace/paused-session-automatic-loop-execution-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-followup-checkpoint.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-followup-checkpoint.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-followup-checkpoint.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-followup-checkpoint.json"].category, "audit")
         self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].virtual_folder, "/workspace/runtime/")
         self.assertEqual(
             routes["workspace/recursive-continuation-readiness.json"].future_path,

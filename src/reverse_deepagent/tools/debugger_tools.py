@@ -237,6 +237,16 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "automatic_loop_execution_result",
             "automaticLoopExecutionResult",
         )
+        automatic_loop_followup_checkpoint = _object_alias(
+            payload,
+            "paused_session_automatic_loop_followup_checkpoint",
+            "paused-session-automatic-loop-followup-checkpoint",
+            "pausedSessionAutomaticLoopFollowupCheckpoint",
+            "paused_session_automatic_loop_execution_followup",
+            "pausedSessionAutomaticLoopExecutionFollowup",
+            "automatic_loop_followup_checkpoint",
+            "automaticLoopFollowupCheckpoint",
+        )
 
         preflight = _first_object(
             live_preflight.get("preflight"),
@@ -277,11 +287,12 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         automatic_loop_preflight = _first_object(automatic_loop_executor_preflight.get("preflight"), automatic_loop_executor_preflight)
         automatic_loop_approval = _first_object(automatic_loop_executor_approval_plan.get("approval_plan"), automatic_loop_executor_approval_plan)
         automatic_loop_result = _first_object(automatic_loop_execution_result.get("execution"), automatic_loop_execution_result)
+        automatic_loop_followup = _first_object(automatic_loop_followup_checkpoint.get("checkpoint"), automatic_loop_followup_checkpoint)
         execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness, automatic_loop_execution_plan, automatic_loop_executor_preflight, automatic_loop_executor_approval_plan, automatic_loop_execution_result)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness, automatic_loop_execution_plan, automatic_loop_executor_preflight, automatic_loop_executor_approval_plan, automatic_loop_execution_result, automatic_loop_followup_checkpoint)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -441,6 +452,15 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                 warnings.append("automatic_loop_execution_checkpoint_required")
             else:
                 warnings.append("automatic_loop_execution_review_result")
+        automatic_loop_followup_status = _string(automatic_loop_followup.get("status"))
+        if automatic_loop_followup_status == "blocked":
+            blockers.append("paused_session_automatic_loop_followup_checkpoint_blocked")
+        if automatic_loop_followup_status == "ready_for_review":
+            next_loop_review = automatic_loop_followup.get("next_loop_review") if isinstance(automatic_loop_followup.get("next_loop_review"), dict) else {}
+            if _boolish(next_loop_review.get("next_loop_plan_ready")):
+                warnings.append("automatic_loop_followup_checkpoint_ready_for_next_loop_review")
+            else:
+                warnings.append("automatic_loop_followup_checkpoint_requires_next_loop_plan")
         if _looks_paused(paused, session, timeline) and not callframes:
             warnings.append("paused_session_has_no_callframes")
         if requested_action in _LIVE_ACTIONS and not live_continuation_available:
@@ -758,10 +778,24 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
                     "mobile_runtime_used": _boolish(_nested_get(automatic_loop_result, "side_effect_policy", "mobile_runtime_used")),
                     "blockers": automatic_loop_result.get("blockers") if isinstance(automatic_loop_result.get("blockers"), list) else [],
                 },
+                "automatic_loop_followup_checkpoint": {
+                    "status": _string(automatic_loop_followup.get("status") or "unknown"),
+                    "ready_for_review": _boolish(automatic_loop_followup.get("ready_for_review")),
+                    "transaction_id": _string(automatic_loop_followup.get("transaction_id")),
+                    "checkpoint_ready": _boolish(_nested_get(automatic_loop_followup, "checkpoint_review", "checkpoint_ready")),
+                    "next_loop_plan_ready": _boolish(_nested_get(automatic_loop_followup, "next_loop_review", "next_loop_plan_ready")),
+                    "next_iteration_reviewable": _boolish(_nested_get(automatic_loop_followup, "next_loop_review", "next_iteration_reviewable")),
+                    "checkpoint_written": _boolish(_nested_get(automatic_loop_followup, "side_effect_policy", "checkpoint_written")),
+                    "loop_advanced": _boolish(_nested_get(automatic_loop_followup, "side_effect_policy", "loop_advanced")),
+                    "queue_advanced": _boolish(_nested_get(automatic_loop_followup, "side_effect_policy", "queue_advanced")),
+                    "calls_mcp": _boolish(_nested_get(automatic_loop_followup, "side_effect_policy", "calls_mcp")),
+                    "mobile_runtime_used": _boolish(_nested_get(automatic_loop_followup, "side_effect_policy", "mobile_runtime_used")),
+                    "blockers": automatic_loop_followup.get("blockers") if isinstance(automatic_loop_followup.get("blockers"), list) else [],
+                },
             },
             "blockers": blockers,
             "warnings": warnings,
-            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, session_lifecycle, attach_probe, callframe_recovery_artifact, one_action_execution, pre_action_orchestration, next_capture_execution, continuation_checkpoint, multi_step_workflow, multi_step_execution, multi_step_loop, multi_step_loop_exec, automatic_loop_result, session, paused),
+            "review_required_items": _review_required_items(blockers, warnings, preflight, readiness, execution_plan, session_lifecycle, attach_probe, callframe_recovery_artifact, one_action_execution, pre_action_orchestration, next_capture_execution, continuation_checkpoint, multi_step_workflow, multi_step_execution, multi_step_loop, multi_step_loop_exec, automatic_loop_result, automatic_loop_followup, session, paused),
             "side_effect_policy": {
                 "read_only": True,
                 "files_mutated": False,
@@ -2105,6 +2139,8 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_paused_session_automatic_loop_executor_approval_plan_blockers"
     if "paused_session_automatic_loop_execution_result_blocked" in blockers:
         return "inspect_paused_session_automatic_loop_execution_result_blockers"
+    if "paused_session_automatic_loop_followup_checkpoint_blocked" in blockers:
+        return "inspect_paused_session_automatic_loop_followup_checkpoint_blockers"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
     if "no_debugger_artifacts_provided" in warnings:
@@ -2163,6 +2199,10 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "checkpoint_paused_session_automatic_loop_execution"
     if "automatic_loop_execution_review_result" in warnings:
         return "review_paused_session_automatic_loop_execution_result"
+    if "automatic_loop_followup_checkpoint_requires_next_loop_plan" in warnings:
+        return "plan_next_paused_session_loop_iteration_after_checkpoint"
+    if "automatic_loop_followup_checkpoint_ready_for_next_loop_review" in warnings:
+        return "review_next_paused_session_automatic_loop_iteration"
     if "multi_step_continuation_workflow_requires_review" in warnings:
         return "approve_multi_step_continuation_workflow"
     if "cross_process_continuation_checkpoint_ready_for_next_action_review" in warnings:
@@ -2206,6 +2246,7 @@ def _review_required_items(
     multi_step_loop: dict[str, Any],
     multi_step_loop_execution: dict[str, Any],
     automatic_loop_execution_result: dict[str, Any],
+    automatic_loop_followup_checkpoint: dict[str, Any],
     session: dict[str, Any],
     paused: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -2225,6 +2266,7 @@ def _review_required_items(
     multi_step_loop_diagnostics = _multi_step_loop_plan_diagnostics_for_review(multi_step_loop)
     multi_step_loop_execution_diagnostics = _multi_step_loop_execution_diagnostics_for_review(multi_step_loop_execution)
     automatic_loop_execution_diagnostics = _automatic_loop_execution_result_diagnostics_for_review(automatic_loop_execution_result)
+    automatic_loop_followup_diagnostics = _automatic_loop_followup_checkpoint_diagnostics_for_review(automatic_loop_followup_checkpoint)
     for code in blockers:
         items.append(
             {
@@ -2248,6 +2290,7 @@ def _review_required_items(
                 "multi_step_loop_plan_diagnostics": multi_step_loop_diagnostics,
                 "multi_step_loop_execution_diagnostics": multi_step_loop_execution_diagnostics,
                 "automatic_loop_execution_result_diagnostics": automatic_loop_execution_diagnostics,
+                "automatic_loop_followup_checkpoint_diagnostics": automatic_loop_followup_diagnostics,
             }
         )
     for code in warnings:
@@ -2291,6 +2334,8 @@ def _review_required_items(
             "automatic_loop_execution_review_required",
             "automatic_loop_execution_checkpoint_required",
             "automatic_loop_execution_review_result",
+            "automatic_loop_followup_checkpoint_requires_next_loop_plan",
+            "automatic_loop_followup_checkpoint_ready_for_next_loop_review",
         }:
             items.append(
                 {
@@ -2313,6 +2358,7 @@ def _review_required_items(
                     "multi_step_loop_plan_diagnostics": multi_step_loop_diagnostics,
                     "multi_step_loop_execution_diagnostics": multi_step_loop_execution_diagnostics,
                     "automatic_loop_execution_result_diagnostics": automatic_loop_execution_diagnostics,
+                    "automatic_loop_followup_checkpoint_diagnostics": automatic_loop_followup_diagnostics,
                 }
             )
     return items
@@ -2574,6 +2620,23 @@ def _automatic_loop_execution_result_diagnostics_for_review(execution: dict[str,
         "calls_mcp": _boolish(policy.get("calls_mcp")),
         "mobile_runtime_used": _boolish(policy.get("mobile_runtime_used")),
         "blockers": execution.get("blockers") if isinstance(execution.get("blockers"), list) else [],
+    }
+
+
+def _automatic_loop_followup_checkpoint_diagnostics_for_review(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": _string(checkpoint.get("status") or "unknown"),
+        "ready_for_review": _boolish(checkpoint.get("ready_for_review")),
+        "transaction_id": _string(checkpoint.get("transaction_id")),
+        "checkpoint_ready": _boolish(_nested_get(checkpoint, "checkpoint_review", "checkpoint_ready")),
+        "next_loop_plan_ready": _boolish(_nested_get(checkpoint, "next_loop_review", "next_loop_plan_ready")),
+        "next_iteration_reviewable": _boolish(_nested_get(checkpoint, "next_loop_review", "next_iteration_reviewable")),
+        "checkpoint_written": _boolish(_nested_get(checkpoint, "side_effect_policy", "checkpoint_written")),
+        "loop_advanced": _boolish(_nested_get(checkpoint, "side_effect_policy", "loop_advanced")),
+        "queue_advanced": _boolish(_nested_get(checkpoint, "side_effect_policy", "queue_advanced")),
+        "calls_mcp": _boolish(_nested_get(checkpoint, "side_effect_policy", "calls_mcp")),
+        "mobile_runtime_used": _boolish(_nested_get(checkpoint, "side_effect_policy", "mobile_runtime_used")),
+        "blockers": checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else [],
     }
 
 

@@ -35,6 +35,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopExecutorApprovalPlanSpec,
     PausedSessionAutomaticLoopExecutionManager,
     PausedSessionAutomaticLoopExecutionSpec,
+    PausedSessionAutomaticLoopFollowupCheckpointManager,
+    PausedSessionAutomaticLoopFollowupCheckpointSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -2090,6 +2092,136 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["automatic_multi_step_loop"])
         self.assertFalse(result.side_effect_policy["automatic_queue_advance"])
         self.assertFalse(result.side_effect_policy["long_lived_cross_process_session_managed"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_followup_checkpoint_blocks_without_checkpoint(self) -> None:
+        spec = PausedSessionAutomaticLoopFollowupCheckpointSpec.from_context(
+            {
+                "paused_session_automatic_loop_followup_checkpoint": True,
+                "paused_session_automatic_loop_execution_result": {
+                    "execution": {
+                        "status": "executed",
+                        "transaction_id": "tx-follow-1",
+                        "journal_id": "journal-follow-1",
+                        "loop_id": "loop-follow-1",
+                        "workflow_id": "workflow-follow-1",
+                        "pause_session_id": "pause-follow-1",
+                        "target_id": "target-follow-1",
+                        "executed_iteration_count": 1,
+                        "checkpoint_required": True,
+                        "automatic_loop_executed": True,
+                        "automatic_loop_one_iteration_executed": True,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "long_lived_session_managed": False,
+                        "side_effect_policy": {
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionAutomaticLoopFollowupCheckpointManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        checkpoint = result.checkpoint
+        self.assertEqual(checkpoint["schema_version"], "reverse-deepagent.paused-session-automatic-loop-followup-checkpoint.v1")
+        self.assertIn("automatic_loop_followup_checkpoint_required", checkpoint["blockers"])
+        self.assertEqual(checkpoint["next_action"], "checkpoint_paused_session_automatic_loop_execution")
+        self.assertFalse(checkpoint["checkpoint_review"]["checkpoint_present"])
+        self.assertFalse(checkpoint["checkpoint_review"]["checkpoint_ready"])
+        self.assertEqual(checkpoint["required_followups"][0]["artifact"], "workspace/paused-session-cross-process-continuation-checkpoint.json")
+        self.assertTrue(result.side_effect_policy["read_only"])
+        self.assertFalse(result.side_effect_policy["checkpoint_written"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["paused_event_captured"])
+        self.assertFalse(result.side_effect_policy["multi_step_continuation_executed"])
+        self.assertFalse(result.side_effect_policy["loop_advanced"])
+        self.assertFalse(result.side_effect_policy["queue_advanced"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_followup_checkpoint_reviews_next_loop_plan(self) -> None:
+        spec = PausedSessionAutomaticLoopFollowupCheckpointSpec.from_context(
+            {
+                "paused_session_automatic_loop_followup_checkpoint": True,
+                "reviewer": "debug-reviewer",
+                "paused_session_automatic_loop_execution_result": {
+                    "execution": {
+                        "status": "executed",
+                        "transaction_id": "tx-follow-2",
+                        "journal_id": "journal-follow-2",
+                        "loop_id": "loop-follow-2",
+                        "workflow_id": "workflow-follow-2",
+                        "pause_session_id": "pause-follow-2",
+                        "target_id": "target-follow-2",
+                        "executed_iteration_count": 1,
+                        "checkpoint_required": True,
+                        "automatic_loop_executed": True,
+                        "automatic_loop_one_iteration_executed": True,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "long_lived_session_managed": False,
+                        "side_effect_policy": {
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                    }
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "pause-follow-2",
+                        "target_id": "target-follow-2",
+                        "callframe_count": 1,
+                        "continuation_ready_for_next_action": True,
+                        "live_callframe_recovery_ready": True,
+                    }
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "loop-follow-2",
+                        "workflow_id": "workflow-follow-2",
+                        "pause_session_id": "pause-follow-2",
+                        "target_id": "target-follow-2",
+                        "next_iteration": {"available": True, "workflow_step_index": 2, "method": "Debugger.stepOver"},
+                        "readiness": {
+                            "next_loop_iteration_reviewable": True,
+                            "automatic_multi_step_loop_supported": False,
+                        },
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionAutomaticLoopFollowupCheckpointManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        checkpoint = result.checkpoint
+        self.assertTrue(checkpoint["ready_for_review"])
+        self.assertEqual(checkpoint["reviewer"], "debug-reviewer")
+        self.assertEqual(checkpoint["transaction_id"], "tx-follow-2")
+        self.assertTrue(checkpoint["checkpoint_review"]["checkpoint_ready"])
+        self.assertTrue(checkpoint["next_loop_review"]["next_loop_plan_ready"])
+        self.assertTrue(checkpoint["next_loop_review"]["next_iteration_reviewable"])
+        self.assertFalse(checkpoint["next_loop_review"]["would_execute_next_iteration"])
+        self.assertEqual(checkpoint["next_action"], "review_next_paused_session_automatic_loop_iteration")
+        self.assertEqual(checkpoint["required_followups"][0]["action"], "review_next_paused_session_loop_iteration")
+        self.assertFalse(result.side_effect_policy["checkpoint_written"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["loop_advanced"])
+        self.assertFalse(result.side_effect_policy["queue_advanced"])
         self.assertFalse(result.side_effect_policy["calls_mcp"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
 
