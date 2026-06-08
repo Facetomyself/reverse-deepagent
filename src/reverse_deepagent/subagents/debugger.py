@@ -9,6 +9,7 @@ from reverse_deepagent.tools.debugger_tools import (
     make_record_paused_session_automatic_loop_transaction_journal_tool,
     make_review_debugger_artifacts_tool,
     make_review_paused_session_automatic_loop_bounded_executor_gate_tool,
+    make_review_paused_session_automatic_loop_multi_iteration_transaction_preflight_tool,
     make_review_paused_session_automatic_loop_transaction_preflight_tool,
 )
 from reverse_deepagent.tools.artifact_tools import make_read_workspace_artifact_tool
@@ -36,6 +37,7 @@ def build_debugger_subagent(
             make_review_debugger_artifacts_tool(root),
             make_record_paused_session_automatic_loop_executor_approval_tool(root),
             make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool(root),
+            make_review_paused_session_automatic_loop_multi_iteration_transaction_preflight_tool(root),
             make_review_paused_session_automatic_loop_transaction_preflight_tool(root),
             make_record_paused_session_automatic_loop_transaction_journal_tool(root),
             make_review_paused_session_automatic_loop_bounded_executor_gate_tool(root),

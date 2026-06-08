@@ -1207,6 +1207,26 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop multi-iteration transaction preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_multi_iteration_transaction_preflight",
+                    details={
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "transaction_preflight_ready_for_review": True,
+                        "transaction_preflight_id": "automatic-loop-multi-iteration-transaction-preflight:coordinator",
+                        "approval_record_id": "automatic-loop-multi-iteration-executor-approval-record:coordinator",
+                        "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:automatic-loop-multi-iteration-execution-plan:automatic-loop-multi-iteration-preflight:automatic-loop-policy:tx-follow-coordinator-1",
+                        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:automatic-loop-multi-iteration-preflight:automatic-loop-policy:tx-follow-coordinator-1",
+                        "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:tx-follow-coordinator-1",
+                        "policy_id": "automatic-loop-policy:tx-follow-coordinator-1",
+                        "transaction_plan": {"transaction_started": False, "journal_written_now": False, "ready_to_write_now": False},
+                        "journal_writer_input_gates": {"approval_plan_verified": True, "approval_record_verified": True, "journal_written": False, "automatic_multi_iteration_loop": False},
+                        "side_effect_policy": {"read_only": True, "writes_transaction_journal": False, "transaction_started": False, "automatic_multi_iteration_loop": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1373,6 +1393,10 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-approval-record.json"]["executor_input_gates"]["ready_to_execute_now"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-approval-record.json"]["executor_input_gates"]["transaction_started"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-executor-approval-record.json"]["side_effect_policy"]["automatic_multi_iteration_loop"])
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"]["status"], "ready_for_review")
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"]["transaction_plan"]["ready_to_write_now"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"]["journal_writer_input_gates"]["journal_written"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"]["side_effect_policy"]["automatic_multi_iteration_loop"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1544,6 +1568,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_execution_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_executor_approval_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_executor_approval_record"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_transaction_preflight"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")

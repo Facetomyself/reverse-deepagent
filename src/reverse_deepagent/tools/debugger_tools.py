@@ -14,6 +14,7 @@ DEBUGGER_ARTIFACT_REVIEW_VERSION = "2026-05-31.debugger-artifact-review-v1"
 AUTOMATIC_LOOP_EXECUTOR_APPROVAL_RECORD_VERSION = "reverse-deepagent.paused-session-automatic-loop-executor-approval-record.v1"
 AUTOMATIC_LOOP_MULTI_ITERATION_EXECUTOR_APPROVAL_RECORD_VERSION = "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-record.v1"
 AUTOMATIC_LOOP_TRANSACTION_PREFLIGHT_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-preflight.v1"
+AUTOMATIC_LOOP_MULTI_ITERATION_TRANSACTION_PREFLIGHT_VERSION = "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-preflight.v1"
 AUTOMATIC_LOOP_TRANSACTION_JOURNAL_VERSION = "reverse-deepagent.paused-session-automatic-loop-transaction-journal.v1"
 AUTOMATIC_LOOP_BOUNDED_EXECUTOR_GATE_VERSION = "reverse-deepagent.paused-session-automatic-loop-bounded-executor-gate.v1"
 _LIVE_ACTIONS = {"resume", "step", "step_over", "step_into", "step_out", "evaluate", "evaluate_on_callframe"}
@@ -1254,6 +1255,55 @@ def make_review_paused_session_automatic_loop_transaction_preflight_tool(default
     return review_paused_session_automatic_loop_transaction_preflight
 
 
+def make_review_paused_session_automatic_loop_multi_iteration_transaction_preflight_tool(default_artifact_root: str | Path | None = None):
+    """Create a read-only transaction / journal preflight reviewer for multi-iteration automatic loops.
+
+    This tool verifies that a ready multi-iteration approval-plan descriptor and
+    an explicit multi-iteration approval-record artifact can be used as input
+    for a future transaction journal writer. It never writes journals, starts
+    transactions, sends CDP commands, executes iterations, calls MCP, or touches
+    mobile runtime chains.
+    """
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+
+    def review_paused_session_automatic_loop_multi_iteration_transaction_preflight(
+        approval_plan_json: str | None = None,
+        approval_plan_ref: str | None = None,
+        approval_record_json: str | None = None,
+        approval_record_ref: str | None = None,
+        expected_approval_plan_id: str | None = None,
+        expected_approval_record_id: str | None = None,
+        expected_execution_plan_id: str | None = None,
+        expected_preflight_id: str | None = None,
+        expected_policy_id: str | None = None,
+        expected_plan_digest_sha256: str | None = None,
+        artifact_root: str | None = None,
+        metadata_json: str | None = None,
+    ) -> dict[str, Any]:
+        """Review multi-iteration automatic-loop transaction / journal writer readiness."""
+
+        metadata = _loads_optional_object(metadata_json, field_name="metadata_json")
+        return review_paused_session_automatic_loop_multi_iteration_transaction_preflight_payload(
+            approval_plan_json=approval_plan_json,
+            approval_plan_ref=approval_plan_ref,
+            approval_record_json=approval_record_json,
+            approval_record_ref=approval_record_ref,
+            expected_approval_plan_id=expected_approval_plan_id,
+            expected_approval_record_id=expected_approval_record_id,
+            expected_execution_plan_id=expected_execution_plan_id,
+            expected_preflight_id=expected_preflight_id,
+            expected_policy_id=expected_policy_id,
+            expected_plan_digest_sha256=expected_plan_digest_sha256,
+            artifact_root=artifact_root,
+            default_artifact_root=root,
+            metadata=metadata,
+        )
+
+    review_paused_session_automatic_loop_multi_iteration_transaction_preflight.__name__ = "review_paused_session_automatic_loop_multi_iteration_transaction_preflight"
+    return review_paused_session_automatic_loop_multi_iteration_transaction_preflight
+
+
 def make_record_paused_session_automatic_loop_transaction_journal_tool(default_artifact_root: str | Path | None = None):
     """Create an explicit transaction journal writer for automatic-loop execution.
 
@@ -1833,6 +1883,189 @@ def record_paused_session_automatic_loop_transaction_journal_payload(
     return payload
 
 
+def review_paused_session_automatic_loop_multi_iteration_transaction_preflight_payload(
+    *,
+    approval_plan_json: str | None = None,
+    approval_plan_ref: str | None = None,
+    approval_record_json: str | None = None,
+    approval_record_ref: str | None = None,
+    expected_approval_plan_id: str | None = None,
+    expected_approval_record_id: str | None = None,
+    expected_execution_plan_id: str | None = None,
+    expected_preflight_id: str | None = None,
+    expected_policy_id: str | None = None,
+    expected_plan_digest_sha256: str | None = None,
+    artifact_root: str | None = None,
+    default_artifact_root: str | Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a read-only multi-iteration transaction / journal preflight descriptor."""
+
+    root = Path(default_artifact_root) if default_artifact_root is not None else Path("artifacts")
+    loaded_plan, plan_read = _loads_object_or_artifact(
+        approval_plan_json,
+        artifact_ref=approval_plan_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=root,
+        field_name="approval_plan_json",
+        artifact_field_name="approval_plan_ref",
+    )
+    loaded_record, record_read = _loads_object_or_artifact(
+        approval_record_json,
+        artifact_ref=approval_record_ref,
+        artifact_root=artifact_root,
+        default_artifact_root=root,
+        field_name="approval_record_json",
+        artifact_field_name="approval_record_ref",
+    )
+    approval_plan = _first_object(loaded_plan.get("approval_plan"), loaded_plan)
+    approval_record = _first_object(loaded_record.get("approval_record"), loaded_record)
+    plan_digest = _stable_json_digest(approval_plan) if approval_plan else None
+    blockers = _automatic_loop_multi_iteration_transaction_preflight_blockers(
+        approval_plan=approval_plan,
+        approval_record=approval_record,
+        expected_approval_plan_id=expected_approval_plan_id,
+        expected_approval_record_id=expected_approval_record_id,
+        expected_execution_plan_id=expected_execution_plan_id,
+        expected_preflight_id=expected_preflight_id,
+        expected_policy_id=expected_policy_id,
+        expected_plan_digest_sha256=expected_plan_digest_sha256,
+        plan_digest=plan_digest,
+    )
+    ready = not blockers
+    approval_plan_id = _string(approval_plan.get("approval_plan_id"))
+    approval_record_id = _string(approval_record.get("approval_record_id"))
+    execution_plan_id = _string(approval_plan.get("execution_plan_id") or approval_record.get("execution_plan_id"))
+    preflight_id = _string(approval_plan.get("preflight_id") or approval_record.get("preflight_id"))
+    policy_id = _string(approval_plan.get("policy_id") or approval_record.get("policy_id"))
+    transaction_plan = approval_plan.get("transaction_plan") if isinstance(approval_plan.get("transaction_plan"), dict) else {}
+    transaction_id = _string(transaction_plan.get("transaction_id") or f"automatic-loop-multi-iteration-executor-transaction:{preflight_id or policy_id or 'unbound'}")
+    transaction_preflight_id = f"automatic-loop-multi-iteration-transaction-preflight:{approval_record_id or approval_plan_id or preflight_id or 'unbound'}"
+    journal_artifact = transaction_plan.get("journal_artifact") or "workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json"
+    result_artifact = transaction_plan.get("result_artifact") or "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json"
+    approved_iterations = [item for item in approval_record.get("approved_iterations", []) if isinstance(item, dict)]
+    payload: dict[str, Any] = {
+        "schema_version": AUTOMATIC_LOOP_MULTI_ITERATION_TRANSACTION_PREFLIGHT_VERSION,
+        "status": "ready_for_review" if ready else "blocked",
+        "ready_for_review": ready,
+        "transaction_preflight_ready_for_review": ready,
+        "transaction_preflight_id": transaction_preflight_id,
+        "approval_record_id": approval_record_id or None,
+        "approval_plan_id": approval_plan_id or None,
+        "execution_plan_id": execution_plan_id or None,
+        "preflight_id": preflight_id or None,
+        "policy_id": policy_id or None,
+        "transaction_id": transaction_id or None,
+        "approval_plan_digest_sha256": plan_digest,
+        "expected_plan_digest_sha256": expected_plan_digest_sha256,
+        "source_approval_plan_summary": {
+            "schema_version": approval_plan.get("schema_version"),
+            "status": approval_plan.get("status"),
+            "approval_plan_ready_for_review": _boolish(approval_plan.get("approval_plan_ready_for_review")),
+            "approved_iteration_count": approval_plan.get("approved_iteration_count", 0),
+            "max_approved_iterations": approval_plan.get("max_approved_iterations", 0),
+            "automatic_multi_iteration_executor_implemented": _boolish(_nested_get(approval_plan, "executor_input_gates", "automatic_multi_iteration_executor_implemented")),
+            "automatic_multi_iteration_execution_allowed_now": _boolish(_nested_get(approval_plan, "executor_input_gates", "automatic_multi_iteration_execution_allowed_now")),
+            "future_executor_implemented": _boolish(_nested_get(approval_plan, "future_executor_contract", "implemented")),
+            "transaction_id": transaction_id,
+            "transaction_started": _boolish(transaction_plan.get("transaction_started")),
+            "journal_written_now": _boolish(transaction_plan.get("journal_written_now")),
+        },
+        "source_approval_record_summary": {
+            "schema_version": approval_record.get("schema_version"),
+            "status": approval_record.get("status"),
+            "approval_recorded": _boolish(approval_record.get("approval_recorded")),
+            "approved_for_execution": _boolish(approval_record.get("approved_for_execution")),
+            "decision": approval_record.get("decision"),
+            "reviewer": approval_record.get("reviewer"),
+            "approved_iteration_count": len(approved_iterations),
+            "transaction_started": _boolish(_nested_get(approval_record, "executor_input_gates", "transaction_started")),
+            "journal_written": _boolish(_nested_get(approval_record, "executor_input_gates", "journal_written")),
+            "automatic_multi_iteration_loop": _boolish(_nested_get(approval_record, "side_effect_policy", "automatic_multi_iteration_loop")),
+        },
+        "journal_writer_requirements": {
+            "requires_explicit_review_approval": True,
+            "requires_ready_transaction_preflight": True,
+            "requires_matching_approval_plan_id": True,
+            "requires_matching_approval_record_id": True,
+            "requires_matching_execution_plan_id": True,
+            "requires_matching_preflight_id": True,
+            "requires_matching_policy_id": True,
+            "requires_matching_plan_digest": True,
+            "requires_append_only_journal": True,
+            "requires_idempotency_guard": True,
+            "requires_per_iteration_review_gate": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_stop_after_each_checkpoint": True,
+            "requires_stop_after_journal_write": True,
+        },
+        "transaction_plan": {
+            "transaction_id": transaction_id,
+            "idempotency_key": transaction_plan.get("idempotency_key") or transaction_id,
+            "transaction_started": False,
+            "journal_written_now": False,
+            "journal_artifact": journal_artifact,
+            "result_artifact": result_artifact,
+            "ready_for_journal_writer_review": ready,
+            "ready_to_write_now": False,
+            "future_journal_writer_implemented": False,
+        },
+        "journal_writer_input_gates": {
+            "approval_plan_verified": ready,
+            "approval_record_verified": ready,
+            "ready_for_review": ready,
+            "ready_to_write_now": False,
+            "transaction_started": False,
+            "journal_written": False,
+            "automatic_multi_iteration_loop": False,
+            "requires_transaction_journal": True,
+            "requires_per_iteration_review_gate": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_stop_after_each_checkpoint": True,
+        },
+        "planned_journal_entries": [
+            {
+                "entry_index": index,
+                "entry_kind": "planned_multi_iteration_step",
+                "iteration_index": item.get("iteration_index"),
+                "source_iteration_index": item.get("source_iteration_index"),
+                "workflow_step_index": item.get("workflow_step_index"),
+                "method": item.get("method"),
+                "fingerprint": item.get("fingerprint"),
+                "would_write_now": False,
+                "requires_checkpoint_after_iteration": True,
+                "requires_fresh_live_callframe": True,
+            }
+            for index, item in enumerate(approved_iterations)
+        ],
+        "checks": _automatic_loop_multi_iteration_transaction_preflight_checks(
+            approval_plan=approval_plan,
+            approval_record=approval_record,
+            expected_approval_plan_id=expected_approval_plan_id,
+            expected_approval_record_id=expected_approval_record_id,
+            expected_execution_plan_id=expected_execution_plan_id,
+            expected_preflight_id=expected_preflight_id,
+            expected_policy_id=expected_policy_id,
+            expected_plan_digest_sha256=expected_plan_digest_sha256,
+            plan_digest=plan_digest,
+        ),
+        "blockers": blockers,
+        "next_action": _automatic_loop_multi_iteration_transaction_preflight_next_action(blockers=blockers),
+        "metadata": {
+            **(metadata or {}),
+            "tool": "review_paused_session_automatic_loop_multi_iteration_transaction_preflight",
+            "approval_plan_read": plan_read,
+            "approval_record_read": record_read,
+            "legacy_path": "workspace/paused-session-automatic-loop-multi-iteration-transaction-preflight.json",
+            "future_path": "/workspace/debugger/paused-session-automatic-loop-multi-iteration-transaction-preflight.json",
+        },
+        "side_effect_policy": _automatic_loop_multi_iteration_transaction_preflight_side_effect_policy(),
+    }
+    return payload
+
+
 def review_paused_session_automatic_loop_bounded_executor_gate_payload(
     *,
     transaction_journal_json: str | None = None,
@@ -2370,6 +2603,79 @@ def _automatic_loop_transaction_preflight_side_effect_policy() -> dict[str, Any]
         "calls_mcp": False,
         "mobile_runtime_used": False,
     }
+
+
+def _automatic_loop_multi_iteration_transaction_preflight_checks(
+    *,
+    approval_plan: dict[str, Any],
+    approval_record: dict[str, Any],
+    expected_approval_plan_id: str | None,
+    expected_approval_record_id: str | None,
+    expected_execution_plan_id: str | None,
+    expected_preflight_id: str | None,
+    expected_policy_id: str | None,
+    expected_plan_digest_sha256: str | None,
+    plan_digest: str | None,
+) -> list[dict[str, Any]]:
+    plan_blockers = approval_plan.get("blockers") if isinstance(approval_plan.get("blockers"), list) else []
+    record_blockers = approval_record.get("blockers") if isinstance(approval_record.get("blockers"), list) else []
+    plan_id = approval_plan.get("approval_plan_id")
+    record_plan_id = approval_record.get("approval_plan_id")
+    execution_plan_id = approval_plan.get("execution_plan_id")
+    record_execution_plan_id = approval_record.get("execution_plan_id")
+    preflight_id = approval_plan.get("preflight_id")
+    record_preflight_id = approval_record.get("preflight_id")
+    policy_id = approval_plan.get("policy_id")
+    record_policy_id = approval_record.get("policy_id")
+    return [
+        {"name": "approval_plan_available", "passed": bool(approval_plan), "details": {"approval_plan_id": plan_id}},
+        {"name": "approval_record_available", "passed": bool(approval_record), "details": {"approval_record_id": approval_record.get("approval_record_id")}},
+        {"name": "approval_plan_ready_for_review", "passed": approval_plan.get("status") == "ready_for_review" and approval_plan.get("approval_plan_ready_for_review") is True, "details": {"status": approval_plan.get("status"), "approval_plan_ready_for_review": approval_plan.get("approval_plan_ready_for_review")}},
+        {"name": "approval_plan_has_no_blockers", "passed": not plan_blockers, "details": {"blockers": plan_blockers}},
+        {"name": "approval_record_written", "passed": approval_record.get("status") == "written" and approval_record.get("approval_recorded") is True, "details": {"status": approval_record.get("status"), "approval_recorded": approval_record.get("approval_recorded")}},
+        {"name": "approval_record_approved_for_execution", "passed": approval_record.get("approved_for_execution") is True and approval_record.get("decision") == "approved", "details": {"approved_for_execution": approval_record.get("approved_for_execution"), "decision": approval_record.get("decision")}},
+        {"name": "approval_record_has_no_blockers", "passed": not record_blockers, "details": {"blockers": record_blockers}},
+        {"name": "approval_record_matches_approval_plan_id", "passed": bool(plan_id) and plan_id == record_plan_id, "details": {"approval_plan_id": plan_id, "record_approval_plan_id": record_plan_id}},
+        {"name": "approval_record_matches_execution_plan_id", "passed": bool(execution_plan_id) and execution_plan_id == record_execution_plan_id, "details": {"execution_plan_id": execution_plan_id, "record_execution_plan_id": record_execution_plan_id}},
+        {"name": "approval_record_matches_preflight_id", "passed": bool(preflight_id) and preflight_id == record_preflight_id, "details": {"preflight_id": preflight_id, "record_preflight_id": record_preflight_id}},
+        {"name": "approval_record_matches_policy_id", "passed": bool(policy_id) and policy_id == record_policy_id, "details": {"policy_id": policy_id, "record_policy_id": record_policy_id}},
+        {"name": "approval_record_matches_plan_digest", "passed": not approval_record.get("approval_plan_digest_sha256") or approval_record.get("approval_plan_digest_sha256") == plan_digest, "details": {"record_digest": approval_record.get("approval_plan_digest_sha256"), "current_digest": plan_digest}},
+        {"name": "expected_approval_plan_id_matches", "passed": not expected_approval_plan_id or plan_id == expected_approval_plan_id, "details": {"expected_approval_plan_id": expected_approval_plan_id, "approval_plan_id": plan_id}},
+        {"name": "expected_approval_record_id_matches", "passed": not expected_approval_record_id or approval_record.get("approval_record_id") == expected_approval_record_id, "details": {"expected_approval_record_id": expected_approval_record_id, "approval_record_id": approval_record.get("approval_record_id")}},
+        {"name": "expected_execution_plan_id_matches", "passed": not expected_execution_plan_id or execution_plan_id == expected_execution_plan_id, "details": {"expected_execution_plan_id": expected_execution_plan_id, "execution_plan_id": execution_plan_id}},
+        {"name": "expected_preflight_id_matches", "passed": not expected_preflight_id or preflight_id == expected_preflight_id, "details": {"expected_preflight_id": expected_preflight_id, "preflight_id": preflight_id}},
+        {"name": "expected_policy_id_matches", "passed": not expected_policy_id or policy_id == expected_policy_id, "details": {"expected_policy_id": expected_policy_id, "policy_id": policy_id}},
+        {"name": "expected_plan_digest_matches", "passed": not expected_plan_digest_sha256 or expected_plan_digest_sha256 == plan_digest, "details": {"expected_plan_digest_sha256": expected_plan_digest_sha256, "approval_plan_digest_sha256": plan_digest}},
+        {"name": "approval_plan_transaction_not_started", "passed": _nested_get(approval_plan, "transaction_plan", "transaction_started") is not True, "details": {"transaction_started": _nested_get(approval_plan, "transaction_plan", "transaction_started")}},
+        {"name": "approval_plan_journal_not_written", "passed": _nested_get(approval_plan, "transaction_plan", "journal_written_now") is not True, "details": {"journal_written_now": _nested_get(approval_plan, "transaction_plan", "journal_written_now")}},
+        {"name": "approval_record_transaction_not_started", "passed": _nested_get(approval_record, "executor_input_gates", "transaction_started") is not True, "details": {"transaction_started": _nested_get(approval_record, "executor_input_gates", "transaction_started")}},
+        {"name": "approval_record_journal_not_written", "passed": _nested_get(approval_record, "executor_input_gates", "journal_written") is not True, "details": {"journal_written": _nested_get(approval_record, "executor_input_gates", "journal_written")}},
+        {"name": "approval_record_did_not_execute_multi_iteration_loop", "passed": _nested_get(approval_record, "side_effect_policy", "automatic_multi_iteration_loop") is not True, "details": {"automatic_multi_iteration_loop": _nested_get(approval_record, "side_effect_policy", "automatic_multi_iteration_loop")}},
+        {"name": "multi_iteration_executor_not_implemented", "passed": _nested_get(approval_plan, "executor_input_gates", "automatic_multi_iteration_executor_implemented") is not True and _nested_get(approval_plan, "future_executor_contract", "implemented") is not True, "details": {"automatic_multi_iteration_executor_implemented": _nested_get(approval_plan, "executor_input_gates", "automatic_multi_iteration_executor_implemented"), "future_executor_implemented": _nested_get(approval_plan, "future_executor_contract", "implemented")}},
+        {"name": "multi_iteration_execution_not_allowed_now", "passed": _nested_get(approval_plan, "executor_input_gates", "automatic_multi_iteration_execution_allowed_now") is not True, "details": {"automatic_multi_iteration_execution_allowed_now": _nested_get(approval_plan, "executor_input_gates", "automatic_multi_iteration_execution_allowed_now")}},
+    ]
+
+
+def _automatic_loop_multi_iteration_transaction_preflight_blockers(**kwargs: Any) -> list[str]:
+    return [check["name"] for check in _automatic_loop_multi_iteration_transaction_preflight_checks(**kwargs) if not check["passed"]]
+
+
+def _automatic_loop_multi_iteration_transaction_preflight_next_action(*, blockers: list[str]) -> str:
+    if blockers:
+        return "fix_paused_session_automatic_loop_multi_iteration_transaction_preflight_blockers"
+    return "review_explicit_paused_session_automatic_loop_multi_iteration_transaction_journal_writer"
+
+
+def _automatic_loop_multi_iteration_transaction_preflight_side_effect_policy() -> dict[str, Any]:
+    policy = _automatic_loop_transaction_preflight_side_effect_policy()
+    policy.update({
+        "automatic_multi_iteration_loop": False,
+        "per_iteration_review_gate_required": True,
+        "checkpoint_after_each_iteration_required": True,
+        "fresh_live_callframe_per_iteration_required": True,
+        "stop_after_each_checkpoint_required": True,
+    })
+    return policy
 
 
 def _automatic_loop_transaction_journal_checks(
