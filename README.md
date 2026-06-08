@@ -142,7 +142,7 @@ reverse-agent-browser-provider-smoke \
   --artifact-root "<repo-root>/artifacts/browser-provider-smoke"
 ```
 
-默认是 registry metadata-only：不调用 provider factory、不检查 availability、不启动浏览器、不调用 MCP，只写 `workspace/browser-provider-smoke.json`。真实启动必须显式加 `--launch-browser-smoke`，例如：
+默认是 registry metadata-only：不调用 provider factory、不检查 availability、不启动浏览器、不调用 MCP，只写 `workspace/browser-provider-smoke.json`。artifact 会额外写入 redaction-safe `requested_provider_config` 和 `review_command_hint`：前者记录 connect / persistent profile / headless / humanize / proxy / locale / timezone / browser args 的脱敏摘要，后者给出复核或重新生成显式 launch smoke 的命令提示；这只是配置证据，不代表 runtime launch smoke 已通过。真实启动必须显式加 `--launch-browser-smoke`，例如：
 
 ```bash
 reverse-agent-browser-provider-smoke \

@@ -109,6 +109,65 @@ class BrowserProviderSmokeCliTests(unittest.TestCase):
             self.assertEqual(written["schema_version"], "reverse-deepagent.browser-provider-smoke.v1")
             self.assertEqual(written["provider"]["smoke"]["status"], "skipped")
 
+    def test_metadata_only_cloakbrowser_smoke_records_redacted_requested_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "artifacts"
+
+            payload = run_browser_provider_smoke(
+                browser="cloakbrowser",
+                artifact_root=root,
+                smoke_url="https://example.test/smoke",
+                provider_kwargs={
+                    "browser_url": "http://user:pass@127.0.0.1:9222",
+                    "browser_profile_dir": "/Users/example/private-profile",
+                    "browser_headless": False,
+                    "browser_humanize": True,
+                    "browser_proxy": "http://user:pass@example.test:8080",
+                    "browser_geoip": True,
+                    "browser_locale": "zh-CN",
+                    "browser_timezone": "Asia/Shanghai",
+                    "browser_args": ["--load-extension=/Users/example/ext", "--proxy-server=http://user:pass@example.test:8080"],
+                    "request_timeout": 12.5,
+                },
+                provider_factory=raising_provider_factory,
+            )
+
+            artifact_path = root / "workspace" / "browser-provider-smoke.json"
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["mode"], "metadata-only")
+            self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
+            config = payload["requested_provider_config"]
+            self.assertEqual(config, payload["provider"]["requested_provider_config"])
+            self.assertEqual(config["provider_id"], "cloakbrowser")
+            self.assertTrue(config["connect_mode_requested"])
+            self.assertTrue(config["persistent_context_requested"])
+            self.assertFalse(config["launch_mode_requested"])
+            self.assertEqual(config["browser_url"], "http://127.0.0.1:9222")
+            self.assertTrue(config["profile_dir_configured"])
+            self.assertEqual(config["profile_dir_name"], "private-profile")
+            self.assertFalse(config["headless"])
+            self.assertTrue(config["humanize"])
+            self.assertTrue(config["proxy_configured"])
+            self.assertEqual(config["proxy"], "<configured>")
+            self.assertTrue(config["geoip"])
+            self.assertEqual(config["locale"], "zh-CN")
+            self.assertEqual(config["timezone"], "Asia/Shanghai")
+            self.assertEqual(config["browser_args_count"], 2)
+            self.assertEqual(config["browser_args"][0], "--load-extension=<redacted-path>")
+            self.assertEqual(config["browser_args"][1], "--proxy-server=<redacted>")
+            self.assertTrue(config["redaction_safe"])
+            self.assertNotIn("user:pass", json.dumps(payload, ensure_ascii=False))
+            self.assertNotIn("/Users/example", json.dumps(payload, ensure_ascii=False))
+            hint = payload["review_command_hint"]
+            self.assertTrue(hint["launch_smoke_required_for_runtime_acceptance"])
+            self.assertFalse(hint["current_run_was_launch_smoke"])
+            self.assertIn("--launch-browser-smoke", hint["command"])
+            self.assertIn("--browser-url", hint["command"])
+            self.assertIn("http://127.0.0.1:9222", hint["command"])
+
+            written = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(written["requested_provider_config"], config)
+
     def test_launch_smoke_writes_verified_provider_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir) / "artifacts"

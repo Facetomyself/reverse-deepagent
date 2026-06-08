@@ -2844,3 +2844,13 @@ Status: implemented as a read-only / review-only / preflight-only executor-input
 Boundary: this closes only the review input preflight between Step 266 and the explicit Step 264 executor. It calls no executor, writes no checkpoint, recovers no live callFrame, sends no CDP command, subscribes to or captures no paused event, executes no iteration, advances no queue / loop, manages no long-lived session, calls no MCP, and touches no mobile full runtime chain. Full automatic multi-iteration loops, automatic live callFrame recovery, automatic wrapper continuation loops, and long-lived cross-process session management remain separate capability-gated follow-ups.
 
 Tests cover manager-level blocked / ready executor-input preflight review, native-web route priority and no-side-effect metadata, workspace route aliasing, coordinator payload/category mapping, debugger-subagent warning / blocker wiring, compileall, and related breakpoint / native-web / workspace / coordinator / debugger regressions.
+
+### Step 268：BrowserProvider smoke requested config evidence baseline
+
+Status: implemented as metadata-only BrowserProvider smoke evidence hardening for real CloakBrowser / hosted-CDP review workflows. This is not provider certification, not implicit availability probing, not browser launch by default, not MCP integration, and not an Android / iOS / mini-program full runtime chain.
+
+`reverse-agent-browser-provider-smoke` now writes a redaction-safe `requested_provider_config` into `workspace/browser-provider-smoke.json` for metadata-only, availability-check, and launch-smoke modes. The summary records connect-mode intent, persistent-profile intent, headless / humanize choices, proxy configured status, locale, timezone, request timeout, browser arg count, redacted browser args, and redacted browser URL without invoking provider factories. It also writes `review_command_hint`, a redaction-safe command outline for regenerating explicit `--launch-browser-smoke` evidence when runtime launch-smoke acceptance is required.
+
+Boundary: the new fields are review metadata only. They do not make metadata-only evidence count as launch smoke, do not call provider factories, do not check availability, do not probe CDP endpoints, do not start browsers, do not call MCP, and do not touch mobile full runtime chains. Provider credentials, proxy access material, browser URL credentials, and local sensitive path details are redacted before being written to artifacts.
+
+Tests cover CloakBrowser metadata-only smoke artifact redaction, provider factory non-invocation, command hint generation, persisted JSON parity, compileall, and BrowserProvider smoke / CloakBrowser / doctor / matrix regressions.
