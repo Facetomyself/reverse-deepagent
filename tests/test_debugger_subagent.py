@@ -1341,6 +1341,124 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertTrue(diagnostics["next_iteration_reviewable"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_blocks_automatic_loop_next_iteration_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_next_iteration_plan": {
+                "plan": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "transaction_id": "automatic-loop-next-plan:blocked",
+                    "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                    "next_iteration": {
+                        "next_loop_plan_ready": True,
+                        "next_iteration_reviewable": True,
+                        "fresh_live_callframe_recovered": False,
+                        "would_execute_next_iteration": False,
+                    },
+                    "blockers": ["fresh_live_callframe_recovery_required"],
+                    "side_effect_policy": {
+                        "would_execute_next_iteration": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_next_iteration_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_next_iteration_plan_blockers")
+        plan = result["summary"]["automatic_loop_next_iteration_plan"]
+        self.assertEqual(plan["status"], "blocked")
+        self.assertFalse(plan["ready_for_review"])
+        self.assertTrue(plan["followup_checkpoint_ready"])
+        self.assertTrue(plan["continuation_checkpoint_ready"])
+        self.assertTrue(plan["next_loop_plan_ready"])
+        self.assertTrue(plan["next_iteration_reviewable"])
+        self.assertFalse(plan["fresh_live_callframe_recovered"])
+        self.assertFalse(plan["would_execute_next_iteration"])
+        self.assertFalse(plan["loop_advanced"])
+        self.assertFalse(plan["queue_advanced"])
+        self.assertFalse(plan["calls_mcp"])
+        self.assertFalse(plan["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_plan_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["fresh_live_callframe_recovery_required"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_next_iteration_plan_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-next-plan:ready",
+                    "checkpoint_review": {"checkpoint_ready": True},
+                    "next_loop_review": {"next_loop_plan_ready": True, "next_iteration_reviewable": True},
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "checkpoint_written": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            },
+            "paused_session_automatic_loop_next_iteration_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-next-plan:ready",
+                    "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                    "next_iteration": {
+                        "next_loop_plan_ready": True,
+                        "next_iteration_reviewable": True,
+                        "fresh_live_callframe_recovered": True,
+                        "would_execute_next_iteration": False,
+                    },
+                    "execution_review_gates": {"requires_explicit_execution_approval": True},
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "would_execute_next_iteration": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertNotIn("automatic_loop_followup_checkpoint_ready_for_next_loop_review", result["warnings"])
+        self.assertIn("automatic_loop_next_iteration_plan_requires_execution_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_automatic_loop_next_iteration_execution")
+        plan = result["summary"]["automatic_loop_next_iteration_plan"]
+        self.assertEqual(plan["status"], "ready_for_review")
+        self.assertTrue(plan["ready_for_review"])
+        self.assertTrue(plan["followup_checkpoint_ready"])
+        self.assertTrue(plan["continuation_checkpoint_ready"])
+        self.assertTrue(plan["next_loop_plan_ready"])
+        self.assertTrue(plan["next_iteration_reviewable"])
+        self.assertTrue(plan["fresh_live_callframe_recovered"])
+        self.assertFalse(plan["would_execute_next_iteration"])
+        self.assertFalse(plan["loop_advanced"])
+        self.assertFalse(plan["queue_advanced"])
+        self.assertFalse(plan["calls_mcp"])
+        self.assertFalse(plan["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_plan_diagnostics"]
+        self.assertTrue(diagnostics["requires_explicit_execution_approval"])
+        self.assertFalse(diagnostics["would_execute_next_iteration"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
     def test_review_debugger_artifacts_blocks_multi_step_loop_execution(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

@@ -9,6 +9,7 @@
 - 当需要审计 transaction journal 是否可进入未来 bounded executor review 时，调用 review_paused_session_automatic_loop_bounded_executor_gate；它只返回 read-only gate / result contract descriptor，不执行 loop
 - 当输入包含 `workspace/paused-session-automatic-loop-execution-result.json` / `paused_session_automatic_loop_execution_result` 时，调用 review_debugger_artifacts 审计执行状态；executed 且 checkpoint_required=true 时必须提示后续 continuation checkpoint，不得把一次执行结果扩展成自动多轮 loop
 - 当输入包含 `workspace/paused-session-automatic-loop-followup-checkpoint.json` / `paused_session_automatic_loop_followup_checkpoint` 时，调用 review_debugger_artifacts 做只读审计；blocked 时提示修复 checkpoint / loop plan，ready 时仅路由到下一轮 review，不得写 checkpoint 或执行下一轮 iteration
+- 当输入包含 `workspace/paused-session-automatic-loop-next-iteration-plan.json` / `paused_session_automatic_loop_next_iteration_plan` 时，调用 review_debugger_artifacts 做只读审计；blocked 时提示补 fresh live callFrame / checkpoint / loop plan，ready 时仅路由到显式 next-iteration execution review，不得 recover callFrame、发送 CDP、执行下一轮或 advance queue / loop
 - 识别 durable snapshot inspect-only、action_blocked、missing artifacts、paused without callframes、debugger failure 等阻断或警告
 - 给 coordinator / review 返回结构化 status、blockers、warnings、review_required_items 和 next_action
 
