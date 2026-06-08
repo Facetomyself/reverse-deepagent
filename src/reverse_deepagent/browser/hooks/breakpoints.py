@@ -7441,6 +7441,288 @@ class PausedSessionAutomaticLoopFollowingIterationPlanManager:
 
 
 @dataclass(slots=True)
+class PausedSessionAutomaticLoopMultiIterationPolicySpec:
+    """Read-only bounded multi-iteration policy descriptor after following-iteration planning.
+
+    This descriptor is a policy / budget review layer only. It does not execute
+    iterations, recover callFrames, write checkpoints, advance queues, or manage
+    long-lived cross-process sessions.
+    """
+
+    following_iteration_plan: dict[str, Any] = field(default_factory=dict)
+    max_policy_iterations: int = 2
+    require_review_per_iteration: bool = True
+    require_checkpoint_after_each_iteration: bool = True
+    require_fresh_live_callframe_per_iteration: bool = True
+    stop_after_each_checkpoint: bool = True
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionAutomaticLoopMultiIterationPolicySpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_automatic_loop_multi_iteration_policy")
+            or context.get("pausedSessionAutomaticLoopMultiIterationPolicy")
+            or context.get("paused-session-automatic-loop-multi-iteration-policy")
+            or context.get("plan_paused_session_automatic_loop_multi_iteration_policy")
+            or context.get("planPausedSessionAutomaticLoopMultiIterationPolicy")
+            or context.get("review_paused_session_automatic_loop_multi_iteration_policy")
+            or context.get("reviewPausedSessionAutomaticLoopMultiIterationPolicy")
+            or context.get("automatic_loop_multi_iteration_policy")
+            or context.get("automaticLoopMultiIterationPolicy")
+        )
+        plan_container = _first_dict(
+            context,
+            "paused_session_automatic_loop_following_iteration_plan",
+            "pausedSessionAutomaticLoopFollowingIterationPlan",
+            "paused-session-automatic-loop-following-iteration-plan",
+            "plan_following_paused_session_automatic_loop_iteration",
+            "planFollowingPausedSessionAutomaticLoopIteration",
+            "review_following_paused_session_automatic_loop_iteration",
+            "reviewFollowingPausedSessionAutomaticLoopIteration",
+            "automatic_loop_following_iteration_plan",
+            "automaticLoopFollowingIterationPlan",
+        )
+        following_plan = dict(plan_container.get("plan")) if isinstance(plan_container.get("plan"), dict) else plan_container
+        if not requested and not following_plan:
+            return None
+        budget_raw = context.get("max_policy_iterations", context.get("maxPolicyIterations", context.get("max_multi_iteration_budget", context.get("maxMultiIterationBudget", 2))))
+        try:
+            max_policy_iterations = int(budget_raw)
+        except (TypeError, ValueError):
+            max_policy_iterations = 2
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or following_plan.get("reviewer")
+        return cls(
+            following_iteration_plan=following_plan,
+            max_policy_iterations=max(0, min(max_policy_iterations, 10)),
+            require_review_per_iteration=bool(context.get("require_review_per_iteration", context.get("requireReviewPerIteration", True))),
+            require_checkpoint_after_each_iteration=bool(context.get("require_checkpoint_after_each_iteration", context.get("requireCheckpointAfterEachIteration", True))),
+            require_fresh_live_callframe_per_iteration=bool(context.get("require_fresh_live_callframe_per_iteration", context.get("requireFreshLiveCallframePerIteration", True))),
+            stop_after_each_checkpoint=bool(context.get("stop_after_each_checkpoint", context.get("stopAfterEachCheckpoint", True))),
+            reviewer=str(reviewer).strip() if reviewer else None,
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopMultiIterationPolicyResult:
+    status: str
+    policy: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"status": self.status, "policy": self.policy, "side_effect_policy": self.side_effect_policy, "reason": self.reason}
+
+
+class PausedSessionAutomaticLoopMultiIterationPolicyManager:
+    """Read-only policy / budget descriptor for future bounded automatic-loop automation."""
+
+    def review(self, spec: PausedSessionAutomaticLoopMultiIterationPolicySpec | None) -> PausedSessionAutomaticLoopMultiIterationPolicyResult:
+        blockers = self._blockers(spec)
+        status = "ready_for_review" if not blockers else "blocked"
+        payload = self._payload(spec, status=status, blockers=blockers)
+        return PausedSessionAutomaticLoopMultiIterationPolicyResult(status=status, policy=payload, side_effect_policy=self._side_effect_policy(), reason=blockers[0] if blockers else None)
+
+    @classmethod
+    def _blockers(cls, spec: PausedSessionAutomaticLoopMultiIterationPolicySpec | None) -> list[str]:
+        if spec is None:
+            return ["automatic_loop_multi_iteration_policy_request_missing"]
+        plan = spec.following_iteration_plan
+        blockers: list[str] = []
+        if not plan:
+            blockers.append("following_iteration_plan_required")
+        elif plan.get("status") != "ready_for_review" or plan.get("ready_for_review") is not True:
+            blockers.append("following_iteration_plan_not_ready")
+        plan_blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+        if plan_blockers:
+            blockers.append("following_iteration_plan_has_blockers")
+        checkpoint = plan.get("checkpoint_review") if isinstance(plan.get("checkpoint_review"), dict) else {}
+        next_iteration = plan.get("next_iteration") if isinstance(plan.get("next_iteration"), dict) else {}
+        if checkpoint and checkpoint.get("followup_checkpoint_ready") is not True:
+            blockers.append("following_iteration_followup_checkpoint_not_ready")
+        if checkpoint and checkpoint.get("continuation_checkpoint_ready") is not True:
+            blockers.append("following_iteration_continuation_checkpoint_not_ready")
+        if next_iteration and next_iteration.get("next_iteration_reviewable") is not True:
+            blockers.append("following_iteration_not_reviewable")
+        if next_iteration and next_iteration.get("fresh_live_callframe_recovered") is not True:
+            blockers.append("fresh_live_callframe_required_for_policy")
+        if spec.max_policy_iterations < 2:
+            blockers.append("multi_iteration_policy_budget_requires_at_least_two")
+        if spec.require_review_per_iteration is not True:
+            blockers.append("review_per_iteration_required")
+        if spec.require_checkpoint_after_each_iteration is not True:
+            blockers.append("checkpoint_after_each_iteration_required")
+        if spec.require_fresh_live_callframe_per_iteration is not True:
+            blockers.append("fresh_live_callframe_per_iteration_required")
+        if spec.stop_after_each_checkpoint is not True:
+            blockers.append("stop_after_each_checkpoint_required")
+        policy = plan.get("side_effect_policy") if isinstance(plan.get("side_effect_policy"), dict) else {}
+        if policy.get("cdp_command_sent") is True or policy.get("would_execute_next_iteration") is True:
+            blockers.append("following_iteration_plan_has_execution_side_effects")
+        if policy.get("loop_advanced") is True or policy.get("queue_advanced") is True:
+            blockers.append("following_iteration_plan_advanced_loop_or_queue")
+        if policy.get("calls_mcp") is True:
+            blockers.append("following_iteration_plan_called_mcp")
+        if policy.get("mobile_runtime_used") is True:
+            blockers.append("following_iteration_plan_used_mobile_runtime")
+        return list(dict.fromkeys(blockers))
+
+    @classmethod
+    def _payload(cls, spec: PausedSessionAutomaticLoopMultiIterationPolicySpec | None, *, status: str, blockers: list[str]) -> dict[str, Any]:
+        plan = spec.following_iteration_plan if spec else {}
+        checkpoint = plan.get("checkpoint_review") if isinstance(plan.get("checkpoint_review"), dict) else {}
+        next_iteration = plan.get("next_iteration") if isinstance(plan.get("next_iteration"), dict) else {}
+        ready = status == "ready_for_review"
+        budget = spec.max_policy_iterations if spec else 0
+        policy_id = f"automatic-loop-policy:{plan.get('transaction_id') or plan.get('loop_id') or plan.get('workflow_id') or 'unbound'}"
+        per_iteration_gates = [
+            {
+                "iteration_number": index + 1,
+                "requires_explicit_review": True,
+                "requires_ready_following_or_next_iteration_plan": True,
+                "requires_fresh_live_callframe": True,
+                "requires_retained_attached_session": True,
+                "requires_checkpoint_after_iteration": True,
+                "requires_stop_for_review_after_checkpoint": True,
+                "would_execute_in_this_descriptor": False,
+                "would_advance_queue_in_this_descriptor": False,
+            }
+            for index in range(max(0, budget))
+        ]
+        return {
+            "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-policy.v1",
+            "status": status,
+            "ready_for_review": ready,
+            "policy_id": policy_id,
+            "transaction_id": plan.get("transaction_id"),
+            "loop_id": plan.get("loop_id"),
+            "workflow_id": plan.get("workflow_id"),
+            "reviewer": spec.reviewer if spec else None,
+            "source_following_iteration_plan": {
+                "schema_version": plan.get("schema_version"),
+                "status": plan.get("status"),
+                "ready_for_review": bool(plan.get("ready_for_review")),
+                "next_action": plan.get("next_action"),
+                "target_execution_artifact": plan.get("target_execution_artifact"),
+                "followup_checkpoint_ready": bool(checkpoint.get("followup_checkpoint_ready")),
+                "continuation_checkpoint_ready": bool(checkpoint.get("continuation_checkpoint_ready")),
+                "next_loop_plan_ready": bool(next_iteration.get("next_loop_plan_ready")),
+                "next_iteration_reviewable": bool(next_iteration.get("next_iteration_reviewable")),
+                "fresh_live_callframe_recovered": bool(next_iteration.get("fresh_live_callframe_recovered")),
+            },
+            "budget_policy": {
+                "max_policy_iterations": budget,
+                "minimum_budget_for_multi_iteration_policy": 2,
+                "bounded_multi_iteration_policy_ready": ready,
+                "automatic_multi_iteration_executor_implemented": False,
+                "automatic_multi_iteration_execution_allowed_now": False,
+                "requires_review_per_iteration": spec.require_review_per_iteration if spec else True,
+                "requires_checkpoint_after_each_iteration": spec.require_checkpoint_after_each_iteration if spec else True,
+                "requires_fresh_live_callframe_per_iteration": spec.require_fresh_live_callframe_per_iteration if spec else True,
+                "stop_after_each_checkpoint": spec.stop_after_each_checkpoint if spec else True,
+            },
+            "per_iteration_gates": per_iteration_gates,
+            "stop_conditions": {
+                "stop_after_each_checkpoint": spec.stop_after_each_checkpoint if spec else True,
+                "stop_on_missing_fresh_live_callframe": True,
+                "stop_on_missing_review_approval": True,
+                "stop_on_checkpoint_not_ready": True,
+                "stop_on_any_cdp_error": True,
+                "stop_on_loop_or_queue_advance_claim": True,
+                "stop_on_mcp_or_mobile_runtime_signal": True,
+            },
+            "future_executor_contract": {
+                "executor_name": "execute_paused_session_automatic_loop_multi_iteration",
+                "implemented": False,
+                "expected_policy_artifact": "workspace/paused-session-automatic-loop-multi-iteration-policy.json",
+                "would_require_matching_policy_id": True,
+                "would_require_explicit_review_approval": True,
+                "would_require_transaction_journal": True,
+                "would_execute_bounded_iterations_only": True,
+                "would_checkpoint_between_iterations": True,
+                "would_not_run_as_daemon": True,
+                "would_not_auto_recover_live_callframe": True,
+                "would_not_advance_queue_without_review": True,
+                "would_not_manage_long_lived_session": True,
+                "would_not_call_mcp": True,
+                "would_not_touch_mobile_runtime_chains": True,
+            },
+            "blockers": blockers,
+            "blocker_details": cls._blocker_details(blockers),
+            "reason": blockers[0] if blockers else None,
+            "next_action": cls._next_action(status=status, blockers=blockers),
+            "side_effect_policy": cls._side_effect_policy(),
+        }
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "plan_only": True,
+            "policy_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "debugger_domain_enabled": False,
+            "debugger_event_subscribed": False,
+            "paused_event_captured": False,
+            "browser_resumed": False,
+            "debugger_stepped": False,
+            "callframe_evaluated": False,
+            "runtime_mutated": False,
+            "cross_process_action_executed": False,
+            "multi_step_continuation_executed": False,
+            "multi_step_loop_iteration_executed": False,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_loop": False,
+            "automatic_live_callframe_recovery": False,
+            "automatic_queue_advance": False,
+            "loop_advanced": False,
+            "queue_advanced": False,
+            "automatic_wrapper_continuation": False,
+            "long_lived_cross_process_session_managed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _blocker_details(blockers: list[str]) -> list[dict[str, Any]]:
+        catalog = {
+            "automatic_loop_multi_iteration_policy_request_missing": ("request", "No automatic-loop multi-iteration policy request was provided.", "request_paused_session_automatic_loop_multi_iteration_policy"),
+            "following_iteration_plan_required": ("plan", "A ready following-iteration plan is required.", "review_following_paused_session_automatic_loop_iteration"),
+            "following_iteration_plan_not_ready": ("plan", "The following-iteration plan is not ready for review.", "resolve_following_iteration_plan_blockers"),
+            "following_iteration_plan_has_blockers": ("plan", "The following-iteration plan still contains blockers.", "resolve_following_iteration_plan_blockers"),
+            "following_iteration_followup_checkpoint_not_ready": ("checkpoint", "The next-iteration follow-up checkpoint is not ready.", "checkpoint_paused_session_automatic_loop_next_iteration_execution"),
+            "following_iteration_continuation_checkpoint_not_ready": ("checkpoint", "The continuation checkpoint is not ready.", "refresh_continuation_checkpoint"),
+            "following_iteration_not_reviewable": ("review", "The next iteration is not reviewable.", "replan_following_iteration"),
+            "fresh_live_callframe_required_for_policy": ("callframe", "Fresh live callFrame evidence is required before policy review.", "recover_live_callframe_from_captured_pause"),
+            "multi_iteration_policy_budget_requires_at_least_two": ("budget", "A multi-iteration policy requires a budget of at least two iterations.", "raise_multi_iteration_policy_budget_or_use_single_iteration_review"),
+            "review_per_iteration_required": ("review", "Review must remain required for every iteration.", "restore_review_per_iteration_gate"),
+            "checkpoint_after_each_iteration_required": ("checkpoint", "A checkpoint must be required after every iteration.", "restore_checkpoint_after_each_iteration_gate"),
+            "fresh_live_callframe_per_iteration_required": ("callframe", "Fresh live callFrame evidence must be required for every iteration.", "restore_fresh_live_callframe_gate"),
+            "stop_after_each_checkpoint_required": ("policy", "The policy must stop for review after each checkpoint.", "restore_stop_after_each_checkpoint_policy"),
+            "following_iteration_plan_has_execution_side_effects": ("safety", "The following-iteration plan reports execution side effects.", "audit_following_iteration_side_effects"),
+            "following_iteration_plan_advanced_loop_or_queue": ("safety", "The following-iteration plan reports loop or queue advancement.", "audit_following_iteration_loop_state"),
+            "following_iteration_plan_called_mcp": ("safety", "The following-iteration plan reports MCP usage.", "remove_mcp_from_policy_inputs"),
+            "following_iteration_plan_used_mobile_runtime": ("safety", "The following-iteration plan reports mobile runtime usage.", "remove_mobile_runtime_from_policy_inputs"),
+        }
+        return [
+            {"code": blocker, "category": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_multi_iteration_policy"))[0], "explanation": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_multi_iteration_policy"))[1], "next_action": catalog.get(blocker, ("unknown", blocker, "inspect_paused_session_automatic_loop_multi_iteration_policy"))[2]}
+            for blocker in blockers
+        ]
+
+    @staticmethod
+    def _next_action(*, status: str, blockers: list[str]) -> str:
+        if blockers:
+            return "inspect_paused_session_automatic_loop_multi_iteration_policy_blockers"
+        if status == "ready_for_review":
+            return "review_future_paused_session_automatic_loop_multi_iteration_executor_contract"
+        return "inspect_paused_session_automatic_loop_multi_iteration_policy"
+
+
+@dataclass(slots=True)
 class PausedSessionAutomaticLoopNextIterationExecutionSpec:
     """Explicit-review-only executor for one planned automatic-loop next iteration.
 

@@ -176,6 +176,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopNextIterationFollowupCheckpointSpec,
     PausedSessionAutomaticLoopFollowingIterationPlanManager,
     PausedSessionAutomaticLoopFollowingIterationPlanSpec,
+    PausedSessionAutomaticLoopMultiIterationPolicyManager,
+    PausedSessionAutomaticLoopMultiIterationPolicySpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1797,6 +1799,60 @@ class NativeWebRuntime(WebReverseRuntime):
                 status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
                 artifacts=artifact_paths,
                 next_action=plan.get("next_action") or "inspect_paused_session_automatic_loop_following_iteration_plan",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_multi_iteration_policy_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopMultiIterationPolicySpec.from_context(context)
+            result = PausedSessionAutomaticLoopMultiIterationPolicyManager().review(spec)
+            policy_payload = result.policy if isinstance(result.policy, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = policy_payload.get("blockers") if isinstance(policy_payload.get("blockers"), list) else []
+            budget = policy_payload.get("budget_policy") if isinstance(policy_payload.get("budget_policy"), dict) else {}
+            source = policy_payload.get("source_following_iteration_plan") if isinstance(policy_payload.get("source_following_iteration_plan"), dict) else {}
+            verification = [
+                f"paused_session_automatic_loop_multi_iteration_policy_status={result.status}",
+                f"paused_session_automatic_loop_multi_iteration_policy_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_multi_iteration_policy_ready_for_review={policy_payload.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_policy_id={policy_payload.get('policy_id')}",
+                f"paused_session_automatic_loop_multi_iteration_policy_budget={budget.get('max_policy_iterations', 0)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_executor_implemented={budget.get('automatic_multi_iteration_executor_implemented', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_execution_allowed_now={budget.get('automatic_multi_iteration_execution_allowed_now', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_following_plan_ready={source.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_fresh_live_callframe={source.get('fresh_live_callframe_recovered', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_automatic_multi_iteration_loop={policy.get('automatic_multi_iteration_loop', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_multi_iteration_policy_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-multi-iteration-policy.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only paused-session automatic-loop bounded multi-iteration policy descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": policy_payload.get("ready_for_review", False),
+                        "policy_id": policy_payload.get("policy_id"),
+                        "max_policy_iterations": budget.get("max_policy_iterations", 0),
+                        "automatic_multi_iteration_executor_implemented": budget.get("automatic_multi_iteration_executor_implemented", False),
+                        "automatic_multi_iteration_execution_allowed_now": budget.get("automatic_multi_iteration_execution_allowed_now", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=policy_payload.get("next_action") or "inspect_paused_session_automatic_loop_multi_iteration_policy",
                 confidence=ConfidenceLevel.LOW,
             )
         if self._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):
@@ -7320,7 +7376,35 @@ class NativeWebRuntime(WebReverseRuntime):
         )
 
     @staticmethod
+    def _is_paused_session_automatic_loop_multi_iteration_policy_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-automatic-loop-multi-iteration-policy",
+            "review-paused-session-automatic-loop-multi-iteration-policy",
+            "plan-paused-session-automatic-loop-multi-iteration-policy",
+            "review-paused-session-automatic-loop-bounded-multi-iteration-policy",
+            "paused-session-automatic-loop-budget-policy",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_automatic_loop_multi_iteration_policy",
+                "pausedSessionAutomaticLoopMultiIterationPolicy",
+                "paused-session-automatic-loop-multi-iteration-policy",
+                "plan_paused_session_automatic_loop_multi_iteration_policy",
+                "planPausedSessionAutomaticLoopMultiIterationPolicy",
+                "review_paused_session_automatic_loop_multi_iteration_policy",
+                "reviewPausedSessionAutomaticLoopMultiIterationPolicy",
+                "automatic_loop_multi_iteration_policy",
+                "automaticLoopMultiIterationPolicy",
+            )
+        )
+
+    @staticmethod
     def _is_paused_session_automatic_loop_following_iteration_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_policy_request(protection_name, context):
+            return False
         normalized = protection_name.strip().lower()
         if normalized in {
             "paused-session-automatic-loop-following-iteration-plan",

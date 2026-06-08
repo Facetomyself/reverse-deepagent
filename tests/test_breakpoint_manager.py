@@ -45,6 +45,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopNextIterationFollowupCheckpointSpec,
     PausedSessionAutomaticLoopFollowingIterationPlanManager,
     PausedSessionAutomaticLoopFollowingIterationPlanSpec,
+    PausedSessionAutomaticLoopMultiIterationPolicyManager,
+    PausedSessionAutomaticLoopMultiIterationPolicySpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -2674,6 +2676,57 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["calls_mcp"])
         self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
 
+    def test_automatic_loop_multi_iteration_policy_reviews_budget_without_execution(self) -> None:
+        spec = PausedSessionAutomaticLoopMultiIterationPolicySpec.from_context(
+            {
+                "paused_session_automatic_loop_multi_iteration_policy": True,
+                "reviewer": "policy-reviewer",
+                "max_policy_iterations": 3,
+                "paused_session_automatic_loop_following_iteration_plan": {
+                    "plan": {
+                        "schema_version": "reverse-deepagent.paused-session-automatic-loop-following-iteration-plan.v1",
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "transaction_id": "policy-tx-1",
+                        "loop_id": "policy-loop-1",
+                        "workflow_id": "policy-workflow-1",
+                        "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                        "next_iteration": {"next_loop_plan_ready": True, "next_iteration_reviewable": True, "fresh_live_callframe_recovered": True},
+                        "side_effect_policy": {
+                            "would_execute_next_iteration": False,
+                            "cdp_command_sent": False,
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                        "blockers": [],
+                    }
+                },
+            }
+        )
+
+        result = PausedSessionAutomaticLoopMultiIterationPolicyManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        policy = result.policy
+        self.assertEqual(policy["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-policy.v1")
+        self.assertTrue(policy["ready_for_review"])
+        self.assertEqual(policy["policy_id"], "automatic-loop-policy:policy-tx-1")
+        self.assertEqual(policy["reviewer"], "policy-reviewer")
+        self.assertEqual(policy["budget_policy"]["max_policy_iterations"], 3)
+        self.assertFalse(policy["budget_policy"]["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(policy["budget_policy"]["automatic_multi_iteration_execution_allowed_now"])
+        self.assertFalse(policy["future_executor_contract"]["implemented"])
+        self.assertEqual(policy["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertEqual(len(policy["per_iteration_gates"]), 3)
+        self.assertTrue(policy["per_iteration_gates"][0]["requires_explicit_review"])
+        self.assertFalse(policy["per_iteration_gates"][0]["would_execute_in_this_descriptor"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_iteration_loop"])
+        self.assertFalse(result.side_effect_policy["loop_advanced"])
+        self.assertFalse(result.side_effect_policy["queue_advanced"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
 
     def test_multi_step_continuation_execution_requires_review_before_cdp(self) -> None:
         session = RecordingCDPSession(emit_pause_on_step=True)

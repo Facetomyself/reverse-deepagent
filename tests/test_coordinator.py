@@ -1107,6 +1107,23 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop multi-iteration policy",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_multi_iteration_policy",
+                    details={
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "policy_id": "automatic-loop-policy:tx-follow-coordinator-1",
+                        "budget_policy": {
+                            "max_policy_iterations": 3,
+                            "automatic_multi_iteration_executor_implemented": False,
+                            "automatic_multi_iteration_execution_allowed_now": False,
+                        },
+                        "side_effect_policy": {"automatic_multi_iteration_loop": False, "loop_advanced": False, "queue_advanced": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1415,6 +1432,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_next_iteration_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_next_iteration_followup_checkpoint"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_following_iteration_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_policy"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")

@@ -1623,6 +1623,55 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(diagnostics["calls_mcp"])
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_policy_executor_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_policy": {
+                "policy": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "policy_id": "automatic-loop-policy:ready",
+                    "budget_policy": {
+                        "max_policy_iterations": 3,
+                        "automatic_multi_iteration_executor_implemented": False,
+                        "automatic_multi_iteration_execution_allowed_now": False,
+                        "requires_review_per_iteration": True,
+                        "requires_checkpoint_after_each_iteration": True,
+                        "requires_fresh_live_callframe_per_iteration": True,
+                        "stop_after_each_checkpoint": True,
+                    },
+                    "source_following_iteration_plan": {"ready_for_review": True, "fresh_live_callframe_recovered": True},
+                    "future_executor_contract": {"implemented": False},
+                    "side_effect_policy": {
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_policy_requires_executor_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_paused_session_automatic_loop_multi_iteration_executor_contract")
+        policy = result["summary"]["automatic_loop_multi_iteration_policy"]
+        self.assertEqual(policy["status"], "ready_for_review")
+        self.assertEqual(policy["max_policy_iterations"], 3)
+        self.assertFalse(policy["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(policy["automatic_multi_iteration_execution_allowed_now"])
+        self.assertFalse(policy["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_policy_diagnostics"]
+        self.assertEqual(diagnostics["policy_id"], "automatic-loop-policy:ready")
+        self.assertTrue(diagnostics["following_plan_ready"])
+        self.assertFalse(diagnostics["future_executor_implemented"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
     def test_review_debugger_artifacts_blocks_multi_step_loop_execution(self) -> None:
         tool = make_review_debugger_artifacts_tool()

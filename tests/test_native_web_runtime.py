@@ -7265,6 +7265,57 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("paused_session_automatic_loop_following_iteration_plan_queue_advanced=False", result.verification)
         self.assertEqual(len(page._cdp_session.calls), call_count)
 
+    def test_paused_session_automatic_loop_multi_iteration_policy_from_native_runtime_is_read_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "review-paused-session-automatic-loop-multi-iteration-policy",
+            {
+                "paused_session_automatic_loop_multi_iteration_policy": True,
+                "max_policy_iterations": 3,
+                "paused_session_automatic_loop_following_iteration_plan": {
+                    "plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "transaction_id": "native-policy-tx-1",
+                        "loop_id": "native-policy-loop-1",
+                        "workflow_id": "native-policy-workflow-1",
+                        "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                        "next_iteration": {"next_loop_plan_ready": True, "next_iteration_reviewable": True, "fresh_live_callframe_recovered": True},
+                        "side_effect_policy": {
+                            "would_execute_next_iteration": False,
+                            "cdp_command_sent": False,
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                        "blockers": [],
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_future_paused_session_automatic_loop_multi_iteration_executor_contract")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-automatic-loop-multi-iteration-policy.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["max_policy_iterations"], 3)
+        self.assertFalse(result.artifacts[0].metadata["automatic_multi_iteration_executor_implemented"])
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_budget=3", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_executor_implemented=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_execution_allowed_now=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_automatic_multi_iteration_loop=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_loop_advanced=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_queue_advanced=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_policy_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
 
     def test_paused_session_multi_step_loop_plan_from_native_runtime_is_review_only(self) -> None:
         provider = FakeProvider()
