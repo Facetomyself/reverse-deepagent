@@ -1326,6 +1326,40 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop multi-iteration next-step plan",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_multi_iteration_next_step_plan",
+                    details={
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "transaction_id": "automatic-loop-multi-iteration-transaction:coordinator",
+                        "checkpoint_review": {
+                            "multi_iteration_followup_checkpoint_ready": True,
+                            "continuation_checkpoint_ready": True,
+                        },
+                        "next_iteration": {
+                            "next_loop_plan_ready": True,
+                            "next_iteration_reviewable": True,
+                            "fresh_live_callframe_recovered": True,
+                            "would_execute_multi_iteration": False,
+                        },
+                        "expected_executor": {
+                            "name": "execute_paused_session_automatic_loop_multi_iteration",
+                            "implemented": True,
+                            "step264_executor_mvp": True,
+                        },
+                        "side_effect_policy": {
+                            "would_execute_multi_iteration": False,
+                            "automatic_multi_iteration_loop": False,
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1529,6 +1563,21 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"]["side_effect_policy"]["queue_advanced"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"]["side_effect_policy"]["calls_mcp"])
         self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"]["side_effect_policy"]["mobile_runtime_used"])
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["checkpoint_review"]["multi_iteration_followup_checkpoint_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["checkpoint_review"]["continuation_checkpoint_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["next_iteration"]["next_loop_plan_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["next_iteration"]["next_iteration_reviewable"])
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["next_iteration"]["fresh_live_callframe_recovered"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["next_iteration"]["would_execute_multi_iteration"])
+        self.assertEqual(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["expected_executor"]["name"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertTrue(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["expected_executor"]["step264_executor_mvp"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["would_execute_multi_iteration"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["automatic_multi_iteration_loop"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["loop_advanced"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["queue_advanced"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"]["side_effect_policy"]["mobile_runtime_used"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1705,6 +1754,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_bounded_executor_gate"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_execution_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_followup_checkpoint"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_multi_iteration_next_step_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")
