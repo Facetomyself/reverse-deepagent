@@ -7272,6 +7272,97 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(page._cdp_session.calls[-1][0], "Debugger.stepOver")
 
 
+
+    def test_paused_session_automatic_loop_multi_iteration_followup_checkpoint_from_native_runtime_is_read_only(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        page = provider.session.context.pages[0]
+        call_count = len(page._cdp_session.calls)
+
+        result = runtime.apply_minimal_protection(
+            "paused-session-automatic-loop-multi-iteration-followup-checkpoint",
+            {
+                "paused_session_automatic_loop_multi_iteration_followup_checkpoint": True,
+                "reviewer": "native-multi-followup-reviewer",
+                "paused_session_automatic_loop_multi_iteration_execution_result": {
+                    "execution": {
+                        "status": "partial",
+                        "transaction_id": "native-multi-followup-tx-1",
+                        "journal_id": "native-multi-followup-journal-1",
+                        "loop_id": "native-multi-followup-loop-1",
+                        "workflow_id": "native-multi-followup-workflow-1",
+                        "pause_session_id": "native-multi-followup-pause-1",
+                        "target_id": "native-multi-followup-target-1",
+                        "requested_iteration_budget": 2,
+                        "max_iterations_per_apply": 1,
+                        "executed_iteration_count": 1,
+                        "checkpoint_required": True,
+                        "automatic_multi_iteration_execution_mvp": True,
+                        "automatic_multi_iteration_executor_implemented": True,
+                        "automatic_multi_iteration_loop": False,
+                        "automatic_loop_executed": True,
+                        "automatic_loop_one_iteration_executed": True,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "long_lived_session_managed": False,
+                        "side_effect_policy": {
+                            "automatic_multi_iteration_loop": False,
+                            "loop_advanced": False,
+                            "queue_advanced": False,
+                            "calls_mcp": False,
+                            "mobile_runtime_used": False,
+                        },
+                    }
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_next_action_review",
+                        "pause_session_id": "native-multi-followup-pause-1",
+                        "target_id": "native-multi-followup-target-1",
+                        "callframe_count": 1,
+                        "continuation_ready_for_next_action": True,
+                        "live_callframe_recovery_ready": True,
+                    }
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "native-multi-followup-loop-1",
+                        "workflow_id": "native-multi-followup-workflow-1",
+                        "pause_session_id": "native-multi-followup-pause-1",
+                        "target_id": "native-multi-followup-target-1",
+                        "next_iteration": {"available": True, "ready_for_review": True, "workflow_step_index": 2, "method": "Debugger.stepInto"},
+                        "readiness": {"next_loop_iteration_reviewable": True},
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "review_next_paused_session_automatic_loop_multi_iteration_step")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/paused-session-automatic-loop-multi-iteration-followup-checkpoint.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["executed_iteration_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["checkpoint_ready"])
+        self.assertTrue(result.artifacts[0].metadata["next_loop_plan_ready"])
+        self.assertTrue(result.artifacts[0].metadata["next_iteration_reviewable"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_multi_iteration_loop"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["checkpoint_written"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["loop_advanced"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["queue_advanced"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(result.artifacts[0].metadata["side_effect_policy"]["mobile_runtime_used"])
+        self.assertIn("paused_session_automatic_loop_multi_iteration_followup_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_followup_checkpoint_checkpoint_ready=True", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_followup_checkpoint_next_loop_plan_ready=True", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_followup_checkpoint_automatic_multi_iteration_loop=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_followup_checkpoint_calls_mcp=False", result.verification)
+        self.assertIn("paused_session_automatic_loop_multi_iteration_followup_checkpoint_mobile_runtime_used=False", result.verification)
+        self.assertEqual(len(page._cdp_session.calls), call_count)
+
     def test_paused_session_automatic_loop_next_iteration_followup_checkpoint_from_native_runtime_is_read_only(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
