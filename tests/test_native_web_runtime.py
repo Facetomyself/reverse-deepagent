@@ -6058,6 +6058,91 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["hook_installed"])
         self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
 
+    def test_native_web_runtime_reviews_source_map_selected_executor_approval_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        side_effect_policy = {
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "fetch_source_map": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "debugger_execution_performed": False,
+            "runtime_evaluated": False,
+            "logpoint_installed": False,
+            "hook_installed": False,
+            "rebuild_executed": False,
+            "surface_executor_invoked": False,
+            "executor_invoked": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+        input_review = {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-input-review.v1",
+            "status": "ready_for_review",
+            "ready_for_executor_review": True,
+            "selected_action_id": "review-rebuild-source-metadata-use",
+            "selected_consumer": "rebuild",
+            "selected_followthrough_review_surface": "review_rebuild_source_metadata_executor_input",
+            "executor_review_package": {
+                "package_version": "reverse-deepagent.source-map-selected-executor-input-review.package.v1",
+                "action_id": "review-rebuild-source-metadata-use",
+                "consumer": "rebuild",
+                "followthrough_review_surface": "review_rebuild_source_metadata_executor_input",
+                "executor_input": {"source_content_digest": "abc123", "raw_source_content": None, "raw_content_exported": False, "preview_exported": False},
+                "review_gate": {"gate": "explicit_rebuild_source_metadata_review", "required_approval_flag": "review_approved"},
+                "requires_explicit_review": True,
+                "ready_for_downstream_review": True,
+                "execute_automatically": False,
+                "executor_invoked": False,
+                "side_effect_policy": side_effect_policy,
+            },
+            "surface_executor_invoked": False,
+            "side_effect_policy": side_effect_policy,
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-selected-executor-approval-plan",
+            {"source_map_selected_executor_input_review": input_review, "expected_consumer": "rebuild"},
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_selected_executor_approval_plan"])
+        self.assertIn("source_map_selected_executor_approval_plan_status=ready_for_review", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_selected_action_id=review-rebuild-source-metadata-use", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_selected_consumer=rebuild", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_selected_gate=explicit_rebuild_source_metadata_review", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_approval_ready=True", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_apply_ready_for_review=True", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_ready_to_apply_now=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_approval_recorded=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_review_only=True", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_plan_only=True", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_approval_plan_only=True", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_apply_plan_only=True", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_browser_started=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_logpoint_installed=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_hook_installed=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_rebuild_executed=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_calls_mcp=False", result.verification)
+        self.assertIn("source_map_selected_executor_approval_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "record_review_approval_for_source_map_rebuild_executor")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-selected-executor-approval-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "rebuild")
+        self.assertEqual(result.artifacts[0].metadata["selected_review_gate"], "explicit_rebuild_source_metadata_review")
+        self.assertTrue(result.artifacts[0].metadata["approval_plan_ready"])
+        self.assertTrue(result.artifacts[0].metadata["apply_plan_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["approval_recorded"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_apply_now"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
     def test_native_web_runtime_reviews_source_map_readiness_without_starting_browser(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)

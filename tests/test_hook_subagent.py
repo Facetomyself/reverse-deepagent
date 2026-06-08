@@ -372,6 +372,37 @@ class HookSubagentTests(unittest.TestCase):
         self.assertIn("source_map_selected_executor_input_review_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "provide_ready_source_map_followthrough_surface_selection_descriptor")
 
+    def test_review_hook_artifacts_warns_for_source_map_selected_executor_approval_plan_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {
+            "source_map_selected_executor_approval_plan": {
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "next_action": "record_review_approval_for_source_map_debugger_executor",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_selected_executor_approval_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_approval_plan_before_apply")
+        self.assertEqual(result["summary"]["source_map_selected_executor_approval_plan_status"], "ready_for_review")
+        self.assertEqual(result["summary"]["source_map_selected_executor_approval_plan_selected_consumer"], "debugger")
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["hook_installed"])
+        self.assertFalse(result["side_effect_policy"]["javascript_evaluated"])
+
+    def test_review_hook_artifacts_blocks_failed_source_map_selected_executor_approval_plan_descriptor(self) -> None:
+        tool = make_review_hook_artifacts_tool()
+        payload = {"source_map_selected_executor_approval_plan": {"status": "blocked", "reason": "executor_review_package_missing"}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_selected_executor_approval_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_ready_source_map_selected_executor_input_review_descriptor")
+
     def test_review_hook_artifacts_blocks_failed_source_map_consumer_action_plan_descriptor(self) -> None:
         tool = make_review_hook_artifacts_tool()
         payload = {"source_map_consumer_action_plan": {"status": "blocked", "reason": "source_map_readiness_descriptor_missing"}}

@@ -983,6 +983,7 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_source_map_followthrough_review": "triage",
     "workspace_source_map_followthrough_surface_selection": "triage",
     "workspace_source_map_selected_executor_input_review": "triage",
+    "workspace_source_map_selected_executor_approval_plan": "triage",
     "workspace_bundler_symbol_scope": "triage",
     "workspace_source_logpoints": "trace",
     "workspace_source_logpoint_timeline": "trace",
@@ -1940,6 +1941,8 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-map-followthrough-surface-selection.json"] = evidence.details
         elif evidence.source == "source_map_selected_executor_input_review":
             payloads["source-map-selected-executor-input-review.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_approval_plan":
+            payloads["source-map-selected-executor-approval-plan.json"] = evidence.details
         elif evidence.source == "bundler_symbol_scope":
             payloads["bundler-symbol-scope.json"] = evidence.details
         elif evidence.source == "source_logpoints":

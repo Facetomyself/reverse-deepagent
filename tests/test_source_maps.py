@@ -16,6 +16,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughReviewSpec,
     SourceMapFollowthroughSurfaceSelectionManager,
     SourceMapFollowthroughSurfaceSelectionSpec,
+    SourceMapSelectedExecutorApprovalPlanManager,
+    SourceMapSelectedExecutorApprovalPlanSpec,
     SourceMapSelectedExecutorInputReviewManager,
     SourceMapSelectedExecutorInputReviewSpec,
     SourceMapTypedPayloadPreflightManager,
@@ -1202,6 +1204,106 @@ class SourceMapSelectedExecutorInputReviewManagerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("selected_executor_input_mismatch", result.descriptor["blockers"])
         self.assertFalse(result.descriptor["executor_review_package_ready"])
+
+
+class SourceMapSelectedExecutorApprovalPlanManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_input_review() -> dict:
+        selection = SourceMapSelectedExecutorInputReviewManagerTests._ready_surface_selection()
+        spec = SourceMapSelectedExecutorInputReviewSpec.from_context(
+            {
+                "source_map_selected_executor_input_review": True,
+                "source_map_followthrough_surface_selection": selection,
+                "expected_consumer": "debugger",
+            }
+        )
+        return SourceMapSelectedExecutorInputReviewManager().review(spec).descriptor
+
+    def test_source_map_selected_executor_approval_plan_reviews_apply_contract_without_side_effects(self) -> None:
+        input_review = self._ready_input_review()
+        spec = SourceMapSelectedExecutorApprovalPlanSpec.from_context(
+            {
+                "source_map_selected_executor_approval_plan": True,
+                "source_map_selected_executor_input_review": input_review,
+                "expected_consumer": "debugger",
+            }
+        )
+
+        result = SourceMapSelectedExecutorApprovalPlanManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-selected-executor-approval-plan.v1")
+        self.assertTrue(descriptor["review_only"])
+        self.assertTrue(descriptor["plan_only"])
+        self.assertTrue(descriptor["approval_plan_only"])
+        self.assertTrue(descriptor["apply_plan_only"])
+        self.assertTrue(descriptor["handoff_only"])
+        self.assertEqual(descriptor["source_executor_input_review_schema_version"], "reverse-deepagent.source-map-selected-executor-input-review.v1")
+        self.assertEqual(descriptor["source_executor_input_review_status"], "ready_for_review")
+        self.assertEqual(descriptor["selected_action_id"], "review-debugger-location-use")
+        self.assertEqual(descriptor["selected_consumer"], "debugger")
+        self.assertEqual(descriptor["selected_review_gate"], "explicit_debugger_location_review")
+        self.assertTrue(descriptor["approval_plan_ready"])
+        self.assertTrue(descriptor["apply_plan_ready_for_review"])
+        self.assertFalse(descriptor["approval_recorded"])
+        self.assertFalse(descriptor["ready_to_apply_now"])
+        self.assertFalse(descriptor["surface_executor_invoked"])
+        approval = descriptor["approval_requirements"]
+        self.assertEqual(approval["approval_schema_version"], "reverse-deepagent.source-map-selected-executor-approval.v1")
+        self.assertEqual(approval["approval_record_artifact"], "workspace/source-map-selected-executor-approval-record.json")
+        self.assertEqual(approval["approval_scope"]["consumer"], "debugger")
+        apply_plan = descriptor["apply_plan"]
+        self.assertEqual(apply_plan["apply_plan_schema_version"], "reverse-deepagent.source-map-selected-executor-apply-plan.v1")
+        self.assertEqual(apply_plan["future_action"], "execute_reviewed_source_map_debugger_location_action")
+        self.assertEqual(apply_plan["future_result_artifact"], "workspace/source-map-debugger-execution-result.json")
+        self.assertFalse(apply_plan["ready_to_apply_now"])
+        self.assertFalse(apply_plan["executor_implemented_now"])
+        self.assertFalse(apply_plan["surface_executor_invoked"])
+        self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+        self.assertFalse(result.side_effect_policy["runtime_evaluated"])
+        self.assertFalse(result.side_effect_policy["logpoint_installed"])
+        self.assertFalse(result.side_effect_policy["hook_installed"])
+        self.assertFalse(result.side_effect_policy["rebuild_executed"])
+        self.assertFalse(result.side_effect_policy["surface_executor_invoked"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+        self.assertEqual(descriptor["next_action"], "record_review_approval_for_source_map_debugger_executor")
+
+    def test_source_map_selected_executor_approval_plan_blocks_unready_input_review(self) -> None:
+        input_review = self._ready_input_review()
+        input_review["status"] = "blocked"
+        input_review["ready_for_executor_review"] = False
+        spec = SourceMapSelectedExecutorApprovalPlanSpec.from_context(
+            {
+                "source_map_selected_executor_approval_plan": True,
+                "source_map_selected_executor_input_review": input_review,
+            }
+        )
+
+        result = SourceMapSelectedExecutorApprovalPlanManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_selected_executor_input_review_not_ready", result.descriptor["blockers"])
+        self.assertIn("source_map_selected_executor_input_review_not_ready_for_approval_plan", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["approval_plan_ready"])
+        self.assertEqual(result.descriptor["next_action"], "resolve_source_map_selected_executor_input_review_blockers")
+
+    def test_source_map_selected_executor_approval_plan_blocks_gate_mismatch(self) -> None:
+        input_review = self._ready_input_review()
+        spec = SourceMapSelectedExecutorApprovalPlanSpec.from_context(
+            {
+                "source_map_selected_executor_approval_plan": True,
+                "source_map_selected_executor_input_review": input_review,
+                "expected_gate": "wrong",
+            }
+        )
+
+        result = SourceMapSelectedExecutorApprovalPlanManager().review(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("selected_review_gate_mismatch", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["apply_plan_ready_for_review"])
 
 
 class SourceMapRemapperTests(unittest.TestCase):

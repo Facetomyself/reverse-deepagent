@@ -222,6 +222,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughReviewSpec,
     SourceMapFollowthroughSurfaceSelectionManager,
     SourceMapFollowthroughSurfaceSelectionSpec,
+    SourceMapSelectedExecutorApprovalPlanManager,
+    SourceMapSelectedExecutorApprovalPlanSpec,
     SourceMapSelectedExecutorInputReviewManager,
     SourceMapSelectedExecutorInputReviewSpec,
     SourceMapTypedPayloadPreflightManager,
@@ -649,6 +651,104 @@ class NativeWebRuntime(WebReverseRuntime):
                 verification=verification,
                 status=status,
                 artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_selected_executor_approval_plan_request(protection_name, context):
+            spec = SourceMapSelectedExecutorApprovalPlanSpec.from_context(context)
+            result = SourceMapSelectedExecutorApprovalPlanManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            package = descriptor.get("executor_review_package") if isinstance(descriptor.get("executor_review_package"), dict) else {}
+            approval = descriptor.get("approval_requirements") if isinstance(descriptor.get("approval_requirements"), dict) else {}
+            apply_plan = descriptor.get("apply_plan") if isinstance(descriptor.get("apply_plan"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_selected_executor_approval_plan_status={result.status}",
+                f"source_map_selected_executor_approval_plan_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_selected_executor_approval_plan_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_selected_executor_approval_plan_selected_gate={descriptor.get('selected_review_gate', '')}",
+                f"source_map_selected_executor_approval_plan_approval_ready={descriptor.get('approval_plan_ready', False)}",
+                f"source_map_selected_executor_approval_plan_apply_ready_for_review={descriptor.get('apply_plan_ready_for_review', False)}",
+                f"source_map_selected_executor_approval_plan_ready_to_apply_now={descriptor.get('ready_to_apply_now', False)}",
+                f"source_map_selected_executor_approval_plan_approval_recorded={descriptor.get('approval_recorded', False)}",
+                "source_map_selected_executor_approval_plan_review_only=True",
+                "source_map_selected_executor_approval_plan_plan_only=True",
+                "source_map_selected_executor_approval_plan_approval_plan_only=True",
+                "source_map_selected_executor_approval_plan_apply_plan_only=True",
+                "source_map_selected_executor_approval_plan_handoff_only=True",
+                f"source_map_selected_executor_approval_plan_raw_exported={policy.get('raw_source_content_exported', False)}",
+                f"source_map_selected_executor_approval_plan_preview_exported={policy.get('preview_exported', False)}",
+                f"source_map_selected_executor_approval_plan_fetch_source_map={policy.get('fetch_source_map', False)}",
+                f"source_map_selected_executor_approval_plan_browser_started={policy.get('browser_started', False)}",
+                f"source_map_selected_executor_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_selected_executor_approval_plan_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_selected_executor_approval_plan_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_selected_executor_approval_plan_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_selected_executor_approval_plan_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_selected_executor_approval_plan_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_selected_executor_approval_plan_surface_executor_invoked={policy.get('surface_executor_invoked', False)}",
+                f"source_map_selected_executor_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_selected_executor_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_selected_executor_approval_plan_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_selected_executor_approval_plan_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-selected-executor-approval-plan.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map selected executor approval/apply-plan descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""),
+                    "selected_review_gate": descriptor.get("selected_review_gate", ""),
+                    "approval_plan_ready": bool(descriptor.get("approval_plan_ready", False)),
+                    "apply_plan_ready_for_review": bool(descriptor.get("apply_plan_ready_for_review", False)),
+                    "approval_recorded": False,
+                    "ready_to_apply_now": False,
+                    "future_action": apply_plan.get("future_action", ""),
+                    "approval_record_artifact": approval.get("approval_record_artifact", ""),
+                    "review_only": True,
+                    "plan_only": True,
+                    "approval_plan_only": True,
+                    "apply_plan_only": True,
+                    "handoff_only": True,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "surface_executor_invoked": False,
+                    "executor_review_package_consumer": package.get("consumer", ""),
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "record_review_approval_for_source_map_selected_executor"
+                actions = ["review_source_map_selected_executor_approval_plan"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_ready_source_map_selected_executor_input_review_descriptor"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_selected_executor_approval_plan_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
@@ -9941,6 +10041,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "sourceMapFollowthroughExecutorInputReview",
                 "source_map_selected_followthrough_review",
                 "sourceMapSelectedFollowthroughReview",
+            )
+        )
+
+    @staticmethod
+    def _is_source_map_selected_executor_approval_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "source-map-selected-executor-approval-plan",
+            "source-map-selected-executor-apply-plan",
+            "source-map-followthrough-approval-plan",
+            "review-source-map-selected-executor-approval-plan",
+            "plan-source-map-selected-executor-apply",
+            "review-selected-source-map-executor-approval",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "source_map_selected_executor_approval_plan",
+                "sourceMapSelectedExecutorApprovalPlan",
+                "source_map_selected_executor_apply_plan",
+                "sourceMapSelectedExecutorApplyPlan",
+                "source_map_followthrough_approval_plan",
+                "sourceMapFollowthroughApprovalPlan",
             )
         )
 
