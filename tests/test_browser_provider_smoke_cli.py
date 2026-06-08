@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
-from reverse_deepagent.browser_provider_smoke import run_browser_provider_smoke
+from reverse_deepagent.browser_provider_smoke import build_launch_command_payload, run_browser_provider_smoke
 
 
 class FakePage:
@@ -215,6 +215,80 @@ class BrowserProviderSmokeCliTests(unittest.TestCase):
             self.assertTrue((root / "workspace" / "browser-provider-smoke.json").exists())
             self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
             self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+
+    def test_print_launch_command_payload_is_side_effect_free_and_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "artifacts"
+
+            payload = build_launch_command_payload(
+                browser="cloakbrowser",
+                artifact_root=root,
+                smoke_url="https://example.test/smoke",
+                provider_kwargs={
+                    "browser_url": "http://user:pass@127.0.0.1:9222",
+                    "browser_profile_dir": "/Users/example/private-profile",
+                    "browser_proxy": "http://user:pass@example.test:8080",
+                    "browser_locale": "zh-CN",
+                    "browser_timezone": "Asia/Shanghai",
+                    "browser_args": ["--load-extension=/Users/example/ext", "--proxy-server=http://user:pass@example.test:8080"],
+                    "request_timeout": 12.5,
+                },
+            )
+
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.browser-provider-launch-command.v1")
+            self.assertEqual(payload["mode"], "print-launch-command")
+            self.assertFalse(payload["side_effect_policy"]["provider_registry_resolved"])
+            self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["writes_artifact"])
+            self.assertFalse((root / "workspace" / "browser-provider-smoke.json").exists())
+            dumped = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn("user:pass", dumped)
+            self.assertNotIn("/Users/example", dumped)
+            self.assertEqual(payload["requested_provider_config"]["browser_url"], "http://127.0.0.1:9222")
+            self.assertEqual(payload["requested_provider_config"]["proxy"], "<configured>")
+            hint = payload["review_command_hint"]
+            self.assertIn("--launch-browser-smoke", hint["command"])
+            self.assertIn("--browser-url", hint["command"])
+            self.assertIn("http://127.0.0.1:9222", hint["command"])
+
+    def test_module_cli_print_launch_command_does_not_write_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "artifacts"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "reverse_deepagent.browser_provider_smoke",
+                    "--browser",
+                    "cloakbrowser",
+                    "--artifact-root",
+                    str(root),
+                    "--browser-smoke-url",
+                    "https://example.test/smoke",
+                    "--browser-url",
+                    "http://user:pass@127.0.0.1:9222",
+                    "--browser-profile-dir",
+                    "/Users/example/private-profile",
+                    "--browser-proxy",
+                    "http://user:pass@example.test:8080",
+                    "--browser-args",
+                    "--load-extension=/Users/example/ext --proxy-server=http://user:pass@example.test:8080",
+                    "--print-launch-command",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            payload = json.loads(result.stdout)
+
+            self.assertEqual(payload["mode"], "print-launch-command")
+            self.assertFalse(payload["side_effect_policy"]["writes_artifact"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse((root / "workspace" / "browser-provider-smoke.json").exists())
+            self.assertNotIn("user:pass", result.stdout)
+            self.assertNotIn("/Users/example", result.stdout)
 
 
 if __name__ == "__main__":

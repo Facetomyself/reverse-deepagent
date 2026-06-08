@@ -126,6 +126,18 @@ reverse-agent-browser-provider-smoke \
   --browser-timezone "Asia/Shanghai"
 ```
 
+如果只想先打印一条脱敏后的显式 launch-smoke 命令，不写 `workspace/browser-provider-smoke.json`、不 resolve provider、不检查 availability、也不启动浏览器：
+
+```bash
+reverse-agent-browser-provider-smoke \
+  --browser cloakbrowser \
+  --browser-url "http://127.0.0.1:9222" \
+  --browser-profile-dir "./profiles/example" \
+  --browser-locale "zh-CN" \
+  --browser-timezone "Asia/Shanghai" \
+  --print-launch-command
+```
+
 只有显式加入 `--launch-browser-smoke` 时才会启动真实浏览器：
 
 ```bash

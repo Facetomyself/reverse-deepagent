@@ -32,6 +32,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-smoke-url", default=DEFAULT_SMOKE_URL, help="URL used only when --launch-browser-smoke is set.")
     parser.add_argument("--include-availability", action="store_true", help="Call provider.is_available(); may import optional SDKs or probe endpoints.")
     parser.add_argument("--launch-browser-smoke", action="store_true", help="Actually start/connect the BrowserProvider and open --browser-smoke-url.")
+    parser.add_argument(
+        "--print-launch-command",
+        action="store_true",
+        help=(
+            "Print a redaction-safe explicit --launch-browser-smoke command plan as JSON without "
+            "resolving providers, invoking factories, checking availability, launching browsers, "
+            "or writing artifacts."
+        ),
+    )
     parser.add_argument("--browser-url", default=None, help="Existing browser/CDP URL for connect-capable providers such as remote-cdp or CloakBrowser connect mode.")
     parser.add_argument("--browser-profile-dir", default=None, help="Optional BrowserProvider persistent profile directory.")
     parser.add_argument("--browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Run provider headless when supported.")
@@ -184,10 +193,7 @@ def _review_command_hint(
         command.extend(["--browser-timezone", str(requested_config["timezone"])])
     if requested_config.get("browser_args"):
         command.extend(["--browser-args", "<review-redacted-browser-args>"])
-    if launch_browser_smoke:
-        command.append("--launch-browser-smoke")
-    else:
-        command.append("--launch-browser-smoke")
+    command.append("--launch-browser-smoke")
     return {
         "purpose": "review_or_regenerate_explicit_launch_smoke",
         "redaction_safe": True,
@@ -288,6 +294,47 @@ def run_browser_provider_smoke(
     return payload
 
 
+def build_launch_command_payload(
+    *,
+    browser: str = DEFAULT_BROWSER_PROVIDER,
+    artifact_root: str | Path = DEFAULT_ARTIFACT_ROOT,
+    smoke_url: str = DEFAULT_SMOKE_URL,
+    provider_kwargs: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a side-effect-free launch-smoke command review payload."""
+
+    requested_provider = str(browser or DEFAULT_BROWSER_PROVIDER)
+    requested_config = _requested_provider_config_summary(requested_provider, dict(provider_kwargs or {}))
+    return {
+        "schema_version": "reverse-deepagent.browser-provider-launch-command.v1",
+        "mode": "print-launch-command",
+        "ok": True,
+        "requested_provider_id": requested_provider,
+        "smoke_url": smoke_url,
+        "requested_provider_config": requested_config,
+        "review_command_hint": _review_command_hint(
+            browser=requested_provider,
+            artifact_root=Path(artifact_root),
+            smoke_url=smoke_url,
+            requested_config=requested_config,
+            launch_browser_smoke=False,
+        ),
+        "side_effect_policy": {
+            "metadata_only_by_default": True,
+            "provider_registry_resolved": False,
+            "availability_check_requested": False,
+            "launch_smoke_requested": False,
+            "provider_factories_invoked": False,
+            "starts_browser": False,
+            "writes_artifact": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+            "prints_command_only": True,
+        },
+        "next_action": "review_and_run_printed_launch_smoke_command_explicitly",
+    }
+
+
 def _next_action(row: dict[str, Any], *, include_availability: bool, launch_browser_smoke: bool) -> str:
     if launch_browser_smoke:
         return "review_browser_provider_launch_smoke_result" if row.get("ok") else "fix_browser_provider_launch_smoke"
@@ -299,13 +346,23 @@ def _next_action(row: dict[str, Any], *, include_availability: bool, launch_brow
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    provider_kwargs = _provider_kwargs_from_args(args)
+    if args.print_launch_command:
+        payload = build_launch_command_payload(
+            browser=args.browser,
+            artifact_root=args.artifact_root,
+            smoke_url=args.browser_smoke_url,
+            provider_kwargs=provider_kwargs,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
     payload = run_browser_provider_smoke(
         browser=args.browser,
         artifact_root=args.artifact_root,
         smoke_url=args.browser_smoke_url,
         include_availability=args.include_availability,
         launch_browser_smoke=args.launch_browser_smoke,
-        provider_kwargs=_provider_kwargs_from_args(args),
+        provider_kwargs=provider_kwargs,
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if payload["ok"] else 2

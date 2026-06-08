@@ -2854,3 +2854,13 @@ Status: implemented as metadata-only BrowserProvider smoke evidence hardening fo
 Boundary: the new fields are review metadata only. They do not make metadata-only evidence count as launch smoke, do not call provider factories, do not check availability, do not probe CDP endpoints, do not start browsers, do not call MCP, and do not touch mobile full runtime chains. Provider credentials, proxy access material, browser URL credentials, and local sensitive path details are redacted before being written to artifacts.
 
 Tests cover CloakBrowser metadata-only smoke artifact redaction, provider factory non-invocation, command hint generation, persisted JSON parity, compileall, and BrowserProvider smoke / CloakBrowser / doctor / matrix regressions.
+
+### Step 269：BrowserProvider smoke print-launch-command review helper
+
+Status: implemented as a side-effect-free launch-smoke command review helper after Step 268 requested config evidence. This is not provider certification, not metadata-only smoke attachment, not availability probing, not browser launch, not artifact writing, not MCP integration, and not an Android / iOS / mini-program full runtime chain.
+
+`reverse-agent-browser-provider-smoke --print-launch-command` now prints `reverse-deepagent.browser-provider-launch-command.v1` JSON to stdout. The payload reuses the redaction-safe requested provider config summary and emits `review_command_hint.command` / `review_command_hint.shell` with an explicit `--launch-browser-smoke` command outline for reviewer copy / regeneration. The mode does not resolve BrowserProvider registrations, does not invoke provider factories, does not check `is_available()`, does not probe CDP endpoints, does not start browsers, and does not write `workspace/browser-provider-smoke.json`.
+
+Boundary: this closes only the CLI ergonomics layer for reviewing or regenerating explicit BrowserProvider launch smoke commands. The printed command still requires a separate deliberate run to produce runtime launch smoke evidence. The helper does not make metadata-only evidence count as launch smoke, does not attach smoke to a pipeline, does not call MCP, and does not touch mobile full runtime chains. Credentials, proxy access material, browser URL credentials, local profile / executable paths, and high-risk browser args remain redacted in stdout.
+
+Tests cover the pure helper payload, module CLI `--print-launch-command` behavior, no artifact writes, no provider launch side effects, stdout redaction, compileall, and BrowserProvider smoke CLI regressions.
