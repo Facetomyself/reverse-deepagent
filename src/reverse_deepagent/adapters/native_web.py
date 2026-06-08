@@ -174,6 +174,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopNextIterationExecutionSpec,
     PausedSessionAutomaticLoopNextIterationFollowupCheckpointManager,
     PausedSessionAutomaticLoopNextIterationFollowupCheckpointSpec,
+    PausedSessionAutomaticLoopFollowingIterationPlanManager,
+    PausedSessionAutomaticLoopFollowingIterationPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -1739,6 +1741,62 @@ class NativeWebRuntime(WebReverseRuntime):
                 status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
                 artifacts=artifact_paths,
                 next_action=checkpoint.get("next_action") or "inspect_paused_session_automatic_loop_next_iteration_followup_checkpoint",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_following_iteration_plan_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopFollowingIterationPlanSpec.from_context(context)
+            result = PausedSessionAutomaticLoopFollowingIterationPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            checkpoint_review = plan.get("checkpoint_review") if isinstance(plan.get("checkpoint_review"), dict) else {}
+            following_iteration = plan.get("next_iteration") if isinstance(plan.get("next_iteration"), dict) else {}
+            verification = [
+                f"paused_session_automatic_loop_following_iteration_plan_status={result.status}",
+                f"paused_session_automatic_loop_following_iteration_plan_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_following_iteration_plan_ready_for_review={plan.get('ready_for_review', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_transaction_id={plan.get('transaction_id')}",
+                f"paused_session_automatic_loop_following_iteration_plan_followup_checkpoint_ready={checkpoint_review.get('followup_checkpoint_ready', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_continuation_checkpoint_ready={checkpoint_review.get('continuation_checkpoint_ready', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_next_loop_plan_ready={following_iteration.get('next_loop_plan_ready', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_next_iteration_reviewable={following_iteration.get('next_iteration_reviewable', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_fresh_live_callframe_recovered={following_iteration.get('fresh_live_callframe_recovered', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_would_execute_next_iteration={following_iteration.get('would_execute_next_iteration', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_following_iteration_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-following-iteration-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime read-only paused-session automatic-loop following-iteration plan descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": plan.get("ready_for_review", False),
+                        "transaction_id": plan.get("transaction_id"),
+                        "followup_checkpoint_ready": checkpoint_review.get("followup_checkpoint_ready", False),
+                        "continuation_checkpoint_ready": checkpoint_review.get("continuation_checkpoint_ready", False),
+                        "next_loop_plan_ready": following_iteration.get("next_loop_plan_ready", False),
+                        "next_iteration_reviewable": following_iteration.get("next_iteration_reviewable", False),
+                        "fresh_live_callframe_recovered": following_iteration.get("fresh_live_callframe_recovered", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "inspect_paused_session_automatic_loop_following_iteration_plan",
                 confidence=ConfidenceLevel.LOW,
             )
         if self._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):
@@ -7237,6 +7295,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_following_iteration_plan_request(protection_name, context):
+            return False
         normalized = protection_name.strip().lower()
         if normalized in {
             "paused-session-automatic-loop-next-iteration-followup-checkpoint",
@@ -7256,6 +7316,30 @@ class NativeWebRuntime(WebReverseRuntime):
                 "pausedSessionAutomaticLoopNextIterationExecutionFollowup",
                 "checkpoint_paused_session_automatic_loop_next_iteration_execution",
                 "checkpointPausedSessionAutomaticLoopNextIterationExecution",
+            )
+        )
+
+    @staticmethod
+    def _is_paused_session_automatic_loop_following_iteration_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        normalized = protection_name.strip().lower()
+        if normalized in {
+            "paused-session-automatic-loop-following-iteration-plan",
+            "review-paused-session-automatic-loop-following-iteration-plan",
+            "plan-following-paused-session-automatic-loop-iteration",
+            "review-following-paused-session-automatic-loop-iteration",
+            "paused-session-automatic-loop-following-iteration-review",
+        }:
+            return True
+        return any(
+            key in context
+            for key in (
+                "paused_session_automatic_loop_following_iteration_plan",
+                "pausedSessionAutomaticLoopFollowingIterationPlan",
+                "paused-session-automatic-loop-following-iteration-plan",
+                "plan_following_paused_session_automatic_loop_iteration",
+                "planFollowingPausedSessionAutomaticLoopIteration",
+                "review_following_paused_session_automatic_loop_iteration",
+                "reviewFollowingPausedSessionAutomaticLoopIteration",
             )
         )
 
@@ -7285,6 +7369,8 @@ class NativeWebRuntime(WebReverseRuntime):
 
     @staticmethod
     def _is_paused_session_automatic_loop_next_iteration_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
+        if NativeWebRuntime._is_paused_session_automatic_loop_following_iteration_plan_request(protection_name, context):
+            return False
         if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request(protection_name, context):
             return False
         if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):

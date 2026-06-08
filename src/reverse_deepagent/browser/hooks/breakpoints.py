@@ -7281,6 +7281,166 @@ class PausedSessionAutomaticLoopNextIterationPlanManager:
         return "review_paused_session_automatic_loop_next_iteration_execution"
 
 @dataclass(slots=True)
+class PausedSessionAutomaticLoopFollowingIterationPlanSpec:
+    """Read-only plan descriptor after a next-iteration follow-up checkpoint.
+
+    This descriptor consumes the Step 254 follow-up checkpoint plus continuation
+    checkpoint, loop plan, and optional fresh live callFrame recovery evidence. It
+    only prepares another explicit execution review input and never executes a loop.
+    """
+
+    followup_checkpoint: dict[str, Any] = field(default_factory=dict)
+    continuation_checkpoint: dict[str, Any] = field(default_factory=dict)
+    next_loop_plan: dict[str, Any] = field(default_factory=dict)
+    live_callframe_recovery: dict[str, Any] = field(default_factory=dict)
+    reviewer: str | None = None
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "PausedSessionAutomaticLoopFollowingIterationPlanSpec | None":
+        context = context or {}
+        requested = bool(
+            context.get("paused_session_automatic_loop_following_iteration_plan")
+            or context.get("pausedSessionAutomaticLoopFollowingIterationPlan")
+            or context.get("paused-session-automatic-loop-following-iteration-plan")
+            or context.get("plan_following_paused_session_automatic_loop_iteration")
+            or context.get("planFollowingPausedSessionAutomaticLoopIteration")
+            or context.get("review_following_paused_session_automatic_loop_iteration")
+            or context.get("reviewFollowingPausedSessionAutomaticLoopIteration")
+        )
+        followup_container = _first_dict(
+            context,
+            "paused_session_automatic_loop_next_iteration_followup_checkpoint",
+            "pausedSessionAutomaticLoopNextIterationFollowupCheckpoint",
+            "paused-session-automatic-loop-next-iteration-followup-checkpoint",
+            "paused_session_automatic_loop_next_iteration_execution_followup",
+            "pausedSessionAutomaticLoopNextIterationExecutionFollowup",
+            "automatic_loop_next_iteration_followup_checkpoint",
+            "automaticLoopNextIterationFollowupCheckpoint",
+        )
+        followup = dict(followup_container.get("checkpoint")) if isinstance(followup_container.get("checkpoint"), dict) else followup_container
+        checkpoint_container = _first_dict(
+            context,
+            "paused_session_cross_process_continuation_checkpoint",
+            "pausedSessionCrossProcessContinuationCheckpoint",
+            "paused-session-cross-process-continuation-checkpoint",
+            "cross_process_continuation_checkpoint",
+            "crossProcessContinuationCheckpoint",
+            "continuation_checkpoint",
+            "continuationCheckpoint",
+        )
+        checkpoint = dict(checkpoint_container.get("checkpoint")) if isinstance(checkpoint_container.get("checkpoint"), dict) else checkpoint_container
+        loop_container = _first_dict(
+            context,
+            "paused_session_multi_step_loop_plan",
+            "pausedSessionMultiStepLoopPlan",
+            "paused-session-multi-step-loop-plan",
+            "next_loop_plan",
+            "nextLoopPlan",
+            "multi_step_loop_plan",
+            "multiStepLoopPlan",
+            "loop_plan",
+            "loopPlan",
+        )
+        loop_plan = dict(loop_container.get("loop_plan")) if isinstance(loop_container.get("loop_plan"), dict) else loop_container
+        recovery_container = _first_dict(
+            context,
+            "paused_session_live_callframe_recovery",
+            "pausedSessionLiveCallframeRecovery",
+            "paused-session-live-callframe-recovery",
+            "live_callframe_recovery",
+            "liveCallframeRecovery",
+        )
+        recovery = dict(recovery_container.get("recovery")) if isinstance(recovery_container.get("recovery"), dict) else recovery_container
+        if not requested and not followup:
+            return None
+        reviewer = context.get("reviewer") or context.get("reviewer_id") or context.get("reviewerId") or followup.get("reviewer") or loop_plan.get("reviewer")
+        return cls(
+            followup_checkpoint=followup,
+            continuation_checkpoint=checkpoint,
+            next_loop_plan=loop_plan,
+            live_callframe_recovery=recovery,
+            reviewer=str(reviewer).strip() if reviewer else None,
+        )
+
+
+@dataclass(slots=True)
+class PausedSessionAutomaticLoopFollowingIterationPlanResult:
+    status: str
+    plan: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"status": self.status, "plan": self.plan, "side_effect_policy": self.side_effect_policy, "reason": self.reason}
+
+
+class PausedSessionAutomaticLoopFollowingIterationPlanManager:
+    """Review-only plan descriptor for the iteration after Step 254 handoff."""
+
+    def plan(self, spec: PausedSessionAutomaticLoopFollowingIterationPlanSpec | None) -> PausedSessionAutomaticLoopFollowingIterationPlanResult:
+        if spec is None:
+            payload = {
+                "schema_version": "reverse-deepagent.paused-session-automatic-loop-following-iteration-plan.v1",
+                "status": "blocked",
+                "ready_for_review": False,
+                "blockers": ["automatic_loop_following_iteration_plan_request_missing"],
+                "blocker_details": [{"code": "automatic_loop_following_iteration_plan_request_missing", "category": "request", "explanation": "No automatic-loop following-iteration plan request was provided.", "next_action": "request_paused_session_automatic_loop_following_iteration_plan"}],
+                "next_action": "request_paused_session_automatic_loop_following_iteration_plan",
+                "side_effect_policy": self._side_effect_policy(PausedSessionAutomaticLoopNextIterationPlanManager._side_effect_policy()),
+            }
+            return PausedSessionAutomaticLoopFollowingIterationPlanResult(status="blocked", plan=payload, side_effect_policy=payload["side_effect_policy"], reason="automatic_loop_following_iteration_plan_request_missing")
+        base_spec = PausedSessionAutomaticLoopNextIterationPlanSpec(
+            followup_checkpoint=spec.followup_checkpoint,
+            continuation_checkpoint=spec.continuation_checkpoint,
+            next_loop_plan=spec.next_loop_plan,
+            live_callframe_recovery=spec.live_callframe_recovery,
+            reviewer=spec.reviewer,
+        )
+        base = PausedSessionAutomaticLoopNextIterationPlanManager().plan(base_spec)
+        payload = dict(base.plan)
+        policy = self._side_effect_policy(base.side_effect_policy)
+        payload.update(
+            {
+                "schema_version": "reverse-deepagent.paused-session-automatic-loop-following-iteration-plan.v1",
+                "following_iteration_plan": True,
+                "source_followup_artifact": "workspace/paused-session-automatic-loop-next-iteration-followup-checkpoint.json",
+                "target_execution_artifact": "workspace/paused-session-automatic-loop-next-iteration-execution.json",
+                "side_effect_policy": policy,
+            }
+        )
+        statuses = payload.get("source_statuses") if isinstance(payload.get("source_statuses"), dict) else {}
+        statuses["automatic_loop_next_iteration_followup_checkpoint"] = statuses.pop("automatic_loop_followup_checkpoint", spec.followup_checkpoint.get("status"))
+        payload["source_statuses"] = statuses
+        expected = payload.get("expected_executor") if isinstance(payload.get("expected_executor"), dict) else {}
+        expected.update({"name": "execute_paused_session_automatic_loop_next_iteration", "implemented": True, "reused_for_following_iterations": True})
+        payload["expected_executor"] = expected
+        if base.status == "ready_for_review":
+            payload["next_action"] = "review_paused_session_automatic_loop_next_iteration_execution"
+        return PausedSessionAutomaticLoopFollowingIterationPlanResult(status=base.status, plan=payload, side_effect_policy=policy, reason=base.reason)
+
+    @staticmethod
+    def _side_effect_policy(base_policy: dict[str, Any]) -> dict[str, Any]:
+        policy = dict(base_policy)
+        policy.update(
+            {
+                "following_iteration_plan_only": True,
+                "next_iteration_plan_only": True,
+                "would_execute_next_iteration": False,
+                "automatic_loop_executed": False,
+                "automatic_loop_next_iteration_executed": False,
+                "automatic_multi_iteration_loop": False,
+                "automatic_queue_advance": False,
+                "loop_advanced": False,
+                "queue_advanced": False,
+                "long_lived_cross_process_session_managed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            }
+        )
+        return policy
+
+
+@dataclass(slots=True)
 class PausedSessionAutomaticLoopNextIterationExecutionSpec:
     """Explicit-review-only executor for one planned automatic-loop next iteration.
 
@@ -7321,6 +7481,13 @@ class PausedSessionAutomaticLoopNextIterationExecutionSpec:
         )
         plan_container = _first_dict(
             context,
+            "paused_session_automatic_loop_following_iteration_plan",
+            "pausedSessionAutomaticLoopFollowingIterationPlan",
+            "paused-session-automatic-loop-following-iteration-plan",
+            "automatic_loop_following_iteration_plan",
+            "automaticLoopFollowingIterationPlan",
+            "following_iteration_plan",
+            "followingIterationPlan",
             "paused_session_automatic_loop_next_iteration_plan",
             "pausedSessionAutomaticLoopNextIterationPlan",
             "paused-session-automatic-loop-next-iteration-plan",

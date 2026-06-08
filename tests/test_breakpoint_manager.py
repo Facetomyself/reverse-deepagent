@@ -43,6 +43,8 @@ from reverse_deepagent.browser.hooks import (
     PausedSessionAutomaticLoopNextIterationExecutionSpec,
     PausedSessionAutomaticLoopNextIterationFollowupCheckpointManager,
     PausedSessionAutomaticLoopNextIterationFollowupCheckpointSpec,
+    PausedSessionAutomaticLoopFollowingIterationPlanManager,
+    PausedSessionAutomaticLoopFollowingIterationPlanSpec,
     PausedSessionPreActionSubscribeAndActionManager,
     PausedSessionPreActionSubscribeAndActionSpec,
     PausedSessionNextPausedEventCaptureExecutionManager,
@@ -2608,6 +2610,64 @@ class BreakpointManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["checkpoint_written"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
         self.assertFalse(result.side_effect_policy["debugger_event_subscribed"])
+        self.assertFalse(result.side_effect_policy["automatic_multi_iteration_loop"])
+        self.assertFalse(result.side_effect_policy["loop_advanced"])
+        self.assertFalse(result.side_effect_policy["queue_advanced"])
+        self.assertFalse(result.side_effect_policy["calls_mcp"])
+        self.assertFalse(result.side_effect_policy["mobile_runtime_used"])
+
+    def test_automatic_loop_following_iteration_plan_reviews_next_execution(self) -> None:
+        spec = PausedSessionAutomaticLoopFollowingIterationPlanSpec.from_context(
+            {
+                "paused_session_automatic_loop_following_iteration_plan": True,
+                "reviewer": "following-reviewer",
+                "paused_session_automatic_loop_next_iteration_followup_checkpoint": {
+                    "checkpoint": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "transaction_id": "following-tx-1",
+                        "journal_id": "following-journal-1",
+                        "loop_id": "following-loop-1",
+                        "workflow_id": "following-workflow-1",
+                        "checkpoint_review": {"checkpoint_ready": True},
+                        "next_loop_review": {"next_loop_plan_ready": True, "next_iteration_reviewable": True},
+                        "side_effect_policy": {"checkpoint_written": False, "cdp_command_sent": False, "loop_advanced": False, "queue_advanced": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    }
+                },
+                "paused_session_cross_process_continuation_checkpoint": {
+                    "checkpoint": {"status": "ready_for_next_action_review", "continuation_ready_for_next_action": True, "callframe_count": 1}
+                },
+                "paused_session_multi_step_loop_plan": {
+                    "loop_plan": {
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "loop_id": "following-loop-1",
+                        "workflow_id": "following-workflow-1",
+                        "next_iteration": {"available": True, "ready_for_review": True, "workflow_step_index": 4, "method": "Debugger.stepOver"},
+                        "readiness": {"next_loop_iteration_reviewable": True},
+                    }
+                },
+                "paused_session_live_callframe_recovery": {"recovery": {"status": "recovered", "live_callframe_recovered": True, "live_callframe_id": "following-cf-1"}},
+            }
+        )
+
+        result = PausedSessionAutomaticLoopFollowingIterationPlanManager().plan(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        plan = result.plan
+        self.assertEqual(plan["schema_version"], "reverse-deepagent.paused-session-automatic-loop-following-iteration-plan.v1")
+        self.assertTrue(plan["following_iteration_plan"])
+        self.assertEqual(plan["transaction_id"], "following-tx-1")
+        self.assertTrue(plan["checkpoint_review"]["followup_checkpoint_ready"])
+        self.assertTrue(plan["checkpoint_review"]["continuation_checkpoint_ready"])
+        self.assertTrue(plan["next_iteration"]["next_loop_plan_ready"])
+        self.assertTrue(plan["next_iteration"]["next_iteration_reviewable"])
+        self.assertTrue(plan["next_iteration"]["fresh_live_callframe_recovered"])
+        self.assertFalse(plan["next_iteration"]["would_execute_next_iteration"])
+        self.assertEqual(plan["expected_executor"]["name"], "execute_paused_session_automatic_loop_next_iteration")
+        self.assertTrue(plan["expected_executor"]["reused_for_following_iterations"])
+        self.assertEqual(plan["next_action"], "review_paused_session_automatic_loop_next_iteration_execution")
+        self.assertFalse(result.side_effect_policy["would_execute_next_iteration"])
         self.assertFalse(result.side_effect_policy["automatic_multi_iteration_loop"])
         self.assertFalse(result.side_effect_policy["loop_advanced"])
         self.assertFalse(result.side_effect_policy["queue_advanced"])

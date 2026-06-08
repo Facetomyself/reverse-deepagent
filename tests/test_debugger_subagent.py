@@ -1592,6 +1592,38 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
 
 
+    def test_review_debugger_artifacts_warns_for_automatic_loop_following_iteration_plan_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_following_iteration_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-following:ready",
+                    "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                    "next_iteration": {"next_loop_plan_ready": True, "next_iteration_reviewable": True, "fresh_live_callframe_recovered": True},
+                    "side_effect_policy": {"would_execute_next_iteration": False, "loop_advanced": False, "queue_advanced": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_following_iteration_plan_requires_execution_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_automatic_loop_next_iteration_execution")
+        following = result["summary"]["automatic_loop_following_iteration_plan"]
+        self.assertEqual(following["status"], "ready_for_review")
+        self.assertTrue(following["followup_checkpoint_ready"])
+        self.assertTrue(following["continuation_checkpoint_ready"])
+        self.assertFalse(following["would_execute_next_iteration"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_following_iteration_plan_diagnostics"]
+        self.assertTrue(diagnostics["followup_checkpoint_ready"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+
     def test_review_debugger_artifacts_blocks_multi_step_loop_execution(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         payload = {

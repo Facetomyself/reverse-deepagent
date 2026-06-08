@@ -1093,6 +1093,20 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native paused-session automatic loop following-iteration plan",
+                    kind=EvidenceKind.NOTE,
+                    source="paused_session_automatic_loop_following_iteration_plan",
+                    details={
+                        "status": "ready_for_review",
+                        "ready_for_review": True,
+                        "transaction_id": "tx-follow-coordinator-1",
+                        "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                        "next_iteration": {"next_loop_plan_ready": True, "next_iteration_reviewable": True, "fresh_live_callframe_recovered": True, "would_execute_next_iteration": False},
+                        "side_effect_policy": {"would_execute_next_iteration": False, "loop_advanced": False, "queue_advanced": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source logpoint install result",
                     kind=EvidenceKind.HOOK,
                     source="source_logpoints",
@@ -1226,6 +1240,15 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(payloads["paused-session-automatic-loop-next-iteration-followup-checkpoint.json"]["side_effect_policy"]["loop_advanced"])
         self.assertFalse(payloads["paused-session-automatic-loop-next-iteration-followup-checkpoint.json"]["side_effect_policy"]["queue_advanced"])
         self.assertFalse(payloads["paused-session-automatic-loop-next-iteration-followup-checkpoint.json"]["side_effect_policy"]["calls_mcp"])
+        self.assertEqual(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["checkpoint_review"]["followup_checkpoint_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["checkpoint_review"]["continuation_checkpoint_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["next_iteration"]["next_loop_plan_ready"])
+        self.assertTrue(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["next_iteration"]["next_iteration_reviewable"])
+        self.assertFalse(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["side_effect_policy"]["would_execute_next_iteration"])
+        self.assertFalse(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["side_effect_policy"]["loop_advanced"])
+        self.assertFalse(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["side_effect_policy"]["queue_advanced"])
+        self.assertFalse(payloads["paused-session-automatic-loop-following-iteration-plan.json"]["side_effect_policy"]["calls_mcp"])
         self.assertEqual(payloads["closure-wrapper-replacement-plan.json"]["status"], "ready_for_review")
         self.assertFalse(payloads["closure-wrapper-replacement-plan.json"]["plan"]["wrapper_installed"])
         self.assertTrue(payloads["closure-wrapper-assignment-safety.json"]["assignment_safety"]["assignment_safety_proven"])
@@ -1391,6 +1414,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_next_iteration_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_next_iteration_execution"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_next_iteration_followup_checkpoint"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_paused_session_automatic_loop_following_iteration_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_functions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_closure_function_candidates"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_closure_wrapper_replacement_plan"), "triage")
