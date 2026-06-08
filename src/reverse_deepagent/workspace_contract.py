@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from collections.abc import Iterable
@@ -389,6 +389,7 @@ def default_workspace_artifact_routes() -> tuple[WorkspaceArtifactRoute, ...]:
         ("workspace_paused_session_automatic_loop_multi_iteration_executor_preflight", "workspace/paused-session-automatic-loop-multi-iteration-executor-preflight.json", "/workspace/debugger/", "paused-session-automatic-loop-multi-iteration-executor-preflight.json", "triage", ("debugger", "browser_runtime", "review")),
         ("workspace_paused_session_automatic_loop_multi_iteration_execution_plan", "workspace/paused-session-automatic-loop-multi-iteration-execution-plan.json", "/workspace/debugger/", "paused-session-automatic-loop-multi-iteration-execution-plan.json", "triage", ("debugger", "browser_runtime", "review")),
         ("workspace_paused_session_automatic_loop_multi_iteration_executor_approval_plan", "workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json", "/workspace/debugger/", "paused-session-automatic-loop-multi-iteration-executor-approval-plan.json", "triage", ("debugger", "browser_runtime", "review")),
+        ("workspace_paused_session_automatic_loop_multi_iteration_executor_approval_record", "workspace/paused-session-automatic-loop-multi-iteration-executor-approval-record.json", "/workspace/debugger/", "paused-session-automatic-loop-multi-iteration-executor-approval-record.json", "audit", ("debugger", "review")),
         ("workspace_closure_functions", "workspace/closure-functions.json", "/workspace/debugger/", "closure-functions.json", "trace", ("debugger", "hook", "review")),
         ("workspace_closure_function_candidates", "workspace/closure-function-candidates.json", "/workspace/hooks/", "closure-function-candidates.json", "triage", ("debugger", "hook", "review")),
         ("workspace_closure_wrapper_replacement_plan", "workspace/closure-wrapper-replacement-plan.json", "/workspace/hooks/", "closure-wrapper-replacement-plan.json", "triage", ("debugger", "hook", "review")),

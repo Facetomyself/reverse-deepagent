@@ -12,6 +12,7 @@ from reverse_deepagent.subagents.debugger import (
 )
 from reverse_deepagent.tools.debugger_tools import (
     make_record_paused_session_automatic_loop_executor_approval_tool,
+    make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool,
     make_record_paused_session_automatic_loop_transaction_journal_tool,
     make_review_debugger_artifacts_tool,
     make_review_paused_session_automatic_loop_bounded_executor_gate_tool,
@@ -65,6 +66,68 @@ def _ready_automatic_loop_executor_approval_plan() -> dict:
         },
         "blockers": [],
         "next_action": "review_future_bounded_automatic_loop_executor_approval_transaction",
+    }
+
+
+def _ready_automatic_loop_multi_iteration_executor_approval_plan() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-plan.v1",
+        "status": "ready_for_review",
+        "ready_for_review": True,
+        "approval_plan_ready_for_review": True,
+        "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:ready",
+        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+        "preflight_id": "automatic-loop-multi-iteration-preflight:ready",
+        "policy_id": "automatic-loop-policy:ready",
+        "approved_iteration_count": 2,
+        "max_approved_iterations": 2,
+        "approved_iterations": [
+            {
+                "iteration_index": 0,
+                "source_iteration_index": 10,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "requires_checkpoint_after_iteration": True,
+            },
+            {
+                "iteration_index": 1,
+                "source_iteration_index": 11,
+                "workflow_step_index": 1,
+                "method": "Debugger.stepInto",
+                "fingerprint": "step-1",
+                "requires_checkpoint_after_iteration": True,
+            },
+        ],
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "automatic_multi_iteration_executor_implemented": False,
+            "automatic_multi_iteration_execution_allowed_now": False,
+            "approval_recorded": False,
+            "requires_transaction_journal": True,
+            "requires_per_iteration_review_gate": True,
+            "requires_per_iteration_checkpoint_gate": True,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_stop_after_each_checkpoint": True,
+        },
+        "future_executor_contract": {
+            "implemented": False,
+            "executor_name": "execute_paused_session_automatic_loop_multi_iteration",
+        },
+        "transaction_plan": {
+            "transaction_id": "automatic-loop-multi-iteration-transaction:ready",
+            "transaction_started": False,
+            "journal_written_now": False,
+        },
+        "side_effect_policy": {
+            "automatic_multi_iteration_loop": False,
+            "loop_advanced": False,
+            "queue_advanced": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+        "blockers": [],
+        "next_action": "review_future_paused_session_automatic_loop_multi_iteration_executor_approval_transaction",
     }
 
 
@@ -2251,6 +2314,86 @@ class DebuggerSubagentTests(unittest.TestCase):
             self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-executor-approval-record.json").exists())
             self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
 
+    def test_record_automatic_loop_multi_iteration_executor_approval_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                reviewer="alice",
+                reason="Ready to approve multi-iteration transaction preflight input.",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["approval_recorded"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-approval-record.json").exists())
+            self.assertTrue(result["side_effect_policy"]["dry_run_is_read_only"])
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+
+    def test_record_automatic_loop_multi_iteration_executor_approval_apply_requires_explicit_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                mode="apply",
+                write_result=True,
+                approve_approval_record=False,
+            )
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("reviewer_present", result["blockers"])
+            self.assertIn("apply_requires_explicit_approval_record", result["blockers"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-approval-record.json").exists())
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+
+    def test_record_automatic_loop_multi_iteration_executor_approval_apply_writes_record_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                reviewer="alice",
+                decision="approved",
+                reason="Reviewed bounded multi-iteration budget and transaction gates.",
+                mode="apply",
+                write_result=True,
+                approve_approval_record=True,
+                expected_execution_plan_id="automatic-loop-multi-iteration-execution-plan:ready",
+                expected_preflight_id="automatic-loop-multi-iteration-preflight:ready",
+                expected_policy_id="automatic-loop-policy:ready",
+                metadata_json=json.dumps({"ticket": "DBG-MI-1"}),
+            )
+
+            record_path = artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-approval-record.json"
+            self.assertEqual(result["status"], "written")
+            self.assertTrue(result["approval_recorded"])
+            self.assertTrue(record_path.exists())
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-record.v1")
+            self.assertEqual(record["execution_plan_id"], "automatic-loop-multi-iteration-execution-plan:ready")
+            self.assertEqual(record["preflight_id"], "automatic-loop-multi-iteration-preflight:ready")
+            self.assertEqual(record["policy_id"], "automatic-loop-policy:ready")
+            self.assertEqual(len(record["approved_iterations"]), 2)
+            self.assertTrue(record["executor_input_gates"]["approval_recorded"])
+            self.assertFalse(record["executor_input_gates"]["ready_to_execute_now"])
+            self.assertFalse(record["executor_input_gates"]["transaction_started"])
+            self.assertFalse(record["executor_input_gates"]["journal_written"])
+            self.assertFalse(record["executor_input_gates"]["automatic_multi_iteration_executor_implemented"])
+            self.assertEqual(record["metadata"]["ticket"], "DBG-MI-1")
+            self.assertTrue(record["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(record["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(record["side_effect_policy"]["transaction_started"])
+            self.assertFalse(record["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(record["side_effect_policy"]["automatic_multi_iteration_loop"])
+            self.assertFalse(record["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(record["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(record["side_effect_policy"]["mobile_runtime_used"])
+
     def test_record_automatic_loop_executor_approval_apply_writes_record_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             artifact_root = Path(tmp) / "artifacts"
@@ -2536,6 +2679,7 @@ class DebuggerSubagentTests(unittest.TestCase):
                 "read_workspace_artifact",
                 "review_debugger_artifacts",
                 "record_paused_session_automatic_loop_executor_approval",
+                "record_paused_session_automatic_loop_multi_iteration_executor_approval",
                 "review_paused_session_automatic_loop_transaction_preflight",
                 "record_paused_session_automatic_loop_transaction_journal",
                 "review_paused_session_automatic_loop_bounded_executor_gate",
@@ -2547,6 +2691,7 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertIn("approval record", load_debugger_prompt(path))
         self.assertIn("review_paused_session_automatic_loop_transaction_preflight", load_debugger_prompt(path))
         self.assertIn("record_paused_session_automatic_loop_transaction_journal", load_debugger_prompt(path))
+        self.assertIn("record_paused_session_automatic_loop_multi_iteration_executor_approval", load_debugger_prompt(path))
         self.assertIn("review_paused_session_automatic_loop_bounded_executor_gate", load_debugger_prompt(path))
         self.assertIn("preflight-only", load_debugger_prompt(path))
 
