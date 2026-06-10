@@ -158,7 +158,19 @@ Goal-09  B3c：page-using 分支提取（~3h，依赖 Goal-08）
 
 ---
 
-## 四、文档维护规则（对齐 2026-06-09 audit 结论）
+## 四、已知问题与设计边界说明
+
+### P0 根因（已修复，commit `7919f0e6`）
+
+`_dispatch_paused` 中的 plan-class matcher（如 `_is_paused_session_cross_process_execution_plan_request`）会通过 context key 检测请求类型。execution-class 测试（如 attach probe、one-action、multi-step loop）将 plan 数据作为输入传入 context，导致被 plan matcher 提前拦截，返回 `ExecutionStatus.PARTIAL` 而非 `SUCCESS`。
+
+修复方式：在 `_dispatch_paused` 入口处加 8 个 execution-class early-exit guard + 2 个交叉排除规则（见 `src/reverse_deepagent/adapters/native_web.py` line 9713-9730）。
+
+**重要**：`partial` 作为 `ExecutionStatus` 的值表示"未达到执行预期"，绝不是这类 execution 请求的正确结果。如果看到 paused_session execution 类请求返回 `partial`，应优先检查 `_dispatch_paused` 的 guard 是否覆盖了新增的 execution matcher。
+
+---
+
+## 五、文档维护规则（对齐 2026-06-09 audit 结论）
 
 1. 新增 explicit-review-only executor → ROADMAP 写 `Done（MVP，estimate-only）`，不写 `proof` / `automatic`
 2. 重构 commit → 必须附带全量测试截图或 `Ran N tests in Xs, OK`
