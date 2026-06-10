@@ -533,1586 +533,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         _closure_prefix_result = self._dispatch_closure_prefix(protection_name, context)
         if _closure_prefix_result is not None:
             return _closure_prefix_result
-        if self._is_heap_snapshot_path_to_root_executor_request(protection_name, context):
-            spec = HeapSnapshotPathToRootExecutorSpec.from_context(context)
-            result = HeapSnapshotPathToRootExecutorManager().execute(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source_summary = descriptor.get("source_summary") if isinstance(descriptor.get("source_summary"), dict) else {}
-            heap_summary = descriptor.get("heap_summary") if isinstance(descriptor.get("heap_summary"), dict) else {}
-            candidates = descriptor.get("candidate_paths") if isinstance(descriptor.get("candidate_paths"), list) else []
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_path_to_root_analysis_status={result.status}",
-                f"heap_snapshot_path_to_root_retained_size_analysis_status={source_summary.get('retained_size_analysis_status')}",
-                f"heap_snapshot_path_to_root_retained_path_preflight_status={source_summary.get('retained_path_preflight_status')}",
-                f"heap_snapshot_path_to_root_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_path_to_root_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_path_to_root_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_path_to_root_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_path_to_root_raw_strings_exported={policy.get('raw_strings_exported', False)}",
-                f"heap_snapshot_path_to_root_estimated={policy.get('path_to_root_estimated', False)}",
-                f"heap_snapshot_path_to_root_proven={policy.get('path_to_root_proven', False)}",
-                f"heap_snapshot_path_to_root_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_path_to_root_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_path_to_root_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_path_to_root_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_path_to_root_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_path_to_root_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_path_to_root_node_count={heap_summary.get('node_count_total')}",
-                f"heap_snapshot_path_to_root_candidate_count={len(candidates)}",
-                f"heap_snapshot_path_to_root_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_path_to_root_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_path_to_root_analysis_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-path-to-root-analysis.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web explicit-review-only heap snapshot path-to-root analysis MVP result.",
-                    metadata={
-                        "status": result.status,
-                        "executor_mvp": descriptor.get("executor_mvp", True),
-                        "result_artifact": descriptor.get("result_artifact"),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "raw_strings_exported": policy.get("raw_strings_exported", False),
-                        "path_to_root_estimated": policy.get("path_to_root_estimated", False),
-                        "path_to_root_proven": policy.get("path_to_root_proven", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_heap_snapshot_path_to_root_analysis_mvp"] if result.status == "executed" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_path_to_root_analysis_before_second_pass_or_constructor_drilldown",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_retained_size_executor_request(protection_name, context):
-            spec = HeapSnapshotRetainedSizeExecutorSpec.from_context(context)
-            result = HeapSnapshotRetainedSizeExecutorManager().execute(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            gate_summary = descriptor.get("gate_summary") if isinstance(descriptor.get("gate_summary"), dict) else {}
-            heap_summary = descriptor.get("heap_summary") if isinstance(descriptor.get("heap_summary"), dict) else {}
-            candidates = descriptor.get("candidate_estimates") if isinstance(descriptor.get("candidate_estimates"), list) else []
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_retained_size_analysis_status={result.status}",
-                f"heap_snapshot_retained_size_analysis_journal_id={gate_summary.get('journal_id')}",
-                f"heap_snapshot_retained_size_analysis_transaction_plan_id={gate_summary.get('transaction_plan_id')}",
-                f"heap_snapshot_retained_size_analysis_approval_plan_id={gate_summary.get('approval_plan_id')}",
-                f"heap_snapshot_retained_size_analysis_candidate_digest={gate_summary.get('candidate_digest')}",
-                f"heap_snapshot_retained_size_analysis_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_retained_size_analysis_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_retained_size_analysis_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_retained_size_analysis_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_retained_size_analysis_raw_strings_exported={policy.get('raw_strings_exported', False)}",
-                f"heap_snapshot_retained_size_analysis_retained_size_estimated={policy.get('retained_size_estimated', False)}",
-                f"heap_snapshot_retained_size_analysis_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_retained_size_analysis_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_retained_size_analysis_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_retained_size_analysis_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_retained_size_analysis_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_retained_size_analysis_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_retained_size_analysis_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_retained_size_analysis_node_count={heap_summary.get('node_count_total')}",
-                f"heap_snapshot_retained_size_analysis_candidate_count={len(candidates)}",
-                f"heap_snapshot_retained_size_analysis_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_retained_size_analysis_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_retained_size_analysis_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-retained-size-analysis.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web explicit-review-only heap snapshot retained-size analysis MVP result.",
-                    metadata={
-                        "status": result.status,
-                        "executor_mvp": descriptor.get("executor_mvp", True),
-                        "journal_id": gate_summary.get("journal_id"),
-                        "transaction_plan_id": gate_summary.get("transaction_plan_id"),
-                        "approval_plan_id": gate_summary.get("approval_plan_id"),
-                        "candidate_digest": gate_summary.get("candidate_digest"),
-                        "result_artifact": descriptor.get("result_artifact"),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "raw_strings_exported": policy.get("raw_strings_exported", False),
-                        "retained_size_estimated": policy.get("retained_size_estimated", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_heap_snapshot_retained_size_analysis_mvp"] if result.status == "executed" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_retained_size_analysis_before_path_to_root_or_second_pass",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_retained_size_bounded_gate_request(protection_name, context):
-            spec = HeapSnapshotRetainedSizeBoundedGateSpec.from_context(context)
-            result = HeapSnapshotRetainedSizeBoundedGateManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            bounded_input = descriptor.get("bounded_executor_input") if isinstance(descriptor.get("bounded_executor_input"), dict) else {}
-            future_contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
-            source_summary = descriptor.get("source_journal_summary") if isinstance(descriptor.get("source_journal_summary"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_retained_size_bounded_gate_status={result.status}",
-                f"heap_snapshot_retained_size_bounded_gate_journal_id={descriptor.get('journal_id')}",
-                f"heap_snapshot_retained_size_bounded_gate_transaction_plan_id={descriptor.get('transaction_plan_id')}",
-                f"heap_snapshot_retained_size_bounded_gate_approval_plan_id={descriptor.get('approval_plan_id')}",
-                f"heap_snapshot_retained_size_bounded_gate_candidate_digest={descriptor.get('candidate_digest')}",
-                f"heap_snapshot_retained_size_bounded_gate_journal_written={descriptor.get('journal_written', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_ready_for_review={descriptor.get('bounded_executor_gate_ready_for_review', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_future_executor_implemented={future_contract.get('implemented', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_requires_raw_heap={future_contract.get('requires_raw_heap', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_raw_strings_exported={policy.get('raw_strings_exported', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_retained_size_bounded_gate_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_retained_size_bounded_gate_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_retained_size_bounded_gate_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-retained-size-bounded-gate.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot retained-size bounded gate descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "journal_id": descriptor.get("journal_id"),
-                        "transaction_plan_id": descriptor.get("transaction_plan_id"),
-                        "approval_plan_id": descriptor.get("approval_plan_id"),
-                        "candidate_digest": descriptor.get("candidate_digest"),
-                        "transaction_journal_verified": descriptor.get("transaction_journal_verified", False),
-                        "bounded_executor_gate_ready_for_review": descriptor.get("bounded_executor_gate_ready_for_review", False),
-                        "ready_to_execute_now": descriptor.get("ready_to_execute_now", False),
-                        "future_executor_implemented": future_contract.get("implemented", False),
-                        "result_artifact": future_contract.get("result_artifact") or bounded_input.get("result_artifact"),
-                        "journal_written": source_summary.get("journal_written", False),
-                        "bounded_executor_gate_written": descriptor.get("bounded_executor_gate_written", False),
-                        "executor_invoked": policy.get("executor_invoked", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "raw_strings_exported": policy.get("raw_strings_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "provide_written_heap_snapshot_retained_size_transaction_journal",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_retained_size_transaction_preflight_request(protection_name, context):
-            spec = HeapSnapshotRetainedSizeTransactionPreflightSpec.from_context(context)
-            result = HeapSnapshotRetainedSizeTransactionPreflightManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            approval = descriptor.get("approval_summary") if isinstance(descriptor.get("approval_summary"), dict) else {}
-            transaction = descriptor.get("transaction_summary") if isinstance(descriptor.get("transaction_summary"), dict) else {}
-            candidate = descriptor.get("candidate_summary") if isinstance(descriptor.get("candidate_summary"), dict) else {}
-            journal_contract = descriptor.get("journal_writer_contract") if isinstance(descriptor.get("journal_writer_contract"), dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_retained_size_transaction_preflight_status={result.status}",
-                f"heap_snapshot_retained_size_transaction_preflight_approval_plan_id={approval.get('approval_plan_id')}",
-                f"heap_snapshot_retained_size_transaction_preflight_approval_recorded={approval.get('approval_recorded', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_approved_for_execution={approval.get('approved_for_execution', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_transaction_plan_id={transaction.get('transaction_plan_id')}",
-                f"heap_snapshot_retained_size_transaction_preflight_candidate_digest={candidate.get('candidate_digest')}",
-                f"heap_snapshot_retained_size_transaction_preflight_ready_to_write_journal={journal_contract.get('ready_for_journal_review', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_transaction_started={policy.get('transaction_started', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_journal_written={policy.get('journal_written', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_bounded_executor_gate_written={policy.get('bounded_executor_gate_written', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_retained_size_transaction_preflight_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_retained_size_transaction_preflight_warnings={','.join(str(item) for item in warnings)}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_retained_size_transaction_preflight_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-retained-size-transaction-preflight.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot retained-size transaction preflight descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": descriptor.get("review_only", True),
-                        "transaction_preflight_only": descriptor.get("transaction_preflight_only", True),
-                        "retained_size_only": descriptor.get("retained_size_only", True),
-                        "approval_plan_id": approval.get("approval_plan_id"),
-                        "transaction_plan_id": transaction.get("transaction_plan_id"),
-                        "candidate_digest": candidate.get("candidate_digest"),
-                        "ready_for_journal_review": journal_contract.get("ready_for_journal_review", False),
-                        "transaction_started": policy.get("transaction_started", False),
-                        "journal_written": policy.get("journal_written", False),
-                        "bounded_executor_gate_written": policy.get("bounded_executor_gate_written", False),
-                        "executor_invoked": policy.get("executor_invoked", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "resolve_heap_snapshot_retained_size_transaction_preflight_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_retained_size_approval_plan_request(protection_name, context):
-            spec = HeapSnapshotRetainedSizeApprovalPlanSpec.from_context(context)
-            result = HeapSnapshotRetainedSizeApprovalPlanManager().review(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source = plan.get("source_retained_size_input_review") if isinstance(plan.get("source_retained_size_input_review"), dict) else {}
-            approval = plan.get("approval_plan") if isinstance(plan.get("approval_plan"), dict) else {}
-            transaction = plan.get("transaction_plan") if isinstance(plan.get("transaction_plan"), dict) else {}
-            executor = plan.get("executor_input_contract") if isinstance(plan.get("executor_input_contract"), dict) else {}
-            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
-            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
-            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
-            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_retained_size_approval_plan_status={result.status}",
-                f"heap_snapshot_retained_size_approval_plan_candidate_count={plan.get('candidate_count')}",
-                f"heap_snapshot_retained_size_approval_plan_top_candidate={top_candidate.get('name')}",
-                f"heap_snapshot_retained_size_approval_plan_transaction_id={source.get('transaction_id')}",
-                f"heap_snapshot_retained_size_approval_plan_executor_implemented={executor.get('implemented', False)}",
-                f"heap_snapshot_retained_size_approval_plan_approval_recorded={approval.get('approval_recorded', False)}",
-                f"heap_snapshot_retained_size_approval_plan_transaction_started={transaction.get('transaction_started', False)}",
-                f"heap_snapshot_retained_size_approval_plan_journal_written={transaction.get('journal_written', False)}",
-                f"heap_snapshot_retained_size_approval_plan_ready_to_execute_now={executor.get('ready_to_execute_now', False)}",
-                f"heap_snapshot_retained_size_approval_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_retained_size_approval_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_retained_size_approval_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_retained_size_approval_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_retained_size_approval_plan_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_retained_size_approval_plan_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_retained_size_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_retained_size_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_retained_size_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_retained_size_approval_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_retained_size_approval_plan_warnings={','.join(str(item) for item in warnings)}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_retained_size_approval_plan_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-retained-size-approval-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot retained-size approval / transaction plan descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": plan.get("review_only", True),
-                        "approval_plan_only": plan.get("approval_plan_only", True),
-                        "transaction_plan_only": plan.get("transaction_plan_only", True),
-                        "candidate_count": plan.get("candidate_count"),
-                        "top_candidate": top_candidate.get("name"),
-                        "transaction_id": source.get("transaction_id"),
-                        "executor_implemented": executor.get("implemented", False),
-                        "approval_recorded": approval.get("approval_recorded", False),
-                        "transaction_started": transaction.get("transaction_started", False),
-                        "journal_written": transaction.get("journal_written", False),
-                        "ready_to_execute_now": executor.get("ready_to_execute_now", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "resolve_heap_snapshot_retained_size_approval_plan_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_retained_size_input_review_request(protection_name, context):
-            spec = HeapSnapshotRetainedSizeInputReviewSpec.from_context(context)
-            result = HeapSnapshotRetainedSizeInputReviewManager().review(spec)
-            review = result.review if isinstance(result.review, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source = review.get("source_retained_path_preflight") if isinstance(review.get("source_retained_path_preflight"), dict) else {}
-            executor = review.get("executor_input_contract") if isinstance(review.get("executor_input_contract"), dict) else {}
-            gate = review.get("approval_gate") if isinstance(review.get("approval_gate"), dict) else {}
-            raw_req = review.get("raw_heap_requirements") if isinstance(review.get("raw_heap_requirements"), dict) else {}
-            candidates = review.get("candidate_inputs") if isinstance(review.get("candidate_inputs"), list) else []
-            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
-            blockers = review.get("blockers") if isinstance(review.get("blockers"), list) else []
-            warnings = review.get("warnings") if isinstance(review.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_retained_size_input_review_status={result.status}",
-                f"heap_snapshot_retained_size_input_review_candidate_count={review.get('candidate_count')}",
-                f"heap_snapshot_retained_size_input_review_top_candidate={top_candidate.get('name')}",
-                f"heap_snapshot_retained_size_input_review_transaction_id={source.get('transaction_id')}",
-                f"heap_snapshot_retained_size_input_review_requires_raw_heap={raw_req.get('requires_raw_heap', False)}",
-                f"heap_snapshot_retained_size_input_review_executor_implemented={executor.get('implemented', False)}",
-                f"heap_snapshot_retained_size_input_review_approval_required={gate.get('approval_required', False)}",
-                f"heap_snapshot_retained_size_input_review_ready_to_execute_now={gate.get('ready_to_execute_now', False)}",
-                f"heap_snapshot_retained_size_input_review_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_retained_size_input_review_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_retained_size_input_review_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_retained_size_input_review_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_retained_size_input_review_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_retained_size_input_review_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_retained_size_input_review_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_retained_size_input_review_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_retained_size_input_review_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_retained_size_input_review_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_retained_size_input_review_warnings={','.join(str(item) for item in warnings)}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_retained_size_input_review_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-retained-size-input-review.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot retained-size executor input review descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": review.get("review_only", True),
-                        "input_review_only": review.get("input_review_only", True),
-                        "approval_gate_only": review.get("approval_gate_only", True),
-                        "candidate_count": review.get("candidate_count"),
-                        "top_candidate": top_candidate.get("name"),
-                        "transaction_id": source.get("transaction_id"),
-                        "requires_raw_heap": raw_req.get("requires_raw_heap", True),
-                        "executor_implemented": executor.get("implemented", False),
-                        "ready_to_execute_now": gate.get("ready_to_execute_now", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=review.get("next_action") or "resolve_heap_snapshot_retained_size_input_review_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_retained_path_preflight_request(protection_name, context):
-            spec = HeapSnapshotRetainedPathPreflightSpec.from_context(context)
-            result = HeapSnapshotRetainedPathPreflightManager().review(spec)
-            preflight = result.preflight if isinstance(result.preflight, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source = preflight.get("source_constructor_growth_drilldown") if isinstance(preflight.get("source_constructor_growth_drilldown"), dict) else {}
-            raw_req = preflight.get("raw_heap_requirements") if isinstance(preflight.get("raw_heap_requirements"), dict) else {}
-            future = preflight.get("future_executor_contracts") if isinstance(preflight.get("future_executor_contracts"), dict) else {}
-            retained_contract = future.get("retained_size_analysis") if isinstance(future.get("retained_size_analysis"), dict) else {}
-            path_contract = future.get("path_to_root_analysis") if isinstance(future.get("path_to_root_analysis"), dict) else {}
-            candidates = preflight.get("candidate_inputs") if isinstance(preflight.get("candidate_inputs"), list) else []
-            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
-            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
-            warnings = preflight.get("warnings") if isinstance(preflight.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_retained_path_preflight_status={result.status}",
-                f"heap_snapshot_retained_path_preflight_requested_analysis={preflight.get('requested_analysis')}",
-                f"heap_snapshot_retained_path_preflight_candidate_count={preflight.get('candidate_count')}",
-                f"heap_snapshot_retained_path_preflight_top_candidate={top_candidate.get('name')}",
-                f"heap_snapshot_retained_path_preflight_top_delta={top_candidate.get('delta')}",
-                f"heap_snapshot_retained_path_preflight_transaction_id={source.get('transaction_id')}",
-                f"heap_snapshot_retained_path_preflight_requires_raw_heap={raw_req.get('requires_raw_heap', False)}",
-                f"heap_snapshot_retained_path_preflight_raw_heap_available={raw_req.get('raw_heap_available_in_this_preflight', False)}",
-                f"heap_snapshot_retained_path_preflight_retained_size_implemented={retained_contract.get('implemented', False)}",
-                f"heap_snapshot_retained_path_preflight_path_to_root_implemented={path_contract.get('implemented', False)}",
-                f"heap_snapshot_retained_path_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_retained_path_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_retained_path_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_retained_path_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_retained_path_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_retained_path_preflight_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_retained_path_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_retained_path_preflight_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_retained_path_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_retained_path_preflight_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_retained_path_preflight_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_retained_path_preflight_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-retained-path-preflight.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot retained-size / path-to-root preflight descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": preflight.get("review_only", True),
-                        "preflight_only": preflight.get("preflight_only", True),
-                        "handoff_only": preflight.get("handoff_only", True),
-                        "requested_analysis": preflight.get("requested_analysis"),
-                        "candidate_count": preflight.get("candidate_count"),
-                        "top_candidate": top_candidate.get("name"),
-                        "top_delta": top_candidate.get("delta"),
-                        "transaction_id": source.get("transaction_id"),
-                        "requires_raw_heap": raw_req.get("requires_raw_heap", True),
-                        "raw_heap_available_in_this_preflight": raw_req.get("raw_heap_available_in_this_preflight", False),
-                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
-                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=preflight.get("next_action") or "resolve_heap_snapshot_retained_path_preflight_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_automatic_followup_plan_request(protection_name, context):
-            spec = HeapSnapshotAutomaticFollowupPlanSpec.from_context(context)
-            result = HeapSnapshotAutomaticFollowupPlanManager().review(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source = plan.get("source_summary") if isinstance(plan.get("source_summary"), dict) else {}
-            top_action = plan.get("top_recommended_action") if isinstance(plan.get("top_recommended_action"), dict) else {}
-            actions = plan.get("recommended_actions") if isinstance(plan.get("recommended_actions"), list) else []
-            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
-            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
-            retained_summary = source.get("retained_size_analysis") if isinstance(source.get("retained_size_analysis"), dict) else {}
-            path_summary = source.get("path_to_root_analysis") if isinstance(source.get("path_to_root_analysis"), dict) else {}
-            constructor_summary = source.get("constructor_growth_drilldown_analysis") if isinstance(source.get("constructor_growth_drilldown_analysis"), dict) else {}
-            verification = [
-                f"heap_snapshot_automatic_followup_plan_status={result.status}",
-                f"heap_snapshot_automatic_followup_plan_recommended_action_count={len(actions)}",
-                f"heap_snapshot_automatic_followup_plan_top_action={top_action.get('action')}",
-                f"heap_snapshot_automatic_followup_plan_retained_size_provided={retained_summary.get('provided', False)}",
-                f"heap_snapshot_automatic_followup_plan_path_to_root_provided={path_summary.get('provided', False)}",
-                f"heap_snapshot_automatic_followup_plan_constructor_growth_provided={constructor_summary.get('provided', False)}",
-                f"heap_snapshot_automatic_followup_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_automatic_followup_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_automatic_followup_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_automatic_followup_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_automatic_followup_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
-                f"heap_snapshot_automatic_followup_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
-                f"heap_snapshot_automatic_followup_plan_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_automatic_followup_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_automatic_followup_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_automatic_followup_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_automatic_followup_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_automatic_followup_plan_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_automatic_followup_plan_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-automatic-followup-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot automatic follow-up review plan.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": plan.get("review_only", True),
-                        "plan_only": plan.get("plan_only", True),
-                        "recommended_action_count": len(actions),
-                        "top_recommended_action": top_action.get("action"),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_proven": policy.get("path_to_root_proven", False),
-                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
-                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "resolve_heap_snapshot_automatic_followup_plan_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_retained_size_proof_plan_request(protection_name, context):
-            spec = HeapSnapshotRetainedSizeProofPlanSpec.from_context(context)
-            result = HeapSnapshotRetainedSizeProofPlanManager().review(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
-            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
-            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
-            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
-            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
-            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_retained_size_proof_plan_status={result.status}",
-                f"heap_snapshot_retained_size_proof_plan_candidate_count={len(candidates)}",
-                f"heap_snapshot_retained_size_proof_plan_top_candidate={top_candidate.get('name')}",
-                f"heap_snapshot_retained_size_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
-                f"heap_snapshot_retained_size_proof_plan_future_executor_implemented={future.get('implemented', False)}",
-                f"heap_snapshot_retained_size_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
-                f"heap_snapshot_retained_size_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_retained_size_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_retained_size_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_retained_size_proof_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_retained_size_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
-                f"heap_snapshot_retained_size_proof_plan_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_retained_size_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_retained_size_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_retained_size_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_retained_size_proof_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_retained_size_proof_plan_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_retained_size_proof_plan_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-retained-size-proof-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot retained-size proof planning descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": plan.get("review_only", True),
-                        "plan_only": plan.get("plan_only", True),
-                        "proof_plan_only": plan.get("proof_plan_only", True),
-                        "candidate_count": len(candidates),
-                        "top_candidate": top_candidate.get("name"),
-                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
-                        "future_executor_implemented": future.get("implemented", False),
-                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "resolve_heap_snapshot_retained_size_proof_plan_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_path_to_root_proof_plan_request(protection_name, context):
-            spec = HeapSnapshotPathToRootProofPlanSpec.from_context(context)
-            result = HeapSnapshotPathToRootProofPlanManager().review(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
-            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
-            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
-            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
-            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
-            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_path_to_root_proof_plan_status={result.status}",
-                f"heap_snapshot_path_to_root_proof_plan_candidate_count={len(candidates)}",
-                f"heap_snapshot_path_to_root_proof_plan_top_candidate={top_candidate.get('name')}",
-                f"heap_snapshot_path_to_root_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_future_executor_implemented={future.get('implemented', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_path_to_root_proof_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_path_to_root_proof_plan_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_path_to_root_proof_plan_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-path-to-root-proof-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot path-to-root proof planning descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": plan.get("review_only", True),
-                        "plan_only": plan.get("plan_only", True),
-                        "proof_plan_only": plan.get("proof_plan_only", True),
-                        "candidate_count": len(candidates),
-                        "top_candidate": top_candidate.get("name"),
-                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
-                        "future_executor_implemented": future.get("implemented", False),
-                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "path_to_root_proven": policy.get("path_to_root_proven", False),
-                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "resolve_heap_snapshot_path_to_root_proof_plan_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request(protection_name, context):
-            spec = HeapSnapshotRawHeapConstructorDrilldownProofPlanSpec.from_context(context)
-            result = HeapSnapshotRawHeapConstructorDrilldownProofPlanManager().review(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
-            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
-            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
-            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
-            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
-            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_status={result.status}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_candidate_count={len(candidates)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_top_candidate={top_candidate.get('constructor_name')}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_constructor_reachability_graph={requirements.get('requires_constructor_reachability_graph', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_future_executor_implemented={future.get('implemented', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_constructor_drilldown_proven={policy.get('constructor_drilldown_proven', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot raw-heap constructor drilldown proof planning descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": plan.get("review_only", True),
-                        "plan_only": plan.get("plan_only", True),
-                        "proof_plan_only": plan.get("proof_plan_only", True),
-                        "candidate_count": len(candidates),
-                        "top_candidate": top_candidate.get("constructor_name"),
-                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
-                        "requires_constructor_reachability_graph": requirements.get("requires_constructor_reachability_graph", True),
-                        "future_executor_implemented": future.get("implemented", False),
-                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_proven": policy.get("path_to_root_proven", False),
-                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "resolve_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_constructor_growth_drilldown_execution_request(protection_name, context):
-            spec = HeapSnapshotConstructorGrowthDrilldownExecutorSpec.from_context(context)
-            result = HeapSnapshotConstructorGrowthDrilldownExecutorManager().execute(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source = descriptor.get("source_summary") if isinstance(descriptor.get("source_summary"), dict) else {}
-            summary = descriptor.get("constructor_drilldown_summary") if isinstance(descriptor.get("constructor_drilldown_summary"), dict) else {}
-            top_candidate = summary.get("top_candidate") if isinstance(summary.get("top_candidate"), dict) else {}
-            rows = descriptor.get("constructor_drilldown_rows") if isinstance(descriptor.get("constructor_drilldown_rows"), list) else []
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_constructor_growth_drilldown_analysis_status={result.status}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_source_status={source.get('status')}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_selected_action={source.get('selected_action')}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_candidate_count={len(rows)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_top_candidate={top_candidate.get('name')}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_top_delta={top_candidate.get('delta')}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_computed={policy.get('constructor_drilldown_computed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_proven={policy.get('constructor_drilldown_proven', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_strings_exported={policy.get('raw_strings_exported', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_constructor_growth_drilldown_analysis_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_constructor_growth_drilldown_analysis_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-constructor-growth-drilldown-analysis.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web explicit-review-only heap snapshot constructor-growth drilldown analysis MVP result.",
-                    metadata={
-                        "status": result.status,
-                        "executor_mvp": descriptor.get("executor_mvp", True),
-                        "result_artifact": descriptor.get("result_artifact"),
-                        "candidate_count": len(rows),
-                        "top_candidate": top_candidate.get("name"),
-                        "constructor_drilldown_computed": policy.get("constructor_drilldown_computed", False),
-                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "raw_strings_exported": policy.get("raw_strings_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_heap_snapshot_constructor_growth_drilldown_mvp"] if result.status == "executed" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_constructor_growth_drilldown_analysis_before_retained_size_path_to_root_or_second_pass",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_constructor_growth_drilldown_request(protection_name, context):
-            spec = HeapSnapshotConstructorGrowthDrilldownSpec.from_context(context)
-            result = HeapSnapshotConstructorGrowthDrilldownManager().review(spec)
-            drilldown = result.drilldown if isinstance(result.drilldown, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source = drilldown.get("source_selected_analysis_input_preflight") if isinstance(drilldown.get("source_selected_analysis_input_preflight"), dict) else {}
-            summary = drilldown.get("constructor_growth_summary") if isinstance(drilldown.get("constructor_growth_summary"), dict) else {}
-            top_candidate = summary.get("top_candidate") if isinstance(summary.get("top_candidate"), dict) else {}
-            contracts = drilldown.get("future_analysis_contracts") if isinstance(drilldown.get("future_analysis_contracts"), dict) else {}
-            retained_contract = contracts.get("retained_size_analysis") if isinstance(contracts.get("retained_size_analysis"), dict) else {}
-            path_contract = contracts.get("path_to_root_analysis") if isinstance(contracts.get("path_to_root_analysis"), dict) else {}
-            blockers = drilldown.get("blockers") if isinstance(drilldown.get("blockers"), list) else []
-            warnings = drilldown.get("warnings") if isinstance(drilldown.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_constructor_growth_drilldown_status={result.status}",
-                f"heap_snapshot_constructor_growth_drilldown_selected_action={drilldown.get('selected_action')}",
-                f"heap_snapshot_constructor_growth_drilldown_candidate_count={summary.get('candidate_count')}",
-                f"heap_snapshot_constructor_growth_drilldown_top_candidate={top_candidate.get('name')}",
-                f"heap_snapshot_constructor_growth_drilldown_top_delta={top_candidate.get('delta')}",
-                f"heap_snapshot_constructor_growth_drilldown_source_preflight_status={source.get('status')}",
-                f"heap_snapshot_constructor_growth_drilldown_transaction_id={source.get('transaction_id')}",
-                f"heap_snapshot_constructor_growth_drilldown_retained_size_implemented={retained_contract.get('implemented', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_path_to_root_implemented={path_contract.get('implemented', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_constructor_drilldown_computed={policy.get('constructor_drilldown_computed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_constructor_growth_drilldown_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_constructor_growth_drilldown_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_constructor_growth_drilldown_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-constructor-growth-drilldown.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot constructor-growth drilldown descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": drilldown.get("review_only", True),
-                        "drilldown_only": drilldown.get("drilldown_only", True),
-                        "summary_only": drilldown.get("summary_only", True),
-                        "selected_action": drilldown.get("selected_action"),
-                        "candidate_count": summary.get("candidate_count"),
-                        "top_candidate": top_candidate.get("name"),
-                        "top_delta": top_candidate.get("delta"),
-                        "transaction_id": source.get("transaction_id"),
-                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
-                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "constructor_drilldown_computed": policy.get("constructor_drilldown_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=drilldown.get("next_action") or "resolve_heap_snapshot_constructor_growth_drilldown_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_selected_analysis_input_preflight_request(protection_name, context):
-            spec = HeapSnapshotDiffSelectedAnalysisInputPreflightSpec.from_context(context)
-            result = HeapSnapshotDiffSelectedAnalysisInputPreflightManager().review(spec)
-            preflight = result.preflight if isinstance(result.preflight, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            source = preflight.get("source_checkpoint_summary") if isinstance(preflight.get("source_checkpoint_summary"), dict) else {}
-            selected = preflight.get("selected_analysis_input") if isinstance(preflight.get("selected_analysis_input"), dict) else {}
-            future = preflight.get("future_executor_contract") if isinstance(preflight.get("future_executor_contract"), dict) else {}
-            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
-            warnings = preflight.get("warnings") if isinstance(preflight.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_selected_analysis_input_preflight_status={result.status}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_selected_action={selected.get('selected_action')}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_candidate_count={selected.get('candidate_count')}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_source_checkpoint_status={source.get('status')}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_transaction_id={source.get('transaction_id')}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_future_executor_implemented={future.get('implemented', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_requires_raw_heap={future.get('requires_raw_heap', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_selected_analysis_input_preflight_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_selected_analysis_input_preflight_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-selected-analysis-input-preflight.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot diff selected follow-up analysis input preflight.",
-                    metadata={
-                        "status": result.status,
-                        "review_only": preflight.get("review_only", True),
-                        "preflight_only": preflight.get("preflight_only", True),
-                        "selection_only": preflight.get("selection_only", True),
-                        "selected_action": selected.get("selected_action"),
-                        "candidate_count": selected.get("candidate_count"),
-                        "transaction_id": source.get("transaction_id"),
-                        "future_executor_implemented": future.get("implemented", False),
-                        "requires_raw_heap": future.get("requires_raw_heap", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "retained_size_proven": policy.get("retained_size_proven", False),
-                        "path_to_root_computed": policy.get("path_to_root_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=preflight.get("next_action") or "resolve_heap_snapshot_diff_selected_analysis_input_preflight_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_followup_checkpoint_request(protection_name, context):
-            spec = HeapSnapshotDiffFollowupCheckpointSpec.from_context(context)
-            result = HeapSnapshotDiffFollowupCheckpointManager().review(spec)
-            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            summary = checkpoint.get("executor_result_summary") if isinstance(checkpoint.get("executor_result_summary"), dict) else {}
-            analysis_plan = checkpoint.get("analysis_plan") if isinstance(checkpoint.get("analysis_plan"), dict) else {}
-            delta_review = analysis_plan.get("summary_delta_review") if isinstance(analysis_plan.get("summary_delta_review"), dict) else {}
-            contracts = analysis_plan.get("future_analysis_contracts") if isinstance(analysis_plan.get("future_analysis_contracts"), dict) else {}
-            retained_contract = contracts.get("retained_size_analysis") if isinstance(contracts.get("retained_size_analysis"), dict) else {}
-            path_contract = contracts.get("path_to_root_analysis") if isinstance(contracts.get("path_to_root_analysis"), dict) else {}
-            recommendations = analysis_plan.get("recommendations") if isinstance(analysis_plan.get("recommendations"), list) else []
-            blockers = checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else []
-            warnings = checkpoint.get("warnings") if isinstance(checkpoint.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_followup_checkpoint_status={result.status}",
-                f"heap_snapshot_diff_followup_checkpoint_executor_result_status={summary.get('status')}",
-                f"heap_snapshot_diff_followup_checkpoint_transaction_id={summary.get('transaction_id')}",
-                f"heap_snapshot_diff_followup_checkpoint_node_delta={delta_review.get('node_count_delta')}",
-                f"heap_snapshot_diff_followup_checkpoint_edge_delta={delta_review.get('edge_count_delta')}",
-                f"heap_snapshot_diff_followup_checkpoint_self_size_delta={delta_review.get('self_size_total_analyzed_delta')}",
-                f"heap_snapshot_diff_followup_checkpoint_recommendation_count={len(recommendations)}",
-                f"heap_snapshot_diff_followup_checkpoint_retained_size_implemented={retained_contract.get('implemented', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_path_to_root_implemented={path_contract.get('implemented', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_followup_checkpoint_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_followup_checkpoint_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_followup_checkpoint_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-followup-checkpoint.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot diff follow-up checkpoint.",
-                    metadata={
-                        "status": result.status,
-                        "checkpoint_only": checkpoint.get("checkpoint_only", True),
-                        "review_only": checkpoint.get("review_only", True),
-                        "transaction_id": summary.get("transaction_id"),
-                        "node_count_delta": delta_review.get("node_count_delta"),
-                        "edge_count_delta": delta_review.get("edge_count_delta"),
-                        "recommendation_count": len(recommendations),
-                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
-                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "complete_heap_traversal_claimed": checkpoint.get("complete_heap_traversal_claimed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=checkpoint.get("next_action") or "review_heap_snapshot_diff_followup_plan_before_retained_size_or_path_to_root_work",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_executor_request(protection_name, context):
-            spec = HeapSnapshotDiffExecutorSpec.from_context(context)
-            result = HeapSnapshotDiffExecutorManager().execute(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            diff = descriptor.get("diff") if isinstance(descriptor.get("diff"), dict) else {}
-            gate_summary = descriptor.get("gate_summary") if isinstance(descriptor.get("gate_summary"), dict) else {}
-            heap_summaries = descriptor.get("heap_summaries") if isinstance(descriptor.get("heap_summaries"), dict) else {}
-            before_summary = heap_summaries.get("before") if isinstance(heap_summaries.get("before"), dict) else {}
-            after_summary = heap_summaries.get("after") if isinstance(heap_summaries.get("after"), dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_executor_result_status={result.status}",
-                f"heap_snapshot_diff_executor_result_transaction_id={gate_summary.get('transaction_id')}",
-                f"heap_snapshot_diff_executor_result_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_diff_executor_result_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_executor_result_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_diff_executor_result_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_executor_result_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_executor_result_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_diff_executor_result_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_executor_result_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_executor_result_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_executor_result_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_executor_result_before_nodes={before_summary.get('node_count_total')}",
-                f"heap_snapshot_diff_executor_result_after_nodes={after_summary.get('node_count_total')}",
-                f"heap_snapshot_diff_executor_result_node_delta={diff.get('node_count_delta')}",
-                f"heap_snapshot_diff_executor_result_edge_delta={diff.get('edge_count_delta')}",
-                f"heap_snapshot_diff_executor_result_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_executor_result_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_executor_result_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-executor-result.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web explicit-review-only heap snapshot diff executor MVP result.",
-                    metadata={
-                        "status": result.status,
-                        "executor_mvp": descriptor.get("executor_mvp", True),
-                        "transaction_id": gate_summary.get("transaction_id"),
-                        "result_artifact": descriptor.get("result_artifact"),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_heap_snapshot_diff_executor_mvp"] if result.status == "executed" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_result_before_followup",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_readiness_request(protection_name, context):
-            spec = HeapSnapshotReadinessSpec.from_context(context)
-            result = HeapSnapshotReadinessManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            evidence = descriptor.get("capability_evidence") if isinstance(descriptor.get("capability_evidence"), dict) else {}
-            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_readiness_status={result.status}",
-                f"heap_snapshot_readiness_provider_id={evidence.get('browser_provider_id')}",
-                f"heap_snapshot_readiness_cdp_available={evidence.get('cdp_available')}",
-                f"heap_snapshot_readiness_heap_profiler_capability={evidence.get('heap_profiler_capability')}",
-                f"heap_snapshot_readiness_heap_snapshot_collected={descriptor.get('heap_snapshot_collected', False)}",
-                f"heap_snapshot_readiness_heap_diff_computed={descriptor.get('heap_diff_computed', False)}",
-                f"heap_snapshot_readiness_raw_heap_export_allowed={gates.get('raw_heap_export_allowed', False)}",
-                f"heap_snapshot_readiness_max_snapshot_bytes={gates.get('max_snapshot_bytes')}",
-                f"heap_snapshot_readiness_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_readiness_provider_factory_invoked={policy.get('provider_factory_invoked', False)}",
-                f"heap_snapshot_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_readiness_heap_profiler_enabled={policy.get('heap_profiler_enabled', False)}",
-                f"heap_snapshot_readiness_runtime_evaluated={policy.get('runtime_evaluated', False)}",
-                f"heap_snapshot_readiness_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_readiness_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_readiness_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_readiness_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_readiness_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-readiness.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only CDP HeapProfiler heap snapshot readiness descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "browser_provider_id": evidence.get("browser_provider_id"),
-                        "cdp_available": evidence.get("cdp_available"),
-                        "heap_profiler_capability": evidence.get("heap_profiler_capability"),
-                        "heap_snapshot_collected": descriptor.get("heap_snapshot_collected", False),
-                        "raw_heap_export_allowed": gates.get("raw_heap_export_allowed", False),
-                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_readiness_before_collection",
-                confidence=ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_executor_bounded_gate_request(protection_name, context):
-            spec = HeapSnapshotDiffExecutorBoundedGateSpec.from_context(context)
-            result = HeapSnapshotDiffExecutorBoundedGateManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            bounded_input = descriptor.get("bounded_executor_input") if isinstance(descriptor.get("bounded_executor_input"), dict) else {}
-            future_contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
-            source_summary = descriptor.get("source_journal_summary") if isinstance(descriptor.get("source_journal_summary"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_executor_bounded_gate_status={result.status}",
-                f"heap_snapshot_diff_executor_bounded_gate_journal_id={descriptor.get('journal_id')}",
-                f"heap_snapshot_diff_executor_bounded_gate_transaction_id={descriptor.get('transaction_id')}",
-                f"heap_snapshot_diff_executor_bounded_gate_journal_written={descriptor.get('journal_written', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_ready_for_review={descriptor.get('bounded_executor_gate_ready_for_review', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_future_executor_implemented={future_contract.get('implemented', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_requires_safe_raw_heap_parser={future_contract.get('requires_safe_raw_heap_parser', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_executor_bounded_gate_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_executor_bounded_gate_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_executor_bounded_gate_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-executor-bounded-gate.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot diff executor bounded gate descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "journal_id": descriptor.get("journal_id"),
-                        "transaction_id": descriptor.get("transaction_id"),
-                        "idempotency_key": descriptor.get("idempotency_key"),
-                        "transaction_journal_verified": descriptor.get("transaction_journal_verified", False),
-                        "bounded_executor_gate_ready_for_review": descriptor.get("bounded_executor_gate_ready_for_review", False),
-                        "ready_to_execute_now": descriptor.get("ready_to_execute_now", False),
-                        "future_executor_implemented": future_contract.get("implemented", False),
-                        "result_artifact": future_contract.get("result_artifact") or bounded_input.get("result_artifact"),
-                        "journal_written": source_summary.get("journal_written", False),
-                        "bounded_executor_gate_written": descriptor.get("bounded_executor_gate_written", False),
-                        "executor_invoked": policy.get("executor_invoked", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_raw_heap_parser_or_executor_mvp",
-                confidence=ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_executor_transaction_preflight_request(protection_name, context):
-            spec = HeapSnapshotDiffExecutorTransactionPreflightSpec.from_context(context)
-            result = HeapSnapshotDiffExecutorTransactionPreflightManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            approval = descriptor.get("approval_summary") if isinstance(descriptor.get("approval_summary"), dict) else {}
-            transaction = descriptor.get("transaction_summary") if isinstance(descriptor.get("transaction_summary"), dict) else {}
-            preflight = descriptor.get("preflight_summary") if isinstance(descriptor.get("preflight_summary"), dict) else {}
-            journal_contract = descriptor.get("journal_writer_contract") if isinstance(descriptor.get("journal_writer_contract"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_executor_transaction_preflight_status={result.status}",
-                f"heap_snapshot_diff_executor_transaction_preflight_approval_scope={approval.get('approval_scope')}",
-                f"heap_snapshot_diff_executor_transaction_preflight_approval_recorded={approval.get('approval_recorded', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_approved_for_execution={approval.get('approved_for_execution', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_transaction_id={transaction.get('transaction_id')}",
-                f"heap_snapshot_diff_executor_transaction_preflight_idempotency_key={transaction.get('idempotency_key')}",
-                f"heap_snapshot_diff_executor_transaction_preflight_before_digest={preflight.get('before_digest')}",
-                f"heap_snapshot_diff_executor_transaction_preflight_after_digest={preflight.get('after_digest')}",
-                f"heap_snapshot_diff_executor_transaction_preflight_ready_to_write_journal={journal_contract.get('ready_for_journal_review', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_transaction_started={policy.get('transaction_started', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_journal_written={policy.get('journal_written', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_bounded_executor_gate_written={policy.get('bounded_executor_gate_written', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_executor_transaction_preflight_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_executor_transaction_preflight_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-executor-transaction-preflight.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web read-only heap snapshot diff executor transaction preflight descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "approval_scope": approval.get("approval_scope"),
-                        "approval_recorded": approval.get("approval_recorded", False),
-                        "approved_for_execution": approval.get("approved_for_execution", False),
-                        "transaction_id": transaction.get("transaction_id"),
-                        "idempotency_key": transaction.get("idempotency_key"),
-                        "before_digest": preflight.get("before_digest"),
-                        "after_digest": preflight.get("after_digest"),
-                        "ready_for_journal_review": journal_contract.get("ready_for_journal_review", False),
-                        "transaction_started": policy.get("transaction_started", False),
-                        "journal_written": policy.get("journal_written", False),
-                        "bounded_executor_gate_written": policy.get("bounded_executor_gate_written", False),
-                        "executor_invoked": policy.get("executor_invoked", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_transaction_journal_writer",
-                confidence=ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_executor_approval_plan_request(protection_name, context):
-            spec = HeapSnapshotDiffExecutorApprovalPlanSpec.from_context(context)
-            result = HeapSnapshotDiffExecutorApprovalPlanManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            preflight = descriptor.get("preflight_summary") if isinstance(descriptor.get("preflight_summary"), dict) else {}
-            approval = descriptor.get("approval_plan") if isinstance(descriptor.get("approval_plan"), dict) else {}
-            transaction = descriptor.get("transaction_plan") if isinstance(descriptor.get("transaction_plan"), dict) else {}
-            contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_executor_approval_plan_status={result.status}",
-                f"heap_snapshot_diff_executor_approval_plan_before_digest={preflight.get('before_digest')}",
-                f"heap_snapshot_diff_executor_approval_plan_after_digest={preflight.get('after_digest')}",
-                f"heap_snapshot_diff_executor_approval_plan_approval_scope={approval.get('approval_scope')}",
-                f"heap_snapshot_diff_executor_approval_plan_approval_recorded={policy.get('approval_recorded', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_transaction_id={transaction.get('transaction_id')}",
-                f"heap_snapshot_diff_executor_approval_plan_idempotency_key={transaction.get('idempotency_key')}",
-                f"heap_snapshot_diff_executor_approval_plan_transaction_started={policy.get('transaction_started', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_journal_written_now={policy.get('journal_written_now', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_future_executor_implemented={contract.get('implemented', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_executor_invoked={policy.get('executor_invoked', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_executor_approval_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_executor_approval_plan_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_executor_approval_plan_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-executor-approval-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot diff executor approval and transaction plan.",
-                    metadata={
-                        "status": result.status,
-                        "before_digest": preflight.get("before_digest"),
-                        "after_digest": preflight.get("after_digest"),
-                        "approval_scope": approval.get("approval_scope"),
-                        "approval_recorded": policy.get("approval_recorded", False),
-                        "transaction_id": transaction.get("transaction_id"),
-                        "idempotency_key": transaction.get("idempotency_key"),
-                        "transaction_started": policy.get("transaction_started", False),
-                        "journal_written_now": policy.get("journal_written_now", False),
-                        "future_executor_implemented": contract.get("implemented", False),
-                        "executor_invoked": policy.get("executor_invoked", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_approval_plan_before_recording_approval",
-                confidence=ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_executor_preflight_request(protection_name, context):
-            spec = HeapSnapshotDiffExecutorPreflightSpec.from_context(context)
-            result = HeapSnapshotDiffExecutorPreflightManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            readiness = descriptor.get("readiness_summary") if isinstance(descriptor.get("readiness_summary"), dict) else {}
-            ingestion = descriptor.get("ingestion_policy") if isinstance(descriptor.get("ingestion_policy"), dict) else {}
-            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_executor_preflight_status={result.status}",
-                f"heap_snapshot_diff_executor_preflight_before_digest={readiness.get('before_digest')}",
-                f"heap_snapshot_diff_executor_preflight_after_digest={readiness.get('after_digest')}",
-                f"heap_snapshot_diff_executor_preflight_raw_heap_ingestion_policy={ingestion.get('raw_heap_ingestion_policy')}",
-                f"heap_snapshot_diff_executor_preflight_parser_sandbox={ingestion.get('parser_sandbox')}",
-                f"heap_snapshot_diff_executor_preflight_redaction_plan={ingestion.get('redaction_plan')}",
-                f"heap_snapshot_diff_executor_preflight_max_raw_heap_bytes={ingestion.get('max_raw_heap_bytes')}",
-                f"heap_snapshot_diff_executor_preflight_future_diff_executor_implemented={gates.get('future_diff_executor_implemented', False)}",
-                f"heap_snapshot_diff_executor_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_executor_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
-                f"heap_snapshot_diff_executor_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_executor_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_executor_preflight_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_diff_executor_preflight_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_executor_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_executor_preflight_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_executor_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_executor_preflight_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_executor_preflight_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_executor_preflight_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-executor-preflight.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot diff executor preflight and raw-ingestion safety gate.",
-                    metadata={
-                        "status": result.status,
-                        "before_digest": readiness.get("before_digest"),
-                        "after_digest": readiness.get("after_digest"),
-                        "raw_heap_ingestion_policy": ingestion.get("raw_heap_ingestion_policy"),
-                        "future_diff_executor_implemented": gates.get("future_diff_executor_implemented", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_preflight_before_implementation",
-                confidence=ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_diff_readiness_request(protection_name, context):
-            spec = HeapSnapshotDiffReadinessSpec.from_context(context)
-            result = HeapSnapshotDiffReadinessManager().review(spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            pair = descriptor.get("pair_summary") if isinstance(descriptor.get("pair_summary"), dict) else {}
-            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_diff_readiness_status={result.status}",
-                f"heap_snapshot_diff_readiness_before_digest={pair.get('before_digest')}",
-                f"heap_snapshot_diff_readiness_after_digest={pair.get('after_digest')}",
-                f"heap_snapshot_diff_readiness_digest_equal={pair.get('digest_equal')}",
-                f"heap_snapshot_diff_readiness_byte_delta={pair.get('byte_delta')}",
-                f"heap_snapshot_diff_readiness_byte_delta_ratio={pair.get('byte_delta_ratio')}",
-                f"heap_snapshot_diff_readiness_future_diff_executor_implemented={gates.get('future_diff_executor_implemented', False)}",
-                f"heap_snapshot_diff_readiness_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_diff_readiness_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
-                f"heap_snapshot_diff_readiness_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_diff_readiness_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_diff_readiness_browser_started={policy.get('browser_started', False)}",
-                f"heap_snapshot_diff_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_diff_readiness_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_diff_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_diff_readiness_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_diff_readiness_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_diff_readiness_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-diff-readiness.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web review-only heap snapshot diff readiness descriptor over collected metadata.",
-                    metadata={
-                        "status": result.status,
-                        "before_digest": pair.get("before_digest"),
-                        "after_digest": pair.get("after_digest"),
-                        "digest_equal": pair.get("digest_equal"),
-                        "byte_delta": pair.get("byte_delta"),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
-                        "browser_started": policy.get("browser_started", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_readiness_before_diff_executor",
-                confidence=ConfidenceLevel.LOW,
-            )
+        _heap_result = self._dispatch_heap(protection_name, context)
+        if _heap_result is not None:
+            return _heap_result
         if self._is_object_graph_diff_request(protection_name, context):
             spec = ObjectGraphDiffSpec.from_context(context)
             result = ObjectGraphDiffManager().review(spec)
@@ -12731,6 +11154,1590 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
             next_action="resume_recon" if install.ok else "ensure_browser_provider_or_hook_capability",
             confidence=ConfidenceLevel.MEDIUM if install.ok else ConfidenceLevel.LOW,
         )
+
+    def _dispatch_heap(self, protection_name: str, context: dict) -> "ProtectionResult | None":
+        if self._is_heap_snapshot_path_to_root_executor_request(protection_name, context):
+            spec = HeapSnapshotPathToRootExecutorSpec.from_context(context)
+            result = HeapSnapshotPathToRootExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source_summary = descriptor.get("source_summary") if isinstance(descriptor.get("source_summary"), dict) else {}
+            heap_summary = descriptor.get("heap_summary") if isinstance(descriptor.get("heap_summary"), dict) else {}
+            candidates = descriptor.get("candidate_paths") if isinstance(descriptor.get("candidate_paths"), list) else []
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_path_to_root_analysis_status={result.status}",
+                f"heap_snapshot_path_to_root_retained_size_analysis_status={source_summary.get('retained_size_analysis_status')}",
+                f"heap_snapshot_path_to_root_retained_path_preflight_status={source_summary.get('retained_path_preflight_status')}",
+                f"heap_snapshot_path_to_root_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_path_to_root_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_path_to_root_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_path_to_root_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_path_to_root_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_path_to_root_estimated={policy.get('path_to_root_estimated', False)}",
+                f"heap_snapshot_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_path_to_root_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_path_to_root_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_path_to_root_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_path_to_root_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_path_to_root_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_path_to_root_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_path_to_root_node_count={heap_summary.get('node_count_total')}",
+                f"heap_snapshot_path_to_root_candidate_count={len(candidates)}",
+                f"heap_snapshot_path_to_root_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_path_to_root_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_path_to_root_analysis_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-path-to-root-analysis.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot path-to-root analysis MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "path_to_root_estimated": policy.get("path_to_root_estimated", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_path_to_root_analysis_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_path_to_root_analysis_before_second_pass_or_constructor_drilldown",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_executor_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeExecutorSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            gate_summary = descriptor.get("gate_summary") if isinstance(descriptor.get("gate_summary"), dict) else {}
+            heap_summary = descriptor.get("heap_summary") if isinstance(descriptor.get("heap_summary"), dict) else {}
+            candidates = descriptor.get("candidate_estimates") if isinstance(descriptor.get("candidate_estimates"), list) else []
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_analysis_status={result.status}",
+                f"heap_snapshot_retained_size_analysis_journal_id={gate_summary.get('journal_id')}",
+                f"heap_snapshot_retained_size_analysis_transaction_plan_id={gate_summary.get('transaction_plan_id')}",
+                f"heap_snapshot_retained_size_analysis_approval_plan_id={gate_summary.get('approval_plan_id')}",
+                f"heap_snapshot_retained_size_analysis_candidate_digest={gate_summary.get('candidate_digest')}",
+                f"heap_snapshot_retained_size_analysis_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_retained_size_analysis_retained_size_estimated={policy.get('retained_size_estimated', False)}",
+                f"heap_snapshot_retained_size_analysis_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_analysis_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_analysis_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_retained_size_analysis_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_analysis_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_analysis_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_analysis_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_analysis_node_count={heap_summary.get('node_count_total')}",
+                f"heap_snapshot_retained_size_analysis_candidate_count={len(candidates)}",
+                f"heap_snapshot_retained_size_analysis_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_analysis_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_analysis_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-analysis.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot retained-size analysis MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "journal_id": gate_summary.get("journal_id"),
+                        "transaction_plan_id": gate_summary.get("transaction_plan_id"),
+                        "approval_plan_id": gate_summary.get("approval_plan_id"),
+                        "candidate_digest": gate_summary.get("candidate_digest"),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "retained_size_estimated": policy.get("retained_size_estimated", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_retained_size_analysis_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_retained_size_analysis_before_path_to_root_or_second_pass",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_bounded_gate_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeBoundedGateSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeBoundedGateManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            bounded_input = descriptor.get("bounded_executor_input") if isinstance(descriptor.get("bounded_executor_input"), dict) else {}
+            future_contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
+            source_summary = descriptor.get("source_journal_summary") if isinstance(descriptor.get("source_journal_summary"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_bounded_gate_status={result.status}",
+                f"heap_snapshot_retained_size_bounded_gate_journal_id={descriptor.get('journal_id')}",
+                f"heap_snapshot_retained_size_bounded_gate_transaction_plan_id={descriptor.get('transaction_plan_id')}",
+                f"heap_snapshot_retained_size_bounded_gate_approval_plan_id={descriptor.get('approval_plan_id')}",
+                f"heap_snapshot_retained_size_bounded_gate_candidate_digest={descriptor.get('candidate_digest')}",
+                f"heap_snapshot_retained_size_bounded_gate_journal_written={descriptor.get('journal_written', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_ready_for_review={descriptor.get('bounded_executor_gate_ready_for_review', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_future_executor_implemented={future_contract.get('implemented', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_requires_raw_heap={future_contract.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_bounded_gate_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_bounded_gate_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-bounded-gate.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot retained-size bounded gate descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "journal_id": descriptor.get("journal_id"),
+                        "transaction_plan_id": descriptor.get("transaction_plan_id"),
+                        "approval_plan_id": descriptor.get("approval_plan_id"),
+                        "candidate_digest": descriptor.get("candidate_digest"),
+                        "transaction_journal_verified": descriptor.get("transaction_journal_verified", False),
+                        "bounded_executor_gate_ready_for_review": descriptor.get("bounded_executor_gate_ready_for_review", False),
+                        "ready_to_execute_now": descriptor.get("ready_to_execute_now", False),
+                        "future_executor_implemented": future_contract.get("implemented", False),
+                        "result_artifact": future_contract.get("result_artifact") or bounded_input.get("result_artifact"),
+                        "journal_written": source_summary.get("journal_written", False),
+                        "bounded_executor_gate_written": descriptor.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "provide_written_heap_snapshot_retained_size_transaction_journal",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_transaction_preflight_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeTransactionPreflightSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeTransactionPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            approval = descriptor.get("approval_summary") if isinstance(descriptor.get("approval_summary"), dict) else {}
+            transaction = descriptor.get("transaction_summary") if isinstance(descriptor.get("transaction_summary"), dict) else {}
+            candidate = descriptor.get("candidate_summary") if isinstance(descriptor.get("candidate_summary"), dict) else {}
+            journal_contract = descriptor.get("journal_writer_contract") if isinstance(descriptor.get("journal_writer_contract"), dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_transaction_preflight_status={result.status}",
+                f"heap_snapshot_retained_size_transaction_preflight_approval_plan_id={approval.get('approval_plan_id')}",
+                f"heap_snapshot_retained_size_transaction_preflight_approval_recorded={approval.get('approval_recorded', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_approved_for_execution={approval.get('approved_for_execution', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_transaction_plan_id={transaction.get('transaction_plan_id')}",
+                f"heap_snapshot_retained_size_transaction_preflight_candidate_digest={candidate.get('candidate_digest')}",
+                f"heap_snapshot_retained_size_transaction_preflight_ready_to_write_journal={journal_contract.get('ready_for_journal_review', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_transaction_started={policy.get('transaction_started', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_journal_written={policy.get('journal_written', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_bounded_executor_gate_written={policy.get('bounded_executor_gate_written', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_transaction_preflight_warnings={','.join(str(item) for item in warnings)}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_transaction_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-transaction-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size transaction preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": descriptor.get("review_only", True),
+                        "transaction_preflight_only": descriptor.get("transaction_preflight_only", True),
+                        "retained_size_only": descriptor.get("retained_size_only", True),
+                        "approval_plan_id": approval.get("approval_plan_id"),
+                        "transaction_plan_id": transaction.get("transaction_plan_id"),
+                        "candidate_digest": candidate.get("candidate_digest"),
+                        "ready_for_journal_review": journal_contract.get("ready_for_journal_review", False),
+                        "transaction_started": policy.get("transaction_started", False),
+                        "journal_written": policy.get("journal_written", False),
+                        "bounded_executor_gate_written": policy.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "resolve_heap_snapshot_retained_size_transaction_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_approval_plan_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeApprovalPlanSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeApprovalPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = plan.get("source_retained_size_input_review") if isinstance(plan.get("source_retained_size_input_review"), dict) else {}
+            approval = plan.get("approval_plan") if isinstance(plan.get("approval_plan"), dict) else {}
+            transaction = plan.get("transaction_plan") if isinstance(plan.get("transaction_plan"), dict) else {}
+            executor = plan.get("executor_input_contract") if isinstance(plan.get("executor_input_contract"), dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_approval_plan_status={result.status}",
+                f"heap_snapshot_retained_size_approval_plan_candidate_count={plan.get('candidate_count')}",
+                f"heap_snapshot_retained_size_approval_plan_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_size_approval_plan_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_retained_size_approval_plan_executor_implemented={executor.get('implemented', False)}",
+                f"heap_snapshot_retained_size_approval_plan_approval_recorded={approval.get('approval_recorded', False)}",
+                f"heap_snapshot_retained_size_approval_plan_transaction_started={transaction.get('transaction_started', False)}",
+                f"heap_snapshot_retained_size_approval_plan_journal_written={transaction.get('journal_written', False)}",
+                f"heap_snapshot_retained_size_approval_plan_ready_to_execute_now={executor.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_approval_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_approval_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_approval_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_approval_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_approval_plan_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_approval_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_approval_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_approval_plan_warnings={','.join(str(item) for item in warnings)}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_approval_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-approval-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size approval / transaction plan descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "approval_plan_only": plan.get("approval_plan_only", True),
+                        "transaction_plan_only": plan.get("transaction_plan_only", True),
+                        "candidate_count": plan.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "transaction_id": source.get("transaction_id"),
+                        "executor_implemented": executor.get("implemented", False),
+                        "approval_recorded": approval.get("approval_recorded", False),
+                        "transaction_started": transaction.get("transaction_started", False),
+                        "journal_written": transaction.get("journal_written", False),
+                        "ready_to_execute_now": executor.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_retained_size_approval_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_input_review_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeInputReviewSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeInputReviewManager().review(spec)
+            review = result.review if isinstance(result.review, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = review.get("source_retained_path_preflight") if isinstance(review.get("source_retained_path_preflight"), dict) else {}
+            executor = review.get("executor_input_contract") if isinstance(review.get("executor_input_contract"), dict) else {}
+            gate = review.get("approval_gate") if isinstance(review.get("approval_gate"), dict) else {}
+            raw_req = review.get("raw_heap_requirements") if isinstance(review.get("raw_heap_requirements"), dict) else {}
+            candidates = review.get("candidate_inputs") if isinstance(review.get("candidate_inputs"), list) else []
+            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+            blockers = review.get("blockers") if isinstance(review.get("blockers"), list) else []
+            warnings = review.get("warnings") if isinstance(review.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_input_review_status={result.status}",
+                f"heap_snapshot_retained_size_input_review_candidate_count={review.get('candidate_count')}",
+                f"heap_snapshot_retained_size_input_review_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_size_input_review_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_retained_size_input_review_requires_raw_heap={raw_req.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_size_input_review_executor_implemented={executor.get('implemented', False)}",
+                f"heap_snapshot_retained_size_input_review_approval_required={gate.get('approval_required', False)}",
+                f"heap_snapshot_retained_size_input_review_ready_to_execute_now={gate.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_input_review_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_input_review_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_input_review_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_input_review_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_input_review_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_input_review_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_input_review_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_input_review_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_input_review_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_input_review_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_input_review_warnings={','.join(str(item) for item in warnings)}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_input_review_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-input-review.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size executor input review descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": review.get("review_only", True),
+                        "input_review_only": review.get("input_review_only", True),
+                        "approval_gate_only": review.get("approval_gate_only", True),
+                        "candidate_count": review.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "transaction_id": source.get("transaction_id"),
+                        "requires_raw_heap": raw_req.get("requires_raw_heap", True),
+                        "executor_implemented": executor.get("implemented", False),
+                        "ready_to_execute_now": gate.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=review.get("next_action") or "resolve_heap_snapshot_retained_size_input_review_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_path_preflight_request(protection_name, context):
+            spec = HeapSnapshotRetainedPathPreflightSpec.from_context(context)
+            result = HeapSnapshotRetainedPathPreflightManager().review(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = preflight.get("source_constructor_growth_drilldown") if isinstance(preflight.get("source_constructor_growth_drilldown"), dict) else {}
+            raw_req = preflight.get("raw_heap_requirements") if isinstance(preflight.get("raw_heap_requirements"), dict) else {}
+            future = preflight.get("future_executor_contracts") if isinstance(preflight.get("future_executor_contracts"), dict) else {}
+            retained_contract = future.get("retained_size_analysis") if isinstance(future.get("retained_size_analysis"), dict) else {}
+            path_contract = future.get("path_to_root_analysis") if isinstance(future.get("path_to_root_analysis"), dict) else {}
+            candidates = preflight.get("candidate_inputs") if isinstance(preflight.get("candidate_inputs"), list) else []
+            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            warnings = preflight.get("warnings") if isinstance(preflight.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_path_preflight_status={result.status}",
+                f"heap_snapshot_retained_path_preflight_requested_analysis={preflight.get('requested_analysis')}",
+                f"heap_snapshot_retained_path_preflight_candidate_count={preflight.get('candidate_count')}",
+                f"heap_snapshot_retained_path_preflight_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_path_preflight_top_delta={top_candidate.get('delta')}",
+                f"heap_snapshot_retained_path_preflight_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_retained_path_preflight_requires_raw_heap={raw_req.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_path_preflight_raw_heap_available={raw_req.get('raw_heap_available_in_this_preflight', False)}",
+                f"heap_snapshot_retained_path_preflight_retained_size_implemented={retained_contract.get('implemented', False)}",
+                f"heap_snapshot_retained_path_preflight_path_to_root_implemented={path_contract.get('implemented', False)}",
+                f"heap_snapshot_retained_path_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_path_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_path_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_path_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_path_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_path_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_path_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_path_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_path_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_path_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_path_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_path_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-path-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size / path-to-root preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": preflight.get("review_only", True),
+                        "preflight_only": preflight.get("preflight_only", True),
+                        "handoff_only": preflight.get("handoff_only", True),
+                        "requested_analysis": preflight.get("requested_analysis"),
+                        "candidate_count": preflight.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "top_delta": top_candidate.get("delta"),
+                        "transaction_id": source.get("transaction_id"),
+                        "requires_raw_heap": raw_req.get("requires_raw_heap", True),
+                        "raw_heap_available_in_this_preflight": raw_req.get("raw_heap_available_in_this_preflight", False),
+                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
+                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "resolve_heap_snapshot_retained_path_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_automatic_followup_plan_request(protection_name, context):
+            spec = HeapSnapshotAutomaticFollowupPlanSpec.from_context(context)
+            result = HeapSnapshotAutomaticFollowupPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = plan.get("source_summary") if isinstance(plan.get("source_summary"), dict) else {}
+            top_action = plan.get("top_recommended_action") if isinstance(plan.get("top_recommended_action"), dict) else {}
+            actions = plan.get("recommended_actions") if isinstance(plan.get("recommended_actions"), list) else []
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            retained_summary = source.get("retained_size_analysis") if isinstance(source.get("retained_size_analysis"), dict) else {}
+            path_summary = source.get("path_to_root_analysis") if isinstance(source.get("path_to_root_analysis"), dict) else {}
+            constructor_summary = source.get("constructor_growth_drilldown_analysis") if isinstance(source.get("constructor_growth_drilldown_analysis"), dict) else {}
+            verification = [
+                f"heap_snapshot_automatic_followup_plan_status={result.status}",
+                f"heap_snapshot_automatic_followup_plan_recommended_action_count={len(actions)}",
+                f"heap_snapshot_automatic_followup_plan_top_action={top_action.get('action')}",
+                f"heap_snapshot_automatic_followup_plan_retained_size_provided={retained_summary.get('provided', False)}",
+                f"heap_snapshot_automatic_followup_plan_path_to_root_provided={path_summary.get('provided', False)}",
+                f"heap_snapshot_automatic_followup_plan_constructor_growth_provided={constructor_summary.get('provided', False)}",
+                f"heap_snapshot_automatic_followup_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_automatic_followup_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_automatic_followup_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_automatic_followup_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_automatic_followup_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_automatic_followup_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_automatic_followup_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_automatic_followup_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_automatic_followup_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_automatic_followup_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_automatic_followup_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_automatic_followup_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_automatic_followup_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-automatic-followup-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot automatic follow-up review plan.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "recommended_action_count": len(actions),
+                        "top_recommended_action": top_action.get("action"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_automatic_followup_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_proof_plan_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeProofPlanSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeProofPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
+            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
+            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_proof_plan_status={result.status}",
+                f"heap_snapshot_retained_size_proof_plan_candidate_count={len(candidates)}",
+                f"heap_snapshot_retained_size_proof_plan_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_size_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_size_proof_plan_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_retained_size_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_proof_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_retained_size_proof_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_proof_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_proof_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_proof_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-proof-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size proof planning descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "proof_plan_only": plan.get("proof_plan_only", True),
+                        "candidate_count": len(candidates),
+                        "top_candidate": top_candidate.get("name"),
+                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_retained_size_proof_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_path_to_root_proof_plan_request(protection_name, context):
+            spec = HeapSnapshotPathToRootProofPlanSpec.from_context(context)
+            result = HeapSnapshotPathToRootProofPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
+            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
+            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_path_to_root_proof_plan_status={result.status}",
+                f"heap_snapshot_path_to_root_proof_plan_candidate_count={len(candidates)}",
+                f"heap_snapshot_path_to_root_proof_plan_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_path_to_root_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_path_to_root_proof_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_path_to_root_proof_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-path-to-root-proof-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot path-to-root proof planning descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "proof_plan_only": plan.get("proof_plan_only", True),
+                        "candidate_count": len(candidates),
+                        "top_candidate": top_candidate.get("name"),
+                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_path_to_root_proof_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request(protection_name, context):
+            spec = HeapSnapshotRawHeapConstructorDrilldownProofPlanSpec.from_context(context)
+            result = HeapSnapshotRawHeapConstructorDrilldownProofPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
+            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
+            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_status={result.status}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_candidate_count={len(candidates)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_top_candidate={top_candidate.get('constructor_name')}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_constructor_reachability_graph={requirements.get('requires_constructor_reachability_graph', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_constructor_drilldown_proven={policy.get('constructor_drilldown_proven', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot raw-heap constructor drilldown proof planning descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "proof_plan_only": plan.get("proof_plan_only", True),
+                        "candidate_count": len(candidates),
+                        "top_candidate": top_candidate.get("constructor_name"),
+                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
+                        "requires_constructor_reachability_graph": requirements.get("requires_constructor_reachability_graph", True),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_constructor_growth_drilldown_execution_request(protection_name, context):
+            spec = HeapSnapshotConstructorGrowthDrilldownExecutorSpec.from_context(context)
+            result = HeapSnapshotConstructorGrowthDrilldownExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = descriptor.get("source_summary") if isinstance(descriptor.get("source_summary"), dict) else {}
+            summary = descriptor.get("constructor_drilldown_summary") if isinstance(descriptor.get("constructor_drilldown_summary"), dict) else {}
+            top_candidate = summary.get("top_candidate") if isinstance(summary.get("top_candidate"), dict) else {}
+            rows = descriptor.get("constructor_drilldown_rows") if isinstance(descriptor.get("constructor_drilldown_rows"), list) else []
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_constructor_growth_drilldown_analysis_status={result.status}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_source_status={source.get('status')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_selected_action={source.get('selected_action')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_candidate_count={len(rows)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_top_delta={top_candidate.get('delta')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_computed={policy.get('constructor_drilldown_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_proven={policy.get('constructor_drilldown_proven', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_constructor_growth_drilldown_analysis_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-constructor-growth-drilldown-analysis.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot constructor-growth drilldown analysis MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "candidate_count": len(rows),
+                        "top_candidate": top_candidate.get("name"),
+                        "constructor_drilldown_computed": policy.get("constructor_drilldown_computed", False),
+                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_constructor_growth_drilldown_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_constructor_growth_drilldown_analysis_before_retained_size_path_to_root_or_second_pass",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_constructor_growth_drilldown_request(protection_name, context):
+            spec = HeapSnapshotConstructorGrowthDrilldownSpec.from_context(context)
+            result = HeapSnapshotConstructorGrowthDrilldownManager().review(spec)
+            drilldown = result.drilldown if isinstance(result.drilldown, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = drilldown.get("source_selected_analysis_input_preflight") if isinstance(drilldown.get("source_selected_analysis_input_preflight"), dict) else {}
+            summary = drilldown.get("constructor_growth_summary") if isinstance(drilldown.get("constructor_growth_summary"), dict) else {}
+            top_candidate = summary.get("top_candidate") if isinstance(summary.get("top_candidate"), dict) else {}
+            contracts = drilldown.get("future_analysis_contracts") if isinstance(drilldown.get("future_analysis_contracts"), dict) else {}
+            retained_contract = contracts.get("retained_size_analysis") if isinstance(contracts.get("retained_size_analysis"), dict) else {}
+            path_contract = contracts.get("path_to_root_analysis") if isinstance(contracts.get("path_to_root_analysis"), dict) else {}
+            blockers = drilldown.get("blockers") if isinstance(drilldown.get("blockers"), list) else []
+            warnings = drilldown.get("warnings") if isinstance(drilldown.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_constructor_growth_drilldown_status={result.status}",
+                f"heap_snapshot_constructor_growth_drilldown_selected_action={drilldown.get('selected_action')}",
+                f"heap_snapshot_constructor_growth_drilldown_candidate_count={summary.get('candidate_count')}",
+                f"heap_snapshot_constructor_growth_drilldown_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_constructor_growth_drilldown_top_delta={top_candidate.get('delta')}",
+                f"heap_snapshot_constructor_growth_drilldown_source_preflight_status={source.get('status')}",
+                f"heap_snapshot_constructor_growth_drilldown_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_constructor_growth_drilldown_retained_size_implemented={retained_contract.get('implemented', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_path_to_root_implemented={path_contract.get('implemented', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_constructor_drilldown_computed={policy.get('constructor_drilldown_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_constructor_growth_drilldown_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_constructor_growth_drilldown_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-constructor-growth-drilldown.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot constructor-growth drilldown descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": drilldown.get("review_only", True),
+                        "drilldown_only": drilldown.get("drilldown_only", True),
+                        "summary_only": drilldown.get("summary_only", True),
+                        "selected_action": drilldown.get("selected_action"),
+                        "candidate_count": summary.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "top_delta": top_candidate.get("delta"),
+                        "transaction_id": source.get("transaction_id"),
+                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
+                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "constructor_drilldown_computed": policy.get("constructor_drilldown_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=drilldown.get("next_action") or "resolve_heap_snapshot_constructor_growth_drilldown_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_selected_analysis_input_preflight_request(protection_name, context):
+            spec = HeapSnapshotDiffSelectedAnalysisInputPreflightSpec.from_context(context)
+            result = HeapSnapshotDiffSelectedAnalysisInputPreflightManager().review(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = preflight.get("source_checkpoint_summary") if isinstance(preflight.get("source_checkpoint_summary"), dict) else {}
+            selected = preflight.get("selected_analysis_input") if isinstance(preflight.get("selected_analysis_input"), dict) else {}
+            future = preflight.get("future_executor_contract") if isinstance(preflight.get("future_executor_contract"), dict) else {}
+            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            warnings = preflight.get("warnings") if isinstance(preflight.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_selected_analysis_input_preflight_status={result.status}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_selected_action={selected.get('selected_action')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_candidate_count={selected.get('candidate_count')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_source_checkpoint_status={source.get('status')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_requires_raw_heap={future.get('requires_raw_heap', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_selected_analysis_input_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-selected-analysis-input-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff selected follow-up analysis input preflight.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": preflight.get("review_only", True),
+                        "preflight_only": preflight.get("preflight_only", True),
+                        "selection_only": preflight.get("selection_only", True),
+                        "selected_action": selected.get("selected_action"),
+                        "candidate_count": selected.get("candidate_count"),
+                        "transaction_id": source.get("transaction_id"),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "requires_raw_heap": future.get("requires_raw_heap", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "resolve_heap_snapshot_diff_selected_analysis_input_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_followup_checkpoint_request(protection_name, context):
+            spec = HeapSnapshotDiffFollowupCheckpointSpec.from_context(context)
+            result = HeapSnapshotDiffFollowupCheckpointManager().review(spec)
+            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            summary = checkpoint.get("executor_result_summary") if isinstance(checkpoint.get("executor_result_summary"), dict) else {}
+            analysis_plan = checkpoint.get("analysis_plan") if isinstance(checkpoint.get("analysis_plan"), dict) else {}
+            delta_review = analysis_plan.get("summary_delta_review") if isinstance(analysis_plan.get("summary_delta_review"), dict) else {}
+            contracts = analysis_plan.get("future_analysis_contracts") if isinstance(analysis_plan.get("future_analysis_contracts"), dict) else {}
+            retained_contract = contracts.get("retained_size_analysis") if isinstance(contracts.get("retained_size_analysis"), dict) else {}
+            path_contract = contracts.get("path_to_root_analysis") if isinstance(contracts.get("path_to_root_analysis"), dict) else {}
+            recommendations = analysis_plan.get("recommendations") if isinstance(analysis_plan.get("recommendations"), list) else []
+            blockers = checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else []
+            warnings = checkpoint.get("warnings") if isinstance(checkpoint.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_followup_checkpoint_status={result.status}",
+                f"heap_snapshot_diff_followup_checkpoint_executor_result_status={summary.get('status')}",
+                f"heap_snapshot_diff_followup_checkpoint_transaction_id={summary.get('transaction_id')}",
+                f"heap_snapshot_diff_followup_checkpoint_node_delta={delta_review.get('node_count_delta')}",
+                f"heap_snapshot_diff_followup_checkpoint_edge_delta={delta_review.get('edge_count_delta')}",
+                f"heap_snapshot_diff_followup_checkpoint_self_size_delta={delta_review.get('self_size_total_analyzed_delta')}",
+                f"heap_snapshot_diff_followup_checkpoint_recommendation_count={len(recommendations)}",
+                f"heap_snapshot_diff_followup_checkpoint_retained_size_implemented={retained_contract.get('implemented', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_path_to_root_implemented={path_contract.get('implemented', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_followup_checkpoint_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_followup_checkpoint_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-followup-checkpoint.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff follow-up checkpoint.",
+                    metadata={
+                        "status": result.status,
+                        "checkpoint_only": checkpoint.get("checkpoint_only", True),
+                        "review_only": checkpoint.get("review_only", True),
+                        "transaction_id": summary.get("transaction_id"),
+                        "node_count_delta": delta_review.get("node_count_delta"),
+                        "edge_count_delta": delta_review.get("edge_count_delta"),
+                        "recommendation_count": len(recommendations),
+                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
+                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal_claimed": checkpoint.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=checkpoint.get("next_action") or "review_heap_snapshot_diff_followup_plan_before_retained_size_or_path_to_root_work",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            diff = descriptor.get("diff") if isinstance(descriptor.get("diff"), dict) else {}
+            gate_summary = descriptor.get("gate_summary") if isinstance(descriptor.get("gate_summary"), dict) else {}
+            heap_summaries = descriptor.get("heap_summaries") if isinstance(descriptor.get("heap_summaries"), dict) else {}
+            before_summary = heap_summaries.get("before") if isinstance(heap_summaries.get("before"), dict) else {}
+            after_summary = heap_summaries.get("after") if isinstance(heap_summaries.get("after"), dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_result_status={result.status}",
+                f"heap_snapshot_diff_executor_result_transaction_id={gate_summary.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_result_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_result_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_result_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_result_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_result_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_result_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_result_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_result_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_result_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_result_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_result_before_nodes={before_summary.get('node_count_total')}",
+                f"heap_snapshot_diff_executor_result_after_nodes={after_summary.get('node_count_total')}",
+                f"heap_snapshot_diff_executor_result_node_delta={diff.get('node_count_delta')}",
+                f"heap_snapshot_diff_executor_result_edge_delta={diff.get('edge_count_delta')}",
+                f"heap_snapshot_diff_executor_result_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_result_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_result_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot diff executor MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "transaction_id": gate_summary.get("transaction_id"),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_diff_executor_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_result_before_followup",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_readiness_request(protection_name, context):
+            spec = HeapSnapshotReadinessSpec.from_context(context)
+            result = HeapSnapshotReadinessManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            evidence = descriptor.get("capability_evidence") if isinstance(descriptor.get("capability_evidence"), dict) else {}
+            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_readiness_status={result.status}",
+                f"heap_snapshot_readiness_provider_id={evidence.get('browser_provider_id')}",
+                f"heap_snapshot_readiness_cdp_available={evidence.get('cdp_available')}",
+                f"heap_snapshot_readiness_heap_profiler_capability={evidence.get('heap_profiler_capability')}",
+                f"heap_snapshot_readiness_heap_snapshot_collected={descriptor.get('heap_snapshot_collected', False)}",
+                f"heap_snapshot_readiness_heap_diff_computed={descriptor.get('heap_diff_computed', False)}",
+                f"heap_snapshot_readiness_raw_heap_export_allowed={gates.get('raw_heap_export_allowed', False)}",
+                f"heap_snapshot_readiness_max_snapshot_bytes={gates.get('max_snapshot_bytes')}",
+                f"heap_snapshot_readiness_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_readiness_provider_factory_invoked={policy.get('provider_factory_invoked', False)}",
+                f"heap_snapshot_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_readiness_heap_profiler_enabled={policy.get('heap_profiler_enabled', False)}",
+                f"heap_snapshot_readiness_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"heap_snapshot_readiness_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_readiness_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_readiness_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_readiness_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only CDP HeapProfiler heap snapshot readiness descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "browser_provider_id": evidence.get("browser_provider_id"),
+                        "cdp_available": evidence.get("cdp_available"),
+                        "heap_profiler_capability": evidence.get("heap_profiler_capability"),
+                        "heap_snapshot_collected": descriptor.get("heap_snapshot_collected", False),
+                        "raw_heap_export_allowed": gates.get("raw_heap_export_allowed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_readiness_before_collection",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_bounded_gate_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorBoundedGateSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorBoundedGateManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            bounded_input = descriptor.get("bounded_executor_input") if isinstance(descriptor.get("bounded_executor_input"), dict) else {}
+            future_contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
+            source_summary = descriptor.get("source_journal_summary") if isinstance(descriptor.get("source_journal_summary"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_bounded_gate_status={result.status}",
+                f"heap_snapshot_diff_executor_bounded_gate_journal_id={descriptor.get('journal_id')}",
+                f"heap_snapshot_diff_executor_bounded_gate_transaction_id={descriptor.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_bounded_gate_journal_written={descriptor.get('journal_written', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_ready_for_review={descriptor.get('bounded_executor_gate_ready_for_review', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_future_executor_implemented={future_contract.get('implemented', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_requires_safe_raw_heap_parser={future_contract.get('requires_safe_raw_heap_parser', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_bounded_gate_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_bounded_gate_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-bounded-gate.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff executor bounded gate descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "journal_id": descriptor.get("journal_id"),
+                        "transaction_id": descriptor.get("transaction_id"),
+                        "idempotency_key": descriptor.get("idempotency_key"),
+                        "transaction_journal_verified": descriptor.get("transaction_journal_verified", False),
+                        "bounded_executor_gate_ready_for_review": descriptor.get("bounded_executor_gate_ready_for_review", False),
+                        "ready_to_execute_now": descriptor.get("ready_to_execute_now", False),
+                        "future_executor_implemented": future_contract.get("implemented", False),
+                        "result_artifact": future_contract.get("result_artifact") or bounded_input.get("result_artifact"),
+                        "journal_written": source_summary.get("journal_written", False),
+                        "bounded_executor_gate_written": descriptor.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_raw_heap_parser_or_executor_mvp",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_transaction_preflight_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorTransactionPreflightSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorTransactionPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            approval = descriptor.get("approval_summary") if isinstance(descriptor.get("approval_summary"), dict) else {}
+            transaction = descriptor.get("transaction_summary") if isinstance(descriptor.get("transaction_summary"), dict) else {}
+            preflight = descriptor.get("preflight_summary") if isinstance(descriptor.get("preflight_summary"), dict) else {}
+            journal_contract = descriptor.get("journal_writer_contract") if isinstance(descriptor.get("journal_writer_contract"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_transaction_preflight_status={result.status}",
+                f"heap_snapshot_diff_executor_transaction_preflight_approval_scope={approval.get('approval_scope')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_approval_recorded={approval.get('approval_recorded', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_approved_for_execution={approval.get('approved_for_execution', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_transaction_id={transaction.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_idempotency_key={transaction.get('idempotency_key')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_before_digest={preflight.get('before_digest')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_after_digest={preflight.get('after_digest')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_ready_to_write_journal={journal_contract.get('ready_for_journal_review', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_transaction_started={policy.get('transaction_started', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_journal_written={policy.get('journal_written', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_bounded_executor_gate_written={policy.get('bounded_executor_gate_written', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_transaction_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-transaction-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot diff executor transaction preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "approval_scope": approval.get("approval_scope"),
+                        "approval_recorded": approval.get("approval_recorded", False),
+                        "approved_for_execution": approval.get("approved_for_execution", False),
+                        "transaction_id": transaction.get("transaction_id"),
+                        "idempotency_key": transaction.get("idempotency_key"),
+                        "before_digest": preflight.get("before_digest"),
+                        "after_digest": preflight.get("after_digest"),
+                        "ready_for_journal_review": journal_contract.get("ready_for_journal_review", False),
+                        "transaction_started": policy.get("transaction_started", False),
+                        "journal_written": policy.get("journal_written", False),
+                        "bounded_executor_gate_written": policy.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_transaction_journal_writer",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_approval_plan_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorApprovalPlanSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorApprovalPlanManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            preflight = descriptor.get("preflight_summary") if isinstance(descriptor.get("preflight_summary"), dict) else {}
+            approval = descriptor.get("approval_plan") if isinstance(descriptor.get("approval_plan"), dict) else {}
+            transaction = descriptor.get("transaction_plan") if isinstance(descriptor.get("transaction_plan"), dict) else {}
+            contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_approval_plan_status={result.status}",
+                f"heap_snapshot_diff_executor_approval_plan_before_digest={preflight.get('before_digest')}",
+                f"heap_snapshot_diff_executor_approval_plan_after_digest={preflight.get('after_digest')}",
+                f"heap_snapshot_diff_executor_approval_plan_approval_scope={approval.get('approval_scope')}",
+                f"heap_snapshot_diff_executor_approval_plan_approval_recorded={policy.get('approval_recorded', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_transaction_id={transaction.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_approval_plan_idempotency_key={transaction.get('idempotency_key')}",
+                f"heap_snapshot_diff_executor_approval_plan_transaction_started={policy.get('transaction_started', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_journal_written_now={policy.get('journal_written_now', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_future_executor_implemented={contract.get('implemented', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_approval_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_approval_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-approval-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff executor approval and transaction plan.",
+                    metadata={
+                        "status": result.status,
+                        "before_digest": preflight.get("before_digest"),
+                        "after_digest": preflight.get("after_digest"),
+                        "approval_scope": approval.get("approval_scope"),
+                        "approval_recorded": policy.get("approval_recorded", False),
+                        "transaction_id": transaction.get("transaction_id"),
+                        "idempotency_key": transaction.get("idempotency_key"),
+                        "transaction_started": policy.get("transaction_started", False),
+                        "journal_written_now": policy.get("journal_written_now", False),
+                        "future_executor_implemented": contract.get("implemented", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_approval_plan_before_recording_approval",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_preflight_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorPreflightSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            readiness = descriptor.get("readiness_summary") if isinstance(descriptor.get("readiness_summary"), dict) else {}
+            ingestion = descriptor.get("ingestion_policy") if isinstance(descriptor.get("ingestion_policy"), dict) else {}
+            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_preflight_status={result.status}",
+                f"heap_snapshot_diff_executor_preflight_before_digest={readiness.get('before_digest')}",
+                f"heap_snapshot_diff_executor_preflight_after_digest={readiness.get('after_digest')}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_ingestion_policy={ingestion.get('raw_heap_ingestion_policy')}",
+                f"heap_snapshot_diff_executor_preflight_parser_sandbox={ingestion.get('parser_sandbox')}",
+                f"heap_snapshot_diff_executor_preflight_redaction_plan={ingestion.get('redaction_plan')}",
+                f"heap_snapshot_diff_executor_preflight_max_raw_heap_bytes={ingestion.get('max_raw_heap_bytes')}",
+                f"heap_snapshot_diff_executor_preflight_future_diff_executor_implemented={gates.get('future_diff_executor_implemented', False)}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_preflight_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff executor preflight and raw-ingestion safety gate.",
+                    metadata={
+                        "status": result.status,
+                        "before_digest": readiness.get("before_digest"),
+                        "after_digest": readiness.get("after_digest"),
+                        "raw_heap_ingestion_policy": ingestion.get("raw_heap_ingestion_policy"),
+                        "future_diff_executor_implemented": gates.get("future_diff_executor_implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_preflight_before_implementation",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_readiness_request(protection_name, context):
+            spec = HeapSnapshotDiffReadinessSpec.from_context(context)
+            result = HeapSnapshotDiffReadinessManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            pair = descriptor.get("pair_summary") if isinstance(descriptor.get("pair_summary"), dict) else {}
+            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_readiness_status={result.status}",
+                f"heap_snapshot_diff_readiness_before_digest={pair.get('before_digest')}",
+                f"heap_snapshot_diff_readiness_after_digest={pair.get('after_digest')}",
+                f"heap_snapshot_diff_readiness_digest_equal={pair.get('digest_equal')}",
+                f"heap_snapshot_diff_readiness_byte_delta={pair.get('byte_delta')}",
+                f"heap_snapshot_diff_readiness_byte_delta_ratio={pair.get('byte_delta_ratio')}",
+                f"heap_snapshot_diff_readiness_future_diff_executor_implemented={gates.get('future_diff_executor_implemented', False)}",
+                f"heap_snapshot_diff_readiness_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_readiness_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_readiness_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_readiness_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_readiness_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_readiness_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_readiness_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_readiness_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff readiness descriptor over collected metadata.",
+                    metadata={
+                        "status": result.status,
+                        "before_digest": pair.get("before_digest"),
+                        "after_digest": pair.get("after_digest"),
+                        "digest_equal": pair.get("digest_equal"),
+                        "byte_delta": pair.get("byte_delta"),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_readiness_before_diff_executor",
+                confidence=ConfidenceLevel.LOW,
+            )
+        return None
+
 
     def export_reverse_artifacts(self, final_result: FinalResult | None = None) -> RuntimeExportBundle:
         exports: list[dict[str, Any]] = [

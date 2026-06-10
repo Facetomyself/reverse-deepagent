@@ -8,11 +8,60 @@ from typing import Any
 from reverse_deepagent.adapters.native_web import NativeWebRuntime
 from reverse_deepagent.browser import BrowserPageRef, BrowserProviderCapabilities, PlaywrightBrowserPageAdapter
 from reverse_deepagent.browser.hooks import BreakpointManager, ClosureWrapperReplacementExecutionManager
+from reverse_deepagent.browser.source_maps import (
+    SourceMapFollowthroughDispatchApprovalPlanManager,
+    SourceMapFollowthroughDispatchApprovalPlanSpec,
+    SourceMapDebuggerCandidateSelectionManager,
+    SourceMapDebuggerCandidateSelectionSpec,
+    SourceMapHookCandidateSelectionManager,
+    SourceMapHookCandidateSelectionSpec,
+)
 from reverse_deepagent.coordinator import build_runtime, list_runtime_backends, run_reverse_pipeline
 from reverse_deepagent.fixtures.web_sign import FixtureProfile, _build_js
+from reverse_deepagent.schemas import ConfidenceLevel, EvidenceItem, EvidenceKind, ExecutionStatus, FinalResult, KeyFindings, ReverseMode, ReverseStage, TaskCard
 
 
 WEBPACK_MINIFIED_SOURCE = _build_js(FixtureProfile.WEBPACK_MINIFIED)
+
+
+def _v8_heap_snapshot_for_native_test(*, extra_object: bool = False) -> dict[str, Any]:
+    strings = ["", "Window", "Object", "ExtraObject", "prop"]
+    nodes = [3, 1, 1, 64, 1, 0, 3, 2, 2, 32, 0, 0]
+    if extra_object:
+        nodes.extend([3, 3, 3, 48, 0, 0])
+    edges = [2, 4, 1]
+    if extra_object:
+        edges.extend([2, 4, 2])
+    return {
+        "snapshot": {
+            "meta": {
+                "node_fields": ["type", "name", "id", "self_size", "edge_count", "trace_node_id"],
+                "node_types": [["hidden", "array", "string", "object", "code", "closure", "regexp", "number", "native", "synthetic"], "string", "number", "number", "number", "number"],
+                "edge_fields": ["type", "name_or_index", "to_node"],
+                "edge_types": [["context", "element", "property", "internal", "hidden", "shortcut", "weak"], "string_or_number", "node"],
+            }
+        },
+        "nodes": nodes,
+        "edges": edges,
+        "strings": strings,
+    }
+
+
+def _v8_heap_snapshot_path_to_root_for_native_test() -> dict[str, Any]:
+    strings = ["", "Window", "Object", "TokenSecret", "child", "secret"]
+    return {
+        "snapshot": {
+            "meta": {
+                "node_fields": ["type", "name", "id", "self_size", "edge_count", "trace_node_id"],
+                "node_types": [["hidden", "array", "string", "object", "code", "closure", "regexp", "number", "native", "synthetic"], "string", "number", "number", "number", "number"],
+                "edge_fields": ["type", "name_or_index", "to_node"],
+                "edge_types": [["context", "element", "property", "internal", "hidden", "shortcut", "weak"], "string_or_number", "node"],
+            }
+        },
+        "nodes": [3, 1, 1, 64, 1, 0, 3, 2, 2, 32, 1, 0, 3, 3, 3, 48, 0, 0],
+        "edges": [2, 4, 6, 2, 5, 12],
+        "strings": strings,
+    }
 
 
 class FakeCDPSession:
@@ -38,6 +87,13 @@ class FakeCDPSession:
         if method == "Target.attachToTarget":
             return {"sessionId": "attached-session-1"}
         if method == "Target.detachFromTarget":
+            return {}
+        if method == "HeapProfiler.enable":
+            return {}
+        if method == "HeapProfiler.takeHeapSnapshot":
+            self.emit("HeapProfiler.addHeapSnapshotChunk", {"chunk": '{"snapshot":{"meta":{}},"nodes":[1,2,3]}'})
+            return {}
+        if method == "HeapProfiler.disable":
             return {}
         if method == "Debugger.setBreakpointByUrl":
             self.last_breakpoint_params = params or {}
@@ -5309,6 +5365,1522 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["categories"], ["added", "descriptor", "removed", "value"])
         self.assertFalse(result.artifacts[0].metadata["getter_invocation"])
 
+
+    def test_native_web_runtime_reviews_heap_snapshot_readiness_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-readiness",
+            {
+                "heap_snapshot_readiness": True,
+                "browser_provider_id": "remote-cdp",
+                "cdp_available": True,
+                "heap_profiler_capability": "provided",
+                "max_snapshot_bytes": 2048,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_readiness_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_readiness_provider_id=remote-cdp", result.verification)
+        self.assertIn("heap_snapshot_readiness_cdp_available=True", result.verification)
+        self.assertIn("heap_snapshot_readiness_heap_profiler_capability=provided", result.verification)
+        self.assertIn("heap_snapshot_readiness_heap_snapshot_collected=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_raw_heap_export_allowed=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_provider_factory_invoked=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_heap_profiler_enabled=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_runtime_evaluated=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_complete_heap_traversal=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_readiness_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_readiness_before_collection")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-readiness.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["browser_provider_id"], "remote-cdp")
+        self.assertTrue(result.artifacts[0].metadata["cdp_available"])
+        self.assertEqual(result.artifacts[0].metadata["heap_profiler_capability"], "provided")
+        self.assertFalse(result.artifacts[0].metadata["heap_snapshot_collected"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_export_allowed"])
+        self.assertFalse(result.artifacts[0].metadata["complete_heap_traversal_claimed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_blocks_heap_snapshot_collect_without_review_before_cdp(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        readiness = {
+            "schema_version": "reverse-deepagent.heap-snapshot-readiness.v1",
+            "status": "ready_for_review",
+            "capability_evidence": {"browser_provider_id": "fake-native", "cdp_available": True, "heap_profiler_capability": "provided"},
+            "safety_gates": {"max_snapshot_bytes": 4096, "redaction_plan": "required", "raw_heap_export_allowed": False},
+        }
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-collect",
+            {
+                "heap_snapshot_collect": True,
+                "collect_heap_snapshot": True,
+                "heap_snapshot_readiness": readiness,
+            },
+        )
+
+        cdp_calls = provider.session.context.pages[0]._cdp_session.calls
+        self.assertEqual(provider.started, 1)
+        self.assertEqual(cdp_calls, [])
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_collect_status=blocked", result.verification)
+        self.assertIn("heap_snapshot_collect_reason=heap_snapshot_collect_review_approval_required", result.verification)
+        self.assertIn("heap_snapshot_collect_cdp_command_sent=False", result.verification)
+        self.assertEqual(result.next_action, "resolve_heap_snapshot_collect_blockers")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-collect.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "blocked")
+        self.assertFalse(result.artifacts[0].metadata["heap_snapshot_collected"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_exported"])
+
+    def test_native_web_runtime_collects_heap_snapshot_metadata_with_review_gates(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        readiness = {
+            "schema_version": "reverse-deepagent.heap-snapshot-readiness.v1",
+            "status": "ready_for_review",
+            "capability_evidence": {"browser_provider_id": "fake-native", "cdp_available": True, "heap_profiler_capability": "provided"},
+            "safety_gates": {"max_snapshot_bytes": 4096, "redaction_plan": "required", "raw_heap_export_allowed": False},
+        }
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-collect",
+            {
+                "heap_snapshot_collect": True,
+                "collect_heap_snapshot": True,
+                "review_approved": True,
+                "heap_snapshot_readiness": readiness,
+                "max_snapshot_bytes": 4096,
+            },
+        )
+
+        cdp_calls = provider.session.context.pages[0]._cdp_session.calls
+        self.assertEqual(provider.started, 1)
+        self.assertEqual([call[0] for call in cdp_calls], ["HeapProfiler.enable", "HeapProfiler.takeHeapSnapshot", "HeapProfiler.disable"])
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["collect_heap_snapshot_metadata"])
+        self.assertIn("heap_snapshot_collect_status=collected", result.verification)
+        self.assertIn("heap_snapshot_collect_collected=True", result.verification)
+        self.assertTrue(any(item.startswith("heap_snapshot_collect_digest=sha256:") for item in result.verification))
+        self.assertIn("heap_snapshot_collect_chunk_count=1", result.verification)
+        self.assertIn("heap_snapshot_collect_cdp_command_sent=True", result.verification)
+        self.assertIn("heap_snapshot_collect_heap_profiler_enabled=True", result.verification)
+        self.assertIn("heap_snapshot_collect_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_collect_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_collect_complete_heap_traversal=False", result.verification)
+        self.assertIn("heap_snapshot_collect_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_collect_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_collect_before_heap_diff")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-collect.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "collected")
+        self.assertTrue(result.artifacts[0].metadata["heap_snapshot_collected"])
+        self.assertTrue(result.artifacts[0].metadata["snapshot_digest"].startswith("sha256:"))
+        self.assertGreater(result.artifacts[0].metadata["snapshot_byte_count"], 0)
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_exported"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["complete_heap_traversal"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_diff_readiness_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        before = {
+            "schema_version": "reverse-deepagent.heap-snapshot-collect.v1",
+            "status": "collected",
+            "heap_snapshot_collected": True,
+            "heap_diff_computed": False,
+            "raw_heap_exported": False,
+            "raw_heap_available_in_artifact": False,
+            "complete_heap_traversal_claimed": False,
+            "snapshot_metadata": {"snapshot_digest": "sha256:before", "snapshot_byte_count": 64, "chunk_count": 1, "redacted_summary_only": True},
+            "readiness_summary": {"browser_provider_id": "fake-native"},
+            "side_effect_policy": {"cdp_command_sent": True, "heap_diff_computed": False, "raw_heap_exported": False, "complete_heap_traversal": False},
+        }
+        after = {
+            "schema_version": "reverse-deepagent.heap-snapshot-collect.v1",
+            "status": "collected",
+            "heap_snapshot_collected": True,
+            "heap_diff_computed": False,
+            "raw_heap_exported": False,
+            "raw_heap_available_in_artifact": False,
+            "complete_heap_traversal_claimed": False,
+            "snapshot_metadata": {"snapshot_digest": "sha256:after", "snapshot_byte_count": 96, "chunk_count": 1, "redacted_summary_only": True},
+            "readiness_summary": {"browser_provider_id": "fake-native"},
+            "side_effect_policy": {"cdp_command_sent": True, "heap_diff_computed": False, "raw_heap_exported": False, "complete_heap_traversal": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-diff-readiness",
+            {
+                "heap_snapshot_diff_readiness": True,
+                "before_heap_snapshot_collect": before,
+                "after_heap_snapshot_collect": after,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_diff_readiness_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_before_digest=sha256:before", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_after_digest=sha256:after", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_byte_delta=32", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_future_diff_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_complete_heap_traversal=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_readiness_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_readiness_before_diff_executor")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-readiness.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["before_digest"], "sha256:before")
+        self.assertEqual(result.artifacts[0].metadata["after_digest"], "sha256:after")
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_exported"])
+        self.assertFalse(result.artifacts[0].metadata["complete_heap_traversal"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_diff_executor_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        readiness = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-readiness.v1",
+            "status": "ready_for_review",
+            "heap_snapshot_diff_computed": False,
+            "heap_diff_computed": False,
+            "raw_heap_loaded": False,
+            "raw_heap_exported": False,
+            "complete_heap_traversal_claimed": False,
+            "pair_summary": {"before_digest": "sha256:before", "after_digest": "sha256:after", "byte_delta": 32, "digest_equal": False},
+            "safety_gates": {"future_diff_executor_implemented": False},
+            "side_effect_policy": {"heap_diff_computed": False, "raw_heap_loaded": False, "raw_heap_exported": False, "complete_heap_traversal": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-diff-executor-preflight",
+            {
+                "heap_snapshot_diff_executor_preflight": True,
+                "review_approved": True,
+                "heap_snapshot_diff_readiness": readiness,
+                "raw_heap_ingestion_policy": "metadata-only",
+                "parser_sandbox": "subprocess",
+                "redaction_plan": "digest-only",
+                "max_raw_heap_bytes": 1024,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_diff_executor_preflight_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_before_digest=sha256:before", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_after_digest=sha256:after", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_raw_heap_ingestion_policy=metadata-only", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_future_diff_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_complete_heap_traversal=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_preflight_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_executor_preflight_before_implementation")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-executor-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["raw_heap_ingestion_policy"], "metadata-only")
+        self.assertFalse(result.artifacts[0].metadata["future_diff_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_parsed"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_exported"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["complete_heap_traversal"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_diff_executor_approval_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        preflight = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-preflight.v1",
+            "status": "ready_for_review",
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "raw_heap_exported": False,
+            "heap_diff_computed": False,
+            "complete_heap_traversal_claimed": False,
+            "diff_executor_implemented": False,
+            "readiness_summary": {"before_digest": "sha256:before", "after_digest": "sha256:after"},
+            "ingestion_policy": {"raw_heap_ingestion_policy": "metadata-only", "parser_sandbox": "subprocess", "redaction_plan": "digest-only", "max_raw_heap_bytes": 1024},
+            "safety_gates": {"review_approved": True, "future_diff_executor_implemented": False},
+            "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "complete_heap_traversal": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-diff-executor-approval-plan",
+            {
+                "heap_snapshot_diff_executor_approval_plan": True,
+                "heap_snapshot_diff_executor_preflight": preflight,
+                "reviewer": "alice",
+                "transaction_id": "heap-diff-txn-1",
+                "idempotency_key": "heap-diff-idem-1",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_before_digest=sha256:before", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_after_digest=sha256:after", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_approval_scope=heap-snapshot-diff-executor", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_approval_recorded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_transaction_id=heap-diff-txn-1", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_idempotency_key=heap-diff-idem-1", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_transaction_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_journal_written_now=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_future_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_executor_invoked=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_complete_heap_traversal=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_approval_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_executor_approval_plan_before_recording_approval")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-executor-approval-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["approval_scope"], "heap-snapshot-diff-executor")
+        self.assertFalse(result.artifacts[0].metadata["approval_recorded"])
+        self.assertEqual(result.artifacts[0].metadata["transaction_id"], "heap-diff-txn-1")
+        self.assertFalse(result.artifacts[0].metadata["transaction_started"])
+        self.assertFalse(result.artifacts[0].metadata["journal_written_now"])
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_exported"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_diff_executor_transaction_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        approval_plan = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-approval-plan.v1",
+            "status": "ready_for_review",
+            "approval_recorded": False,
+            "transaction_started": False,
+            "journal_written_now": False,
+            "bounded_executor_gate_written": False,
+            "executor_invoked": False,
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "raw_heap_exported": False,
+            "heap_diff_computed": False,
+            "heap_snapshot_diff_computed": False,
+            "complete_heap_traversal_claimed": False,
+            "diff_executor_implemented": False,
+            "preflight_summary": {"before_digest": "sha256:before", "after_digest": "sha256:after", "raw_heap_ingestion_policy": "metadata-only", "parser_sandbox": "subprocess", "redaction_plan": "digest-only", "max_raw_heap_bytes": 1024},
+            "approval_plan": {"approval_scope": "heap-snapshot-diff-executor", "reviewer": "alice", "approval_record_artifact": "workspace/heap-snapshot-diff-executor-approval-record.json", "approval_recorded": False},
+            "transaction_plan": {"transaction_id": "heap-diff-txn-1", "idempotency_key": "heap-diff-idem-1", "transaction_journal_artifact": "workspace/heap-snapshot-diff-executor-journal.json", "bounded_gate_artifact": "workspace/heap-snapshot-diff-executor-bounded-gate.json", "result_artifact": "workspace/heap-snapshot-diff-executor-result.json", "transaction_started": False, "journal_written_now": False},
+            "future_executor_contract": {"implemented": False},
+            "side_effect_policy": {"approval_recorded": False, "transaction_started": False, "journal_written_now": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "heap_snapshot_diff_computed": False, "complete_heap_traversal": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+        approval_record = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-approval-record.v1",
+            "status": "written",
+            "approval_scope": "heap-snapshot-diff-executor",
+            "reviewer": "alice",
+            "approval_recorded": True,
+            "approved_for_execution": True,
+            "transaction_id": "heap-diff-txn-1",
+            "idempotency_key": "heap-diff-idem-1",
+            "executor_input_gates": {"transaction_started": False, "journal_written": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False},
+            "side_effect_policy": {"transaction_started": False, "journal_written": False, "journal_written_now": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "heap_snapshot_diff_computed": False, "complete_heap_traversal": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-diff-executor-transaction-preflight",
+            {
+                "heap_snapshot_diff_executor_transaction_preflight": True,
+                "heap_snapshot_diff_executor_approval_plan": approval_plan,
+                "heap_snapshot_diff_executor_approval_record": approval_record,
+                "expected_transaction_id": "heap-diff-txn-1",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_approval_scope=heap-snapshot-diff-executor", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_approval_recorded=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_approved_for_execution=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_transaction_id=heap-diff-txn-1", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_ready_to_write_journal=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_transaction_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_journal_written=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_bounded_executor_gate_written=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_executor_invoked=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_transaction_preflight_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_executor_transaction_journal_writer")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-executor-transaction-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_journal_review"])
+        self.assertFalse(result.artifacts[0].metadata["transaction_started"])
+        self.assertFalse(result.artifacts[0].metadata["journal_written"])
+        self.assertFalse(result.artifacts[0].metadata["executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+
+    def test_native_web_runtime_reviews_heap_snapshot_diff_executor_bounded_gate_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        transaction_journal = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-transaction-journal.v1",
+            "status": "written",
+            "journal_written": True,
+            "transaction_started": True,
+            "journal_id": "heap-snapshot-diff-executor-transaction-journal:abc123",
+            "transaction_preflight_id": "heap-snapshot-diff-executor-transaction-preflight:def456",
+            "transaction_id": "heap-diff-txn-1",
+            "idempotency_key": "heap-diff-idem-1",
+            "approval_scope": "heap-snapshot-diff-executor",
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "raw_heap_exported": False,
+            "heap_snapshot_diff_computed": False,
+            "heap_diff_computed": False,
+            "complete_heap_traversal_claimed": False,
+            "diff_executor_implemented": False,
+            "preflight_summary": {"before_digest": "sha256:before", "after_digest": "sha256:after", "raw_heap_ingestion_policy": "metadata-only", "parser_sandbox": "subprocess", "redaction_plan": "digest-only", "max_raw_heap_bytes": 1024},
+            "journal_summary": {"transaction_started": True, "journal_written": True, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "requires_bounded_executor_gate_followup": True},
+            "executor_input_gates": {"approval_record_verified": True, "transaction_started": True, "journal_written": True, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "complete_heap_traversal_claimed": False, "diff_executor_implemented": False, "requires_bounded_executor_gate": True, "requires_explicit_executor_review": True, "ready_to_execute_now": False},
+            "blockers": [],
+            "side_effect_policy": {"writes_transaction_journal": True, "transaction_started": True, "journal_written": True, "bounded_executor_gate_written": False, "ready_to_execute_now": False, "executor_invoked": False, "browser_started": False, "provider_factory_invoked": False, "cdp_command_sent": False, "heap_profiler_enabled": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "heap_snapshot_diff_computed": False, "complete_heap_traversal": False, "runtime_evaluated": False, "javascript_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-diff-executor-bounded-gate",
+            {
+                "heap_snapshot_diff_executor_bounded_gate": True,
+                "heap_snapshot_diff_executor_transaction_journal": transaction_journal,
+                "expected_transaction_id": "heap-diff-txn-1",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_transaction_id=heap-diff-txn-1", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_journal_written=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_ready_for_review=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_ready_to_execute_now=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_future_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_requires_safe_raw_heap_parser=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_executor_invoked=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_bounded_gate_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_executor_raw_heap_parser_or_executor_mvp")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-executor-bounded-gate.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_executes_heap_snapshot_diff_executor_mvp_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        bounded_gate = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-bounded-gate.v1",
+            "status": "ready_for_review",
+            "journal_id": "heap-snapshot-diff-executor-transaction-journal:abc123",
+            "transaction_id": "heap-diff-txn-1",
+            "idempotency_key": "heap-diff-idem-1",
+            "bounded_executor_gate_ready_for_review": True,
+            "ready_for_executor_review": True,
+            "ready_to_execute_now": False,
+            "side_effect_policy": {"executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-heap-snapshot-diff-executor",
+            {
+                "execute_heap_snapshot_diff_executor": True,
+                "heap_snapshot_diff_executor_bounded_gate": bounded_gate,
+                "before_heap_snapshot": _v8_heap_snapshot_for_native_test(extra_object=False),
+                "after_heap_snapshot": _v8_heap_snapshot_for_native_test(extra_object=True),
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_diff_executor_execution": True,
+                "reviewer": "alice",
+                "max_raw_heap_bytes": 20000,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_heap_snapshot_diff_executor_mvp"])
+        self.assertIn("heap_snapshot_diff_executor_result_status=executed", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_executor_invoked=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_raw_heap_loaded=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_raw_heap_parsed=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_heap_diff_computed=True", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_complete_heap_traversal=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_mobile_runtime_used=False", result.verification)
+        self.assertIn("heap_snapshot_diff_executor_result_node_delta=1", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_executor_result_before_followup")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-executor-result.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "executed")
+        self.assertTrue(result.artifacts[0].metadata["executor_mvp"])
+        self.assertTrue(result.artifacts[0].metadata["raw_heap_parsed"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_exported"])
+        self.assertFalse(result.artifacts[0].metadata["complete_heap_traversal_claimed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+
+
+    def test_native_web_runtime_reviews_heap_snapshot_diff_followup_checkpoint_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        executor_result = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-result.v1",
+            "status": "executed",
+            "executor_name": "execute_heap_snapshot_diff_executor",
+            "executor_mvp": True,
+            "result_artifact": "workspace/heap-snapshot-diff-executor-result.json",
+            "reviewer": "alice",
+            "gate_summary": {"transaction_id": "heap-diff-txn-1"},
+            "heap_summaries": {
+                "before": {"raw_heap_digest_sha256": "sha256:before", "node_count_total": 2, "edge_count_total": 1},
+                "after": {"raw_heap_digest_sha256": "sha256:after", "node_count_total": 3, "edge_count_total": 2},
+            },
+            "diff": {
+                "node_count_delta": 1,
+                "edge_count_delta": 1,
+                "self_size_total_analyzed_delta": 64,
+                "node_type_deltas": [{"name": "object", "before": 1, "after": 2, "delta": 1}],
+                "top_constructor_deltas": [{"name": "LeakyThing", "before": 0, "after": 1, "delta": 1}],
+            },
+            "raw_heap_loaded": True,
+            "raw_heap_parsed": True,
+            "raw_heap_exported": False,
+            "heap_diff_computed": True,
+            "complete_heap_traversal_claimed": False,
+            "summary_only": True,
+            "side_effect_policy": {"raw_heap_exported": False, "raw_strings_exported": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-diff-followup-checkpoint",
+            {
+                "heap_snapshot_diff_followup_checkpoint": True,
+                "heap_snapshot_diff_executor_result": executor_result,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_executor_result_status=executed", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_transaction_id=heap-diff-txn-1", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_node_delta=1", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_retained_size_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_path_to_root_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_complete_heap_traversal=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_followup_checkpoint_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_followup_plan_before_retained_size_or_path_to_root_work")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-followup-checkpoint.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertFalse(result.artifacts[0].metadata["retained_size_analysis_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_analysis_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_diff_selected_analysis_input_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        checkpoint = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-followup-checkpoint.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "checkpoint_only": True,
+            "checkpoint_artifact": "workspace/heap-snapshot-diff-followup-checkpoint.json",
+            "executor_result_summary": {"status": "executed", "transaction_id": "heap-diff-txn-1", "result_artifact": "workspace/heap-snapshot-diff-executor-result.json"},
+            "analysis_plan": {
+                "summary_delta_review": {"node_count_delta": 1, "edge_count_delta": 1, "self_size_total_analyzed_delta": 64, "analysis_truncated": False},
+                "top_growth_signals": {
+                    "constructor_deltas": [{"name": "LeakyThing", "before": 0, "after": 1, "delta": 1}],
+                    "node_type_deltas": [{"name": "object", "before": 1, "after": 2, "delta": 1}],
+                    "edge_type_deltas": [],
+                },
+                "recommendations": [
+                    {"action": "review_constructor_growth", "requires_review": True},
+                    {"action": "plan_retained_size_analysis", "requires_review": True, "implemented": False},
+                ],
+            },
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "raw_heap_exported": False,
+            "heap_diff_computed": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-diff-selected-analysis-input-preflight",
+            {
+                "heap_snapshot_diff_selected_analysis_input_preflight": True,
+                "heap_snapshot_diff_followup_checkpoint": checkpoint,
+                "selected_analysis_action": "plan_retained_size_analysis",
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_selected_action=plan_retained_size_analysis", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_source_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_transaction_id=heap-diff-txn-1", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_future_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_requires_raw_heap=True", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_diff_selected_analysis_input_preflight_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_diff_selected_analysis_input_before_raw_heap_or_drilldown_work")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-diff-selected-analysis-input-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["selected_action"], "plan_retained_size_analysis")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertTrue(result.artifacts[0].metadata["requires_raw_heap"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_constructor_growth_drilldown_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        preflight = {
+            "schema_version": "reverse-deepagent.heap-snapshot-diff-selected-analysis-input-preflight.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "preflight_only": True,
+            "selection_only": True,
+            "source_checkpoint_summary": {"status": "ready_for_review", "transaction_id": "heap-diff-txn-1", "executor_result_status": "executed", "node_count_delta": 1, "edge_count_delta": 1},
+            "selected_analysis_input": {
+                "selected_action": "review_constructor_growth",
+                "candidate_count": 1,
+                "candidates": [{"name": "LeakyThing", "before": 0, "after": 1, "delta": 1, "source": "summary_diff_followup_checkpoint", "raw_value_exported": False}],
+            },
+            "future_executor_contract": {"implemented": False, "selected_action": "review_constructor_growth", "executor_name": "review_heap_snapshot_constructor_growth_drilldown", "requires_raw_heap": False},
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "heap_diff_computed": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "constructor_drilldown_computed": False,
+            "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-constructor-growth-drilldown",
+            {
+                "heap_snapshot_constructor_growth_drilldown": True,
+                "heap_snapshot_diff_selected_analysis_input_preflight": preflight,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_selected_action=review_constructor_growth", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_top_candidate=LeakyThing", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_top_delta=1", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_transaction_id=heap-diff-txn-1", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_retained_size_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_path_to_root_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_constructor_drilldown_computed=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_constructor_growth_before_retained_size_or_path_to_root_preflight")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-constructor-growth-drilldown.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["selected_action"], "review_constructor_growth")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["top_candidate"], "LeakyThing")
+        self.assertFalse(result.artifacts[0].metadata["retained_size_analysis_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_analysis_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+
+    def test_native_web_runtime_executes_heap_snapshot_constructor_growth_drilldown_analysis_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        drilldown = {
+            "schema_version": "reverse-deepagent.heap-snapshot-constructor-growth-drilldown.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "drilldown_only": True,
+            "summary_only": True,
+            "selected_action": "review_constructor_growth",
+            "source_selected_analysis_input_preflight": {"status": "ready_for_review", "transaction_id": "heap-diff-txn-1"},
+            "constructor_growth_summary": {
+                "candidate_count": 1,
+                "total_positive_delta": 3,
+                "top_candidate": {"name": "LeakyThing", "before": 0, "after": 3, "delta": 3},
+                "candidates": [{"name": "LeakyThing", "before": 0, "after": 3, "delta": 3, "source": "summary_diff_followup_checkpoint"}],
+            },
+            "future_analysis_contracts": {"constructor_drilldown_execution": {"implemented": False, "requires_explicit_review": True, "requires_raw_heap": False}},
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "raw_heap_exported": False,
+            "heap_diff_computed": False,
+            "new_heap_diff_computed": False,
+            "constructor_drilldown_computed": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "constructor_drilldown_computed": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-heap-snapshot-constructor-growth-drilldown",
+            {
+                "execute_heap_snapshot_constructor_growth_drilldown": True,
+                "heap_snapshot_constructor_growth_drilldown": drilldown,
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_constructor_growth_drilldown_execution": True,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_heap_snapshot_constructor_growth_drilldown_mvp"])
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_status=executed", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_top_candidate=LeakyThing", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_computed=True", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_proven=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_constructor_growth_drilldown_analysis_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_constructor_growth_drilldown_analysis_before_retained_size_path_to_root_or_second_pass")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-constructor-growth-drilldown-analysis.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "executed")
+        self.assertTrue(result.artifacts[0].metadata["constructor_drilldown_computed"])
+        self.assertFalse(result.artifacts[0].metadata["constructor_drilldown_proven"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_automatic_followup_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        retained = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-analysis.v1",
+            "status": "executed",
+            "result_artifact": "workspace/heap-snapshot-retained-size-analysis.json",
+            "candidate_estimates": [{"name": "LeakyThing", "retained_size_estimate": 64}],
+            "raw_heap_exported": False,
+            "raw_strings_exported": False,
+            "retained_size_estimated": True,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "complete_heap_traversal_claimed": False,
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+        path = {
+            "schema_version": "reverse-deepagent.heap-snapshot-path-to-root-analysis.v1",
+            "status": "executed",
+            "result_artifact": "workspace/heap-snapshot-path-to-root-analysis.json",
+            "candidate_paths": [{"candidate_name": "LeakyThing", "path_depth": 2, "root_like_node_reached": True}],
+            "raw_heap_exported": False,
+            "raw_strings_exported": False,
+            "path_to_root_estimated": True,
+            "path_to_root_proven": False,
+            "retained_size_proven": False,
+            "complete_heap_traversal_claimed": False,
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+        constructor = {
+            "schema_version": "reverse-deepagent.heap-snapshot-constructor-growth-drilldown-analysis.v1",
+            "status": "executed",
+            "result_artifact": "workspace/heap-snapshot-constructor-growth-drilldown-analysis.json",
+            "constructor_drilldown_computed": True,
+            "constructor_drilldown_proven": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "complete_heap_traversal_claimed": False,
+            "constructor_drilldown_rows": [{"name": "LeakyThing", "delta": 3}],
+            "raw_heap_loaded": False,
+            "raw_heap_exported": False,
+            "heap_diff_computed": False,
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-automatic-followup-plan",
+            {
+                "heap_snapshot_automatic_followup_plan": True,
+                "heap_snapshot_retained_size_analysis": retained,
+                "heap_snapshot_path_to_root_analysis": path,
+                "heap_snapshot_constructor_growth_drilldown_analysis": constructor,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_automatic_followup_plan_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_recommended_action_count=6", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_top_action=review_combined_heap_candidate_evidence", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_retained_size_provided=True", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_path_to_root_provided=True", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_constructor_growth_provided=True", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_path_to_root_proven=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_automatic_execution_allowed=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_automatic_followup_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_automatic_followup_plan_before_proof_or_second_pass")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-automatic-followup-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertEqual(result.artifacts[0].metadata["recommended_action_count"], 6)
+        self.assertEqual(result.artifacts[0].metadata["top_recommended_action"], "review_combined_heap_candidate_evidence")
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_parsed"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_proven"])
+        self.assertFalse(result.artifacts[0].metadata["constructor_drilldown_proven"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_execution_allowed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_retained_size_proof_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        retained = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-analysis.v1",
+            "status": "executed",
+            "result_artifact": "workspace/heap-snapshot-retained-size-analysis.json",
+            "candidate_estimates": [{"name": "LeakyThing", "retained_size_estimate": 64}],
+            "raw_heap_exported": False,
+            "raw_strings_exported": False,
+            "retained_size_estimated": True,
+            "retained_size_proven": False,
+            "complete_heap_traversal_claimed": False,
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+        followup = {
+            "schema_version": "reverse-deepagent.heap-snapshot-automatic-followup-plan.v1",
+            "status": "ready_for_review",
+            "automatic_execution_allowed": False,
+            "recommended_actions": [{"action": "plan_proof_grade_retained_size_analysis"}],
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-retained-size-proof-plan",
+            {
+                "heap_snapshot_retained_size_proof_plan": True,
+                "heap_snapshot_retained_size_analysis": retained,
+                "heap_snapshot_automatic_followup_plan": followup,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_retained_size_proof_plan_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_requires_raw_heap=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_future_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_ready_to_execute_now=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_automatic_execution_allowed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_proof_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_retained_size_proof_plan_before_raw_heap_ingestion_or_executor")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-retained-size-proof-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertTrue(result.artifacts[0].metadata["proof_plan_only"])
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["requires_raw_heap"])
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_parsed"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_execution_allowed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_path_to_root_proof_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        path = {
+            "schema_version": "reverse-deepagent.heap-snapshot-path-to-root-analysis.v1",
+            "status": "executed",
+            "result_artifact": "workspace/heap-snapshot-path-to-root-analysis.json",
+            "candidate_paths": [{"candidate_name": "LeakyThing", "path_depth": 2, "root_like_node_reached": True}],
+            "raw_heap_exported": False,
+            "raw_strings_exported": False,
+            "path_to_root_estimated": True,
+            "path_to_root_proven": False,
+            "retained_size_proven": False,
+            "complete_heap_traversal_claimed": False,
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+        followup = {
+            "schema_version": "reverse-deepagent.heap-snapshot-automatic-followup-plan.v1",
+            "status": "ready_for_review",
+            "automatic_execution_allowed": False,
+            "recommended_actions": [{"action": "plan_proof_grade_path_to_root_analysis"}],
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False},
+        }
+        retained_proof = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-proof-plan.v1",
+            "status": "ready_for_review",
+            "proof_plan_only": True,
+            "candidate_count": 1,
+            "future_executor_contract": {"implemented": False, "ready_to_execute_now": False},
+            "retained_size_proven": False,
+            "automatic_execution_allowed": False,
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-path-to-root-proof-plan",
+            {
+                "heap_snapshot_path_to_root_proof_plan": True,
+                "heap_snapshot_path_to_root_analysis": path,
+                "heap_snapshot_automatic_followup_plan": followup,
+                "heap_snapshot_retained_size_proof_plan": retained_proof,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_requires_raw_heap=True", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_future_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_ready_to_execute_now=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_path_to_root_proven=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_automatic_execution_allowed=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proof_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_path_to_root_proof_plan_before_raw_heap_ingestion_or_executor")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-path-to-root-proof-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertTrue(result.artifacts[0].metadata["proof_plan_only"])
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["requires_raw_heap"])
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_parsed"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_proven"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_execution_allowed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        analysis = {
+            "schema_version": "reverse-deepagent.heap-snapshot-constructor-growth-drilldown-analysis.v1",
+            "status": "executed",
+            "result_artifact": "workspace/heap-snapshot-constructor-growth-drilldown-analysis.json",
+            "constructor_drilldown_rows": [{"constructor_name": "LeakyThing", "growth_score": 91, "severity": "high", "node_count_delta": 7}],
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "raw_heap_exported": False,
+            "raw_strings_exported": False,
+            "constructor_drilldown_computed": True,
+            "constructor_drilldown_proven": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "complete_heap_traversal_claimed": False,
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-raw-heap-constructor-drilldown-proof-plan",
+            {
+                "heap_snapshot_raw_heap_constructor_drilldown_proof_plan": True,
+                "heap_snapshot_constructor_growth_drilldown_analysis": analysis,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_raw_heap=True", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_constructor_reachability_graph=True", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_future_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_ready_to_execute_now=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_parsed=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_heap_diff_computed=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_constructor_drilldown_proven=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_automatic_execution_allowed=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_calls_mcp=False", result.verification)
+        self.assertIn("heap_snapshot_raw_heap_constructor_drilldown_proof_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_before_raw_heap_ingestion_or_executor")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertTrue(result.artifacts[0].metadata["plan_only"])
+        self.assertTrue(result.artifacts[0].metadata["proof_plan_only"])
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertTrue(result.artifacts[0].metadata["requires_raw_heap"])
+        self.assertTrue(result.artifacts[0].metadata["requires_constructor_reachability_graph"])
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_parsed"])
+        self.assertFalse(result.artifacts[0].metadata["heap_diff_computed"])
+        self.assertFalse(result.artifacts[0].metadata["constructor_drilldown_proven"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_execution_allowed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_retained_path_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        drilldown = {
+            "schema_version": "reverse-deepagent.heap-snapshot-constructor-growth-drilldown.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "drilldown_only": True,
+            "summary_only": True,
+            "source_selected_analysis_input_preflight": {"status": "ready_for_review", "transaction_id": "heap-diff-txn-1"},
+            "selected_action": "review_constructor_growth",
+            "constructor_growth_summary": {
+                "candidate_count": 1,
+                "top_candidate": {"name": "LeakyThing", "before": 0, "after": 1, "delta": 1},
+                "candidates": [{"name": "LeakyThing", "before": 0, "after": 1, "delta": 1, "source": "summary_diff_followup_checkpoint", "raw_value_exported": False}],
+            },
+            "future_analysis_contracts": {"retained_size_analysis": {"implemented": False}, "path_to_root_analysis": {"implemented": False}},
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "heap_diff_computed": False,
+            "constructor_drilldown_computed": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-retained-path-preflight",
+            {
+                "heap_snapshot_retained_path_preflight": True,
+                "heap_snapshot_constructor_growth_drilldown": drilldown,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_retained_path_preflight_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_top_candidate=LeakyThing", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_requires_raw_heap=True", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_retained_path_preflight_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_retained_path_executor_inputs")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-retained-path-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["top_candidate"], "LeakyThing")
+        self.assertTrue(result.artifacts[0].metadata["requires_raw_heap"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_computed"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_retained_size_input_review_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        preflight = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-path-preflight.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "preflight_only": True,
+            "handoff_only": True,
+            "requested_analysis": "retained-size-and-path-to-root",
+            "source_constructor_growth_drilldown": {"status": "ready_for_review", "transaction_id": "heap-diff-txn-1", "selected_action": "review_constructor_growth"},
+            "candidate_count": 1,
+            "candidate_inputs": [{"name": "LeakyThing", "before": 0, "after": 1, "delta": 1, "source": "constructor_growth_drilldown"}],
+            "raw_heap_requirements": {"requires_raw_heap": True, "requires_raw_heap_ingestion_preflight": True, "raw_heap_available_in_this_preflight": False, "raw_heap_loaded_now": False},
+            "future_executor_contracts": {"retained_size_analysis": {"executor_name": "execute_heap_snapshot_retained_size_analysis", "implemented": False, "result_artifact": "workspace/heap-snapshot-retained-size-analysis.json"}},
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "heap_diff_computed": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-retained-size-input-review",
+            {
+                "heap_snapshot_retained_size_input_review": True,
+                "heap_snapshot_retained_path_preflight": preflight,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_retained_size_input_review_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_top_candidate=LeakyThing", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_requires_raw_heap=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_ready_to_execute_now=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_input_review_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_retained_size_approval_plan")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-retained-size-input-review.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["top_candidate"], "LeakyThing")
+        self.assertTrue(result.artifacts[0].metadata["requires_raw_heap"])
+        self.assertFalse(result.artifacts[0].metadata["executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_computed"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_retained_size_approval_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        input_review = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-input-review.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "input_review_only": True,
+            "approval_gate_only": True,
+            "candidate_count": 1,
+            "candidate_inputs": [{"name": "LeakyThing", "delta": 1, "source": "retained_path_preflight"}],
+            "source_retained_path_preflight": {"transaction_id": "heap-diff-txn-1", "requested_analysis": "retained-size-and-path-to-root"},
+            "raw_heap_requirements": {"requires_raw_heap": True, "requires_raw_heap_ingestion_preflight": True},
+            "executor_input_contract": {"executor_name": "execute_heap_snapshot_retained_size_analysis", "implemented": False, "result_artifact": "workspace/heap-snapshot-retained-size-analysis.json"},
+            "approval_gate": {"approval_required": True, "approval_recorded": False, "transaction_started": False, "journal_written": False, "ready_to_execute_now": False},
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "heap_diff_computed": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "executor_invoked": False,
+            "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "browser_started": False, "cdp_command_sent": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-retained-size-approval-plan",
+            {
+                "heap_snapshot_retained_size_approval_plan": True,
+                "heap_snapshot_retained_size_input_review": input_review,
+                "reviewer": "alice",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_retained_size_approval_plan_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_candidate_count=1", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_top_candidate=LeakyThing", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_approval_recorded=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_transaction_started=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_journal_written=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_ready_to_execute_now=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_browser_started=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_approval_plan_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "record_heap_snapshot_retained_size_approval")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-retained-size-approval-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["top_candidate"], "LeakyThing")
+        self.assertFalse(result.artifacts[0].metadata["executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["approval_recorded"])
+        self.assertFalse(result.artifacts[0].metadata["transaction_started"])
+        self.assertFalse(result.artifacts[0].metadata["journal_written"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["raw_heap_loaded"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_retained_size_transaction_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        approval_plan = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-approval-plan.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "approval_plan_only": True,
+            "transaction_plan_only": True,
+            "retained_size_only": True,
+            "candidate_count": 1,
+            "candidate_inputs": [{"name": "LeakyThing", "delta": 1}],
+            "candidate_digest": "retained-size-candidate-digest-test",
+            "approval_plan": {"approval_plan_id": "retained-size-approval-plan-test", "approval_recorded": False, "approval_record_artifact": "workspace/heap-snapshot-retained-size-approval-record.json", "approval_record_writer": "record_heap_snapshot_retained_size_approval"},
+            "transaction_plan": {"transaction_plan_id": "retained-size-approval-plan-test", "transaction_started": False, "journal_written": False, "transaction_journal_artifact": "workspace/heap-snapshot-retained-size-executor-journal.json", "bounded_gate_artifact": "workspace/heap-snapshot-retained-size-bounded-gate.json", "result_artifact": "workspace/heap-snapshot-retained-size-analysis.json"},
+            "executor_input_contract": {"implemented": False, "ready_to_execute_now": False},
+            "approval_recorded": False,
+            "transaction_started": False,
+            "journal_written_now": False,
+            "bounded_executor_gate_written": False,
+            "executor_invoked": False,
+            "raw_heap_loaded": False,
+            "raw_heap_parsed": False,
+            "raw_heap_exported": False,
+            "heap_diff_computed": False,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "side_effect_policy": {"approval_recorded": False, "transaction_started": False, "journal_written": False, "journal_written_now": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+        approval_record = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-approval-record.v1",
+            "status": "written",
+            "approval_recorded": True,
+            "approved_for_execution": True,
+            "approval_plan_id": "retained-size-approval-plan-test",
+            "transaction_plan_id": "retained-size-approval-plan-test",
+            "candidate_digest": "retained-size-candidate-digest-test",
+            "executor_input_gates": {"transaction_started": False, "journal_written": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False},
+            "side_effect_policy": {"transaction_started": False, "journal_written": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-retained-size-transaction-preflight",
+            {
+                "heap_snapshot_retained_size_transaction_preflight": True,
+                "heap_snapshot_retained_size_approval_plan": approval_plan,
+                "heap_snapshot_retained_size_approval_record": approval_record,
+                "expected_transaction_plan_id": "retained-size-approval-plan-test",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_approval_recorded=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_approved_for_execution=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_transaction_plan_id=retained-size-approval-plan-test", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_ready_to_write_journal=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_transaction_started=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_journal_written=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_executor_invoked=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_transaction_preflight_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_retained_size_transaction_journal_writer")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-retained-size-transaction-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_journal_review"])
+        self.assertFalse(result.artifacts[0].metadata["transaction_started"])
+        self.assertFalse(result.artifacts[0].metadata["journal_written"])
+        self.assertFalse(result.artifacts[0].metadata["executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+
+    def test_native_web_runtime_reviews_heap_snapshot_retained_size_bounded_gate_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        journal = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-transaction-journal.v1",
+            "status": "written",
+            "journal_written": True,
+            "transaction_started": True,
+            "journal_id": "retained-size-journal-test",
+            "transaction_preflight_id": "retained-size-preflight-test",
+            "transaction_plan_id": "retained-size-approval-plan-test",
+            "approval_plan_id": "retained-size-approval-plan-test",
+            "candidate_digest": "retained-size-candidate-digest-test",
+            "source_transaction_preflight_summary": {"schema_version": "reverse-deepagent.heap-snapshot-retained-size-transaction-preflight.v1", "status": "ready_for_review", "retained_size_only": True, "ready_to_write_journal": True, "ready_to_execute_now": False},
+            "candidate_summary": {"candidate_digest": "retained-size-candidate-digest-test", "candidate_count": 1, "top_candidate": "LeakyThing"},
+            "journal_summary": {"transaction_started": True, "journal_written": True, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "retained_size_proven": False, "path_to_root_computed": False, "requires_bounded_executor_gate_followup": True},
+            "executor_input_gates": {"ready_to_execute_now": False, "approval_record_verified": True, "transaction_started": True, "journal_written": True, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "raw_strings_exported": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "complete_heap_traversal_claimed": False, "retained_size_executor_implemented": False, "requires_bounded_executor_gate": True, "requires_explicit_executor_review": True},
+            "blockers": [],
+            "side_effect_policy": {"writes_transaction_journal": True, "bounded_executor_gate_written": False, "executor_invoked": False, "future_executor_invoked": False, "browser_started": False, "provider_factory_invoked": False, "provider_availability_checked": False, "cdp_command_sent": False, "heap_profiler_enabled": False, "heap_snapshot_collected": False, "heap_snapshot_diff_computed": False, "heap_diff_computed": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "raw_strings_exported": False, "complete_heap_traversal": False, "retained_size_proven": False, "path_to_root_computed": False, "runtime_evaluated": False, "javascript_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "heap-snapshot-retained-size-bounded-gate",
+            {
+                "heap_snapshot_retained_size_bounded_gate": True,
+                "heap_snapshot_retained_size_transaction_journal": journal,
+                "expected_transaction_plan_id": "retained-size-approval-plan-test",
+                "expected_candidate_digest": "retained-size-candidate-digest-test",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_status=ready_for_review", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_transaction_plan_id=retained-size-approval-plan-test", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_candidate_digest=retained-size-candidate-digest-test", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_journal_written=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_ready_for_review=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_ready_to_execute_now=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_future_executor_implemented=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_executor_invoked=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_raw_heap_loaded=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_bounded_gate_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_retained_size_executor_mvp")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-retained-size-bounded-gate.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["future_executor_implemented"])
+        self.assertFalse(result.artifacts[0].metadata["executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+
+    def test_native_web_runtime_executes_heap_snapshot_retained_size_analysis_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        gate = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-bounded-gate.v1",
+            "status": "ready_for_review",
+            "retained_size_only": True,
+            "journal_id": "retained-size-journal-test",
+            "transaction_plan_id": "retained-size-approval-plan-test",
+            "approval_plan_id": "retained-size-approval-plan-test",
+            "candidate_digest": "retained-size-candidate-digest-test",
+            "bounded_executor_gate_ready_for_review": True,
+            "ready_for_executor_review": True,
+            "ready_to_execute_now": False,
+            "future_executor_contract": {"executor_name": "execute_heap_snapshot_retained_size_analysis", "implemented": False, "result_artifact": "workspace/heap-snapshot-retained-size-analysis.json"},
+            "side_effect_policy": {"executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "raw_strings_exported": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-heap-snapshot-retained-size-analysis",
+            {
+                "execute_heap_snapshot_retained_size_analysis": True,
+                "heap_snapshot_retained_size_bounded_gate": gate,
+                "heap_snapshot": _v8_heap_snapshot_for_native_test(extra_object=True),
+                "candidate_name": "ExtraObject",
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_retained_size_execution": True,
+                "reviewer": "alice",
+                "max_raw_heap_bytes": 20000,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_heap_snapshot_retained_size_analysis_mvp"])
+        self.assertIn("heap_snapshot_retained_size_analysis_status=executed", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_journal_id=retained-size-journal-test", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_raw_heap_loaded=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_raw_heap_parsed=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_raw_strings_exported=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_retained_size_estimated=True", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_path_to_root_computed=False", result.verification)
+        self.assertIn("heap_snapshot_retained_size_analysis_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_retained_size_analysis_before_path_to_root_or_second_pass")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-retained-size-analysis.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "executed")
+        self.assertTrue(result.artifacts[0].metadata["retained_size_estimated"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_computed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+
+    def test_native_web_runtime_executes_heap_snapshot_path_to_root_analysis_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        retained_analysis = {
+            "schema_version": "reverse-deepagent.heap-snapshot-retained-size-analysis.v1",
+            "status": "executed",
+            "retained_size_estimated": True,
+            "retained_size_proven": False,
+            "path_to_root_computed": False,
+            "raw_heap_loaded": True,
+            "raw_heap_parsed": True,
+            "raw_heap_exported": False,
+            "raw_strings_exported": False,
+            "candidate_estimates": [{"name": "<redacted>", "retained_size_estimate": 48}],
+            "requested_candidate_names": ["TokenSecret"],
+        }
+
+        result = runtime.apply_minimal_protection(
+            "execute-heap-snapshot-path-to-root-analysis",
+            {
+                "execute_heap_snapshot_path_to_root_analysis": True,
+                "heap_snapshot_retained_size_analysis": retained_analysis,
+                "heap_snapshot": _v8_heap_snapshot_path_to_root_for_native_test(),
+                "candidate_name": "TokenSecret",
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_path_to_root_execution": True,
+                "reviewer": "alice",
+                "max_raw_heap_bytes": 20000,
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["execute_heap_snapshot_path_to_root_analysis_mvp"])
+        self.assertIn("heap_snapshot_path_to_root_analysis_status=executed", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_raw_heap_loaded=True", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_raw_heap_parsed=True", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_raw_heap_exported=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_raw_strings_exported=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_estimated=True", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_proven=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_retained_size_proven=False", result.verification)
+        self.assertIn("heap_snapshot_path_to_root_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_heap_snapshot_path_to_root_analysis_before_second_pass_or_constructor_drilldown")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/heap-snapshot-path-to-root-analysis.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "executed")
+        self.assertTrue(result.artifacts[0].metadata["path_to_root_estimated"])
+        self.assertFalse(result.artifacts[0].metadata["path_to_root_proven"])
+        self.assertFalse(result.artifacts[0].metadata["retained_size_proven"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
     def test_native_web_runtime_reviews_object_graph_diff_without_starting_browser(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
@@ -5340,6 +6912,49 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["risk"], "high")
         self.assertTrue(result.artifacts[0].metadata["review_only"])
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+    def test_native_web_runtime_collects_runtime_object_graph_diff_explicitly(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "runtime-object-graph-diff",
+            {
+                "runtime_object_graph_diff": True,
+                "object_root": "window.__appState",
+                "trigger_expression": "mutateNativeObjectRoot()",
+            },
+        )
+
+        self.assertEqual(provider.started, 1)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["collect_runtime_object_graph_diff"])
+        self.assertIn("runtime_object_graph_diff_status=ready_for_review", result.verification)
+        self.assertIn("runtime_object_graph_diff_root_path=window.__appState", result.verification)
+        self.assertIn("runtime_object_graph_diff_changed=True", result.verification)
+        self.assertIn("runtime_object_graph_diff_change_count=4", result.verification)
+        self.assertIn("runtime_object_graph_diff_explicit_collection=True", result.verification)
+        self.assertIn("runtime_object_graph_diff_snapshot_source=runtime_collected_object_root_snapshots", result.verification)
+        self.assertIn("runtime_object_graph_diff_default_recon=False", result.verification)
+        self.assertIn("runtime_object_graph_diff_cdp_command_sent=False", result.verification)
+        self.assertIn("runtime_object_graph_diff_runtime_evaluated=True", result.verification)
+        self.assertIn("runtime_object_graph_diff_trigger_executed=True", result.verification)
+        self.assertIn("runtime_object_graph_diff_getter_invocation=False", result.verification)
+        self.assertIn("runtime_object_graph_diff_prototype_traversal=False", result.verification)
+        self.assertIn("runtime_object_graph_diff_full_heap_snapshot=False", result.verification)
+        self.assertIn("runtime_object_graph_diff_complete_heap_traversal=False", result.verification)
+        self.assertIn("runtime_object_graph_diff_calls_mcp=False", result.verification)
+        self.assertIn("runtime_object_graph_diff_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_runtime_object_graph_diff_before_hook_or_replay")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/runtime-object-graph-diff.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertEqual(result.artifacts[0].metadata["root_path"], "window.__appState")
+        self.assertTrue(result.artifacts[0].metadata["changed"])
+        self.assertEqual(result.artifacts[0].metadata["change_count"], 4)
+        self.assertEqual(result.artifacts[0].metadata["risk"], "high")
+        self.assertTrue(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["full_heap_snapshot"])
+        self.assertFalse(result.artifacts[0].metadata["complete_heap_traversal"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
 
     def test_native_web_runtime_apply_minimal_protection_audits_page_mutation(self) -> None:
         provider = FakeProvider()
@@ -6225,12 +7840,50 @@ class NativeWebRuntimeTests(unittest.TestCase):
             "blockers": [],
             "side_effect_policy": {**side_effect_policy, "approval_recorded": True, "files_mutated": True, "approval_record_writer_only": True},
         }
+        dispatcher_result = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatcher-result.v1",
+            "status": "dispatched",
+            "dispatcher_result_id": "source-map-dispatcher-result:native-web",
+            "selected_consumer": "rebuild",
+            "dispatch_surface": "source-map-rebuild-result",
+            "required_result_artifact": "workspace/source-map-rebuild-result.json",
+            "dispatcher_decision_recorded": True,
+            "requires_selected_executor_apply_preflight": True,
+            "dispatcher_mvp_invoked": True,
+            "dispatcher_invoked": False,
+            "dispatch_target_invoked": False,
+            "executor_invoked": False,
+            "selected_executor_invoked": False,
+            "selected_executor_apply_preflight_invoked": False,
+            "runtime_apply_preflight_invoked": False,
+            "ready_to_execute_selected_executor_now": False,
+            "blockers": [],
+            "side_effect_policy": {
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "dispatcher_invoked": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "selected_executor_invoked": False,
+                "selected_executor_apply_preflight_invoked": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        dispatcher_result_digest = hashlib.sha256(json.dumps(dispatcher_result, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
         result = runtime.apply_minimal_protection(
             "source-map-selected-executor-apply-preflight",
             {
                 "source_map_selected_executor_approval_plan": approval_plan,
                 "source_map_selected_executor_approval_record": approval_record,
+                "source_map_followthrough_dispatcher_result": dispatcher_result,
                 "expected_consumer": "rebuild",
+                "expected_dispatcher_result_id": "source-map-dispatcher-result:native-web",
+                "expected_dispatcher_result_digest_sha256": dispatcher_result_digest,
             },
         )
 
@@ -6243,6 +7896,14 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("source_map_selected_executor_apply_preflight_selected_gate=explicit_rebuild_source_metadata_review", result.verification)
         self.assertIn("source_map_selected_executor_apply_preflight_approval_record_verified=True", result.verification)
         self.assertIn("source_map_selected_executor_apply_preflight_executor_input_ready=True", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_result_verified=True", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_decision_recorded=True", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_result_id=source-map-dispatcher-result:native-web", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_result_optional=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_result_handoff_only=True", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_result_selected_executor_invoked=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_result_selected_executor_apply_preflight_invoked=False", result.verification)
+        self.assertIn("source_map_selected_executor_apply_preflight_dispatcher_result_dispatch_target_invoked=False", result.verification)
         self.assertIn("source_map_selected_executor_apply_preflight_ready_for_selected_executor_review=True", result.verification)
         self.assertIn("source_map_selected_executor_apply_preflight_ready_to_apply_now=False", result.verification)
         self.assertIn("source_map_selected_executor_apply_preflight_future_executor_implemented=False", result.verification)
@@ -6260,6 +7921,14 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["selected_review_gate"], "explicit_rebuild_source_metadata_review")
         self.assertTrue(result.artifacts[0].metadata["approval_record_verified"])
         self.assertTrue(result.artifacts[0].metadata["executor_input_ready"])
+        self.assertTrue(result.artifacts[0].metadata["dispatcher_result_verified"])
+        self.assertTrue(result.artifacts[0].metadata["dispatcher_decision_recorded"])
+        self.assertEqual(result.artifacts[0].metadata["dispatcher_result_id"], "source-map-dispatcher-result:native-web")
+        self.assertFalse(result.artifacts[0].metadata["dispatcher_result_optional"])
+        self.assertTrue(result.artifacts[0].metadata["dispatcher_result_handoff_only"])
+        self.assertFalse(result.artifacts[0].metadata["dispatcher_result_selected_executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["dispatcher_result_selected_executor_apply_preflight_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["dispatcher_result_dispatch_target_invoked"])
         self.assertFalse(result.artifacts[0].metadata["ready_to_apply_now"])
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
         self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
@@ -6267,6 +7936,1255 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
         self.assertFalse(result.artifacts[0].metadata["hook_installed"])
         self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
+
+    def test_native_web_runtime_reviews_source_map_selected_executor_application_handoff_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        apply_preflight = self._ready_source_map_debugger_apply_preflight()
+        apply_preflight_digest = hashlib.sha256(json.dumps(apply_preflight, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+        result = runtime.apply_minimal_protection(
+            "source-map-selected-executor-application-handoff",
+            {
+                "source_map_selected_executor_application_handoff": True,
+                "source_map_selected_executor_apply_preflight": apply_preflight,
+                "expected_consumer": "debugger",
+                "expected_action_id": "review-debugger-location-use",
+                "expected_apply_preflight_digest_sha256": apply_preflight_digest,
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_selected_executor_application_handoff"])
+        self.assertIn("source_map_selected_executor_application_handoff_status=ready_for_review", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_selected_action_id=review-debugger-location-use", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_application_surface=source-map-debugger-application", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_application_input_key=source_map_debugger_location_input", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_ready_for_application_review=True", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_ready_to_execute_now=False", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_browser_started=False", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_calls_mcp=False", result.verification)
+        self.assertIn("source_map_selected_executor_application_handoff_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_debugger_executor_application")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-selected-executor-application-handoff.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["application_surface"], "source-map-debugger-application")
+        self.assertEqual(result.artifacts[0].metadata["application_input_key"], "source_map_debugger_location_input")
+        self.assertEqual(result.artifacts[0].metadata["required_approval_flags"], ["review_approved", "approve_source_map_debugger_action"])
+        self.assertTrue(result.artifacts[0].metadata["ready_for_application_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["surface_executor_invoked"])
+
+
+    def test_native_web_runtime_reviews_source_map_selected_executor_result_checkpoint_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        handoff = {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-application-handoff.v1",
+            "status": "ready_for_review",
+            "selected_action_id": "review-debugger-location-use",
+            "selected_consumer": "debugger",
+            "selected_review_gate": "explicit_debugger_location_review",
+            "application_surface": "source-map-debugger-application",
+            "future_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "ready_for_application_review": True,
+            "ready_to_execute_now": False,
+            "application_invoked": False,
+            "surface_executor_invoked": False,
+            "side_effect_policy": {
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        application_result = {
+            "schema_version": "reverse-deepagent.source-map-debugger-execution-result.v1",
+            "status": "success",
+            "selected_action_id": "review-debugger-location-use",
+            "selected_consumer": "debugger",
+            "selected_review_gate": "explicit_debugger_location_review",
+            "approval_record_id": "source-map-selected-executor-approval:review-debugger-location-use",
+            "reviewer": "analyst",
+            "review_approved": True,
+            "approve_source_map_debugger_action": True,
+            "mode": "apply",
+            "breakpoint_count": 1,
+            "breakpoint_set": True,
+            "browser_started": True,
+            "runtime_evaluated": False,
+            "cdp_command_sent": True,
+            "debugger_location_applied": True,
+            "debugger_execution_performed": True,
+            "surface_executor_invoked": True,
+            "automatic_continuation": False,
+            "automatic_loop": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-selected-executor-result-checkpoint",
+            {
+                "source_map_selected_executor_result_checkpoint": True,
+                "source_map_selected_executor_application_handoff": handoff,
+                "source_map_selected_executor_application_result": application_result,
+                "expected_consumer": "debugger",
+                "expected_action_id": "review-debugger-location-use",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_selected_executor_result_checkpoint"])
+        self.assertIn("source_map_selected_executor_result_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_application_surface=source-map-debugger-application", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_application_result_status=success", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_application_result_verified=True", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_ready_for_next_explicit_review=True", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_ready_to_execute_now=False", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_observed_browser_started=True", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_observed_cdp_command_sent=True", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_browser_started_by_checkpoint=False", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_cdp_command_sent_by_checkpoint=False", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_calls_mcp=False", result.verification)
+        self.assertIn("source_map_selected_executor_result_checkpoint_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_selected_executor_result_checkpoint")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-selected-executor-result-checkpoint.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["application_result_status"], "success")
+        self.assertTrue(result.artifacts[0].metadata["application_result_verified"])
+        self.assertTrue(result.artifacts[0].metadata["ready_for_next_explicit_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started_by_checkpoint"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent_by_checkpoint"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated_by_checkpoint"])
+
+
+    def test_native_web_runtime_reviews_source_map_followthrough_completion_checkpoint_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result_checkpoint = {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-result-checkpoint.v1",
+            "status": "ready_for_review",
+            "selected_action_id": "review-debugger-location-use",
+            "selected_consumer": "debugger",
+            "selected_review_gate": "explicit_debugger_location_review",
+            "application_surface": "source-map-debugger-application",
+            "application_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "application_result_status": "success",
+            "application_result_verified": True,
+            "application_handoff_verified": True,
+            "ready_for_next_explicit_review": True,
+            "ready_to_execute_now": False,
+            "execute_next_automatically": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-completion-checkpoint",
+            {
+                "source_map_followthrough_completion_checkpoint": True,
+                "source_map_selected_executor_result_checkpoint": result_checkpoint,
+                "expected_consumer": "debugger",
+                "expected_action_id": "review-debugger-location-use",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_completion_checkpoint"])
+        self.assertIn("source_map_followthrough_completion_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_completion_status=terminal_review_candidate", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_terminal_review_candidate=True", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_followup_required=False", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_ready_for_completion_review=True", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_ready_to_execute_now=False", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_recommended_review_action=inspect_source_map_debugger_execution_artifacts", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_browser_started_by_completion=False", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_cdp_command_sent_by_completion=False", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_runtime_evaluated_by_completion=False", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_completion_checkpoint_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "inspect_source_map_debugger_execution_artifacts")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-completion-checkpoint.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["completion_status"], "terminal_review_candidate")
+        self.assertTrue(result.artifacts[0].metadata["terminal_review_candidate"])
+        self.assertFalse(result.artifacts[0].metadata["followup_required"])
+        self.assertTrue(result.artifacts[0].metadata["ready_for_completion_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started_by_completion"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent_by_completion"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated_by_completion"])
+
+
+    def test_native_web_runtime_reviews_source_map_terminal_review_package_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        completion = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-completion-checkpoint.v1",
+            "status": "ready_for_review",
+            "selected_action_id": "review-debugger-location-use",
+            "selected_consumer": "debugger",
+            "selected_review_gate": "explicit_debugger_location_review",
+            "application_surface": "source-map-debugger-application",
+            "completion_status": "terminal_review_candidate",
+            "terminal_review_candidate": True,
+            "followup_required": False,
+            "completion_checkpoint_ready": True,
+            "ready_for_completion_review": True,
+            "ready_for_next_explicit_review": True,
+            "ready_to_execute_now": False,
+            "execute_next_automatically": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "completion_review": {
+                "recommended_review_action": "inspect_source_map_debugger_execution_artifacts",
+                "required_artifacts": ["workspace/source-map-debugger-execution-result.json", "workspace/breakpoints.json"],
+            },
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-terminal-review-package",
+            {
+                "source_map_terminal_review_package": True,
+                "source_map_followthrough_completion_checkpoint": completion,
+                "expected_consumer": "debugger",
+                "expected_action_id": "review-debugger-location-use",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_terminal_review_package"])
+        self.assertIn("source_map_terminal_review_package_status=ready_for_review", result.verification)
+        self.assertIn("source_map_terminal_review_package_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_terminal_review_package_completion_status=terminal_review_candidate", result.verification)
+        self.assertIn("source_map_terminal_review_package_terminal_review_candidate=True", result.verification)
+        self.assertIn("source_map_terminal_review_package_ready_for_terminal_review=True", result.verification)
+        self.assertIn("source_map_terminal_review_package_ready_to_execute_now=False", result.verification)
+        self.assertIn("source_map_terminal_review_package_recommended_review_action=inspect_source_map_debugger_execution_artifacts", result.verification)
+        self.assertIn("source_map_terminal_review_package_recommended_action_executed=False", result.verification)
+        self.assertIn("source_map_terminal_review_package_browser_started_by_package=False", result.verification)
+        self.assertIn("source_map_terminal_review_package_cdp_command_sent_by_package=False", result.verification)
+        self.assertIn("source_map_terminal_review_package_runtime_evaluated_by_package=False", result.verification)
+        self.assertIn("source_map_terminal_review_package_calls_mcp=False", result.verification)
+        self.assertIn("source_map_terminal_review_package_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_terminal_review_package")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-terminal-review-package.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["package_kind"], "terminal-review-package")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_terminal_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["recommended_action_executed"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started_by_package"])
+
+
+    def test_native_web_runtime_reviews_source_map_terminal_review_closure_checkpoint_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        terminal_package = {
+            "schema_version": "reverse-deepagent.source-map-terminal-review-package.v1",
+            "status": "ready_for_review",
+            "selected_action_id": "review-debugger-location-use",
+            "selected_consumer": "debugger",
+            "selected_review_gate": "explicit_debugger_location_review",
+            "application_surface": "source-map-debugger-application",
+            "completion_status": "terminal_review_candidate",
+            "terminal_review_candidate": True,
+            "followup_required": False,
+            "ready_for_terminal_review": True,
+            "ready_for_audit_handoff_review": True,
+            "ready_to_execute_now": False,
+            "execute_next_automatically": False,
+            "recommended_action_executed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "terminal_review_package": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-package.payload.v1",
+                "package_kind": "terminal-review-package",
+                "recommended_review_action": "inspect_source_map_debugger_execution_artifacts",
+                "required_artifacts": ["workspace/source-map-debugger-execution-result.json", "workspace/breakpoints.json"],
+                "execute_recommended_action": False,
+            },
+        }
+        observed = {
+            "schema_version": "reverse-deepagent.source-map-terminal-review-observed-result.v1",
+            "status": "reviewed",
+            "review_completed": True,
+            "observed_review_action": "inspect_source_map_debugger_execution_artifacts",
+            "reviewer": "analyst",
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-terminal-review-closure-checkpoint",
+            {
+                "source_map_terminal_review_closure_checkpoint": True,
+                "source_map_terminal_review_package": terminal_package,
+                "source_map_terminal_review_observed_result": observed,
+                "expected_consumer": "debugger",
+                "expected_action_id": "review-debugger-location-use",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_terminal_review_closure_checkpoint"])
+        self.assertIn("source_map_terminal_review_closure_checkpoint_status=ready_for_review", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_closure_status=terminal_review_observed", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_ready_for_closure_audit_review=True", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_ready_to_execute_now=False", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_recommended_review_action=inspect_source_map_debugger_execution_artifacts", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_observed_review_action=inspect_source_map_debugger_execution_artifacts", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_recommended_action_executed_by_checkpoint=False", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_browser_started_by_checkpoint=False", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_cdp_command_sent_by_checkpoint=False", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_runtime_evaluated_by_checkpoint=False", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_calls_mcp=False", result.verification)
+        self.assertIn("source_map_terminal_review_closure_checkpoint_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_terminal_review_closure_checkpoint")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-terminal-review-closure-checkpoint.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["closure_status"], "terminal_review_observed")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_closure_audit_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["recommended_action_executed_by_checkpoint"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started_by_checkpoint"])
+
+
+    def test_native_web_runtime_reviews_source_map_terminal_review_final_audit_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        closure = {
+            "schema_version": "reverse-deepagent.source-map-terminal-review-closure-checkpoint.v1",
+            "status": "ready_for_review",
+            "selected_action_id": "review-debugger-location-use",
+            "selected_consumer": "debugger",
+            "selected_review_gate": "explicit_debugger_location_review",
+            "application_surface": "source-map-debugger-application",
+            "closure_status": "terminal_review_observed",
+            "terminal_review_candidate": True,
+            "followup_required": False,
+            "ready_for_closure_audit_review": True,
+            "observed_review_completed": True,
+            "ready_to_execute_now": False,
+            "execute_next_automatically": False,
+            "recommended_action_executed_by_checkpoint": False,
+            "recommended_review_action": "inspect_source_map_debugger_execution_artifacts",
+            "observed_review_action": "inspect_source_map_debugger_execution_artifacts",
+            "required_artifacts": ["workspace/source-map-debugger-execution-result.json", "workspace/breakpoints.json"],
+            "source_terminal_review_package_digest_sha256": "pkg-digest",
+            "source_observed_result_digest_sha256": "obs-digest",
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "closure_audit": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-closure-audit.v1",
+                "manual_review_observed": True,
+                "execute_recommended_action": False,
+            },
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-terminal-review-final-audit",
+            {
+                "source_map_terminal_review_final_audit": True,
+                "source_map_terminal_review_closure_checkpoint": closure,
+                "expected_consumer": "debugger",
+                "expected_action_id": "review-debugger-location-use",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_terminal_review_final_audit"])
+        self.assertIn("source_map_terminal_review_final_audit_status=ready_for_review", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_final_audit_status=source_map_followthrough_review_closed", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_ready_for_final_audit_review=True", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_ready_to_execute_now=False", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_recommended_review_action=inspect_source_map_debugger_execution_artifacts", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_observed_review_action=inspect_source_map_debugger_execution_artifacts", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_recommended_action_executed_by_rollup=False", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_browser_started_by_rollup=False", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_cdp_command_sent_by_rollup=False", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_runtime_evaluated_by_rollup=False", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_calls_mcp=False", result.verification)
+        self.assertIn("source_map_terminal_review_final_audit_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_terminal_review_final_audit")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-terminal-review-final-audit.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["final_audit_status"], "source_map_followthrough_review_closed")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_final_audit_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_execute_now"])
+        self.assertFalse(result.artifacts[0].metadata["recommended_action_executed_by_rollup"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started_by_rollup"])
+
+
+    def test_native_web_runtime_reviews_source_map_followthrough_chain_readiness_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        apply_preflight = {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+            "status": "ready_for_review",
+            "selected_action_id": "review-rebuild-source-metadata-use",
+            "selected_consumer": "rebuild",
+            "selected_followthrough_review_surface": "review_rebuild_source_metadata_executor_input",
+            "selected_review_gate": "explicit_rebuild_source_metadata_review",
+            "approval_record_verified": True,
+            "executor_input_ready": True,
+            "ready_for_selected_executor_review": True,
+            "ready_to_apply_now": False,
+            "future_executor_contract": {"implemented": False},
+            "future_action": "run_reviewed_source_map_rebuild_metadata_generation",
+            "future_result_artifact": "workspace/source-map-rebuild-result.json",
+            "blockers": [],
+            "side_effect_policy": {
+                "raw_source_content_exported": False,
+                "preview_exported": False,
+                "fetch_source_map": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "debugger_execution_performed": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "surface_executor_invoked": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-chain-readiness",
+            {
+                "source_map_followthrough_chain_readiness": True,
+                "source_map_selected_executor_apply_preflight": apply_preflight,
+                "expected_consumer": "rebuild",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_chain_readiness"])
+        self.assertIn("source_map_followthrough_chain_readiness_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_selected_consumer=rebuild", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_completed_stage=source_map_selected_executor_apply_preflight", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_next_stage=selected_executor_result_review", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_next_required_artifact=workspace/source-map-rebuild-generation-result.json", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_selected_executor_result_ready=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_ready_for_selected_executor_review=True", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_review_only=True", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_plan_only=True", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_orchestration_only=True", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_handoff_only=True", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_automatic_followthrough_supported=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_logpoint_installed=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_hook_installed=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_rebuild_executed=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_chain_readiness_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_rebuild_generation_or_metadata_result")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-chain-readiness.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "rebuild")
+        self.assertEqual(result.artifacts[0].metadata["completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertEqual(result.artifacts[0].metadata["next_stage"], "selected_executor_result_review")
+        self.assertEqual(result.artifacts[0].metadata["next_required_artifact"], "workspace/source-map-rebuild-generation-result.json")
+        self.assertTrue(result.artifacts[0].metadata["orchestration_only"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_followthrough_supported"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
+    def test_native_web_runtime_reviews_source_map_followthrough_one_step_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        chain = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-chain-readiness.v1",
+            "status": "ready_for_review",
+            "selected_consumer": "debugger",
+            "completed_stage": "source_map_selected_executor_apply_preflight",
+            "next_stage": "selected_executor_result_review",
+            "next_required_artifact": "workspace/source-map-debugger-execution-result.json",
+            "next_action": "review_source_map_debugger_executor_application",
+            "selected_executor_result_ready": False,
+            "automatic_followthrough_supported": False,
+            "automatic_execution_supported": False,
+            "blockers": [],
+            "side_effect_policy": {
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-one-step-plan",
+            {
+                "source_map_followthrough_one_step_plan": True,
+                "source_map_followthrough_chain_readiness": chain,
+                "expected_consumer": "debugger",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_one_step_plan"])
+        self.assertIn("source_map_followthrough_one_step_plan_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_source_chain_completed_stage=source_map_selected_executor_apply_preflight", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_source_chain_next_stage=selected_executor_result_review", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_source_chain_next_action=review_source_map_debugger_executor_application", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_planned_step_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_review_only=True", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_plan_only=True", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_will_invoke_next_action=False", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_hook_installed=False", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_rebuild_executed=False", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_one_step_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_followthrough_one_step_plan_before_next_action")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-one-step-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["source_chain_completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertEqual(result.artifacts[0].metadata["source_chain_next_stage"], "selected_executor_result_review")
+        self.assertEqual(result.artifacts[0].metadata["source_chain_next_action"], "review_source_map_debugger_executor_application")
+        self.assertTrue(result.artifacts[0].metadata["one_step_plan_only"])
+        self.assertFalse(result.artifacts[0].metadata["will_invoke_next_action"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+
+    def test_native_web_runtime_reviews_source_map_followthrough_dispatch_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        one_step_plan = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-one-step-plan.v1",
+            "status": "ready_for_review",
+            "selected_consumer": "debugger",
+            "source_chain_next_stage": "selected_executor_result_review",
+            "source_chain_next_action": "review_source_map_debugger_executor_application",
+            "source_chain_next_required_artifact": "workspace/source-map-debugger-execution-result.json",
+            "planned_step_ready_for_review": True,
+            "will_invoke_next_action": False,
+            "automatic_execution_supported": False,
+            "planned_step": {
+                "step_id": "source-map-followthrough-one-step:debugger",
+                "step_schema_version": "reverse-deepagent.source-map-followthrough-one-step.v1",
+                "selected_consumer": "debugger",
+                "next_stage": "selected_executor_result_review",
+                "next_action": "review_source_map_debugger_executor_application",
+                "next_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                "requires_explicit_review": True,
+                "requires_separate_executor_call": True,
+                "execute_automatically": False,
+                "executor_invoked": False,
+                "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+            },
+            "blockers": [],
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-dispatch-preflight",
+            {
+                "source_map_followthrough_dispatch_preflight": True,
+                "source_map_followthrough_one_step_plan": one_step_plan,
+                "expected_consumer": "debugger",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_dispatch_preflight"])
+        self.assertIn("source_map_followthrough_dispatch_preflight_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_planned_next_action=review_source_map_debugger_executor_application", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_dispatch_surface=source-map-debugger-execution-result", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_dispatcher_input_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_will_invoke_dispatch_target=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_preflight_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_followthrough_dispatch_preflight_before_explicit_executor_call")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-dispatch-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(result.artifacts[0].metadata["dispatcher_input_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["will_invoke_dispatch_target"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+
+    def test_native_web_runtime_reviews_source_map_followthrough_dispatch_approval_plan_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        preflight = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-preflight.v1",
+            "status": "ready_for_review",
+            "selected_consumer": "debugger",
+            "planned_next_action": "review_source_map_debugger_executor_application",
+            "planned_required_artifact": "workspace/source-map-debugger-execution-result.json",
+            "dispatch_target": {"dispatch_surface": "source-map-debugger-execution-result"},
+            "dispatcher_input_ready_for_review": True,
+            "dispatcher_input": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-input.v1",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "selected_consumer": "debugger",
+                "next_action": "review_source_map_debugger_executor_application",
+                "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+                "review_gate": "explicit_source_map_debugger_executor_review",
+                "requires_explicit_review": True,
+                "requires_separate_executor_call": True,
+                "dispatcher_invoked": False,
+                "executor_invoked": False,
+                "approval_recorded": False,
+                "apply_preflight_invoked": False,
+                "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+            },
+            "blockers": [],
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-dispatch-approval-plan",
+            {
+                "source_map_followthrough_dispatch_approval_plan": True,
+                "source_map_followthrough_dispatch_preflight": preflight,
+                "expected_consumer": "debugger",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_dispatch_approval_plan"])
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_dispatch_surface=source-map-debugger-execution-result", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_plan_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_ready_to_dispatch_now=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_approval_recorded=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_transaction_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_will_invoke_dispatch_target=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_followthrough_dispatch_approval_plan_before_recording_approval")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-dispatch-approval-plan.json")
+        self.assertEqual(result.artifacts[0].metadata["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(result.artifacts[0].metadata["approval_plan_ready_for_review"])
+        self.assertTrue(result.artifacts[0].metadata["transaction_plan_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["ready_to_dispatch_now"])
+        self.assertFalse(result.artifacts[0].metadata["will_invoke_dispatch_target"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+
+    def test_native_web_runtime_reviews_source_map_followthrough_dispatch_transaction_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        dispatch_preflight = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-preflight.v1",
+            "status": "ready_for_review",
+            "selected_consumer": "debugger",
+            "planned_next_action": "review_source_map_debugger_executor_application",
+            "planned_required_artifact": "workspace/source-map-debugger-execution-result.json",
+            "dispatch_target": {"dispatch_surface": "source-map-debugger-execution-result"},
+            "dispatcher_input_ready_for_review": True,
+            "dispatcher_input": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-input.v1",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "selected_consumer": "debugger",
+                "next_action": "review_source_map_debugger_executor_application",
+                "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+                "review_gate": "explicit_source_map_debugger_executor_review",
+                "requires_explicit_review": True,
+                "requires_separate_executor_call": True,
+                "dispatcher_invoked": False,
+                "executor_invoked": False,
+                "approval_recorded": False,
+                "apply_preflight_invoked": False,
+                "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+            },
+            "blockers": [],
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "calls_mcp": False, "mobile_runtime_used": False},
+        }
+        approval_descriptor = SourceMapFollowthroughDispatchApprovalPlanManager().review(
+            SourceMapFollowthroughDispatchApprovalPlanSpec.from_context(
+                {
+                    "source_map_followthrough_dispatch_approval_plan": True,
+                    "source_map_followthrough_dispatch_preflight": dispatch_preflight,
+                    "expected_consumer": "debugger",
+                    "expected_dispatch_surface": "source-map-debugger-execution-result",
+                    "expected_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                    "reviewer": "analyst",
+                }
+            )
+        ).descriptor
+        plan_digest = hashlib.sha256(json.dumps(approval_descriptor, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+        approval_record = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-approval-record.v1",
+            "status": "written",
+            "approval_recorded": True,
+            "approved_for_dispatch": True,
+            "decision": "approved",
+            "approval_record_id": "source-map-followthrough-dispatch-approval-record:native",
+            "approval_plan_id": approval_descriptor["approval_plan"]["approval_plan_id"],
+            "transaction_plan_id": approval_descriptor["transaction_plan"]["transaction_plan_id"],
+            "selected_consumer": "debugger",
+            "dispatch_surface": "source-map-debugger-execution-result",
+            "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "approval_plan_digest_sha256": plan_digest,
+            "dispatch_input_gates": {
+                "approval_recorded": True,
+                "approved_for_dispatch": True,
+                "ready_to_dispatch_now": False,
+                "transaction_started": False,
+                "journal_written": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "requires_transaction_preflight_followup": True,
+                "requires_transaction_journal_before_dispatch": True,
+            },
+            "side_effect_policy": {
+                "approval_record_writer": True,
+                "dry_run_is_read_only": True,
+                "files_mutated": True,
+                "artifacts_written": True,
+                "writes_approval_record": True,
+                "approval_recorded": True,
+                "ready_to_dispatch_now": False,
+                "transaction_started": False,
+                "journal_written": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-dispatch-transaction-preflight",
+            {
+                "source_map_followthrough_dispatch_transaction_preflight": True,
+                "source_map_followthrough_dispatch_approval_plan": approval_descriptor,
+                "source_map_followthrough_dispatch_approval_record": approval_record,
+                "expected_consumer": "debugger",
+                "expected_dispatch_surface": "source-map-debugger-execution-result",
+                "expected_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                "expected_plan_digest_sha256": plan_digest,
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_dispatch_transaction_preflight"])
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_dispatch_surface=source-map-debugger-execution-result", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_approval_record_verified=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_transaction_plan_verified=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_journal_writer_gate_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_ready_to_write_now=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_ready_to_dispatch_now=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_transaction_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_journal_written=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_will_write_transaction_journal=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_will_invoke_dispatch_target=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_followthrough_dispatch_transaction_journal_writer")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-dispatch-transaction-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(result.artifacts[0].metadata["transaction_preflight_ready_for_review"])
+        self.assertTrue(result.artifacts[0].metadata["journal_writer_gate_ready_for_review"])
+        self.assertFalse(result.artifacts[0].metadata["will_write_transaction_journal"])
+        self.assertFalse(result.artifacts[0].metadata["will_invoke_dispatch_target"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+
+    def test_native_web_runtime_reviews_source_map_followthrough_dispatch_bounded_executor_gate_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        journal = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-transaction-journal.v1",
+            "status": "written",
+            "journal_written": True,
+            "transaction_started": True,
+            "journal_id": "source-map-followthrough-dispatch-transaction-journal:native",
+            "transaction_preflight_id": "source-map-followthrough-dispatch-transaction-preflight:native",
+            "approval_record_id": "source-map-followthrough-dispatch-approval-record:native",
+            "approval_plan_id": "source-map-followthrough-dispatch-approval:native",
+            "transaction_plan_id": "source-map-followthrough-dispatch-transaction:native",
+            "selected_consumer": "debugger",
+            "dispatch_surface": "source-map-debugger-execution-result",
+            "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "journal_summary": {
+                "entry_count": 2,
+                "planned_entry_count": 2,
+                "transaction_started": True,
+                "journal_written": True,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "requires_bounded_dispatch_gate_followup": True,
+            },
+            "dispatch_input_gates": {
+                "ready_to_dispatch_now": False,
+                "approval_record_verified": True,
+                "transaction_plan_verified": True,
+                "transaction_started": True,
+                "journal_written": True,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "debugger_executed": False,
+                "source_logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "requires_bounded_dispatch_gate": True,
+                "requires_explicit_dispatch_review": True,
+            },
+            "blockers": [],
+            "side_effect_policy": {
+                "transaction_journal_writer": True,
+                "files_mutated": True,
+                "artifacts_written": True,
+                "writes_transaction_journal": True,
+                "transaction_started": True,
+                "journal_written": True,
+                "ready_to_dispatch_now": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "debugger_execution_performed": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "fetch_source_map": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        journal_digest = hashlib.sha256(json.dumps(journal, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-dispatch-bounded-executor-gate",
+            {
+                "source_map_followthrough_dispatch_bounded_executor_gate": True,
+                "source_map_followthrough_dispatch_transaction_journal": journal,
+                "expected_journal_id": journal["journal_id"],
+                "expected_consumer": "debugger",
+                "expected_dispatch_surface": "source-map-debugger-execution-result",
+                "expected_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                "expected_journal_digest_sha256": journal_digest,
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_dispatch_bounded_executor_gate"])
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_dispatch_surface=source-map-debugger-execution-result", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_transaction_journal_verified=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_ready_for_dispatcher_handoff_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_ready_to_dispatch_now=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_dispatch_target_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_executor_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_future_dispatcher_implemented=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_calls_mcp=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_followthrough_dispatcher_handoff")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-dispatch-bounded-executor-gate.json")
+        self.assertEqual(result.artifacts[0].metadata["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(result.artifacts[0].metadata["bounded_executor_gate_ready_for_review"])
+        self.assertTrue(result.artifacts[0].metadata["ready_for_dispatcher_handoff_review"])
+        self.assertFalse(result.artifacts[0].metadata["future_dispatcher_contract"]["implemented"])
+        self.assertFalse(result.artifacts[0].metadata["will_invoke_dispatch_target"])
+        self.assertFalse(result.artifacts[0].metadata["will_invoke_next_action"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+
+    def test_native_web_runtime_reviews_source_map_followthrough_dispatcher_handoff_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        gate = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-bounded-executor-gate.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "read_only": True,
+            "bounded_executor_gate_only": True,
+            "handoff_only": True,
+            "journal_id": "journal-1",
+            "transaction_preflight_id": "tx-preflight-1",
+            "approval_record_id": "approval-record-1",
+            "approval_plan_id": "approval-plan-1",
+            "transaction_plan_id": "transaction-plan-1",
+            "selected_consumer": "debugger",
+            "dispatch_surface": "source-map-debugger-execution-result",
+            "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "transaction_journal_verified": True,
+            "bounded_executor_gate_ready_for_review": True,
+            "ready_for_dispatcher_handoff_review": True,
+            "ready_to_dispatch_now": False,
+            "ready_to_execute_now": False,
+            "dispatch_target_invoked": False,
+            "executor_invoked": False,
+            "bounded_dispatch_input": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-bounded-input.v1",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+                "journal_id": "journal-1",
+                "transaction_preflight_id": "tx-preflight-1",
+                "approval_record_id": "approval-record-1",
+                "transaction_plan_id": "transaction-plan-1",
+                "ready_for_dispatcher_handoff_review": True,
+                "ready_to_dispatch_now": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+            },
+            "future_dispatcher_contract": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatcher-contract.v1",
+                "dispatcher_name": "dispatch_source_map_followthrough_next_action",
+                "implemented": False,
+                "result_artifact": "workspace/source-map-followthrough-dispatcher-handoff.json",
+                "requires_explicit_review": True,
+            },
+            "blockers": [],
+            "side_effect_policy": {
+                "read_only": True,
+                "review_only": True,
+                "ready_to_dispatch_now": False,
+                "ready_to_execute_now": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "apply_preflight_invoked": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        gate_digest = hashlib.sha256(json.dumps(gate, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-dispatcher-handoff",
+            {
+                "source_map_followthrough_dispatcher_handoff": True,
+                "source_map_followthrough_dispatch_bounded_executor_gate": gate,
+                "expected_gate_digest_sha256": gate_digest,
+                "expected_journal_id": "journal-1",
+                "expected_consumer": "debugger",
+                "expected_dispatch_surface": "source-map-debugger-execution-result",
+                "expected_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_dispatcher_handoff"])
+        self.assertIn("source_map_followthrough_dispatcher_handoff_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_bounded_gate_verified=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_ready_for_explicit_dispatch_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_ready_to_dispatch_now=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_dispatcher_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_dispatch_target_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_executor_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_handoff_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_followthrough_dispatcher_apply_preflight")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-dispatcher-handoff.json")
+        self.assertEqual(result.artifacts[0].metadata["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(result.artifacts[0].metadata["dispatcher_handoff_ready_for_review"])
+        self.assertTrue(result.artifacts[0].metadata["ready_for_explicit_dispatch_review"])
+        self.assertFalse(result.artifacts[0].metadata["dispatcher_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+
+    def test_native_web_runtime_reviews_source_map_followthrough_dispatcher_apply_preflight_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        handoff = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatcher-handoff.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "read_only": True,
+            "dispatcher_handoff_only": True,
+            "handoff_only": True,
+            "journal_id": "journal-1",
+            "transaction_preflight_id": "tx-preflight-1",
+            "approval_record_id": "approval-record-1",
+            "approval_plan_id": "approval-plan-1",
+            "transaction_plan_id": "transaction-plan-1",
+            "selected_consumer": "debugger",
+            "dispatch_surface": "source-map-debugger-execution-result",
+            "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "bounded_gate_verified": True,
+            "dispatcher_handoff_ready_for_review": True,
+            "ready_for_explicit_dispatch_review": True,
+            "ready_for_selected_executor_review": True,
+            "ready_to_dispatch_now": False,
+            "ready_to_execute_now": False,
+            "dispatcher_invoked": False,
+            "dispatch_target_invoked": False,
+            "executor_invoked": False,
+            "selected_executor_apply_preflight_invoked": False,
+            "dispatcher_handoff": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatcher-handoff-input.v1",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+                "journal_id": "journal-1",
+                "transaction_preflight_id": "tx-preflight-1",
+                "approval_record_id": "approval-record-1",
+                "transaction_plan_id": "transaction-plan-1",
+                "dispatcher_name": "dispatch_source_map_followthrough_next_action",
+                "ready_for_explicit_dispatch_review": True,
+                "ready_to_dispatch_now": False,
+                "ready_to_execute_now": False,
+                "requires_selected_executor_apply_preflight": True,
+                "dispatcher_invoked": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+            },
+            "selected_executor_review_contract": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-selected-executor-review-contract.v1",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+                "ready_for_review": True,
+                "selected_executor_apply_preflight_artifact": "workspace/source-map-selected-executor-apply-preflight.json",
+                "must_review_apply_preflight_before_executor": True,
+                "must_not_invoke_executor_from_handoff": True,
+            },
+            "blockers": [],
+            "side_effect_policy": {
+                "read_only": True,
+                "review_only": True,
+                "ready_to_dispatch_now": False,
+                "ready_to_execute_now": False,
+                "dispatcher_invoked": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "selected_executor_invoked": False,
+                "apply_preflight_invoked": False,
+                "selected_executor_apply_preflight_invoked": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        handoff_digest = hashlib.sha256(json.dumps(handoff, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-dispatcher-apply-preflight",
+            {
+                "source_map_followthrough_dispatcher_apply_preflight": True,
+                "source_map_followthrough_dispatcher_handoff": handoff,
+                "expected_handoff_digest_sha256": handoff_digest,
+                "expected_journal_id": "journal-1",
+                "expected_consumer": "debugger",
+                "expected_dispatch_surface": "source-map-debugger-execution-result",
+                "expected_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_followthrough_dispatcher_apply_preflight"])
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_status=ready_for_review", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_handoff_verified=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_ready_for_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_ready_for_dispatcher_mvp_review=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_ready_to_dispatch_now=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_dispatcher_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_dispatch_target_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_executor_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_selected_executor_apply_preflight_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_followthrough_dispatcher_mvp")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-dispatcher-apply-preflight.json")
+        self.assertEqual(result.artifacts[0].metadata["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(result.artifacts[0].metadata["dispatcher_apply_preflight_ready_for_review"])
+        self.assertTrue(result.artifacts[0].metadata["ready_for_explicit_dispatcher_mvp_review"])
+        self.assertFalse(result.artifacts[0].metadata["dispatcher_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+
+    def test_native_web_runtime_records_source_map_followthrough_dispatcher_result_without_starting_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        apply_preflight = {
+            "schema_version": "reverse-deepagent.source-map-followthrough-dispatcher-apply-preflight.v1",
+            "status": "ready_for_review",
+            "journal_id": "journal-1",
+            "transaction_preflight_id": "tx-preflight-1",
+            "approval_record_id": "dispatch-approval-1",
+            "approval_plan_id": "dispatch-approval-plan-1",
+            "transaction_plan_id": "tx-plan-1",
+            "selected_consumer": "debugger",
+            "dispatch_surface": "source-map-debugger-execution-result",
+            "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+            "dispatcher_apply_preflight_ready_for_review": True,
+            "ready_for_explicit_dispatcher_mvp_review": True,
+            "ready_to_dispatch_now": False,
+            "ready_to_execute_now": False,
+            "dispatcher_invoked": False,
+            "dispatch_target_invoked": False,
+            "executor_invoked": False,
+            "selected_executor_invoked": False,
+            "selected_executor_apply_preflight_invoked": False,
+            "dispatcher_apply_preflight": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatcher-apply-preflight-input.v1",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+                "journal_id": "journal-1",
+                "transaction_preflight_id": "tx-preflight-1",
+                "approval_record_id": "dispatch-approval-1",
+                "transaction_plan_id": "tx-plan-1",
+                "dispatcher_name": "dispatch_source_map_followthrough_next_action",
+                "ready_for_explicit_dispatcher_mvp_review": True,
+                "ready_to_dispatch_now": False,
+                "ready_to_execute_now": False,
+                "requires_explicit_dispatcher_mvp_review": True,
+                "requires_selected_executor_apply_preflight": True,
+                "selected_executor_apply_preflight_artifact": "workspace/source-map-selected-executor-apply-preflight.json",
+                "dispatcher_invoked": False,
+                "dispatch_target_invoked": False,
+                "executor_invoked": False,
+                "selected_executor_apply_preflight_invoked": False,
+            },
+            "future_dispatcher_mvp_contract": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatcher-mvp-contract.v1",
+                "dispatcher_name": "dispatch_source_map_followthrough_next_action",
+                "implemented": False,
+                "contract_ready_for_review": True,
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "required_result_artifact": "workspace/source-map-debugger-execution-result.json",
+                "input_artifact": "workspace/source-map-followthrough-dispatcher-apply-preflight.json",
+                "result_artifact": "workspace/source-map-followthrough-dispatcher-result.json",
+                "requires_explicit_review": True,
+                "requires_selected_executor_apply_preflight": True,
+                "must_not_skip_selected_executor_apply_preflight": True,
+            },
+            "blockers": [],
+            "side_effect_policy": {
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+                "logpoint_installed": False,
+                "hook_installed": False,
+                "rebuild_executed": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+        apply_preflight_digest = hashlib.sha256(json.dumps(apply_preflight, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+        result = runtime.apply_minimal_protection(
+            "source-map-followthrough-dispatcher-result",
+            {
+                "source_map_followthrough_dispatcher_result": True,
+                "source_map_followthrough_dispatcher_apply_preflight": apply_preflight,
+                "mode": "apply",
+                "write_result": True,
+                "review_approved": True,
+                "approve_dispatcher_mvp": True,
+                "reviewer": "analyst",
+                "expected_apply_preflight_digest_sha256": apply_preflight_digest,
+                "expected_journal_id": "journal-1",
+                "expected_consumer": "debugger",
+                "expected_dispatch_surface": "source-map-debugger-execution-result",
+                "expected_required_artifact": "workspace/source-map-debugger-execution-result.json",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["record_source_map_followthrough_dispatcher_result"])
+        self.assertIn("source_map_followthrough_dispatcher_result_status=dispatched", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_apply_preflight_verified=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_decision_recorded=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_dispatch_target_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_selected_executor_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_selected_executor_apply_preflight_invoked=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_requires_selected_executor_apply_preflight=True", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_browser_started=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_followthrough_dispatcher_result_calls_mcp=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_selected_executor_apply_preflight")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-followthrough-dispatcher-result.json")
+        self.assertTrue(result.artifacts[0].metadata["dispatcher_decision_recorded"])
+        self.assertFalse(result.artifacts[0].metadata["dispatch_target_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["selected_executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["selected_executor_apply_preflight_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
 
     def test_native_web_runtime_reviews_source_map_readiness_without_starting_browser(self) -> None:
         provider = FakeProvider()
@@ -6437,6 +9355,114 @@ class NativeWebRuntimeTests(unittest.TestCase):
         }
 
     @staticmethod
+    def _ready_source_map_debugger_apply_preflight() -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "preflight_only": True,
+            "apply_preflight_only": True,
+            "handoff_only": True,
+            "selected_action_id": "review-debugger-location-use",
+            "selected_consumer": "debugger",
+            "selected_followthrough_review_surface": "review_debugger_location_executor_input",
+            "selected_review_gate": "explicit_debugger_location_review",
+            "approval_record_id": "source-map-selected-executor-approval-record:debugger",
+            "approval_record_verified": True,
+            "executor_input_ready": True,
+            "ready_for_selected_executor_review": True,
+            "ready_to_apply_now": False,
+            "surface_executor_invoked": False,
+            "debugger_executed": False,
+            "executor_input": {
+                "location": {
+                    "source": "src/sign.ts",
+                    "line_number": 4,
+                    "column_number": 0,
+                    "mapping_strategy": "source_map_generated_exact",
+                },
+                "cdp_command": None,
+                "requires_review_before_debugger_use": True,
+            },
+            "future_executor_contract": {
+                "implemented": False,
+                "future_action": "execute_reviewed_source_map_debugger_location_action",
+                "requires_explicit_executor_approval": True,
+                "requires_apply_mode": True,
+                "requires_write_result": True,
+                "requires_reviewed_apply_preflight": True,
+            },
+            "side_effect_policy": {
+                "read_only": True,
+                "review_only": True,
+                "preflight_only": True,
+                "apply_preflight_only": True,
+                "handoff_only": True,
+                "browser_started": False,
+                "runtime_evaluated": False,
+                "cdp_command_sent": False,
+                "debugger_execution_performed": False,
+                "surface_executor_invoked": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+    @staticmethod
+    def _ready_source_map_hook_apply_preflight() -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
+            "status": "ready_for_review",
+            "review_only": True,
+            "preflight_only": True,
+            "apply_preflight_only": True,
+            "handoff_only": True,
+            "selected_action_id": "review-hook-symbol-scope-use",
+            "selected_consumer": "hook",
+            "selected_followthrough_review_surface": "review_hook_symbol_scope_executor_input",
+            "selected_review_gate": "explicit_hook_symbol_scope_review",
+            "approval_record_id": "source-map-selected-executor-approval-record:hook",
+            "approval_record_verified": True,
+            "executor_input_ready": True,
+            "ready_for_selected_executor_review": True,
+            "ready_to_apply_now": False,
+            "surface_executor_invoked": False,
+            "hook_installed": False,
+            "executor_input": {
+                "hook_symbol_scope": {
+                    "bundler_kind": "webpack",
+                    "scope_candidate_count": 1,
+                    "symbol": "buildSign",
+                    "source": "src/sign.ts",
+                },
+                "hook_candidate_review_required": True,
+                "hook_install_supported_now": False,
+            },
+            "future_executor_contract": {
+                "implemented": False,
+                "future_action": "install_reviewed_source_map_hook_symbol_scope",
+                "requires_explicit_executor_approval": True,
+                "requires_apply_mode": True,
+                "requires_write_result": True,
+                "requires_reviewed_apply_preflight": True,
+            },
+            "side_effect_policy": {
+                "read_only": True,
+                "review_only": True,
+                "preflight_only": True,
+                "apply_preflight_only": True,
+                "handoff_only": True,
+                "browser_started": False,
+                "runtime_evaluated": False,
+                "cdp_command_sent": False,
+                "hook_installed": False,
+                "surface_executor_invoked": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            },
+        }
+
+    @staticmethod
     def _ready_source_map_rebuild_apply_preflight() -> dict[str, Any]:
         return {
             "schema_version": "reverse-deepagent.source-map-selected-executor-apply-preflight.v1",
@@ -6490,6 +9516,693 @@ class NativeWebRuntimeTests(unittest.TestCase):
                 "mobile_runtime_used": False,
             },
         }
+
+    @staticmethod
+    def _successful_source_map_rebuild_metadata_result() -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-rebuild-result.v1",
+            "status": "success",
+            "selected_consumer": "rebuild",
+            "selected_review_gate": "explicit_rebuild_source_metadata_review",
+            "source_content_digest": "abc123",
+            "source_content_available": True,
+            "metadata_only": True,
+            "rebuild_metadata_applied": True,
+            "rebuild_bundle_generated": False,
+            "rebuild_executed": False,
+            "raw_source_content_exported": False,
+            "preview_exported": False,
+            "raw_source_content_included": False,
+            "source_map_fetched": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+    @staticmethod
+    def _source_map_rebuild_generation_inputs() -> tuple[dict[str, Any], dict[str, Any]]:
+        task_card = TaskCard(
+            target_url_or_file="https://example.test/",
+            target_param_or_api="sign",
+            goal="生成纯算 replay",
+            boundaries="source map rebuild generation test",
+        )
+        source_context = """function buildSign(keyword, timestamp) {
+  return CryptoJS.MD5(`${keyword}:${timestamp}`).toString();
+}"""
+        sample_sign = hashlib.md5("sign:1700000000000".encode("utf-8")).hexdigest()
+        candidate = {
+            "candidate_id": "source-map:buildSign",
+            "function_name": "buildSign",
+            "file_url": "https://example.test/assets/app.js",
+            "script_id": "script-1",
+            "line_number": 1,
+            "source_context": source_context,
+            "related_requests": [{"id": 1, "method": "POST", "url": "https://example.test/api/search"}],
+        }
+        validation = {
+            "candidate_id": candidate["candidate_id"],
+            "function_name": "buildSign",
+            "validation_status": "success",
+            "checks": {
+                "source_complete": True,
+                "runtime_located": True,
+                "runtime_invocation_ok": True,
+                "sign_shape_ok": True,
+                "replay_attempted": True,
+                "replay_ok": True,
+            },
+            "sample_input": {"keyword": "sign", "timestamp": 1700000000000},
+            "sample_output": {"sign": sample_sign, "callable_path": "window.buildSign", "invocation_result_type": "string"},
+            "replay_result": {"attempted": True, "ok": True},
+        }
+        final_result = FinalResult(
+            task_card=task_card,
+            mode=ReverseMode.FIND_ENTRY,
+            stage=ReverseStage.REPLAY_DELIVERY,
+            status=ExecutionStatus.SUCCESS,
+            key_findings=KeyFindings(facts=["reviewed source-map rebuild input"]),
+            evidence=[
+                EvidenceItem(
+                    summary="candidate",
+                    kind=EvidenceKind.STATIC,
+                    source="function_candidate_card",
+                    details={"count": 1, "candidates": [candidate]},
+                    confidence=ConfidenceLevel.HIGH,
+                ),
+                EvidenceItem(
+                    summary="validation",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="function_validation_result",
+                    details={"count": 1, "validations": [validation]},
+                    confidence=ConfidenceLevel.HIGH,
+                ),
+                EvidenceItem(
+                    summary="summary",
+                    kind=EvidenceKind.NOTE,
+                    source="function_validation_summary",
+                    details={
+                        "total": 1,
+                        "success_count": 1,
+                        "failed_count": 0,
+                        "replay_ready": True,
+                        "best_candidate_id": candidate["candidate_id"],
+                        "best_function_name": "buildSign",
+                    },
+                    confidence=ConfidenceLevel.HIGH,
+                ),
+            ],
+            artifacts=[],
+            next_action="extract_pure_logic_and_build_replay",
+            confidence=ConfidenceLevel.HIGH,
+        )
+        return task_card.model_dump(mode="json"), final_result.model_dump(mode="json")
+
+    def test_native_web_runtime_applies_reviewed_source_map_function_hook_install(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-hook-application",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_map_hook_install": True,
+                "reviewer": "reviewer-1",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_hook_apply_preflight(),
+                "source_map_hook_install_input": {
+                    "hook_kind": "function",
+                    "function_name": "buildSign",
+                    "function_paths": ["window.buildSign"],
+                    "candidate_id": "source-map-hook:buildSign",
+                    "trigger_expression": "window.buildSign('sign', 1700000000000)",
+                    "cdp_command": None,
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 1)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["install_source_map_function_hook:buildSign"])
+        self.assertIn("source_map_hook_application_status=success", result.verification)
+        self.assertIn("source_map_hook_application_installed_count=1", result.verification)
+        self.assertIn("source_map_hook_application_event_count=2", result.verification)
+        self.assertIn("source_map_hook_application_browser_started=True", result.verification)
+        self.assertIn("source_map_hook_application_runtime_evaluated=True", result.verification)
+        self.assertIn("source_map_hook_application_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_hook_application_hook_installed=True", result.verification)
+        self.assertIn("source_map_hook_application_function_hook_installed=True", result.verification)
+        self.assertIn("source_map_hook_application_module_hook_installed=False", result.verification)
+        self.assertIn("source_map_hook_application_calls_mcp=False", result.verification)
+        self.assertIn("source_map_hook_application_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "inspect_source_map_hook_events")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-hook-install-result.json")
+        self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-hook-install-result.v1")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "hook")
+        self.assertEqual(result.artifacts[0].metadata["selected_review_gate"], "explicit_hook_symbol_scope_review")
+        self.assertEqual(result.artifacts[0].metadata["hook_kind"], "function")
+        self.assertEqual(result.artifacts[0].metadata["function_name"], "buildSign")
+        self.assertTrue(result.artifacts[0].metadata["review_approved"])
+        self.assertTrue(result.artifacts[0].metadata["approve_source_map_hook_install"])
+        self.assertTrue(result.artifacts[0].metadata["browser_started"])
+        self.assertTrue(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertTrue(result.artifacts[0].metadata["hook_installed"])
+        self.assertTrue(result.artifacts[0].metadata["function_hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["module_hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_hook_installation"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+        self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+        self.assertEqual(result.artifacts[1].path, "virtual://workspace/function-hooks.json")
+        self.assertEqual(result.artifacts[2].path, "virtual://workspace/function-hook-timeline.json")
+        self.assertEqual(result.artifacts[2].metadata["event_count"], 2)
+
+    def test_native_web_runtime_refines_source_map_hook_candidates_without_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-hook-candidates",
+            {
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "symbol_request": {"symbol_name": "buildSign", "original_source": "webpack://demo/src/sign.ts"},
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                    "scope_candidates": [
+                        {
+                            "kind": "source-map-name",
+                            "symbol_name": "buildSign",
+                            "original_source": "webpack://demo/src/sign.ts",
+                            "generated_line_number": 4,
+                            "generated_column_number": 0,
+                            "strategy": "source_map_name",
+                        }
+                    ],
+                    "scope_candidate_count": 1,
+                    "hook_readiness": {"source_logpoint_reviewable": True},
+                    "side_effect_policy": {"browser_started": False, "hook_installed": False, "calls_mcp": False},
+                },
+                "function_paths": ["window.buildSign"],
+                "module_candidates": [{"module_id": "731", "export_names": ["buildSign"], "runtime_path": "window.__webpack_require__"}],
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["refine_source_map_hook_candidates"])
+        self.assertIn("source_map_hook_candidates_status=ready_for_review", result.verification)
+        self.assertIn("source_map_hook_candidates_candidate_count=2", result.verification)
+        self.assertIn("source_map_hook_candidates_ready_for_install_review_count=2", result.verification)
+        self.assertIn("source_map_hook_candidates_browser_started=False", result.verification)
+        self.assertIn("source_map_hook_candidates_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_hook_candidates_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_hook_candidates_hook_installed=False", result.verification)
+        self.assertIn("source_map_hook_candidates_automatic_hook_installation=False", result.verification)
+        self.assertIn("source_map_hook_candidates_calls_mcp=False", result.verification)
+        self.assertIn("source_map_hook_candidates_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_hook_candidates_before_selected_hook_install")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-hook-candidates.json")
+        self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-hook-candidates.v1")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 2)
+        self.assertEqual(result.artifacts[0].metadata["ready_for_hook_install_review_count"], 2)
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_reviews_source_map_debugger_candidates_without_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-debugger-candidates",
+            {
+                "script_url": "https://example.test/assets/app.js",
+                "bundler_symbol_scope": {
+                    "status": "ready_for_review",
+                    "script_url": "https://example.test/assets/app.js",
+                    "symbol_request": {"symbol_name": "buildSign", "original_source": "webpack://demo/src/sign.ts"},
+                    "bundler_classification": {"bundler_kind": "webpack"},
+                    "scope_candidates": [
+                        {
+                            "kind": "source-map-name",
+                            "symbol_name": "buildSign",
+                            "original_source": "webpack://demo/src/sign.ts",
+                            "generated_line_number": 4,
+                            "generated_column_number": 0,
+                            "strategy": "source_map_name",
+                        }
+                    ],
+                    "scope_candidate_count": 1,
+                    "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "calls_mcp": False},
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_debugger_candidates"])
+        self.assertIn("source_map_debugger_candidates_status=ready_for_review", result.verification)
+        self.assertIn("source_map_debugger_candidates_candidate_count=1", result.verification)
+        self.assertIn("source_map_debugger_candidates_ready_for_location_review_count=1", result.verification)
+        self.assertIn("source_map_debugger_candidates_browser_started=False", result.verification)
+        self.assertIn("source_map_debugger_candidates_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_debugger_candidates_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_debugger_candidates_debugger_execution_performed=False", result.verification)
+        self.assertIn("source_map_debugger_candidates_breakpoint_installed=False", result.verification)
+        self.assertIn("source_map_debugger_candidates_automatic_debugger_continuation=False", result.verification)
+        self.assertIn("source_map_debugger_candidates_calls_mcp=False", result.verification)
+        self.assertIn("source_map_debugger_candidates_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_source_map_debugger_candidates_before_selected_debugger_apply")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-debugger-candidates.json")
+        self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-debugger-candidates.v1")
+        self.assertEqual(result.artifacts[0].metadata["candidate_count"], 1)
+        self.assertEqual(result.artifacts[0].metadata["ready_for_debugger_location_review_count"], 1)
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["debugger_execution_performed"])
+        self.assertFalse(result.artifacts[0].metadata["breakpoint_installed"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+
+    def test_native_web_runtime_selects_source_map_hook_candidate_without_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        candidates = {
+            "schema_version": "reverse-deepagent.source-map-hook-candidates.v1",
+            "status": "ready_for_review",
+            "candidate_count": 1,
+            "ready_for_hook_install_review_count": 1,
+            "review_only": True,
+            "plan_only": True,
+            "candidates": [
+                {
+                    "candidate_id": "source-map-hook-function:buildSign:4:0:0",
+                    "candidate_kind": "source-map-function-symbol",
+                    "hook_kind": "function",
+                    "status": "ready_for_review",
+                    "ready_for_hook_install_review": True,
+                    "install_automatically": False,
+                    "symbol_name": "buildSign",
+                    "original_source": "webpack://demo/src/sign.ts",
+                    "suggested_hook_install_input": {
+                        "hook_kind": "function",
+                        "function_name": "buildSign",
+                        "function_paths": ["window.buildSign"],
+                        "candidate_id": "source-map-hook-function:buildSign:4:0:0",
+                        "cdp_command": None,
+                        "install_supported_now": False,
+                        "requires_explicit_review": True,
+                    },
+                }
+            ],
+            "side_effect_policy": {"browser_started": False, "runtime_evaluated": False, "hook_installed": False, "automatic_hook_installation": False},
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-hook-candidate-selection",
+            {
+                "source_map_hook_candidates": candidates,
+                "selected_candidate_id": "source-map-hook-function:buildSign:4:0:0",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["select_source_map_hook_candidate"])
+        self.assertIn("source_map_hook_candidate_selection_status=ready_for_review", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_candidate_count=1", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_selected_candidate_id=source-map-hook-function:buildSign:4:0:0", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_ready_for_input_review=True", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_browser_started=False", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_hook_installed=False", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_automatic_hook_installation=False", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_calls_mcp=False", result.verification)
+        self.assertIn("source_map_hook_candidate_selection_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "run_source_map_selected_executor_input_review_for_selected_hook_candidate")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-hook-candidate-selection.json")
+        self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-hook-candidate-selection.v1")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_selected_executor_input_review"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_hook_installation"])
+
+    def test_native_web_runtime_reviews_selected_source_map_hook_candidate_input_aliases_without_browser(self) -> None:
+        candidates = {
+            "schema_version": "reverse-deepagent.source-map-hook-candidates.v1",
+            "status": "ready_for_review",
+            "candidate_count": 1,
+            "ready_for_hook_install_review_count": 1,
+            "review_only": True,
+            "plan_only": True,
+            "candidates": [
+                {
+                    "candidate_id": "source-map-hook-function:buildSign:4:0:0",
+                    "candidate_kind": "source-map-function-symbol",
+                    "hook_kind": "function",
+                    "status": "ready_for_review",
+                    "ready_for_hook_install_review": True,
+                    "install_automatically": False,
+                    "symbol_name": "buildSign",
+                    "suggested_hook_install_input": {
+                        "hook_kind": "function",
+                        "function_name": "buildSign",
+                        "function_paths": ["window.buildSign"],
+                        "candidate_id": "source-map-hook-function:buildSign:4:0:0",
+                        "cdp_command": None,
+                        "install_supported_now": False,
+                        "requires_explicit_review": True,
+                    },
+                }
+            ],
+            "side_effect_policy": {"browser_started": False, "runtime_evaluated": False, "hook_installed": False, "automatic_hook_installation": False},
+        }
+        candidate_selection = SourceMapHookCandidateSelectionManager().review(
+            SourceMapHookCandidateSelectionSpec.from_context(
+                {
+                    "source_map_hook_candidate_selection": True,
+                    "source_map_hook_candidates": candidates,
+                    "selected_candidate_id": "source-map-hook-function:buildSign:4:0:0",
+                    "reviewer": "analyst",
+                }
+            )
+        ).descriptor
+
+        for protection_name in (
+            "source-map-hook-candidate-selected-input-review",
+            "source-map-hook-candidate-executor-input-review",
+            "source-map-hook-candidate-selected-executor-input-review",
+            "review-source-map-hook-candidate-selected-input",
+        ):
+            provider = FakeProvider()
+            runtime = NativeWebRuntime(browser_provider=provider)
+            result = runtime.apply_minimal_protection(
+                protection_name,
+                {"source_map_hook_candidate_selection": candidate_selection},
+            )
+
+            self.assertEqual(provider.started, 0)
+            self.assertEqual(result.status.value, "success")
+            self.assertEqual(result.applied_actions, ["review_source_map_selected_executor_input"])
+            self.assertIn("source_map_selected_executor_input_review_status=ready_for_review", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_selected_consumer=hook", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_selected_surface=review_hook_symbol_scope_executor_input", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_source_hook_candidate_selection_id=source-map-hook-function:buildSign:4:0:0", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_source_hook_candidate_selection_ready=True", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_package_ready=True", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_ready_for_executor_review=True", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_gate=explicit_hook_symbol_scope_review", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_browser_started=False", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_cdp_command_sent=False", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_runtime_evaluated=False", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_calls_mcp=False", result.verification)
+            self.assertIn("source_map_selected_executor_input_review_mobile_runtime_used=False", result.verification)
+            self.assertEqual(result.next_action, "review_hook_symbol_scope_before_runtime_hook")
+            self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-selected-executor-input-review.json")
+            self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "hook")
+            self.assertEqual(result.artifacts[0].metadata["source_hook_candidate_selection_id"], "source-map-hook-function:buildSign:4:0:0")
+            self.assertTrue(result.artifacts[0].metadata["source_hook_candidate_selection_ready"])
+            self.assertEqual(result.artifacts[0].metadata["review_gate"], "explicit_hook_symbol_scope_review")
+            self.assertTrue(result.artifacts[0].metadata["ready_for_executor_review"])
+            self.assertFalse(result.artifacts[0].metadata["browser_started"])
+            self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+            self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+
+    def test_native_web_runtime_selects_source_map_debugger_candidate_without_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        candidates = {
+            "schema_version": "reverse-deepagent.source-map-debugger-candidates.v1",
+            "status": "ready_for_review",
+            "candidate_count": 1,
+            "ready_for_debugger_location_review_count": 1,
+            "review_only": True,
+            "plan_only": True,
+            "candidates": [
+                {
+                    "candidate_id": "source-map-debugger:buildSign",
+                    "candidate_kind": "source-map-symbol-generated-location",
+                    "status": "ready_for_review",
+                    "ready_for_debugger_location_review": True,
+                    "apply_automatically": False,
+                    "suggested_debugger_location_input": {
+                        "url_pattern": "https://example.test/assets/app.js",
+                        "line_number": 4,
+                        "column_number": 0,
+                        "source": "webpack://demo/src/sign.ts",
+                        "mapping_strategy": "source_map_name",
+                        "candidate_id": "source-map-debugger:buildSign",
+                        "cdp_command": None,
+                        "requires_explicit_review": True,
+                    },
+                }
+            ],
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "debugger_execution_performed": False},
+        }
+        result = runtime.apply_minimal_protection(
+            "source-map-debugger-candidate-selection",
+            {
+                "source_map_debugger_candidates": candidates,
+                "selected_candidate_id": "source-map-debugger:buildSign",
+                "reviewer": "analyst",
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["select_source_map_debugger_candidate"])
+        self.assertIn("source_map_debugger_candidate_selection_status=ready_for_review", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_candidate_count=1", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_selected_candidate_id=source-map-debugger:buildSign", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_ready_for_input_review=True", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_browser_started=False", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_debugger_execution_performed=False", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_breakpoint_installed=False", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_automatic_debugger_continuation=False", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_calls_mcp=False", result.verification)
+        self.assertIn("source_map_debugger_candidate_selection_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "run_source_map_selected_executor_input_review_for_selected_debugger_candidate")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-debugger-candidate-selection.json")
+        self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-debugger-candidate-selection.v1")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_selected_executor_input_review"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["debugger_execution_performed"])
+        self.assertFalse(result.artifacts[0].metadata["breakpoint_installed"])
+
+    def test_native_web_runtime_reviews_selected_source_map_debugger_candidate_input_without_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        candidates = {
+            "schema_version": "reverse-deepagent.source-map-debugger-candidates.v1",
+            "status": "ready_for_review",
+            "candidate_count": 1,
+            "ready_for_debugger_location_review_count": 1,
+            "review_only": True,
+            "plan_only": True,
+            "candidates": [
+                {
+                    "candidate_id": "source-map-debugger:buildSign",
+                    "candidate_kind": "source-map-symbol-generated-location",
+                    "status": "ready_for_review",
+                    "ready_for_debugger_location_review": True,
+                    "apply_automatically": False,
+                    "suggested_debugger_location_input": {
+                        "url_pattern": "https://example.test/assets/app.js",
+                        "line_number": 4,
+                        "column_number": 0,
+                        "source": "webpack://demo/src/sign.ts",
+                        "mapping_strategy": "source_map_name",
+                        "candidate_id": "source-map-debugger:buildSign",
+                        "cdp_command": None,
+                        "requires_explicit_review": True,
+                    },
+                }
+            ],
+            "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "debugger_execution_performed": False},
+        }
+        selection_result = runtime.apply_minimal_protection(
+            "source-map-debugger-candidate-selection",
+            {
+                "source_map_debugger_candidates": candidates,
+                "selected_candidate_id": "source-map-debugger:buildSign",
+                "reviewer": "analyst",
+            },
+        )
+        candidate_selection = SourceMapDebuggerCandidateSelectionManager().review(
+            SourceMapDebuggerCandidateSelectionSpec.from_context(
+                {
+                    "source_map_debugger_candidate_selection": True,
+                    "source_map_debugger_candidates": candidates,
+                    "selected_candidate_id": "source-map-debugger:buildSign",
+                    "reviewer": "analyst",
+                }
+            )
+        ).descriptor
+
+        result = runtime.apply_minimal_protection(
+            "source-map-debugger-candidate-selected-input-review",
+            {"source_map_debugger_candidate_selection": candidate_selection},
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(selection_result.status.value, "success")
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_selected_executor_input"])
+        self.assertIn("source_map_selected_executor_input_review_status=ready_for_review", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_selected_consumer=debugger", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_selected_surface=review_debugger_location_executor_input", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_source_debugger_candidate_selection_id=source-map-debugger:buildSign", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_source_debugger_candidate_selection_ready=True", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_package_ready=True", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_ready_for_executor_review=True", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_gate=explicit_debugger_location_review", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_browser_started=False", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_cdp_command_sent=False", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_runtime_evaluated=False", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_calls_mcp=False", result.verification)
+        self.assertIn("source_map_selected_executor_input_review_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "review_debugger_location_before_cdp_command")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-selected-executor-input-review.json")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["source_debugger_candidate_selection_id"], "source-map-debugger:buildSign")
+        self.assertTrue(result.artifacts[0].metadata["source_debugger_candidate_selection_ready"])
+        self.assertEqual(result.artifacts[0].metadata["review_gate"], "explicit_debugger_location_review")
+        self.assertTrue(result.artifacts[0].metadata["ready_for_executor_review"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+
+    def test_native_web_runtime_blocks_source_map_hook_without_review_before_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-hook-application",
+            {
+                "mode": "dry-run",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_hook_apply_preflight(),
+                "source_map_hook_install_input": {
+                    "hook_kind": "function",
+                    "function_name": "buildSign",
+                    "function_paths": ["window.buildSign"],
+                    "cdp_command": None,
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertTrue(any("source_map_hook_application_requires_apply_mode" in item for item in result.verification))
+        self.assertIn("source_map_hook_application_blockers=source_map_hook_application_requires_apply_mode,source_map_hook_application_review_not_approved,source_map_hook_install_not_approved,source_map_hook_reviewer_missing", result.verification)
+        self.assertEqual(result.next_action, "approve_source_map_hook_install_before_apply")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-hook-install-result.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "blocked")
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertFalse(result.artifacts[0].metadata["hook_installed"])
+        self.assertFalse(result.artifacts[0].metadata["surface_executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+        self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+
+    def test_native_web_runtime_applies_reviewed_source_map_debugger_location(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-debugger-application",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_map_debugger_action": True,
+                "reviewer": "reviewer-1",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_debugger_apply_preflight(),
+                "source_map_debugger_location_input": {
+                    "location": {
+                        "source": "src/sign.ts",
+                        "line_number": 4,
+                        "column_number": 0,
+                        "mapping_strategy": "source_map_generated_exact",
+                    },
+                    "url_pattern": ".*app\.js$",
+                    "line_number": 4,
+                    "column_number": 0,
+                    "cdp_command": None,
+                    "requires_review_before_debugger_use": True,
+                    "trigger_expression": "setTimeout(() => { debugger; }, 0); 'scheduled'",
+                    "debugger_actions": ["step_over"],
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 1)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["apply_source_map_debugger_location:.*app\.js$:4", "capture_debugger_paused"])
+        self.assertIn("source_map_debugger_application_status=success", result.verification)
+        self.assertIn("source_map_debugger_application_breakpoint_count=1", result.verification)
+        self.assertIn("source_map_debugger_application_paused_status=success", result.verification)
+        self.assertIn("source_map_debugger_application_callframe_count=1", result.verification)
+        self.assertIn("source_map_debugger_application_debugger_action_count=1", result.verification)
+        self.assertIn("source_map_debugger_application_browser_started=True", result.verification)
+        self.assertIn("source_map_debugger_application_runtime_evaluated=True", result.verification)
+        self.assertIn("source_map_debugger_application_cdp_command_sent=True", result.verification)
+        self.assertIn("source_map_debugger_application_debugger_location_applied=True", result.verification)
+        self.assertIn("source_map_debugger_application_calls_mcp=False", result.verification)
+        self.assertIn("source_map_debugger_application_mobile_runtime_used=False", result.verification)
+        self.assertEqual(result.next_action, "inspect_source_map_debugger_execution_artifacts")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-debugger-execution-result.json")
+        self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-debugger-execution-result.v1")
+        self.assertEqual(result.artifacts[0].metadata["selected_consumer"], "debugger")
+        self.assertEqual(result.artifacts[0].metadata["selected_review_gate"], "explicit_debugger_location_review")
+        self.assertTrue(result.artifacts[0].metadata["review_approved"])
+        self.assertTrue(result.artifacts[0].metadata["approve_source_map_debugger_action"])
+        self.assertTrue(result.artifacts[0].metadata["browser_started"])
+        self.assertTrue(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertTrue(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertTrue(result.artifacts[0].metadata["debugger_location_applied"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_continuation"])
+        self.assertFalse(result.artifacts[0].metadata["automatic_loop"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+        self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+        paths = [artifact.path for artifact in result.artifacts]
+        self.assertIn("virtual://workspace/breakpoints.json", paths)
+        self.assertIn("virtual://workspace/debugger-paused.json", paths)
+        self.assertIn("virtual://workspace/callframes.json", paths)
+        self.assertIn("virtual://workspace/debugger-actions.json", paths)
+        page = provider.session.context.pages[0]
+        self.assertIn(("Debugger.enable", {}), page._cdp_session.calls)
+        self.assertIn(("Debugger.setBreakpointByUrl", {"urlRegex": ".*app\.js$", "lineNumber": 4, "columnNumber": 0}), page._cdp_session.calls)
+        self.assertIn(("Debugger.stepOver", {}), page._cdp_session.calls)
+
+    def test_native_web_runtime_blocks_source_map_debugger_without_review_before_browser(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-debugger-application",
+            {
+                "mode": "dry-run",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_debugger_apply_preflight(),
+                "source_map_debugger_location_input": {
+                    "location": {"source": "src/sign.ts", "line_number": 4, "column_number": 0},
+                    "url_pattern": ".*app\.js$",
+                    "line_number": 4,
+                    "cdp_command": None,
+                    "requires_review_before_debugger_use": True,
+                },
+            },
+        )
+
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "partial")
+        self.assertEqual(result.applied_actions, [])
+        self.assertTrue(any("source_map_debugger_application_requires_apply_mode" in item for item in result.verification))
+        self.assertIn("source_map_debugger_application_browser_started=False", result.verification)
+        self.assertEqual(result.next_action, "approve_source_map_debugger_location_before_apply")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-debugger-execution-result.json")
+        self.assertEqual(result.artifacts[0].metadata["status"], "blocked")
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["debugger_location_applied"])
+        self.assertFalse(result.artifacts[0].metadata["surface_executor_invoked"])
+        self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+        self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
 
     def test_native_web_runtime_applies_reviewed_source_map_rebuild_metadata(self) -> None:
         provider = FakeProvider()
@@ -6568,6 +10281,96 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
         self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
 
+    def test_native_web_runtime_generates_reviewed_source_map_rebuild_bundle(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        task_card, final_result = self._source_map_rebuild_generation_inputs()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_root = Path(tmpdir) / "artifacts"
+            result = runtime.apply_minimal_protection(
+                "source-map-rebuild-generation",
+                {
+                    "mode": "apply",
+                    "review_approved": True,
+                    "approve_source_map_rebuild_generation": True,
+                    "reviewer": "reviewer-1",
+                    "artifact_root": str(artifact_root),
+                    "source_map_rebuild_result": self._successful_source_map_rebuild_metadata_result(),
+                    "task_card": task_card,
+                    "final_result": final_result,
+                },
+            )
+
+            self.assertEqual(provider.started, 0)
+            self.assertEqual(result.status.value, "success")
+            self.assertEqual(result.applied_actions, ["generate_source_map_rebuild_bundle:abc123"])
+            self.assertIn("source_map_rebuild_generation_status=success", result.verification)
+            self.assertIn("source_map_rebuild_generation_rebuild_bundle_generated=True", result.verification)
+            self.assertIn("source_map_rebuild_generation_rebuild_executed=True", result.verification)
+            self.assertIn("source_map_rebuild_generation_browser_started=False", result.verification)
+            self.assertIn("source_map_rebuild_generation_runtime_evaluated=False", result.verification)
+            self.assertIn("source_map_rebuild_generation_cdp_command_sent=False", result.verification)
+            self.assertIn("source_map_rebuild_generation_source_map_fetched=False", result.verification)
+            self.assertIn("source_map_rebuild_generation_calls_mcp=False", result.verification)
+            self.assertIn("source_map_rebuild_generation_mobile_runtime_used=False", result.verification)
+            self.assertEqual(result.next_action, "review_generated_rebuild_bundle_before_delivery")
+            self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-rebuild-generation-result.json")
+            self.assertEqual(result.artifacts[0].metadata["schema_version"], "reverse-deepagent.source-map-rebuild-generation-result.v1")
+            self.assertEqual(result.artifacts[0].metadata["status"], "success")
+            self.assertTrue(result.artifacts[0].metadata["metadata_result_verified"])
+            self.assertEqual(result.artifacts[0].metadata["source_content_digest"], "abc123")
+            self.assertTrue(result.artifacts[0].metadata["review_approved"])
+            self.assertTrue(result.artifacts[0].metadata["approve_source_map_rebuild_generation"])
+            self.assertFalse(result.artifacts[0].metadata["metadata_only"])
+            self.assertTrue(result.artifacts[0].metadata["rebuild_metadata_applied"])
+            self.assertTrue(result.artifacts[0].metadata["rebuild_bundle_generated"])
+            self.assertTrue(result.artifacts[0].metadata["rebuild_executed"])
+            self.assertFalse(result.artifacts[0].metadata["browser_started"])
+            self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+            self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+            self.assertFalse(result.artifacts[0].metadata["source_map_fetched"])
+            self.assertFalse(result.artifacts[0].metadata["raw_source_content_exported"])
+            self.assertFalse(result.artifacts[0].metadata["preview_exported"])
+            self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+            self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+            self.assertEqual(result.artifacts[0].metadata["algorithm_strategy_id"], "md5_keyword_timestamp")
+            self.assertGreaterEqual(result.artifacts[0].metadata["generated_file_count"], 4)
+            self.assertTrue((artifact_root / "workspace" / "rebuild-plan.json").exists())
+            self.assertTrue((artifact_root / "rebuild" / "sign_rebuild.py").exists())
+
+    def test_native_web_runtime_blocks_source_map_rebuild_generation_without_review_before_writes(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_root = Path(tmpdir) / "artifacts"
+            result = runtime.apply_minimal_protection(
+                "source-map-rebuild-generation",
+                {
+                    "mode": "dry-run",
+                    "artifact_root": str(artifact_root),
+                    "source_map_rebuild_result": self._successful_source_map_rebuild_metadata_result(),
+                },
+            )
+
+            self.assertEqual(provider.started, 0)
+            self.assertFalse(artifact_root.exists())
+            self.assertEqual(result.status.value, "partial")
+            self.assertEqual(result.applied_actions, [])
+            self.assertTrue(any("source_map_rebuild_generation_requires_apply_mode" in item for item in result.verification))
+            self.assertEqual(result.next_action, "approve_source_map_rebuild_generation_before_apply")
+            self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-rebuild-generation-result.json")
+            self.assertEqual(result.artifacts[0].metadata["status"], "blocked")
+            self.assertFalse(result.artifacts[0].metadata["rebuild_bundle_generated"])
+            self.assertFalse(result.artifacts[0].metadata["rebuild_executed"])
+            self.assertFalse(result.artifacts[0].metadata["browser_started"])
+            self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+            self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+            self.assertFalse(result.artifacts[0].metadata["source_map_fetched"])
+            self.assertFalse(result.artifacts[0].metadata["raw_source_content_exported"])
+            self.assertFalse(result.artifacts[0].metadata["preview_exported"])
+            self.assertFalse(result.artifacts[0].metadata["calls_mcp"])
+            self.assertFalse(result.artifacts[0].metadata["mobile_runtime_used"])
+
     def test_native_web_runtime_applies_reviewed_source_map_source_logpoint_install(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
@@ -6638,6 +10441,65 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.artifacts[0].metadata["status"], "blocked")
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
         self.assertFalse(result.artifacts[0].metadata["logpoint_installed"])
+
+    def test_native_web_runtime_source_logpoint_applies_with_bundle_offset_remap(self) -> None:
+        """Source-logpoint with bundle_offset remap: remap metadata captured in artifact."""
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-source-logpoint-install",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_logpoint_install": True,
+                "reviewer": "alice",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_source_logpoint_apply_preflight(),
+                "source_logpoint_install_input": {
+                    "url_pattern": ".*bundle\\.js$",
+                    "line_number": 0,
+                    "column_number": 1234,
+                    "log_expression": "window.__sign",
+                    "label": "remap-test",
+                    "bundle_offset": 1234,
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertIn("source_map_source_logpoint_application_logpoint_installed=True", result.verification)
+        artifact = result.artifacts[0]
+        self.assertEqual(artifact.path, "virtual://workspace/source-map-source-logpoint-install-result.json")
+        self.assertTrue(artifact.metadata["logpoint_installed"])
+        self.assertTrue(artifact.metadata["cdp_command_sent"])
+        self.assertEqual(provider.started, 1)
+
+    def test_native_web_runtime_source_logpoint_returns_failed_on_provider_unavailable(self) -> None:
+        """When browser provider raises on ensure_browser_session, result is failed with no CDP sent."""
+        from reverse_deepagent.browser import BrowserProviderUnavailableError
+        class UnavailableProvider(FakeProvider):
+            def start(self) -> None:
+                raise BrowserProviderUnavailableError("test_unavailable")
+        provider = UnavailableProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = runtime.apply_minimal_protection(
+            "source-map-source-logpoint-install",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_logpoint_install": True,
+                "reviewer": "alice",
+                "source_map_selected_executor_apply_preflight": self._ready_source_map_source_logpoint_apply_preflight(),
+                "source_logpoint_install_input": {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 5,
+                    "log_expression": "window.__sign",
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "failed")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("ensure_browser_provider", result.next_action)
 
     def test_native_web_runtime_apply_minimal_protection_sets_breakpoint(self) -> None:
         provider = FakeProvider()
