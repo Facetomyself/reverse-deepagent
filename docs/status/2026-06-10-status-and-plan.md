@@ -12,25 +12,11 @@
 | 指标 | 数值 |
 |---|---|
 | 总测试数 | 1687 |
-| 通过 | 1677 |
+| 通过 | 1685 |
 | Skip | 2 |
-| **失败** | **8（全部在 `test_native_web_runtime.py`）** |
+| **失败** | **0 ✅（P0 已修复，commit 7919f0e6）** |
 
-**8 个失败测试均属同一回归**，B3b commit 新增测试，但实现未对齐：
-
-```
-test_paused_session_automatic_loop_execution_from_native_runtime_runs_one_reviewed_iteration
-test_paused_session_automatic_loop_multi_iteration_execution_from_native_runtime_runs_one_reviewed_iteration
-test_paused_session_automatic_loop_next_iteration_execution_from_native_runtime_runs_one_reviewed_iteration
-test_paused_session_cross_process_attach_probe_from_native_runtime_requires_review_and_attaches_only
-test_paused_session_cross_process_one_action_from_native_runtime_executes_once
-test_paused_session_multi_step_continuation_execution_from_native_runtime_runs_one_iteration
-test_paused_session_multi_step_loop_execution_from_native_runtime_runs_one_reviewed_iteration
-test_paused_session_pre_action_subscribe_and_action_from_native_runtime_captures_event
-```
-
-失败原因：全部是 `AssertionError: 'partial' != 'success'`。  
-根因：`_dispatch_paused()` 中相关 Manager 返回值不是 `"attached"` / `"executed"` 等触发 `SUCCESS` 的状态，导致 `apply_minimal_protection` 返回 `ExecutionStatus.PARTIAL`。
+**P0 回归已修复**：`_dispatch_paused()` 入口缺少 execution-class early-exit guard，导致 plan-class matcher 通过 context key 拦截 execution 请求返回 PARTIAL。修复后 1687 tests 全绿。
 
 ---
 
@@ -182,5 +168,5 @@ Goal-09  B3c：page-using 分支提取（~3h，依赖 Goal-08）
 ---
 
 *生成时间：2026-06-10*  
-*测试快照：1687 total, 1677 pass, 8 fail, 2 skip*  
-*当前 branch：main（HEAD: b36f168）*
+*测试快照（P0修复后）：1687 total, 1685 pass, 0 fail, 2 skip*  
+*当前 branch：refactor/consolidate-hooks-native-web（HEAD: 7919f0e6）*
