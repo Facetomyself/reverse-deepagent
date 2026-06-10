@@ -530,158 +530,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
 
     def apply_minimal_protection(self, protection_name: str, context: dict[str, Any] | None = None) -> ProtectionResult:
         context = context or {}
-        if self._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            spec = ClosureWrapperRuntimeMutabilityPreflightSpec.from_context(context)
-            result = ClosureWrapperRuntimeMutabilityPreflightManager().preflight(spec)
-            preflight = result.preflight if isinstance(result.preflight, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            strategy = preflight.get("wrapper_strategy_descriptor") if isinstance(preflight.get("wrapper_strategy_descriptor"), dict) else {}
-            verification = [
-                f"closure_wrapper_runtime_mutability_preflight_status={result.status}",
-                f"closure_wrapper_runtime_mutability_probe_ready_for_review={preflight.get('runtime_mutability_probe_ready_for_review', False)}",
-                f"closure_wrapper_runtime_mutability_strategy={strategy.get('strategy', preflight.get('wrapper_strategy', 'unknown'))}",
-                f"closure_wrapper_runtime_mutability_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
-                f"closure_wrapper_runtime_mutability_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
-                f"closure_wrapper_runtime_mutability_proven={preflight.get('runtime_mutability_proven', False)}",
-                f"closure_wrapper_runtime_mutability_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_runtime_mutability_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_runtime_mutability_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"closure_wrapper_runtime_mutability_preflight_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-runtime-mutability-preflight.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only closure wrapper runtime mutability preflight.",
-                    metadata={
-                        "status": result.status,
-                        "runtime_mutability_probe_ready_for_review": preflight.get("runtime_mutability_probe_ready_for_review", False),
-                        "runtime_mutability_proven": False,
-                        "wrapper_strategy": strategy.get("strategy", preflight.get("wrapper_strategy")),
-                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
-                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
-                        "plan_only": True,
-                        "requires_review": True,
-                        "wrapper_installed": False,
-                        "runtime_mutated": False,
-                        "cdp_command_sent": False,
-                        "callframe_evaluated": False,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["preflight_closure_wrapper_runtime_mutability"] if result.status == "ready_for_review" else [],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=preflight.get("next_action") or "resolve_closure_wrapper_runtime_mutability_preflight_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_assignment_safety_request(protection_name, context):
-            spec = ClosureWrapperAssignmentSafetySpec.from_context(context)
-            result = ClosureWrapperAssignmentSafetyManager().prove(spec)
-            safety = result.assignment_safety if isinstance(result.assignment_safety, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            strategy = safety.get("wrapper_strategy_descriptor") if isinstance(safety.get("wrapper_strategy_descriptor"), dict) else {}
-            verification = [
-                f"closure_wrapper_assignment_safety_status={result.status}",
-                f"closure_wrapper_assignment_safety_proven={safety.get('assignment_safety_proven', False)}",
-                f"closure_wrapper_assignment_safety_strategy={strategy.get('strategy', safety.get('wrapper_strategy', 'unknown'))}",
-                f"closure_wrapper_assignment_safety_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
-                f"closure_wrapper_assignment_safety_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
-                f"closure_wrapper_assignment_safety_safe_to_execute={safety.get('safe_to_request_reviewed_execution', False)}",
-                f"closure_wrapper_assignment_safety_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_assignment_safety_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_assignment_safety_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"closure_wrapper_assignment_safety_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-assignment-safety.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only closure wrapper assignment safety proof.",
-                    metadata={
-                        "status": result.status,
-                        "assignment_safety_proven": safety.get("assignment_safety_proven", False),
-                        "safe_to_request_reviewed_execution": safety.get("safe_to_request_reviewed_execution", False),
-                        "wrapper_strategy": strategy.get("strategy", safety.get("wrapper_strategy")),
-                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
-                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
-                        "plan_only": True,
-                        "requires_review": True,
-                        "wrapper_installed": False,
-                        "runtime_mutated": False,
-                        "cdp_command_sent": False,
-                        "callframe_evaluated": False,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["prove_closure_wrapper_assignment_safety"] if result.status == "ready_for_review" else [],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=safety.get("next_action") or "resolve_closure_wrapper_assignment_safety_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_replacement_plan_request(protection_name, context):
-            spec = ClosureWrapperReplacementPlanSpec.from_context(context)
-            result = ClosureWrapperReplacementPlanManager().plan(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            feasibility = plan.get("replacement_feasibility") if isinstance(plan.get("replacement_feasibility"), dict) else {}
-            strategy = plan.get("wrapper_strategy_descriptor") if isinstance(plan.get("wrapper_strategy_descriptor"), dict) else {}
-            verification = [
-                f"closure_wrapper_replacement_plan_status={result.status}",
-                f"closure_wrapper_replacement_candidate_count={result.candidate_count}",
-                f"closure_wrapper_replacement_plan_only={plan.get('plan_only', True)}",
-                f"closure_wrapper_replacement_strategy={strategy.get('strategy', plan.get('wrapper_strategy', 'unknown'))}",
-                f"closure_wrapper_replacement_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
-                f"closure_wrapper_replacement_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
-                f"closure_wrapper_replacement_wrapper_installed={plan.get('wrapper_installed', False)}",
-                f"closure_wrapper_replacement_runtime_mutated={plan.get('runtime_mutated', False)}",
-                f"closure_wrapper_replacement_cdp_command_sent={plan.get('cdp_command_sent', False)}",
-                f"closure_wrapper_replacement_callframe_evaluated={plan.get('callframe_evaluated', False)}",
-                f"closure_wrapper_replacement_lexical_binding_proven={feasibility.get('lexical_binding_proven', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"closure_wrapper_replacement_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-replacement-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only closure wrapper replacement plan.",
-                    metadata={
-                        "status": result.status,
-                        "candidate_count": result.candidate_count,
-                        "wrapper_strategy": strategy.get("strategy", plan.get("wrapper_strategy")),
-                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
-                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
-                        "plan_only": True,
-                        "requires_review": True,
-                        "automatic_wrapper_replacement": False,
-                        "wrapper_installed": False,
-                        "runtime_mutated": False,
-                        "cdp_command_sent": False,
-                        "callframe_evaluated": False,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["plan_closure_wrapper_replacement"] if result.status == "ready_for_review" else [],
-                verification=verification,
-                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "review_closure_wrapper_replacement_plan_before_execution",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
+        _closure_prefix_result = self._dispatch_closure_prefix(protection_name, context)
+        if _closure_prefix_result is not None:
+            return _closure_prefix_result
         if self._is_heap_snapshot_path_to_root_executor_request(protection_name, context):
             spec = HeapSnapshotPathToRootExecutorSpec.from_context(context)
             result = HeapSnapshotPathToRootExecutorManager().execute(spec)
@@ -14692,6 +14543,162 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
             return "move_to_source_analysis"
         return "enhance_native_collectors_or_adjust_keyword"
 
+
+
+    def _dispatch_closure_prefix(self, protection_name: str, context: dict) -> "ProtectionResult | None":
+        if self._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
+            spec = ClosureWrapperRuntimeMutabilityPreflightSpec.from_context(context)
+            result = ClosureWrapperRuntimeMutabilityPreflightManager().preflight(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = preflight.get("wrapper_strategy_descriptor") if isinstance(preflight.get("wrapper_strategy_descriptor"), dict) else {}
+            verification = [
+                f"closure_wrapper_runtime_mutability_preflight_status={result.status}",
+                f"closure_wrapper_runtime_mutability_probe_ready_for_review={preflight.get('runtime_mutability_probe_ready_for_review', False)}",
+                f"closure_wrapper_runtime_mutability_strategy={strategy.get('strategy', preflight.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_runtime_mutability_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_runtime_mutability_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
+                f"closure_wrapper_runtime_mutability_proven={preflight.get('runtime_mutability_proven', False)}",
+                f"closure_wrapper_runtime_mutability_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_runtime_mutability_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_runtime_mutability_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_runtime_mutability_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-runtime-mutability-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only closure wrapper runtime mutability preflight.",
+                    metadata={
+                        "status": result.status,
+                        "runtime_mutability_probe_ready_for_review": preflight.get("runtime_mutability_probe_ready_for_review", False),
+                        "runtime_mutability_proven": False,
+                        "wrapper_strategy": strategy.get("strategy", preflight.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
+                        "plan_only": True,
+                        "requires_review": True,
+                        "wrapper_installed": False,
+                        "runtime_mutated": False,
+                        "cdp_command_sent": False,
+                        "callframe_evaluated": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["preflight_closure_wrapper_runtime_mutability"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "resolve_closure_wrapper_runtime_mutability_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_assignment_safety_request(protection_name, context):
+            spec = ClosureWrapperAssignmentSafetySpec.from_context(context)
+            result = ClosureWrapperAssignmentSafetyManager().prove(spec)
+            safety = result.assignment_safety if isinstance(result.assignment_safety, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = safety.get("wrapper_strategy_descriptor") if isinstance(safety.get("wrapper_strategy_descriptor"), dict) else {}
+            verification = [
+                f"closure_wrapper_assignment_safety_status={result.status}",
+                f"closure_wrapper_assignment_safety_proven={safety.get('assignment_safety_proven', False)}",
+                f"closure_wrapper_assignment_safety_strategy={strategy.get('strategy', safety.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_assignment_safety_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_assignment_safety_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
+                f"closure_wrapper_assignment_safety_safe_to_execute={safety.get('safe_to_request_reviewed_execution', False)}",
+                f"closure_wrapper_assignment_safety_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_assignment_safety_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_assignment_safety_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_assignment_safety_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-assignment-safety.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only closure wrapper assignment safety proof.",
+                    metadata={
+                        "status": result.status,
+                        "assignment_safety_proven": safety.get("assignment_safety_proven", False),
+                        "safe_to_request_reviewed_execution": safety.get("safe_to_request_reviewed_execution", False),
+                        "wrapper_strategy": strategy.get("strategy", safety.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
+                        "plan_only": True,
+                        "requires_review": True,
+                        "wrapper_installed": False,
+                        "runtime_mutated": False,
+                        "cdp_command_sent": False,
+                        "callframe_evaluated": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["prove_closure_wrapper_assignment_safety"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=safety.get("next_action") or "resolve_closure_wrapper_assignment_safety_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_replacement_plan_request(protection_name, context):
+            spec = ClosureWrapperReplacementPlanSpec.from_context(context)
+            result = ClosureWrapperReplacementPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            feasibility = plan.get("replacement_feasibility") if isinstance(plan.get("replacement_feasibility"), dict) else {}
+            strategy = plan.get("wrapper_strategy_descriptor") if isinstance(plan.get("wrapper_strategy_descriptor"), dict) else {}
+            verification = [
+                f"closure_wrapper_replacement_plan_status={result.status}",
+                f"closure_wrapper_replacement_candidate_count={result.candidate_count}",
+                f"closure_wrapper_replacement_plan_only={plan.get('plan_only', True)}",
+                f"closure_wrapper_replacement_strategy={strategy.get('strategy', plan.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_replacement_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_replacement_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
+                f"closure_wrapper_replacement_wrapper_installed={plan.get('wrapper_installed', False)}",
+                f"closure_wrapper_replacement_runtime_mutated={plan.get('runtime_mutated', False)}",
+                f"closure_wrapper_replacement_cdp_command_sent={plan.get('cdp_command_sent', False)}",
+                f"closure_wrapper_replacement_callframe_evaluated={plan.get('callframe_evaluated', False)}",
+                f"closure_wrapper_replacement_lexical_binding_proven={feasibility.get('lexical_binding_proven', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_replacement_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-replacement-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only closure wrapper replacement plan.",
+                    metadata={
+                        "status": result.status,
+                        "candidate_count": result.candidate_count,
+                        "wrapper_strategy": strategy.get("strategy", plan.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
+                        "plan_only": True,
+                        "requires_review": True,
+                        "automatic_wrapper_replacement": False,
+                        "wrapper_installed": False,
+                        "runtime_mutated": False,
+                        "cdp_command_sent": False,
+                        "callframe_evaluated": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["plan_closure_wrapper_replacement"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "review_closure_wrapper_replacement_plan_before_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        return None
 
 def create_native_web_runtime(*, browser_provider: BrowserProvider | None = None, browser: str | None = None, **kwargs: Any) -> NativeWebRuntime:
     """Create a NativeWebRuntime with a registry-resolved BrowserProvider."""
