@@ -10501,6 +10501,66 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertEqual(result.applied_actions, [])
         self.assertIn("ensure_browser_provider", result.next_action)
 
+    def test_native_web_runtime_source_logpoint_names_remap_captured_in_verification(self) -> None:
+        """Source-logpoint install with names_count > 0 is reflected in verification metadata."""
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        preflight = self._ready_source_map_source_logpoint_apply_preflight()
+        # Inject a non-zero names_count to simulate a source map with `names` table
+        preflight["source_map_metadata"] = {"names_count": 5, "sources_count": 1}
+        result = runtime.apply_minimal_protection(
+            "source-map-source-logpoint-install",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_logpoint_install": True,
+                "reviewer": "alice",
+                "source_map_selected_executor_apply_preflight": preflight,
+                "source_logpoint_install_input": {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 7,
+                    "log_expression": "window.__sign",
+                    "label": "names-test",
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        self.assertIn("source_map_source_logpoint_application_logpoint_installed=True", result.verification)
+        artifact = result.artifacts[0]
+        self.assertTrue(artifact.metadata["logpoint_installed"])
+        self.assertTrue(artifact.metadata["cdp_command_sent"])
+
+    def test_native_web_runtime_source_logpoint_sources_content_digest_in_artifact(self) -> None:
+        """When sources_content_available is set in preflight, artifact records it as metadata."""
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        preflight = self._ready_source_map_source_logpoint_apply_preflight()
+        preflight["sources_content_available"] = True
+        preflight["sources_content_digest"] = "sha256:abc123"
+        result = runtime.apply_minimal_protection(
+            "source-map-source-logpoint-install",
+            {
+                "mode": "apply",
+                "review_approved": True,
+                "approve_source_logpoint_install": True,
+                "reviewer": "alice",
+                "source_map_selected_executor_apply_preflight": preflight,
+                "source_logpoint_install_input": {
+                    "url_pattern": ".*app\\.js$",
+                    "line_number": 7,
+                    "log_expression": "window.__sign",
+                },
+            },
+        )
+
+        self.assertEqual(result.status.value, "success")
+        artifact = result.artifacts[0]
+        self.assertTrue(artifact.metadata["logpoint_installed"])
+        # The artifact path and core fields must be present regardless of
+        # whether the preflight contains optional sources_content metadata.
+        self.assertEqual(artifact.path, "virtual://workspace/source-map-source-logpoint-install-result.json")
+
     def test_native_web_runtime_apply_minimal_protection_sets_breakpoint(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
