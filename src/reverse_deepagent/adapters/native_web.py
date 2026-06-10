@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from reverse_deepagent.browser import BrowserProvider, BrowserProviderRegistryError, BrowserProviderUnavailableError, BrowserSession, build_default_browser_provider_registry
@@ -122,6 +123,52 @@ from reverse_deepagent.browser.hooks import (
     ClosureWrapperReplacementPlanManager,
     ClosureWrapperReplacementPlanSpec,
     FlowTimelineManager,
+    HeapSnapshotCollectManager,
+    HeapSnapshotCollectSpec,
+    HeapSnapshotDiffReadinessManager,
+    HeapSnapshotDiffReadinessSpec,
+    HeapSnapshotDiffExecutorPreflightManager,
+    HeapSnapshotDiffExecutorPreflightSpec,
+    HeapSnapshotDiffExecutorApprovalPlanManager,
+    HeapSnapshotDiffExecutorApprovalPlanSpec,
+    HeapSnapshotDiffExecutorTransactionPreflightManager,
+    HeapSnapshotDiffExecutorTransactionPreflightSpec,
+    HeapSnapshotDiffExecutorBoundedGateManager,
+    HeapSnapshotDiffExecutorBoundedGateSpec,
+    HeapSnapshotDiffExecutorManager,
+    HeapSnapshotDiffExecutorSpec,
+    HeapSnapshotDiffFollowupCheckpointManager,
+    HeapSnapshotDiffFollowupCheckpointSpec,
+    HeapSnapshotDiffSelectedAnalysisInputPreflightManager,
+    HeapSnapshotDiffSelectedAnalysisInputPreflightSpec,
+    HeapSnapshotConstructorGrowthDrilldownManager,
+    HeapSnapshotConstructorGrowthDrilldownSpec,
+    HeapSnapshotConstructorGrowthDrilldownExecutorManager,
+    HeapSnapshotConstructorGrowthDrilldownExecutorSpec,
+    HeapSnapshotAutomaticFollowupPlanManager,
+    HeapSnapshotAutomaticFollowupPlanSpec,
+    HeapSnapshotRetainedSizeProofPlanManager,
+    HeapSnapshotRetainedSizeProofPlanSpec,
+    HeapSnapshotPathToRootProofPlanManager,
+    HeapSnapshotPathToRootProofPlanSpec,
+    HeapSnapshotRawHeapConstructorDrilldownProofPlanManager,
+    HeapSnapshotRawHeapConstructorDrilldownProofPlanSpec,
+    HeapSnapshotRetainedPathPreflightManager,
+    HeapSnapshotRetainedPathPreflightSpec,
+    HeapSnapshotRetainedSizeInputReviewManager,
+    HeapSnapshotRetainedSizeInputReviewSpec,
+    HeapSnapshotRetainedSizeApprovalPlanManager,
+    HeapSnapshotRetainedSizeApprovalPlanSpec,
+    HeapSnapshotRetainedSizeTransactionPreflightManager,
+    HeapSnapshotRetainedSizeTransactionPreflightSpec,
+    HeapSnapshotRetainedSizeBoundedGateManager,
+    HeapSnapshotRetainedSizeBoundedGateSpec,
+    HeapSnapshotRetainedSizeExecutorManager,
+    HeapSnapshotRetainedSizeExecutorSpec,
+    HeapSnapshotPathToRootExecutorManager,
+    HeapSnapshotPathToRootExecutorSpec,
+    HeapSnapshotReadinessManager,
+    HeapSnapshotReadinessSpec,
     FlowTimelineSpec,
     FunctionHookManager,
     FunctionHookSpec,
@@ -137,6 +184,8 @@ from reverse_deepagent.browser.hooks import (
     ObjectRootMutationAuditSpec,
     PageMutationAuditManager,
     PageMutationAuditSpec,
+    RuntimeObjectGraphDiffManager,
+    RuntimeObjectGraphDiffSpec,
     PausedSessionActionSpec,
     PausedSessionCrossProcessAttachProbeManager,
     PausedSessionCrossProcessAttachProbeSpec,
@@ -218,10 +267,48 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerActionPlanSpec,
     SourceMapConsumerMaterializationManager,
     SourceMapConsumerMaterializationSpec,
+    SourceMapDebuggerCandidateSelectionManager,
+    SourceMapDebuggerCandidateSelectionSpec,
+    SourceMapDebuggerCandidateReviewManager,
+    SourceMapDebuggerCandidateReviewSpec,
+    SourceMapFollowthroughChainReadinessManager,
+    SourceMapFollowthroughChainReadinessSpec,
+    SourceMapFollowthroughDispatchApprovalPlanManager,
+    SourceMapFollowthroughDispatchApprovalPlanSpec,
+    SourceMapFollowthroughDispatchBoundedExecutorGateManager,
+    SourceMapFollowthroughDispatchBoundedExecutorGateSpec,
+    SourceMapFollowthroughDispatcherApplyPreflightManager,
+    SourceMapFollowthroughDispatcherApplyPreflightSpec,
+    SourceMapFollowthroughDispatcherHandoffManager,
+    SourceMapFollowthroughDispatcherHandoffSpec,
+    SourceMapFollowthroughDispatcherManager,
+    SourceMapFollowthroughDispatcherResultSpec,
+    SourceMapFollowthroughDispatchTransactionPreflightManager,
+    SourceMapFollowthroughDispatchTransactionPreflightSpec,
+    SourceMapFollowthroughDispatchPreflightManager,
+    SourceMapFollowthroughDispatchPreflightSpec,
+    SourceMapFollowthroughOneStepPlanManager,
+    SourceMapFollowthroughOneStepPlanSpec,
     SourceMapFollowthroughReviewManager,
     SourceMapFollowthroughReviewSpec,
     SourceMapFollowthroughSurfaceSelectionManager,
     SourceMapFollowthroughSurfaceSelectionSpec,
+    SourceMapHookCandidateRefinementManager,
+    SourceMapHookCandidateRefinementSpec,
+    SourceMapHookCandidateSelectionManager,
+    SourceMapHookCandidateSelectionSpec,
+    SourceMapSelectedExecutorApplicationHandoffManager,
+    SourceMapSelectedExecutorApplicationHandoffSpec,
+    SourceMapSelectedExecutorResultCheckpointManager,
+    SourceMapSelectedExecutorResultCheckpointSpec,
+    SourceMapFollowthroughCompletionCheckpointManager,
+    SourceMapFollowthroughCompletionCheckpointSpec,
+    SourceMapTerminalReviewPackageManager,
+    SourceMapTerminalReviewPackageSpec,
+    SourceMapTerminalReviewClosureCheckpointManager,
+    SourceMapTerminalReviewClosureCheckpointSpec,
+    SourceMapTerminalReviewFinalAuditManager,
+    SourceMapTerminalReviewFinalAuditSpec,
     SourceMapSelectedExecutorApplyPreflightManager,
     SourceMapSelectedExecutorApplyPreflightSpec,
     SourceMapSelectedExecutorApprovalPlanManager,
@@ -235,6 +322,7 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapSourceContentManager,
     SourceMapSourceContentSpec,
 )
+from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.schemas import (
     ArtifactKind,
@@ -251,10 +339,11 @@ from reverse_deepagent.schemas import (
     RouterResult,
     TaskCard,
 )
+from reverse_deepagent.adapters._native_web_request_matchers import _NativeWebRequestMatchers
 
 
 @dataclass(slots=True)
-class NativeWebRuntime(WebReverseRuntime):
+class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
     """Native Web runtime backed by a BrowserProvider and project-owned collectors."""
 
     browser_provider: BrowserProvider
@@ -593,6 +682,1586 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action=plan.get("next_action") or "review_closure_wrapper_replacement_plan_before_execution",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
+        if self._is_heap_snapshot_path_to_root_executor_request(protection_name, context):
+            spec = HeapSnapshotPathToRootExecutorSpec.from_context(context)
+            result = HeapSnapshotPathToRootExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source_summary = descriptor.get("source_summary") if isinstance(descriptor.get("source_summary"), dict) else {}
+            heap_summary = descriptor.get("heap_summary") if isinstance(descriptor.get("heap_summary"), dict) else {}
+            candidates = descriptor.get("candidate_paths") if isinstance(descriptor.get("candidate_paths"), list) else []
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_path_to_root_analysis_status={result.status}",
+                f"heap_snapshot_path_to_root_retained_size_analysis_status={source_summary.get('retained_size_analysis_status')}",
+                f"heap_snapshot_path_to_root_retained_path_preflight_status={source_summary.get('retained_path_preflight_status')}",
+                f"heap_snapshot_path_to_root_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_path_to_root_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_path_to_root_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_path_to_root_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_path_to_root_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_path_to_root_estimated={policy.get('path_to_root_estimated', False)}",
+                f"heap_snapshot_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_path_to_root_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_path_to_root_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_path_to_root_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_path_to_root_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_path_to_root_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_path_to_root_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_path_to_root_node_count={heap_summary.get('node_count_total')}",
+                f"heap_snapshot_path_to_root_candidate_count={len(candidates)}",
+                f"heap_snapshot_path_to_root_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_path_to_root_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_path_to_root_analysis_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-path-to-root-analysis.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot path-to-root analysis MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "path_to_root_estimated": policy.get("path_to_root_estimated", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_path_to_root_analysis_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_path_to_root_analysis_before_second_pass_or_constructor_drilldown",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_executor_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeExecutorSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            gate_summary = descriptor.get("gate_summary") if isinstance(descriptor.get("gate_summary"), dict) else {}
+            heap_summary = descriptor.get("heap_summary") if isinstance(descriptor.get("heap_summary"), dict) else {}
+            candidates = descriptor.get("candidate_estimates") if isinstance(descriptor.get("candidate_estimates"), list) else []
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_analysis_status={result.status}",
+                f"heap_snapshot_retained_size_analysis_journal_id={gate_summary.get('journal_id')}",
+                f"heap_snapshot_retained_size_analysis_transaction_plan_id={gate_summary.get('transaction_plan_id')}",
+                f"heap_snapshot_retained_size_analysis_approval_plan_id={gate_summary.get('approval_plan_id')}",
+                f"heap_snapshot_retained_size_analysis_candidate_digest={gate_summary.get('candidate_digest')}",
+                f"heap_snapshot_retained_size_analysis_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_retained_size_analysis_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_retained_size_analysis_retained_size_estimated={policy.get('retained_size_estimated', False)}",
+                f"heap_snapshot_retained_size_analysis_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_analysis_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_analysis_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_retained_size_analysis_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_analysis_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_analysis_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_analysis_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_analysis_node_count={heap_summary.get('node_count_total')}",
+                f"heap_snapshot_retained_size_analysis_candidate_count={len(candidates)}",
+                f"heap_snapshot_retained_size_analysis_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_analysis_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_analysis_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-analysis.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot retained-size analysis MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "journal_id": gate_summary.get("journal_id"),
+                        "transaction_plan_id": gate_summary.get("transaction_plan_id"),
+                        "approval_plan_id": gate_summary.get("approval_plan_id"),
+                        "candidate_digest": gate_summary.get("candidate_digest"),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "retained_size_estimated": policy.get("retained_size_estimated", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_retained_size_analysis_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_retained_size_analysis_before_path_to_root_or_second_pass",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_bounded_gate_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeBoundedGateSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeBoundedGateManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            bounded_input = descriptor.get("bounded_executor_input") if isinstance(descriptor.get("bounded_executor_input"), dict) else {}
+            future_contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
+            source_summary = descriptor.get("source_journal_summary") if isinstance(descriptor.get("source_journal_summary"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_bounded_gate_status={result.status}",
+                f"heap_snapshot_retained_size_bounded_gate_journal_id={descriptor.get('journal_id')}",
+                f"heap_snapshot_retained_size_bounded_gate_transaction_plan_id={descriptor.get('transaction_plan_id')}",
+                f"heap_snapshot_retained_size_bounded_gate_approval_plan_id={descriptor.get('approval_plan_id')}",
+                f"heap_snapshot_retained_size_bounded_gate_candidate_digest={descriptor.get('candidate_digest')}",
+                f"heap_snapshot_retained_size_bounded_gate_journal_written={descriptor.get('journal_written', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_ready_for_review={descriptor.get('bounded_executor_gate_ready_for_review', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_future_executor_implemented={future_contract.get('implemented', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_requires_raw_heap={future_contract.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_bounded_gate_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_bounded_gate_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_bounded_gate_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-bounded-gate.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot retained-size bounded gate descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "journal_id": descriptor.get("journal_id"),
+                        "transaction_plan_id": descriptor.get("transaction_plan_id"),
+                        "approval_plan_id": descriptor.get("approval_plan_id"),
+                        "candidate_digest": descriptor.get("candidate_digest"),
+                        "transaction_journal_verified": descriptor.get("transaction_journal_verified", False),
+                        "bounded_executor_gate_ready_for_review": descriptor.get("bounded_executor_gate_ready_for_review", False),
+                        "ready_to_execute_now": descriptor.get("ready_to_execute_now", False),
+                        "future_executor_implemented": future_contract.get("implemented", False),
+                        "result_artifact": future_contract.get("result_artifact") or bounded_input.get("result_artifact"),
+                        "journal_written": source_summary.get("journal_written", False),
+                        "bounded_executor_gate_written": descriptor.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "provide_written_heap_snapshot_retained_size_transaction_journal",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_transaction_preflight_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeTransactionPreflightSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeTransactionPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            approval = descriptor.get("approval_summary") if isinstance(descriptor.get("approval_summary"), dict) else {}
+            transaction = descriptor.get("transaction_summary") if isinstance(descriptor.get("transaction_summary"), dict) else {}
+            candidate = descriptor.get("candidate_summary") if isinstance(descriptor.get("candidate_summary"), dict) else {}
+            journal_contract = descriptor.get("journal_writer_contract") if isinstance(descriptor.get("journal_writer_contract"), dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_transaction_preflight_status={result.status}",
+                f"heap_snapshot_retained_size_transaction_preflight_approval_plan_id={approval.get('approval_plan_id')}",
+                f"heap_snapshot_retained_size_transaction_preflight_approval_recorded={approval.get('approval_recorded', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_approved_for_execution={approval.get('approved_for_execution', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_transaction_plan_id={transaction.get('transaction_plan_id')}",
+                f"heap_snapshot_retained_size_transaction_preflight_candidate_digest={candidate.get('candidate_digest')}",
+                f"heap_snapshot_retained_size_transaction_preflight_ready_to_write_journal={journal_contract.get('ready_for_journal_review', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_transaction_started={policy.get('transaction_started', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_journal_written={policy.get('journal_written', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_bounded_executor_gate_written={policy.get('bounded_executor_gate_written', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_transaction_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_transaction_preflight_warnings={','.join(str(item) for item in warnings)}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_transaction_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-transaction-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size transaction preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": descriptor.get("review_only", True),
+                        "transaction_preflight_only": descriptor.get("transaction_preflight_only", True),
+                        "retained_size_only": descriptor.get("retained_size_only", True),
+                        "approval_plan_id": approval.get("approval_plan_id"),
+                        "transaction_plan_id": transaction.get("transaction_plan_id"),
+                        "candidate_digest": candidate.get("candidate_digest"),
+                        "ready_for_journal_review": journal_contract.get("ready_for_journal_review", False),
+                        "transaction_started": policy.get("transaction_started", False),
+                        "journal_written": policy.get("journal_written", False),
+                        "bounded_executor_gate_written": policy.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "resolve_heap_snapshot_retained_size_transaction_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_approval_plan_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeApprovalPlanSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeApprovalPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = plan.get("source_retained_size_input_review") if isinstance(plan.get("source_retained_size_input_review"), dict) else {}
+            approval = plan.get("approval_plan") if isinstance(plan.get("approval_plan"), dict) else {}
+            transaction = plan.get("transaction_plan") if isinstance(plan.get("transaction_plan"), dict) else {}
+            executor = plan.get("executor_input_contract") if isinstance(plan.get("executor_input_contract"), dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_approval_plan_status={result.status}",
+                f"heap_snapshot_retained_size_approval_plan_candidate_count={plan.get('candidate_count')}",
+                f"heap_snapshot_retained_size_approval_plan_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_size_approval_plan_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_retained_size_approval_plan_executor_implemented={executor.get('implemented', False)}",
+                f"heap_snapshot_retained_size_approval_plan_approval_recorded={approval.get('approval_recorded', False)}",
+                f"heap_snapshot_retained_size_approval_plan_transaction_started={transaction.get('transaction_started', False)}",
+                f"heap_snapshot_retained_size_approval_plan_journal_written={transaction.get('journal_written', False)}",
+                f"heap_snapshot_retained_size_approval_plan_ready_to_execute_now={executor.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_approval_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_approval_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_approval_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_approval_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_approval_plan_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_approval_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_approval_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_approval_plan_warnings={','.join(str(item) for item in warnings)}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_approval_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-approval-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size approval / transaction plan descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "approval_plan_only": plan.get("approval_plan_only", True),
+                        "transaction_plan_only": plan.get("transaction_plan_only", True),
+                        "candidate_count": plan.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "transaction_id": source.get("transaction_id"),
+                        "executor_implemented": executor.get("implemented", False),
+                        "approval_recorded": approval.get("approval_recorded", False),
+                        "transaction_started": transaction.get("transaction_started", False),
+                        "journal_written": transaction.get("journal_written", False),
+                        "ready_to_execute_now": executor.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_retained_size_approval_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_input_review_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeInputReviewSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeInputReviewManager().review(spec)
+            review = result.review if isinstance(result.review, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = review.get("source_retained_path_preflight") if isinstance(review.get("source_retained_path_preflight"), dict) else {}
+            executor = review.get("executor_input_contract") if isinstance(review.get("executor_input_contract"), dict) else {}
+            gate = review.get("approval_gate") if isinstance(review.get("approval_gate"), dict) else {}
+            raw_req = review.get("raw_heap_requirements") if isinstance(review.get("raw_heap_requirements"), dict) else {}
+            candidates = review.get("candidate_inputs") if isinstance(review.get("candidate_inputs"), list) else []
+            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+            blockers = review.get("blockers") if isinstance(review.get("blockers"), list) else []
+            warnings = review.get("warnings") if isinstance(review.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_input_review_status={result.status}",
+                f"heap_snapshot_retained_size_input_review_candidate_count={review.get('candidate_count')}",
+                f"heap_snapshot_retained_size_input_review_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_size_input_review_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_retained_size_input_review_requires_raw_heap={raw_req.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_size_input_review_executor_implemented={executor.get('implemented', False)}",
+                f"heap_snapshot_retained_size_input_review_approval_required={gate.get('approval_required', False)}",
+                f"heap_snapshot_retained_size_input_review_ready_to_execute_now={gate.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_input_review_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_input_review_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_input_review_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_input_review_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_input_review_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_size_input_review_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_input_review_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_input_review_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_input_review_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_input_review_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_input_review_warnings={','.join(str(item) for item in warnings)}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_input_review_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-input-review.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size executor input review descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": review.get("review_only", True),
+                        "input_review_only": review.get("input_review_only", True),
+                        "approval_gate_only": review.get("approval_gate_only", True),
+                        "candidate_count": review.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "transaction_id": source.get("transaction_id"),
+                        "requires_raw_heap": raw_req.get("requires_raw_heap", True),
+                        "executor_implemented": executor.get("implemented", False),
+                        "ready_to_execute_now": gate.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=review.get("next_action") or "resolve_heap_snapshot_retained_size_input_review_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_path_preflight_request(protection_name, context):
+            spec = HeapSnapshotRetainedPathPreflightSpec.from_context(context)
+            result = HeapSnapshotRetainedPathPreflightManager().review(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = preflight.get("source_constructor_growth_drilldown") if isinstance(preflight.get("source_constructor_growth_drilldown"), dict) else {}
+            raw_req = preflight.get("raw_heap_requirements") if isinstance(preflight.get("raw_heap_requirements"), dict) else {}
+            future = preflight.get("future_executor_contracts") if isinstance(preflight.get("future_executor_contracts"), dict) else {}
+            retained_contract = future.get("retained_size_analysis") if isinstance(future.get("retained_size_analysis"), dict) else {}
+            path_contract = future.get("path_to_root_analysis") if isinstance(future.get("path_to_root_analysis"), dict) else {}
+            candidates = preflight.get("candidate_inputs") if isinstance(preflight.get("candidate_inputs"), list) else []
+            top_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            warnings = preflight.get("warnings") if isinstance(preflight.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_path_preflight_status={result.status}",
+                f"heap_snapshot_retained_path_preflight_requested_analysis={preflight.get('requested_analysis')}",
+                f"heap_snapshot_retained_path_preflight_candidate_count={preflight.get('candidate_count')}",
+                f"heap_snapshot_retained_path_preflight_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_path_preflight_top_delta={top_candidate.get('delta')}",
+                f"heap_snapshot_retained_path_preflight_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_retained_path_preflight_requires_raw_heap={raw_req.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_path_preflight_raw_heap_available={raw_req.get('raw_heap_available_in_this_preflight', False)}",
+                f"heap_snapshot_retained_path_preflight_retained_size_implemented={retained_contract.get('implemented', False)}",
+                f"heap_snapshot_retained_path_preflight_path_to_root_implemented={path_contract.get('implemented', False)}",
+                f"heap_snapshot_retained_path_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_path_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_path_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_path_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_path_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_retained_path_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_path_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_path_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_path_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_path_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_path_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_path_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-path-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size / path-to-root preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": preflight.get("review_only", True),
+                        "preflight_only": preflight.get("preflight_only", True),
+                        "handoff_only": preflight.get("handoff_only", True),
+                        "requested_analysis": preflight.get("requested_analysis"),
+                        "candidate_count": preflight.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "top_delta": top_candidate.get("delta"),
+                        "transaction_id": source.get("transaction_id"),
+                        "requires_raw_heap": raw_req.get("requires_raw_heap", True),
+                        "raw_heap_available_in_this_preflight": raw_req.get("raw_heap_available_in_this_preflight", False),
+                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
+                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "resolve_heap_snapshot_retained_path_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_automatic_followup_plan_request(protection_name, context):
+            spec = HeapSnapshotAutomaticFollowupPlanSpec.from_context(context)
+            result = HeapSnapshotAutomaticFollowupPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = plan.get("source_summary") if isinstance(plan.get("source_summary"), dict) else {}
+            top_action = plan.get("top_recommended_action") if isinstance(plan.get("top_recommended_action"), dict) else {}
+            actions = plan.get("recommended_actions") if isinstance(plan.get("recommended_actions"), list) else []
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            retained_summary = source.get("retained_size_analysis") if isinstance(source.get("retained_size_analysis"), dict) else {}
+            path_summary = source.get("path_to_root_analysis") if isinstance(source.get("path_to_root_analysis"), dict) else {}
+            constructor_summary = source.get("constructor_growth_drilldown_analysis") if isinstance(source.get("constructor_growth_drilldown_analysis"), dict) else {}
+            verification = [
+                f"heap_snapshot_automatic_followup_plan_status={result.status}",
+                f"heap_snapshot_automatic_followup_plan_recommended_action_count={len(actions)}",
+                f"heap_snapshot_automatic_followup_plan_top_action={top_action.get('action')}",
+                f"heap_snapshot_automatic_followup_plan_retained_size_provided={retained_summary.get('provided', False)}",
+                f"heap_snapshot_automatic_followup_plan_path_to_root_provided={path_summary.get('provided', False)}",
+                f"heap_snapshot_automatic_followup_plan_constructor_growth_provided={constructor_summary.get('provided', False)}",
+                f"heap_snapshot_automatic_followup_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_automatic_followup_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_automatic_followup_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_automatic_followup_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_automatic_followup_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_automatic_followup_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_automatic_followup_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_automatic_followup_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_automatic_followup_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_automatic_followup_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_automatic_followup_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_automatic_followup_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_automatic_followup_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-automatic-followup-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot automatic follow-up review plan.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "recommended_action_count": len(actions),
+                        "top_recommended_action": top_action.get("action"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_automatic_followup_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_retained_size_proof_plan_request(protection_name, context):
+            spec = HeapSnapshotRetainedSizeProofPlanSpec.from_context(context)
+            result = HeapSnapshotRetainedSizeProofPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
+            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
+            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_retained_size_proof_plan_status={result.status}",
+                f"heap_snapshot_retained_size_proof_plan_candidate_count={len(candidates)}",
+                f"heap_snapshot_retained_size_proof_plan_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_retained_size_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
+                f"heap_snapshot_retained_size_proof_plan_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_retained_size_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_retained_size_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_retained_size_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_retained_size_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_retained_size_proof_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_retained_size_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_retained_size_proof_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_retained_size_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_retained_size_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_retained_size_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_retained_size_proof_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_retained_size_proof_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_retained_size_proof_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-retained-size-proof-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot retained-size proof planning descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "proof_plan_only": plan.get("proof_plan_only", True),
+                        "candidate_count": len(candidates),
+                        "top_candidate": top_candidate.get("name"),
+                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_retained_size_proof_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_path_to_root_proof_plan_request(protection_name, context):
+            spec = HeapSnapshotPathToRootProofPlanSpec.from_context(context)
+            result = HeapSnapshotPathToRootProofPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
+            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
+            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_path_to_root_proof_plan_status={result.status}",
+                f"heap_snapshot_path_to_root_proof_plan_candidate_count={len(candidates)}",
+                f"heap_snapshot_path_to_root_proof_plan_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_path_to_root_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_path_to_root_proof_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_path_to_root_proof_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_path_to_root_proof_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-path-to-root-proof-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot path-to-root proof planning descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "proof_plan_only": plan.get("proof_plan_only", True),
+                        "candidate_count": len(candidates),
+                        "top_candidate": top_candidate.get("name"),
+                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_path_to_root_proof_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request(protection_name, context):
+            spec = HeapSnapshotRawHeapConstructorDrilldownProofPlanSpec.from_context(context)
+            result = HeapSnapshotRawHeapConstructorDrilldownProofPlanManager().review(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            candidates = plan.get("candidate_inputs") if isinstance(plan.get("candidate_inputs"), list) else []
+            top_candidate = plan.get("top_candidate") if isinstance(plan.get("top_candidate"), dict) else {}
+            requirements = plan.get("proof_requirements") if isinstance(plan.get("proof_requirements"), dict) else {}
+            future = plan.get("future_executor_contract") if isinstance(plan.get("future_executor_contract"), dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            warnings = plan.get("warnings") if isinstance(plan.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_status={result.status}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_candidate_count={len(candidates)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_top_candidate={top_candidate.get('constructor_name')}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_raw_heap={requirements.get('requires_raw_heap', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_requires_constructor_reachability_graph={requirements.get('requires_constructor_reachability_graph', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_ready_to_execute_now={future.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_constructor_drilldown_proven={policy.get('constructor_drilldown_proven', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_path_to_root_proven={policy.get('path_to_root_proven', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_automatic_execution_allowed={policy.get('automatic_execution_allowed', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_raw_heap_constructor_drilldown_proof_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot raw-heap constructor drilldown proof planning descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": plan.get("review_only", True),
+                        "plan_only": plan.get("plan_only", True),
+                        "proof_plan_only": plan.get("proof_plan_only", True),
+                        "candidate_count": len(candidates),
+                        "top_candidate": top_candidate.get("constructor_name"),
+                        "requires_raw_heap": requirements.get("requires_raw_heap", True),
+                        "requires_constructor_reachability_graph": requirements.get("requires_constructor_reachability_graph", True),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "ready_to_execute_now": future.get("ready_to_execute_now", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_proven": policy.get("path_to_root_proven", False),
+                        "automatic_execution_allowed": policy.get("automatic_execution_allowed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "resolve_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_constructor_growth_drilldown_execution_request(protection_name, context):
+            spec = HeapSnapshotConstructorGrowthDrilldownExecutorSpec.from_context(context)
+            result = HeapSnapshotConstructorGrowthDrilldownExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = descriptor.get("source_summary") if isinstance(descriptor.get("source_summary"), dict) else {}
+            summary = descriptor.get("constructor_drilldown_summary") if isinstance(descriptor.get("constructor_drilldown_summary"), dict) else {}
+            top_candidate = summary.get("top_candidate") if isinstance(summary.get("top_candidate"), dict) else {}
+            rows = descriptor.get("constructor_drilldown_rows") if isinstance(descriptor.get("constructor_drilldown_rows"), list) else []
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_constructor_growth_drilldown_analysis_status={result.status}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_source_status={source.get('status')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_selected_action={source.get('selected_action')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_candidate_count={len(rows)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_top_delta={top_candidate.get('delta')}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_computed={policy.get('constructor_drilldown_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_constructor_drilldown_proven={policy.get('constructor_drilldown_proven', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_raw_strings_exported={policy.get('raw_strings_exported', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_constructor_growth_drilldown_analysis_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_constructor_growth_drilldown_analysis_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-constructor-growth-drilldown-analysis.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot constructor-growth drilldown analysis MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "candidate_count": len(rows),
+                        "top_candidate": top_candidate.get("name"),
+                        "constructor_drilldown_computed": policy.get("constructor_drilldown_computed", False),
+                        "constructor_drilldown_proven": policy.get("constructor_drilldown_proven", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "raw_strings_exported": policy.get("raw_strings_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_constructor_growth_drilldown_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_constructor_growth_drilldown_analysis_before_retained_size_path_to_root_or_second_pass",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_constructor_growth_drilldown_request(protection_name, context):
+            spec = HeapSnapshotConstructorGrowthDrilldownSpec.from_context(context)
+            result = HeapSnapshotConstructorGrowthDrilldownManager().review(spec)
+            drilldown = result.drilldown if isinstance(result.drilldown, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = drilldown.get("source_selected_analysis_input_preflight") if isinstance(drilldown.get("source_selected_analysis_input_preflight"), dict) else {}
+            summary = drilldown.get("constructor_growth_summary") if isinstance(drilldown.get("constructor_growth_summary"), dict) else {}
+            top_candidate = summary.get("top_candidate") if isinstance(summary.get("top_candidate"), dict) else {}
+            contracts = drilldown.get("future_analysis_contracts") if isinstance(drilldown.get("future_analysis_contracts"), dict) else {}
+            retained_contract = contracts.get("retained_size_analysis") if isinstance(contracts.get("retained_size_analysis"), dict) else {}
+            path_contract = contracts.get("path_to_root_analysis") if isinstance(contracts.get("path_to_root_analysis"), dict) else {}
+            blockers = drilldown.get("blockers") if isinstance(drilldown.get("blockers"), list) else []
+            warnings = drilldown.get("warnings") if isinstance(drilldown.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_constructor_growth_drilldown_status={result.status}",
+                f"heap_snapshot_constructor_growth_drilldown_selected_action={drilldown.get('selected_action')}",
+                f"heap_snapshot_constructor_growth_drilldown_candidate_count={summary.get('candidate_count')}",
+                f"heap_snapshot_constructor_growth_drilldown_top_candidate={top_candidate.get('name')}",
+                f"heap_snapshot_constructor_growth_drilldown_top_delta={top_candidate.get('delta')}",
+                f"heap_snapshot_constructor_growth_drilldown_source_preflight_status={source.get('status')}",
+                f"heap_snapshot_constructor_growth_drilldown_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_constructor_growth_drilldown_retained_size_implemented={retained_contract.get('implemented', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_path_to_root_implemented={path_contract.get('implemented', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_constructor_drilldown_computed={policy.get('constructor_drilldown_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_constructor_growth_drilldown_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_constructor_growth_drilldown_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_constructor_growth_drilldown_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-constructor-growth-drilldown.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot constructor-growth drilldown descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": drilldown.get("review_only", True),
+                        "drilldown_only": drilldown.get("drilldown_only", True),
+                        "summary_only": drilldown.get("summary_only", True),
+                        "selected_action": drilldown.get("selected_action"),
+                        "candidate_count": summary.get("candidate_count"),
+                        "top_candidate": top_candidate.get("name"),
+                        "top_delta": top_candidate.get("delta"),
+                        "transaction_id": source.get("transaction_id"),
+                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
+                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "constructor_drilldown_computed": policy.get("constructor_drilldown_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=drilldown.get("next_action") or "resolve_heap_snapshot_constructor_growth_drilldown_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_selected_analysis_input_preflight_request(protection_name, context):
+            spec = HeapSnapshotDiffSelectedAnalysisInputPreflightSpec.from_context(context)
+            result = HeapSnapshotDiffSelectedAnalysisInputPreflightManager().review(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            source = preflight.get("source_checkpoint_summary") if isinstance(preflight.get("source_checkpoint_summary"), dict) else {}
+            selected = preflight.get("selected_analysis_input") if isinstance(preflight.get("selected_analysis_input"), dict) else {}
+            future = preflight.get("future_executor_contract") if isinstance(preflight.get("future_executor_contract"), dict) else {}
+            blockers = preflight.get("blockers") if isinstance(preflight.get("blockers"), list) else []
+            warnings = preflight.get("warnings") if isinstance(preflight.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_selected_analysis_input_preflight_status={result.status}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_selected_action={selected.get('selected_action')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_candidate_count={selected.get('candidate_count')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_source_checkpoint_status={source.get('status')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_transaction_id={source.get('transaction_id')}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_future_executor_implemented={future.get('implemented', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_requires_raw_heap={future.get('requires_raw_heap', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_retained_size_proven={policy.get('retained_size_proven', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_path_to_root_computed={policy.get('path_to_root_computed', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_selected_analysis_input_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_selected_analysis_input_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-selected-analysis-input-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff selected follow-up analysis input preflight.",
+                    metadata={
+                        "status": result.status,
+                        "review_only": preflight.get("review_only", True),
+                        "preflight_only": preflight.get("preflight_only", True),
+                        "selection_only": preflight.get("selection_only", True),
+                        "selected_action": selected.get("selected_action"),
+                        "candidate_count": selected.get("candidate_count"),
+                        "transaction_id": source.get("transaction_id"),
+                        "future_executor_implemented": future.get("implemented", False),
+                        "requires_raw_heap": future.get("requires_raw_heap", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "retained_size_proven": policy.get("retained_size_proven", False),
+                        "path_to_root_computed": policy.get("path_to_root_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=preflight.get("next_action") or "resolve_heap_snapshot_diff_selected_analysis_input_preflight_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_followup_checkpoint_request(protection_name, context):
+            spec = HeapSnapshotDiffFollowupCheckpointSpec.from_context(context)
+            result = HeapSnapshotDiffFollowupCheckpointManager().review(spec)
+            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            summary = checkpoint.get("executor_result_summary") if isinstance(checkpoint.get("executor_result_summary"), dict) else {}
+            analysis_plan = checkpoint.get("analysis_plan") if isinstance(checkpoint.get("analysis_plan"), dict) else {}
+            delta_review = analysis_plan.get("summary_delta_review") if isinstance(analysis_plan.get("summary_delta_review"), dict) else {}
+            contracts = analysis_plan.get("future_analysis_contracts") if isinstance(analysis_plan.get("future_analysis_contracts"), dict) else {}
+            retained_contract = contracts.get("retained_size_analysis") if isinstance(contracts.get("retained_size_analysis"), dict) else {}
+            path_contract = contracts.get("path_to_root_analysis") if isinstance(contracts.get("path_to_root_analysis"), dict) else {}
+            recommendations = analysis_plan.get("recommendations") if isinstance(analysis_plan.get("recommendations"), list) else []
+            blockers = checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else []
+            warnings = checkpoint.get("warnings") if isinstance(checkpoint.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_followup_checkpoint_status={result.status}",
+                f"heap_snapshot_diff_followup_checkpoint_executor_result_status={summary.get('status')}",
+                f"heap_snapshot_diff_followup_checkpoint_transaction_id={summary.get('transaction_id')}",
+                f"heap_snapshot_diff_followup_checkpoint_node_delta={delta_review.get('node_count_delta')}",
+                f"heap_snapshot_diff_followup_checkpoint_edge_delta={delta_review.get('edge_count_delta')}",
+                f"heap_snapshot_diff_followup_checkpoint_self_size_delta={delta_review.get('self_size_total_analyzed_delta')}",
+                f"heap_snapshot_diff_followup_checkpoint_recommendation_count={len(recommendations)}",
+                f"heap_snapshot_diff_followup_checkpoint_retained_size_implemented={retained_contract.get('implemented', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_path_to_root_implemented={path_contract.get('implemented', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_followup_checkpoint_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_followup_checkpoint_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_followup_checkpoint_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-followup-checkpoint.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff follow-up checkpoint.",
+                    metadata={
+                        "status": result.status,
+                        "checkpoint_only": checkpoint.get("checkpoint_only", True),
+                        "review_only": checkpoint.get("review_only", True),
+                        "transaction_id": summary.get("transaction_id"),
+                        "node_count_delta": delta_review.get("node_count_delta"),
+                        "edge_count_delta": delta_review.get("edge_count_delta"),
+                        "recommendation_count": len(recommendations),
+                        "retained_size_analysis_implemented": retained_contract.get("implemented", False),
+                        "path_to_root_analysis_implemented": path_contract.get("implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal_claimed": checkpoint.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.PARTIAL if result.status == "ready_for_review" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=checkpoint.get("next_action") or "review_heap_snapshot_diff_followup_plan_before_retained_size_or_path_to_root_work",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorManager().execute(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            diff = descriptor.get("diff") if isinstance(descriptor.get("diff"), dict) else {}
+            gate_summary = descriptor.get("gate_summary") if isinstance(descriptor.get("gate_summary"), dict) else {}
+            heap_summaries = descriptor.get("heap_summaries") if isinstance(descriptor.get("heap_summaries"), dict) else {}
+            before_summary = heap_summaries.get("before") if isinstance(heap_summaries.get("before"), dict) else {}
+            after_summary = heap_summaries.get("after") if isinstance(heap_summaries.get("after"), dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_result_status={result.status}",
+                f"heap_snapshot_diff_executor_result_transaction_id={gate_summary.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_result_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_result_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_result_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_result_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_result_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_result_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_result_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_result_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_result_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_result_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_result_before_nodes={before_summary.get('node_count_total')}",
+                f"heap_snapshot_diff_executor_result_after_nodes={after_summary.get('node_count_total')}",
+                f"heap_snapshot_diff_executor_result_node_delta={diff.get('node_count_delta')}",
+                f"heap_snapshot_diff_executor_result_edge_delta={diff.get('edge_count_delta')}",
+                f"heap_snapshot_diff_executor_result_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_result_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_result_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit-review-only heap snapshot diff executor MVP result.",
+                    metadata={
+                        "status": result.status,
+                        "executor_mvp": descriptor.get("executor_mvp", True),
+                        "transaction_id": gate_summary.get("transaction_id"),
+                        "result_artifact": descriptor.get("result_artifact"),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_heap_snapshot_diff_executor_mvp"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_result_before_followup",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_readiness_request(protection_name, context):
+            spec = HeapSnapshotReadinessSpec.from_context(context)
+            result = HeapSnapshotReadinessManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            evidence = descriptor.get("capability_evidence") if isinstance(descriptor.get("capability_evidence"), dict) else {}
+            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_readiness_status={result.status}",
+                f"heap_snapshot_readiness_provider_id={evidence.get('browser_provider_id')}",
+                f"heap_snapshot_readiness_cdp_available={evidence.get('cdp_available')}",
+                f"heap_snapshot_readiness_heap_profiler_capability={evidence.get('heap_profiler_capability')}",
+                f"heap_snapshot_readiness_heap_snapshot_collected={descriptor.get('heap_snapshot_collected', False)}",
+                f"heap_snapshot_readiness_heap_diff_computed={descriptor.get('heap_diff_computed', False)}",
+                f"heap_snapshot_readiness_raw_heap_export_allowed={gates.get('raw_heap_export_allowed', False)}",
+                f"heap_snapshot_readiness_max_snapshot_bytes={gates.get('max_snapshot_bytes')}",
+                f"heap_snapshot_readiness_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_readiness_provider_factory_invoked={policy.get('provider_factory_invoked', False)}",
+                f"heap_snapshot_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_readiness_heap_profiler_enabled={policy.get('heap_profiler_enabled', False)}",
+                f"heap_snapshot_readiness_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"heap_snapshot_readiness_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_readiness_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_readiness_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_readiness_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only CDP HeapProfiler heap snapshot readiness descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "browser_provider_id": evidence.get("browser_provider_id"),
+                        "cdp_available": evidence.get("cdp_available"),
+                        "heap_profiler_capability": evidence.get("heap_profiler_capability"),
+                        "heap_snapshot_collected": descriptor.get("heap_snapshot_collected", False),
+                        "raw_heap_export_allowed": gates.get("raw_heap_export_allowed", False),
+                        "complete_heap_traversal_claimed": descriptor.get("complete_heap_traversal_claimed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_readiness_before_collection",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_bounded_gate_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorBoundedGateSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorBoundedGateManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            bounded_input = descriptor.get("bounded_executor_input") if isinstance(descriptor.get("bounded_executor_input"), dict) else {}
+            future_contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
+            source_summary = descriptor.get("source_journal_summary") if isinstance(descriptor.get("source_journal_summary"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_bounded_gate_status={result.status}",
+                f"heap_snapshot_diff_executor_bounded_gate_journal_id={descriptor.get('journal_id')}",
+                f"heap_snapshot_diff_executor_bounded_gate_transaction_id={descriptor.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_bounded_gate_journal_written={descriptor.get('journal_written', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_ready_for_review={descriptor.get('bounded_executor_gate_ready_for_review', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_future_executor_implemented={future_contract.get('implemented', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_requires_safe_raw_heap_parser={future_contract.get('requires_safe_raw_heap_parser', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_bounded_gate_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_bounded_gate_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_bounded_gate_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-bounded-gate.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff executor bounded gate descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "journal_id": descriptor.get("journal_id"),
+                        "transaction_id": descriptor.get("transaction_id"),
+                        "idempotency_key": descriptor.get("idempotency_key"),
+                        "transaction_journal_verified": descriptor.get("transaction_journal_verified", False),
+                        "bounded_executor_gate_ready_for_review": descriptor.get("bounded_executor_gate_ready_for_review", False),
+                        "ready_to_execute_now": descriptor.get("ready_to_execute_now", False),
+                        "future_executor_implemented": future_contract.get("implemented", False),
+                        "result_artifact": future_contract.get("result_artifact") or bounded_input.get("result_artifact"),
+                        "journal_written": source_summary.get("journal_written", False),
+                        "bounded_executor_gate_written": descriptor.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_raw_heap_parser_or_executor_mvp",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_transaction_preflight_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorTransactionPreflightSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorTransactionPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            approval = descriptor.get("approval_summary") if isinstance(descriptor.get("approval_summary"), dict) else {}
+            transaction = descriptor.get("transaction_summary") if isinstance(descriptor.get("transaction_summary"), dict) else {}
+            preflight = descriptor.get("preflight_summary") if isinstance(descriptor.get("preflight_summary"), dict) else {}
+            journal_contract = descriptor.get("journal_writer_contract") if isinstance(descriptor.get("journal_writer_contract"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_transaction_preflight_status={result.status}",
+                f"heap_snapshot_diff_executor_transaction_preflight_approval_scope={approval.get('approval_scope')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_approval_recorded={approval.get('approval_recorded', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_approved_for_execution={approval.get('approved_for_execution', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_transaction_id={transaction.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_idempotency_key={transaction.get('idempotency_key')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_before_digest={preflight.get('before_digest')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_after_digest={preflight.get('after_digest')}",
+                f"heap_snapshot_diff_executor_transaction_preflight_ready_to_write_journal={journal_contract.get('ready_for_journal_review', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_transaction_started={policy.get('transaction_started', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_journal_written={policy.get('journal_written', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_bounded_executor_gate_written={policy.get('bounded_executor_gate_written', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_transaction_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_transaction_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-transaction-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web read-only heap snapshot diff executor transaction preflight descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "approval_scope": approval.get("approval_scope"),
+                        "approval_recorded": approval.get("approval_recorded", False),
+                        "approved_for_execution": approval.get("approved_for_execution", False),
+                        "transaction_id": transaction.get("transaction_id"),
+                        "idempotency_key": transaction.get("idempotency_key"),
+                        "before_digest": preflight.get("before_digest"),
+                        "after_digest": preflight.get("after_digest"),
+                        "ready_for_journal_review": journal_contract.get("ready_for_journal_review", False),
+                        "transaction_started": policy.get("transaction_started", False),
+                        "journal_written": policy.get("journal_written", False),
+                        "bounded_executor_gate_written": policy.get("bounded_executor_gate_written", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_transaction_journal_writer",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_approval_plan_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorApprovalPlanSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorApprovalPlanManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            preflight = descriptor.get("preflight_summary") if isinstance(descriptor.get("preflight_summary"), dict) else {}
+            approval = descriptor.get("approval_plan") if isinstance(descriptor.get("approval_plan"), dict) else {}
+            transaction = descriptor.get("transaction_plan") if isinstance(descriptor.get("transaction_plan"), dict) else {}
+            contract = descriptor.get("future_executor_contract") if isinstance(descriptor.get("future_executor_contract"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_approval_plan_status={result.status}",
+                f"heap_snapshot_diff_executor_approval_plan_before_digest={preflight.get('before_digest')}",
+                f"heap_snapshot_diff_executor_approval_plan_after_digest={preflight.get('after_digest')}",
+                f"heap_snapshot_diff_executor_approval_plan_approval_scope={approval.get('approval_scope')}",
+                f"heap_snapshot_diff_executor_approval_plan_approval_recorded={policy.get('approval_recorded', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_transaction_id={transaction.get('transaction_id')}",
+                f"heap_snapshot_diff_executor_approval_plan_idempotency_key={transaction.get('idempotency_key')}",
+                f"heap_snapshot_diff_executor_approval_plan_transaction_started={policy.get('transaction_started', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_journal_written_now={policy.get('journal_written_now', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_future_executor_implemented={contract.get('implemented', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_executor_invoked={policy.get('executor_invoked', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_approval_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_approval_plan_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_approval_plan_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-approval-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff executor approval and transaction plan.",
+                    metadata={
+                        "status": result.status,
+                        "before_digest": preflight.get("before_digest"),
+                        "after_digest": preflight.get("after_digest"),
+                        "approval_scope": approval.get("approval_scope"),
+                        "approval_recorded": policy.get("approval_recorded", False),
+                        "transaction_id": transaction.get("transaction_id"),
+                        "idempotency_key": transaction.get("idempotency_key"),
+                        "transaction_started": policy.get("transaction_started", False),
+                        "journal_written_now": policy.get("journal_written_now", False),
+                        "future_executor_implemented": contract.get("implemented", False),
+                        "executor_invoked": policy.get("executor_invoked", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_approval_plan_before_recording_approval",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_executor_preflight_request(protection_name, context):
+            spec = HeapSnapshotDiffExecutorPreflightSpec.from_context(context)
+            result = HeapSnapshotDiffExecutorPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            readiness = descriptor.get("readiness_summary") if isinstance(descriptor.get("readiness_summary"), dict) else {}
+            ingestion = descriptor.get("ingestion_policy") if isinstance(descriptor.get("ingestion_policy"), dict) else {}
+            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_executor_preflight_status={result.status}",
+                f"heap_snapshot_diff_executor_preflight_before_digest={readiness.get('before_digest')}",
+                f"heap_snapshot_diff_executor_preflight_after_digest={readiness.get('after_digest')}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_ingestion_policy={ingestion.get('raw_heap_ingestion_policy')}",
+                f"heap_snapshot_diff_executor_preflight_parser_sandbox={ingestion.get('parser_sandbox')}",
+                f"heap_snapshot_diff_executor_preflight_redaction_plan={ingestion.get('redaction_plan')}",
+                f"heap_snapshot_diff_executor_preflight_max_raw_heap_bytes={ingestion.get('max_raw_heap_bytes')}",
+                f"heap_snapshot_diff_executor_preflight_future_diff_executor_implemented={gates.get('future_diff_executor_implemented', False)}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_parsed={policy.get('raw_heap_parsed', False)}",
+                f"heap_snapshot_diff_executor_preflight_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_executor_preflight_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_executor_preflight_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_executor_preflight_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_executor_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_executor_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_executor_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_executor_preflight_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_executor_preflight_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_executor_preflight_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-executor-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff executor preflight and raw-ingestion safety gate.",
+                    metadata={
+                        "status": result.status,
+                        "before_digest": readiness.get("before_digest"),
+                        "after_digest": readiness.get("after_digest"),
+                        "raw_heap_ingestion_policy": ingestion.get("raw_heap_ingestion_policy"),
+                        "future_diff_executor_implemented": gates.get("future_diff_executor_implemented", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_parsed": policy.get("raw_heap_parsed", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_executor_preflight_before_implementation",
+                confidence=ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_diff_readiness_request(protection_name, context):
+            spec = HeapSnapshotDiffReadinessSpec.from_context(context)
+            result = HeapSnapshotDiffReadinessManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            pair = descriptor.get("pair_summary") if isinstance(descriptor.get("pair_summary"), dict) else {}
+            gates = descriptor.get("safety_gates") if isinstance(descriptor.get("safety_gates"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_diff_readiness_status={result.status}",
+                f"heap_snapshot_diff_readiness_before_digest={pair.get('before_digest')}",
+                f"heap_snapshot_diff_readiness_after_digest={pair.get('after_digest')}",
+                f"heap_snapshot_diff_readiness_digest_equal={pair.get('digest_equal')}",
+                f"heap_snapshot_diff_readiness_byte_delta={pair.get('byte_delta')}",
+                f"heap_snapshot_diff_readiness_byte_delta_ratio={pair.get('byte_delta_ratio')}",
+                f"heap_snapshot_diff_readiness_future_diff_executor_implemented={gates.get('future_diff_executor_implemented', False)}",
+                f"heap_snapshot_diff_readiness_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_diff_readiness_raw_heap_loaded={policy.get('raw_heap_loaded', False)}",
+                f"heap_snapshot_diff_readiness_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_diff_readiness_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_diff_readiness_browser_started={policy.get('browser_started', False)}",
+                f"heap_snapshot_diff_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_diff_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_diff_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_diff_readiness_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_diff_readiness_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_diff_readiness_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-diff-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web review-only heap snapshot diff readiness descriptor over collected metadata.",
+                    metadata={
+                        "status": result.status,
+                        "before_digest": pair.get("before_digest"),
+                        "after_digest": pair.get("after_digest"),
+                        "digest_equal": pair.get("digest_equal"),
+                        "byte_delta": pair.get("byte_delta"),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "raw_heap_loaded": policy.get("raw_heap_loaded", False),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "browser_started": policy.get("browser_started", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=descriptor.get("next_action") or "review_heap_snapshot_diff_readiness_before_diff_executor",
+                confidence=ConfidenceLevel.LOW,
+            )
         if self._is_object_graph_diff_request(protection_name, context):
             spec = ObjectGraphDiffSpec.from_context(context)
             result = ObjectGraphDiffManager().review(spec)
@@ -655,6 +2324,754 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_hook_candidate_selection_request(protection_name, context):
+            spec = SourceMapHookCandidateSelectionSpec.from_context(context)
+            result = SourceMapHookCandidateSelectionManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_hook_candidate_selection_status={result.status}",
+                f"source_map_hook_candidate_selection_source_status={descriptor.get('source_candidates_status', '')}",
+                f"source_map_hook_candidate_selection_candidate_count={descriptor.get('candidate_count', 0)}",
+                f"source_map_hook_candidate_selection_selected_candidate_id={descriptor.get('selected_candidate_id', '')}",
+                f"source_map_hook_candidate_selection_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_hook_candidate_selection_ready_for_input_review={descriptor.get('ready_for_selected_executor_input_review', False)}",
+                "source_map_hook_candidate_selection_review_only=True",
+                "source_map_hook_candidate_selection_plan_only=True",
+                "source_map_hook_candidate_selection_handoff_only=True",
+                f"source_map_hook_candidate_selection_browser_started={policy.get('browser_started', False)}",
+                f"source_map_hook_candidate_selection_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_hook_candidate_selection_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_hook_candidate_selection_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_hook_candidate_selection_automatic_hook_installation={policy.get('automatic_hook_installation', False)}",
+                f"source_map_hook_candidate_selection_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_hook_candidate_selection_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_hook_candidate_selection_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_hook_candidate_selection_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-hook-candidate-selection.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Source Map hook candidate selection handoff descriptor.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-hook-candidate-selection.v1",
+                        "status": result.status,
+                        "review_only": True,
+                        "plan_only": True,
+                        "selection_only": True,
+                        "handoff_only": True,
+                        "candidate_count": descriptor.get("candidate_count", 0),
+                        "selected_candidate_id": descriptor.get("selected_candidate_id", ""),
+                        "selected_action_id": descriptor.get("selected_action_id", ""),
+                        "selected_consumer": descriptor.get("selected_consumer", ""),
+                        "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""),
+                        "ready_for_selected_executor_input_review": bool(descriptor.get("ready_for_selected_executor_input_review", False)),
+                        "blockers": descriptor.get("blockers", []),
+                        "warnings": descriptor.get("warnings", []),
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "hook_installed": False,
+                        "automatic_hook_installation": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+            ]
+            status = ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["select_source_map_hook_candidate"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(descriptor.get("next_action") or "run_source_map_selected_executor_input_review_for_selected_hook_candidate"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_hook_candidate_refinement_request(protection_name, context):
+            spec = SourceMapHookCandidateRefinementSpec.from_context(context)
+            result = SourceMapHookCandidateRefinementManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            candidates = descriptor.get("candidates") if isinstance(descriptor.get("candidates"), list) else []
+            source_status = descriptor.get("source_status") if isinstance(descriptor.get("source_status"), dict) else {}
+            verification = [
+                f"source_map_hook_candidates_status={result.status}",
+                f"source_map_hook_candidates_bundler={descriptor.get('bundler_kind', 'unknown')}",
+                f"source_map_hook_candidates_symbol={descriptor.get('requested_symbol', '')}",
+                f"source_map_hook_candidates_source_scope_candidate_count={descriptor.get('source_scope_candidate_count', 0)}",
+                f"source_map_hook_candidates_candidate_count={descriptor.get('candidate_count', 0)}",
+                f"source_map_hook_candidates_ready_for_install_review_count={descriptor.get('ready_for_hook_install_review_count', 0)}",
+                f"source_map_hook_candidates_typed_hook_payload_ready={source_status.get('typed_hook_payload_ready', False)}",
+                "source_map_hook_candidates_review_only=True",
+                "source_map_hook_candidates_plan_only=True",
+                f"source_map_hook_candidates_browser_started={policy.get('browser_started', False)}",
+                f"source_map_hook_candidates_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_hook_candidates_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_hook_candidates_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_hook_candidates_automatic_hook_installation={policy.get('automatic_hook_installation', False)}",
+                f"source_map_hook_candidates_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_hook_candidates_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_hook_candidates_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_hook_candidates_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-hook-candidates.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Source Map hook candidate refinement descriptor.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-hook-candidates.v1",
+                        "status": result.status,
+                        "review_only": True,
+                        "plan_only": True,
+                        "candidate_refinement_only": True,
+                        "requested_symbol": descriptor.get("requested_symbol", ""),
+                        "bundler_kind": descriptor.get("bundler_kind", "unknown"),
+                        "source_scope_candidate_count": descriptor.get("source_scope_candidate_count", 0),
+                        "module_candidate_count": descriptor.get("module_candidate_count", 0),
+                        "candidate_count": descriptor.get("candidate_count", 0),
+                        "ready_for_hook_install_review_count": descriptor.get("ready_for_hook_install_review_count", 0),
+                        "candidate_ids": [str(item.get("candidate_id")) for item in candidates if isinstance(item, dict) and item.get("candidate_id")],
+                        "blockers": descriptor.get("blockers", []),
+                        "warnings": descriptor.get("warnings", []),
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "hook_installed": False,
+                        "automatic_hook_installation": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+            ]
+            status = ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["refine_source_map_hook_candidates"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(descriptor.get("next_action") or "review_source_map_hook_candidates_before_selected_hook_install"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_debugger_candidate_selection_request(protection_name, context):
+            spec = SourceMapDebuggerCandidateSelectionSpec.from_context(context)
+            result = SourceMapDebuggerCandidateSelectionManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_debugger_candidate_selection_status={result.status}",
+                f"source_map_debugger_candidate_selection_source_status={descriptor.get('source_candidates_status', '')}",
+                f"source_map_debugger_candidate_selection_candidate_count={descriptor.get('candidate_count', 0)}",
+                f"source_map_debugger_candidate_selection_selected_candidate_id={descriptor.get('selected_candidate_id', '')}",
+                f"source_map_debugger_candidate_selection_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_debugger_candidate_selection_ready_for_input_review={descriptor.get('ready_for_selected_executor_input_review', False)}",
+                "source_map_debugger_candidate_selection_review_only=True",
+                "source_map_debugger_candidate_selection_plan_only=True",
+                "source_map_debugger_candidate_selection_handoff_only=True",
+                f"source_map_debugger_candidate_selection_browser_started={policy.get('browser_started', False)}",
+                f"source_map_debugger_candidate_selection_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_debugger_candidate_selection_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_debugger_candidate_selection_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_debugger_candidate_selection_breakpoint_installed={policy.get('breakpoint_installed', False)}",
+                f"source_map_debugger_candidate_selection_automatic_debugger_continuation={policy.get('automatic_debugger_continuation', False)}",
+                f"source_map_debugger_candidate_selection_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_debugger_candidate_selection_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_debugger_candidate_selection_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_debugger_candidate_selection_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-debugger-candidate-selection.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Source Map debugger candidate selection handoff descriptor.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-debugger-candidate-selection.v1",
+                        "status": result.status,
+                        "review_only": True,
+                        "plan_only": True,
+                        "selection_only": True,
+                        "handoff_only": True,
+                        "candidate_count": descriptor.get("candidate_count", 0),
+                        "selected_candidate_id": descriptor.get("selected_candidate_id", ""),
+                        "selected_action_id": descriptor.get("selected_action_id", ""),
+                        "selected_consumer": descriptor.get("selected_consumer", ""),
+                        "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""),
+                        "ready_for_selected_executor_input_review": bool(descriptor.get("ready_for_selected_executor_input_review", False)),
+                        "blockers": descriptor.get("blockers", []),
+                        "warnings": descriptor.get("warnings", []),
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "debugger_execution_performed": False,
+                        "breakpoint_installed": False,
+                        "automatic_debugger_continuation": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+            ]
+            status = ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["select_source_map_debugger_candidate"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(descriptor.get("next_action") or "run_source_map_selected_executor_input_review_for_selected_debugger_candidate"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_debugger_candidate_review_request(protection_name, context):
+            spec = SourceMapDebuggerCandidateReviewSpec.from_context(context)
+            result = SourceMapDebuggerCandidateReviewManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            candidates = descriptor.get("candidates") if isinstance(descriptor.get("candidates"), list) else []
+            source_status = descriptor.get("source_status") if isinstance(descriptor.get("source_status"), dict) else {}
+            verification = [
+                f"source_map_debugger_candidates_status={result.status}",
+                f"source_map_debugger_candidates_bundler={descriptor.get('bundler_kind', 'unknown')}",
+                f"source_map_debugger_candidates_symbol={descriptor.get('requested_symbol', '')}",
+                f"source_map_debugger_candidates_source_scope_candidate_count={descriptor.get('source_scope_candidate_count', 0)}",
+                f"source_map_debugger_candidates_lookup_candidate_count={descriptor.get('lookup_candidate_count', 0)}",
+                f"source_map_debugger_candidates_candidate_count={descriptor.get('candidate_count', 0)}",
+                f"source_map_debugger_candidates_ready_for_location_review_count={descriptor.get('ready_for_debugger_location_review_count', 0)}",
+                f"source_map_debugger_candidates_typed_debugger_payload_ready={source_status.get('typed_debugger_payload_ready', False)}",
+                "source_map_debugger_candidates_review_only=True",
+                "source_map_debugger_candidates_plan_only=True",
+                f"source_map_debugger_candidates_browser_started={policy.get('browser_started', False)}",
+                f"source_map_debugger_candidates_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_debugger_candidates_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_debugger_candidates_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+                f"source_map_debugger_candidates_breakpoint_installed={policy.get('breakpoint_installed', False)}",
+                f"source_map_debugger_candidates_automatic_debugger_continuation={policy.get('automatic_debugger_continuation', False)}",
+                f"source_map_debugger_candidates_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_debugger_candidates_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_debugger_candidates_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_debugger_candidates_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-debugger-candidates.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Source Map debugger location candidate descriptor.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-debugger-candidates.v1",
+                        "status": result.status,
+                        "review_only": True,
+                        "plan_only": True,
+                        "candidate_review_only": True,
+                        "requested_symbol": descriptor.get("requested_symbol", ""),
+                        "bundler_kind": descriptor.get("bundler_kind", "unknown"),
+                        "source_scope_candidate_count": descriptor.get("source_scope_candidate_count", 0),
+                        "lookup_candidate_count": descriptor.get("lookup_candidate_count", 0),
+                        "candidate_count": descriptor.get("candidate_count", 0),
+                        "ready_for_debugger_location_review_count": descriptor.get("ready_for_debugger_location_review_count", 0),
+                        "candidate_ids": [str(item.get("candidate_id")) for item in candidates if isinstance(item, dict) and item.get("candidate_id")],
+                        "blockers": descriptor.get("blockers", []),
+                        "warnings": descriptor.get("warnings", []),
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "debugger_execution_performed": False,
+                        "breakpoint_installed": False,
+                        "automatic_debugger_continuation": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+            ]
+            status = ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["review_source_map_debugger_candidates"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(descriptor.get("next_action") or "review_source_map_debugger_candidates_before_selected_debugger_apply"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_debugger_application_request(protection_name, context):
+            apply_preflight = self._source_map_debugger_apply_preflight(context)
+            debugger_input = self._source_map_debugger_location_input(context, apply_preflight)
+            breakpoint_context = self._source_map_debugger_breakpoint_context(debugger_input)
+            blockers = self._source_map_debugger_application_blockers(context, apply_preflight, debugger_input, breakpoint_context)
+            spec = BreakpointSpec.from_context(breakpoint_context)
+            approved = bool(
+                context.get(
+                    "approve_source_map_debugger_action",
+                    context.get(
+                        "approveSourceMapDebuggerAction",
+                        context.get(
+                            "approve_source_map_debugger_location_action",
+                            context.get(
+                                "approveSourceMapDebuggerLocationAction",
+                                context.get("approve_debugger_location_action", context.get("approveDebuggerLocationAction", False)),
+                            ),
+                        ),
+                    ),
+                )
+            )
+            location = debugger_input.get("location") if isinstance(debugger_input.get("location"), dict) else {}
+            verification = [
+                f"source_map_debugger_application_preflight_status={apply_preflight.get('status', '')}",
+                f"source_map_debugger_application_selected_action_id={apply_preflight.get('selected_action_id', '')}",
+                f"source_map_debugger_application_selected_consumer={apply_preflight.get('selected_consumer', '')}",
+                f"source_map_debugger_application_selected_gate={apply_preflight.get('selected_review_gate', '')}",
+                f"source_map_debugger_application_review_approved={bool(context.get('review_approved', context.get('reviewApproved', False)))}",
+                f"source_map_debugger_application_action_approved={approved}",
+                f"source_map_debugger_application_mode={context.get('mode', '')}",
+                f"source_map_debugger_application_url_pattern={breakpoint_context.get('url_pattern', '')}",
+                f"source_map_debugger_application_line_number={breakpoint_context.get('line_number', '')}",
+                f"source_map_debugger_application_column_number={breakpoint_context.get('column_number', '')}",
+                f"source_map_debugger_application_source={location.get('source', '')}",
+                f"source_map_debugger_application_mapping_strategy={location.get('mapping_strategy', location.get('strategy', ''))}",
+                f"source_map_debugger_application_blockers={','.join(blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if blockers:
+                verification.extend(
+                    [
+                        "source_map_debugger_application_browser_started=False",
+                        "source_map_debugger_application_cdp_command_sent=False",
+                        "source_map_debugger_application_runtime_evaluated=False",
+                        "source_map_debugger_application_debugger_location_applied=False",
+                        "source_map_debugger_application_surface_executor_invoked=False",
+                        "source_map_debugger_application_calls_mcp=False",
+                        "source_map_debugger_application_mobile_runtime_used=False",
+                        "source_map_debugger_application_automatic_continuation=False",
+                        "source_map_debugger_application_automatic_loop=False",
+                    ]
+                )
+                artifact = ArtifactRef(
+                    path="virtual://workspace/source-map-debugger-execution-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime blocked Source Map selected debugger application result.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-debugger-execution-result.v1",
+                        "status": "blocked",
+                        "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                        "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                        "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                        "review_approved": bool(context.get("review_approved", context.get("reviewApproved", False))),
+                        "approve_source_map_debugger_action": approved,
+                        "mode": context.get("mode", ""),
+                        "reviewer": str(context.get("reviewer") or ""),
+                        "url_pattern": breakpoint_context.get("url_pattern", ""),
+                        "line_number": breakpoint_context.get("line_number"),
+                        "column_number": breakpoint_context.get("column_number"),
+                        "location": dict(location),
+                        "blockers": blockers,
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "debugger_location_applied": False,
+                        "breakpoint_set": False,
+                        "breakpoint_count": 0,
+                        "paused_status": "not_attempted",
+                        "callframe_count": 0,
+                        "debugger_action_count": 0,
+                        "surface_executor_invoked": False,
+                        "automatic_continuation": False,
+                        "automatic_loop": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=verification,
+                    status=ExecutionStatus.PARTIAL,
+                    artifacts=[artifact],
+                    next_action=self._source_map_debugger_application_next_action(blockers),
+                    confidence=ConfidenceLevel.LOW,
+                )
+            try:
+                session = self._ensure_session()
+                page = session.get_active_page() or session.new_page()
+            except Exception as exc:
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=[f"Native Web browser provider unavailable: {exc}", *verification],
+                    status=ExecutionStatus.FAILED,
+                    artifacts=[],
+                    next_action="ensure_browser_provider",
+                    confidence=ConfidenceLevel.LOW,
+                )
+            result = BreakpointManager().set_breakpoint(page, spec)
+            breakpoint_count = len(result.breakpoints)
+            paused_status = result.paused.get("status") if isinstance(result.paused, dict) else "unknown"
+            callframe_count = len(result.callframes)
+            debugger_action_count = len(result.debugger_actions)
+            runtime_evaluated = bool(breakpoint_context.get("trigger_expression") or result.trigger)
+            cdp_command_sent = bool(result.supported and breakpoint_count)
+            debugger_location_applied = result.status in {"success", "partial"} and bool(breakpoint_count)
+            verification.extend(
+                [
+                    f"source_map_debugger_application_status={result.status}",
+                    f"source_map_debugger_application_breakpoint_count={breakpoint_count}",
+                    f"source_map_debugger_application_paused_status={paused_status or 'unknown'}",
+                    f"source_map_debugger_application_callframe_count={callframe_count}",
+                    f"source_map_debugger_application_debugger_action_count={debugger_action_count}",
+                    "source_map_debugger_application_browser_started=True",
+                    f"source_map_debugger_application_runtime_evaluated={runtime_evaluated}",
+                    f"source_map_debugger_application_cdp_command_sent={cdp_command_sent}",
+                    f"source_map_debugger_application_debugger_location_applied={debugger_location_applied}",
+                    "source_map_debugger_application_surface_executor_invoked=True",
+                    "source_map_debugger_application_automatic_continuation=False",
+                    "source_map_debugger_application_automatic_loop=False",
+                    "source_map_debugger_application_calls_mcp=False",
+                    "source_map_debugger_application_mobile_runtime_used=False",
+                ]
+            )
+            if result.trigger:
+                verification.append(f"source_map_debugger_application_trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"source_map_debugger_application_trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"source_map_debugger_application_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_debugger_application_error={result.error}")
+            artifacts = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-debugger-execution-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit-review Source Map selected debugger application result.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-debugger-execution-result.v1",
+                        "status": "success" if debugger_location_applied else result.status,
+                        "breakpoint_status": result.status,
+                        "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                        "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                        "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                        "approval_record_id": apply_preflight.get("approval_record_id", ""),
+                        "reviewer": str(context.get("reviewer") or ""),
+                        "review_approved": True,
+                        "approve_source_map_debugger_action": True,
+                        "mode": "apply",
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "location": dict(location),
+                        "breakpoint_count": breakpoint_count,
+                        "breakpoint_set": bool(breakpoint_count),
+                        "paused_status": paused_status or "unknown",
+                        "callframe_count": callframe_count,
+                        "debugger_action_count": debugger_action_count,
+                        "browser_started": True,
+                        "runtime_evaluated": runtime_evaluated,
+                        "cdp_command_sent": cdp_command_sent,
+                        "debugger_location_applied": debugger_location_applied,
+                        "debugger_execution_performed": True,
+                        "surface_executor_invoked": True,
+                        "automatic_continuation": False,
+                        "automatic_loop": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/breakpoints.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime Source Map debugger breakpoint result.",
+                    metadata={
+                        "status": result.status,
+                        "supported": result.supported,
+                        "count": breakpoint_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "source": location.get("source", ""),
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/debugger-paused.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime Source Map debugger paused snapshot.",
+                    metadata={
+                        "status": paused_status or "unknown",
+                        "count": result.paused.get("count", 0) if isinstance(result.paused, dict) else 0,
+                        "callframe_count": callframe_count,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/callframes.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime Source Map debugger callframe snapshot.",
+                    metadata={
+                        "count": callframe_count,
+                        "paused_status": paused_status or "unknown",
+                    },
+                ),
+            ]
+            if result.debugger_actions:
+                artifacts.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-actions.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime Source Map debugger control action snapshot.",
+                        metadata={"count": debugger_action_count, "paused_status": paused_status or "unknown"},
+                    )
+                )
+            if result.debugger_session:
+                artifacts.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-session.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime Source Map debugger paused-session snapshot.",
+                        metadata={
+                            "status": result.debugger_session.get("status", "unknown"),
+                            "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
+                            "paused_event_count": result.debugger_session.get("paused_event_count", 0),
+                        },
+                    )
+                )
+            if result.debugger_timeline:
+                artifacts.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime Source Map debugger event timeline.",
+                        metadata={
+                            "status": result.debugger_timeline.get("status", "unknown"),
+                            "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
+                            "entry_count": result.debugger_timeline.get("entry_count", 0),
+                            "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
+                        },
+                    )
+                )
+            status = ExecutionStatus.SUCCESS if debugger_location_applied else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"apply_source_map_debugger_location:{spec.url_pattern}:{spec.line_number}"]
+                    + (["capture_debugger_paused"] if paused_status == "success" else [])
+                    if spec and result.supported
+                    else []
+                ),
+                verification=verification,
+                status=status,
+                artifacts=artifacts,
+                next_action="inspect_source_map_debugger_execution_artifacts" if debugger_location_applied else "inspect_source_map_debugger_execution_failure",
+                confidence=ConfidenceLevel.MEDIUM if debugger_location_applied else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_hook_application_request(protection_name, context):
+            apply_preflight = self._source_map_hook_apply_preflight(context)
+            hook_input = self._source_map_hook_install_input(context, apply_preflight)
+            hook_kind, hook_spec = self._source_map_hook_install_spec(hook_input)
+            blockers = self._source_map_hook_application_blockers(context, apply_preflight, hook_input, hook_kind, hook_spec)
+            approve_hook = bool(
+                context.get(
+                    "approve_source_map_hook_install",
+                    context.get("approveSourceMapHookInstall", context.get("approve_hook_install", context.get("approveHookInstall", False))),
+                )
+            )
+            verification = [
+                f"source_map_hook_application_preflight_status={apply_preflight.get('status', '')}",
+                f"source_map_hook_application_selected_action_id={apply_preflight.get('selected_action_id', '')}",
+                f"source_map_hook_application_selected_consumer={apply_preflight.get('selected_consumer', '')}",
+                f"source_map_hook_application_selected_gate={apply_preflight.get('selected_review_gate', '')}",
+                f"source_map_hook_application_review_approved={bool(context.get('review_approved', context.get('reviewApproved', False)))}",
+                f"source_map_hook_application_install_approved={approve_hook}",
+                f"source_map_hook_application_mode={context.get('mode', '')}",
+                f"source_map_hook_application_hook_kind={hook_kind or 'unknown'}",
+                f"source_map_hook_application_blockers={','.join(blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if blockers:
+                artifact = ArtifactRef(
+                    path="virtual://workspace/source-map-hook-install-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime blocked Source Map selected hook application result.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-hook-install-result.v1",
+                        "status": "blocked",
+                        "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                        "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                        "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                        "review_approved": bool(context.get("review_approved", context.get("reviewApproved", False))),
+                        "approve_source_map_hook_install": approve_hook,
+                        "mode": context.get("mode", ""),
+                        "hook_kind": hook_kind or "unknown",
+                        "function_name": getattr(hook_spec, "function_name", None) if hook_spec else None,
+                        "module_id": getattr(hook_spec, "module_id", None) if hook_spec else None,
+                        "export_name": getattr(hook_spec, "export_name", None) if hook_spec else None,
+                        "blockers": blockers,
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "hook_installed": False,
+                        "function_hook_installed": False,
+                        "module_hook_installed": False,
+                        "surface_executor_invoked": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=verification,
+                    status=ExecutionStatus.PARTIAL,
+                    artifacts=[artifact],
+                    next_action=self._source_map_hook_application_next_action(blockers),
+                    confidence=ConfidenceLevel.LOW,
+                )
+            try:
+                session = self._ensure_session()
+                page = session.get_active_page() or session.new_page()
+            except Exception as exc:
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=[f"Native Web browser provider unavailable: {exc}", *verification],
+                    status=ExecutionStatus.FAILED,
+                    artifacts=[],
+                    next_action="ensure_browser_provider",
+                    confidence=ConfidenceLevel.LOW,
+                )
+            if hook_kind == "module":
+                result = ModuleHookManager().install(page, hook_spec if isinstance(hook_spec, ModuleHookSpec) else None)
+                primary_path = "virtual://workspace/module-hooks.json"
+                timeline_path = "virtual://workspace/module-hook-timeline.json"
+                primary_description = "Native Web runtime Source Map reviewed module hook install result."
+                timeline_description = "Native Web runtime Source Map reviewed module hook timeline."
+                install_action = f"install_source_map_module_hook:{hook_spec.module_id}:{hook_spec.export_name}" if isinstance(hook_spec, ModuleHookSpec) else "install_source_map_module_hook:<missing>"
+                hook_target = hook_spec.hook_path() if isinstance(hook_spec, ModuleHookSpec) else "<missing>"
+            else:
+                result = FunctionHookManager().install(page, hook_spec if isinstance(hook_spec, FunctionHookSpec) else None)
+                primary_path = "virtual://workspace/function-hooks.json"
+                timeline_path = "virtual://workspace/function-hook-timeline.json"
+                primary_description = "Native Web runtime Source Map reviewed function hook install result."
+                timeline_description = "Native Web runtime Source Map reviewed function hook timeline."
+                install_action = f"install_source_map_function_hook:{hook_spec.function_name}" if isinstance(hook_spec, FunctionHookSpec) else "install_source_map_function_hook:<missing>"
+                hook_target = getattr(hook_spec, "function_name", "<missing>") if hook_spec else "<missing>"
+            installed_count = len(result.installed)
+            missing_count = len(result.missing)
+            event_count = len(result.events)
+            installed = bool(installed_count and result.status == "success")
+            verification.extend(
+                [
+                    f"source_map_hook_application_status={result.status}",
+                    f"source_map_hook_application_installed_count={installed_count}",
+                    f"source_map_hook_application_missing_count={missing_count}",
+                    f"source_map_hook_application_event_count={event_count}",
+                    "source_map_hook_application_browser_started=True",
+                    "source_map_hook_application_runtime_evaluated=True",
+                    "source_map_hook_application_cdp_command_sent=False",
+                    f"source_map_hook_application_hook_installed={installed}",
+                    f"source_map_hook_application_function_hook_installed={installed and hook_kind == 'function'}",
+                    f"source_map_hook_application_module_hook_installed={installed and hook_kind == 'module'}",
+                    "source_map_hook_application_surface_executor_invoked=True",
+                    "source_map_hook_application_calls_mcp=False",
+                    "source_map_hook_application_mobile_runtime_used=False",
+                ]
+            )
+            if result.trigger:
+                verification.append(f"source_map_hook_application_trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"source_map_hook_application_trigger_error={result.trigger['error']}")
+            if result.error:
+                verification.append(f"source_map_hook_application_error={result.error}")
+            artifacts = [
+                ArtifactRef(
+                    path="virtual://workspace/source-map-hook-install-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit-review Source Map selected hook application result.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-hook-install-result.v1",
+                        "status": "success" if installed else "failed",
+                        "hook_status": result.status,
+                        "selected_action_id": apply_preflight.get("selected_action_id", ""),
+                        "selected_consumer": apply_preflight.get("selected_consumer", ""),
+                        "selected_review_gate": apply_preflight.get("selected_review_gate", ""),
+                        "approval_record_id": apply_preflight.get("approval_record_id", ""),
+                        "reviewer": str(context.get("reviewer") or ""),
+                        "review_approved": True,
+                        "approve_source_map_hook_install": True,
+                        "mode": "apply",
+                        "hook_kind": hook_kind,
+                        "hook_target": hook_target,
+                        "function_name": getattr(hook_spec, "function_name", None) if hook_spec else None,
+                        "function_paths": getattr(hook_spec, "function_paths", []) if isinstance(hook_spec, FunctionHookSpec) else [],
+                        "module_id": getattr(hook_spec, "module_id", None) if hook_spec else None,
+                        "export_name": getattr(hook_spec, "export_name", None) if hook_spec else None,
+                        "require_path": getattr(hook_spec, "require_path", None) if hook_spec else None,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "event_count": event_count,
+                        "browser_started": True,
+                        "runtime_evaluated": True,
+                        "cdp_command_sent": False,
+                        "debugger_execution_performed": False,
+                        "logpoint_installed": False,
+                        "hook_installed": installed,
+                        "function_hook_installed": installed and hook_kind == "function",
+                        "module_hook_installed": installed and hook_kind == "module",
+                        "rebuild_executed": False,
+                        "surface_executor_invoked": True,
+                        "automatic_hook_installation": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                ),
+                ArtifactRef(
+                    path=primary_path,
+                    kind=ArtifactKind.JSON,
+                    description=primary_description,
+                    metadata={
+                        "status": result.status,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "hook_kind": hook_kind,
+                        "hook_target": hook_target,
+                    },
+                ),
+                ArtifactRef(
+                    path=timeline_path,
+                    kind=ArtifactKind.JSON,
+                    description=timeline_description,
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "hook_kind": hook_kind,
+                        "hook_target": hook_target,
+                    },
+                ),
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[install_action] if installed else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if installed else ExecutionStatus.PARTIAL if missing_count else ExecutionStatus.FAILED,
+                artifacts=artifacts,
+                next_action="inspect_source_map_hook_events" if event_count else "trigger_code_path_or_adjust_source_map_hook_input",
+                confidence=ConfidenceLevel.MEDIUM if installed else ConfidenceLevel.LOW,
             )
         if self._is_source_map_rebuild_metadata_application_request(protection_name, context):
             apply_preflight = self._source_map_rebuild_metadata_apply_preflight(context)
@@ -776,6 +3193,238 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=[artifact],
                 next_action="review_source_map_rebuild_metadata_result_before_rebuild_generation",
                 confidence=ConfidenceLevel.MEDIUM,
+            )
+        if self._is_source_map_rebuild_generation_request(protection_name, context):
+            metadata_result = self._source_map_rebuild_generation_metadata_result(context)
+            task_card_payload, task_card_error = self._source_map_rebuild_generation_object_input(
+                context,
+                "task_card",
+                "taskCard",
+                "task_card_json",
+                "taskCardJson",
+                "reviewed_task_card",
+                "reviewedTaskCard",
+            )
+            final_result_payload, final_result_error = self._source_map_rebuild_generation_object_input(
+                context,
+                "final_result",
+                "finalResult",
+                "final_result_json",
+                "finalResultJson",
+                "reviewed_final_result",
+                "reviewedFinalResult",
+            )
+            artifact_root = str(context.get("artifact_root") or context.get("artifactRoot") or "").strip()
+            blockers = self._source_map_rebuild_generation_blockers(
+                context,
+                metadata_result,
+                artifact_root,
+                task_card_payload,
+                final_result_payload,
+                task_card_error,
+                final_result_error,
+            )
+            digest = str(
+                metadata_result.get("source_content_digest")
+                or metadata_result.get("sourceContentDigest")
+                or metadata_result.get("sha256")
+                or ""
+            )
+            approve_generation = bool(
+                context.get(
+                    "approve_source_map_rebuild_generation",
+                    context.get("approveSourceMapRebuildGeneration", context.get("approve_rebuild_generation", context.get("approveRebuildGeneration", False))),
+                )
+            )
+            verification = [
+                f"source_map_rebuild_generation_metadata_status={metadata_result.get('status', '')}",
+                f"source_map_rebuild_generation_metadata_digest={digest}",
+                f"source_map_rebuild_generation_review_approved={bool(context.get('review_approved', context.get('reviewApproved', False)))}",
+                f"source_map_rebuild_generation_approved={approve_generation}",
+                f"source_map_rebuild_generation_mode={context.get('mode', '')}",
+                f"source_map_rebuild_generation_artifact_root={artifact_root}",
+                f"source_map_rebuild_generation_blockers={','.join(blockers)}",
+                "source_map_rebuild_generation_browser_started=False",
+                "source_map_rebuild_generation_cdp_command_sent=False",
+                "source_map_rebuild_generation_runtime_evaluated=False",
+                "source_map_rebuild_generation_source_map_fetched=False",
+                "source_map_rebuild_generation_raw_exported=False",
+                "source_map_rebuild_generation_preview_exported=False",
+                "source_map_rebuild_generation_calls_mcp=False",
+                "source_map_rebuild_generation_mobile_runtime_used=False",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if blockers:
+                artifact = ArtifactRef(
+                    path="virtual://workspace/source-map-rebuild-generation-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime blocked Source Map reviewed rebuild bundle generation result.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-rebuild-generation-result.v1",
+                        "status": "blocked",
+                        "metadata_result_status": metadata_result.get("status", "missing") if metadata_result else "missing",
+                        "metadata_result_verified": False,
+                        "source_content_digest": digest,
+                        "review_approved": bool(context.get("review_approved", context.get("reviewApproved", False))),
+                        "approve_source_map_rebuild_generation": approve_generation,
+                        "mode": context.get("mode", ""),
+                        "artifact_root": artifact_root,
+                        "task_card_input_error": task_card_error,
+                        "final_result_input_error": final_result_error,
+                        "blockers": blockers,
+                        "rebuild_metadata_applied": bool(metadata_result.get("rebuild_metadata_applied")) if metadata_result else False,
+                        "rebuild_bundle_generated": False,
+                        "rebuild_executed": False,
+                        "replay_executed": False,
+                        "scrapy_executed": False,
+                        "delivery_executed": False,
+                        "external_delivery_performed": False,
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "source_map_fetched": False,
+                        "raw_source_content_exported": False,
+                        "preview_exported": False,
+                        "raw_source_content_included": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=verification,
+                    status=ExecutionStatus.PARTIAL,
+                    artifacts=[artifact],
+                    next_action=self._source_map_rebuild_generation_next_action(blockers),
+                    confidence=ConfidenceLevel.LOW,
+                )
+            try:
+                task_card = TaskCard.model_validate(task_card_payload)
+                final_result = FinalResult.model_validate(final_result_payload)
+                rebuild_result = write_rebuild_bundle(Path(artifact_root), task_card, final_result)
+            except Exception as exc:
+                verification.extend(
+                    [
+                        f"source_map_rebuild_generation_status=failed",
+                        f"source_map_rebuild_generation_error={exc}",
+                        "source_map_rebuild_generation_rebuild_bundle_generated=False",
+                    ]
+                )
+                artifact = ArtifactRef(
+                    path="virtual://workspace/source-map-rebuild-generation-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime failed Source Map reviewed rebuild bundle generation result.",
+                    metadata={
+                        "schema_version": "reverse-deepagent.source-map-rebuild-generation-result.v1",
+                        "status": "failed",
+                        "metadata_result_status": metadata_result.get("status", ""),
+                        "metadata_result_verified": True,
+                        "source_content_digest": digest,
+                        "reviewer": str(context.get("reviewer") or ""),
+                        "review_approved": True,
+                        "approve_source_map_rebuild_generation": True,
+                        "mode": "apply",
+                        "artifact_root": artifact_root,
+                        "error": str(exc),
+                        "rebuild_bundle_generated": False,
+                        "rebuild_executed": False,
+                        "replay_executed": False,
+                        "scrapy_executed": False,
+                        "delivery_executed": False,
+                        "external_delivery_performed": False,
+                        "browser_started": False,
+                        "runtime_evaluated": False,
+                        "cdp_command_sent": False,
+                        "source_map_fetched": False,
+                        "raw_source_content_exported": False,
+                        "preview_exported": False,
+                        "raw_source_content_included": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=[],
+                    verification=verification,
+                    status=ExecutionStatus.FAILED,
+                    artifacts=[artifact],
+                    next_action="inspect_source_map_rebuild_generation_failure",
+                    confidence=ConfidenceLevel.LOW,
+                )
+            generated_files = dict(rebuild_result.generated_files or {})
+            rebuild_plan = rebuild_result.rebuild_plan or {}
+            ready = bool(rebuild_plan.get("ready"))
+            strategy = rebuild_plan.get("algorithm_strategy") if isinstance(rebuild_plan.get("algorithm_strategy"), dict) else {}
+            verification.extend(
+                [
+                    "source_map_rebuild_generation_status=success",
+                    f"source_map_rebuild_generation_ready={ready}",
+                    f"source_map_rebuild_generation_rebuild_status={rebuild_result.status.value if hasattr(rebuild_result.status, 'value') else rebuild_result.status}",
+                    f"source_map_rebuild_generation_generated_file_count={len(generated_files)}",
+                    f"source_map_rebuild_generation_artifact_count={len(rebuild_result.artifacts)}",
+                    f"source_map_rebuild_generation_algorithm_strategy_id={strategy.get('id', '')}",
+                    f"source_map_rebuild_generation_rebuild_bundle_generated={bool(generated_files)}",
+                    "source_map_rebuild_generation_rebuild_executed=True",
+                    "source_map_rebuild_generation_replay_executed=False",
+                    "source_map_rebuild_generation_scrapy_executed=False",
+                    "source_map_rebuild_generation_delivery_executed=False",
+                    "source_map_rebuild_generation_external_delivery_performed=False",
+                ]
+            )
+            result_artifact = ArtifactRef(
+                path="virtual://workspace/source-map-rebuild-generation-result.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime explicit-review Source Map rebuild bundle generation result.",
+                metadata={
+                    "schema_version": "reverse-deepagent.source-map-rebuild-generation-result.v1",
+                    "status": "success",
+                    "metadata_result_status": metadata_result.get("status", ""),
+                    "metadata_result_verified": True,
+                    "selected_consumer": "rebuild",
+                    "selected_review_gate": "explicit_rebuild_source_metadata_review",
+                    "source_content_digest": digest,
+                    "reviewer": str(context.get("reviewer") or ""),
+                    "review_approved": True,
+                    "approve_source_map_rebuild_generation": True,
+                    "mode": "apply",
+                    "artifact_root": artifact_root,
+                    "rebuild_metadata_applied": True,
+                    "metadata_only": False,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "raw_source_content_included": False,
+                    "source_map_fetched": False,
+                    "rebuild_bundle_generated": bool(generated_files),
+                    "rebuild_executed": True,
+                    "replay_executed": False,
+                    "scrapy_executed": False,
+                    "delivery_executed": False,
+                    "external_delivery_performed": False,
+                    "browser_started": False,
+                    "runtime_evaluated": False,
+                    "cdp_command_sent": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "generated_file_keys": sorted(generated_files),
+                    "generated_file_count": len(generated_files),
+                    "artifact_count": len(rebuild_result.artifacts),
+                    "rebuild_status": rebuild_result.status.value if hasattr(rebuild_result.status, "value") else str(rebuild_result.status),
+                    "rebuild_ready": ready,
+                    "algorithm_strategy_id": strategy.get("id"),
+                    "generated_files": generated_files,
+                    "rebuild_next_action": rebuild_result.next_action,
+                },
+            )
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[f"generate_source_map_rebuild_bundle:{digest or 'reviewed-input'}"],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if generated_files else ExecutionStatus.PARTIAL,
+                artifacts=[result_artifact, *rebuild_result.artifacts],
+                next_action="review_generated_rebuild_bundle_before_delivery" if ready else "manual_port_or_expand_source_context",
+                confidence=ConfidenceLevel.MEDIUM if ready else ConfidenceLevel.LOW,
             )
         if self._is_source_map_source_logpoint_application_request(protection_name, context):
             apply_preflight = self._source_map_source_logpoint_apply_preflight(context)
@@ -936,6 +3585,1520 @@ class NativeWebRuntime(WebReverseRuntime):
                 next_action="inspect_source_map_source_logpoint_events" if event_count else "trigger_code_path_or_adjust_source_map_source_logpoint",
                 confidence=ConfidenceLevel.MEDIUM if installed else ConfidenceLevel.LOW,
             )
+        if self._is_source_map_followthrough_dispatcher_result_request(protection_name, context):
+            spec = SourceMapFollowthroughDispatcherResultSpec.from_context(context)
+            result = SourceMapFollowthroughDispatcherManager().dispatch(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            dispatch_decision = descriptor.get("dispatch_decision") if isinstance(descriptor.get("dispatch_decision"), dict) else {}
+            verification = [
+                f"source_map_followthrough_dispatcher_result_status={result.status}",
+                f"source_map_followthrough_dispatcher_result_id={descriptor.get('dispatcher_result_id', '')}",
+                f"source_map_followthrough_dispatcher_result_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_dispatcher_result_dispatch_surface={descriptor.get('dispatch_surface', '')}",
+                f"source_map_followthrough_dispatcher_result_required_artifact={descriptor.get('required_result_artifact', '')}",
+                f"source_map_followthrough_dispatcher_result_journal_id={descriptor.get('journal_id', '')}",
+                f"source_map_followthrough_dispatcher_result_transaction_preflight_id={descriptor.get('transaction_preflight_id', '')}",
+                f"source_map_followthrough_dispatcher_result_approval_record_id={descriptor.get('approval_record_id', '')}",
+                f"source_map_followthrough_dispatcher_result_transaction_plan_id={descriptor.get('transaction_plan_id', '')}",
+                f"source_map_followthrough_dispatcher_result_apply_preflight_verified={descriptor.get('apply_preflight_verified', False)}",
+                f"source_map_followthrough_dispatcher_result_decision_recorded={descriptor.get('dispatcher_decision_recorded', False)}",
+                f"source_map_followthrough_dispatcher_result_dispatcher_mvp_invoked={descriptor.get('dispatcher_mvp_invoked', False)}",
+                f"source_map_followthrough_dispatcher_result_dispatcher_invoked={descriptor.get('dispatcher_invoked', False)}",
+                f"source_map_followthrough_dispatcher_result_dispatch_target_invoked={descriptor.get('dispatch_target_invoked', False)}",
+                f"source_map_followthrough_dispatcher_result_executor_invoked={descriptor.get('executor_invoked', False)}",
+                f"source_map_followthrough_dispatcher_result_selected_executor_invoked={descriptor.get('selected_executor_invoked', False)}",
+                f"source_map_followthrough_dispatcher_result_selected_executor_apply_preflight_invoked={descriptor.get('selected_executor_apply_preflight_invoked', False)}",
+                f"source_map_followthrough_dispatcher_result_requires_selected_executor_apply_preflight={descriptor.get('requires_selected_executor_apply_preflight', False)}",
+                f"source_map_followthrough_dispatcher_result_ready_to_execute_selected_executor_now={descriptor.get('ready_to_execute_selected_executor_now', False)}",
+                f"source_map_followthrough_dispatcher_result_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_dispatcher_result_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_dispatcher_result_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_dispatcher_result_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_followthrough_dispatcher_result_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_dispatcher_result_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_dispatcher_result_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_dispatcher_result_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_dispatcher_result_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_dispatcher_result_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-dispatcher-result.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime explicit-review-only Source Map follow-through dispatcher MVP result.",
+                metadata={
+                    "status": result.status,
+                    "dispatcher_result_id": descriptor.get("dispatcher_result_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "dispatch_surface": descriptor.get("dispatch_surface", ""),
+                    "required_result_artifact": descriptor.get("required_result_artifact", ""),
+                    "selected_executor_apply_preflight_artifact": descriptor.get("selected_executor_apply_preflight_artifact", ""),
+                    "journal_id": descriptor.get("journal_id", ""),
+                    "transaction_preflight_id": descriptor.get("transaction_preflight_id", ""),
+                    "approval_record_id": descriptor.get("approval_record_id", ""),
+                    "transaction_plan_id": descriptor.get("transaction_plan_id", ""),
+                    "apply_preflight_verified": bool(descriptor.get("apply_preflight_verified", False)),
+                    "dispatcher_decision_recorded": bool(descriptor.get("dispatcher_decision_recorded", False)),
+                    "dispatcher_mvp_invoked": bool(descriptor.get("dispatcher_mvp_invoked", False)),
+                    "dispatcher_invoked": False,
+                    "dispatch_target_invoked": False,
+                    "executor_invoked": False,
+                    "selected_executor_invoked": False,
+                    "selected_executor_apply_preflight_invoked": False,
+                    "runtime_apply_preflight_invoked": False,
+                    "ready_to_dispatch_now": False,
+                    "ready_to_execute_now": False,
+                    "ready_to_execute_selected_executor_now": False,
+                    "requires_selected_executor_apply_preflight": True,
+                    "requires_separate_selected_executor_apply_preflight": True,
+                    "requires_separate_selected_executor_execution": True,
+                    "will_invoke_dispatch_target": False,
+                    "will_invoke_selected_executor": False,
+                    "will_run_selected_executor_apply_preflight": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_dispatch_supported": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "dispatch_decision": dispatch_decision,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "dispatched":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_selected_executor_apply_preflight"
+                actions = ["record_source_map_followthrough_dispatcher_result"]
+            elif result.status in {"ready_for_review", "review_required", "blocked"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatcher_mvp"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_dispatcher_result"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "dispatched" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_dispatcher_apply_preflight_request(protection_name, context):
+            spec = SourceMapFollowthroughDispatcherApplyPreflightSpec.from_context(context)
+            result = SourceMapFollowthroughDispatcherApplyPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            apply_preflight = descriptor.get("dispatcher_apply_preflight") if isinstance(descriptor.get("dispatcher_apply_preflight"), dict) else {}
+            future_contract = descriptor.get("future_dispatcher_mvp_contract") if isinstance(descriptor.get("future_dispatcher_mvp_contract"), dict) else {}
+            verification = [
+                f"source_map_followthrough_dispatcher_apply_preflight_status={result.status}",
+                f"source_map_followthrough_dispatcher_apply_preflight_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_dispatcher_apply_preflight_dispatch_surface={descriptor.get('dispatch_surface', '')}",
+                f"source_map_followthrough_dispatcher_apply_preflight_required_artifact={descriptor.get('required_result_artifact', '')}",
+                f"source_map_followthrough_dispatcher_apply_preflight_journal_id={descriptor.get('journal_id', '')}",
+                f"source_map_followthrough_dispatcher_apply_preflight_transaction_preflight_id={descriptor.get('transaction_preflight_id', '')}",
+                f"source_map_followthrough_dispatcher_apply_preflight_approval_record_id={descriptor.get('approval_record_id', '')}",
+                f"source_map_followthrough_dispatcher_apply_preflight_transaction_plan_id={descriptor.get('transaction_plan_id', '')}",
+                f"source_map_followthrough_dispatcher_apply_preflight_handoff_verified={descriptor.get('handoff_verified', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_ready_for_review={descriptor.get('dispatcher_apply_preflight_ready_for_review', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_ready_for_dispatcher_mvp_review={descriptor.get('ready_for_explicit_dispatcher_mvp_review', False)}",
+                "source_map_followthrough_dispatcher_apply_preflight_read_only=True",
+                "source_map_followthrough_dispatcher_apply_preflight_preflight_only=True",
+                f"source_map_followthrough_dispatcher_apply_preflight_ready_to_dispatch_now={descriptor.get('ready_to_dispatch_now', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_dispatcher_invoked={descriptor.get('dispatcher_invoked', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_dispatch_target_invoked={descriptor.get('dispatch_target_invoked', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_executor_invoked={descriptor.get('executor_invoked', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_selected_executor_apply_preflight_invoked={descriptor.get('selected_executor_apply_preflight_invoked', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_future_dispatcher_mvp_implemented={future_contract.get('implemented', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_dispatcher_apply_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_dispatcher_apply_preflight_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_dispatcher_apply_preflight_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-dispatcher-apply-preflight.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map follow-through dispatcher apply-preflight descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "dispatch_surface": descriptor.get("dispatch_surface", ""),
+                    "required_result_artifact": descriptor.get("required_result_artifact", ""),
+                    "journal_id": descriptor.get("journal_id", ""),
+                    "transaction_preflight_id": descriptor.get("transaction_preflight_id", ""),
+                    "approval_record_id": descriptor.get("approval_record_id", ""),
+                    "transaction_plan_id": descriptor.get("transaction_plan_id", ""),
+                    "handoff_verified": bool(descriptor.get("handoff_verified", False)),
+                    "dispatcher_apply_preflight_ready_for_review": bool(descriptor.get("dispatcher_apply_preflight_ready_for_review", False)),
+                    "ready_for_explicit_dispatcher_mvp_review": bool(descriptor.get("ready_for_explicit_dispatcher_mvp_review", False)),
+                    "review_only": True,
+                    "read_only": True,
+                    "preflight_only": True,
+                    "dispatcher_apply_preflight_only": True,
+                    "ready_to_dispatch_now": False,
+                    "ready_to_execute_now": False,
+                    "dispatcher_invoked": False,
+                    "dispatch_target_invoked": False,
+                    "executor_invoked": False,
+                    "selected_executor_invoked": False,
+                    "selected_executor_apply_preflight_invoked": False,
+                    "runtime_apply_preflight_invoked": False,
+                    "will_invoke_dispatcher": False,
+                    "will_invoke_dispatch_target": False,
+                    "will_invoke_selected_executor": False,
+                    "will_run_selected_executor_apply_preflight": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_dispatch_supported": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "dispatcher_apply_preflight": apply_preflight,
+                    "future_dispatcher_mvp_contract": future_contract,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatcher_mvp"
+                actions = ["review_source_map_followthrough_dispatcher_apply_preflight"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_source_map_followthrough_dispatcher_apply_preflight_blockers"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_dispatcher_apply_preflight_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_dispatcher_handoff_request(protection_name, context):
+            spec = SourceMapFollowthroughDispatcherHandoffSpec.from_context(context)
+            result = SourceMapFollowthroughDispatcherHandoffManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            handoff_payload = descriptor.get("dispatcher_handoff") if isinstance(descriptor.get("dispatcher_handoff"), dict) else {}
+            executor_contract = descriptor.get("selected_executor_review_contract") if isinstance(descriptor.get("selected_executor_review_contract"), dict) else {}
+            verification = [
+                f"source_map_followthrough_dispatcher_handoff_status={result.status}",
+                f"source_map_followthrough_dispatcher_handoff_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_dispatcher_handoff_dispatch_surface={descriptor.get('dispatch_surface', '')}",
+                f"source_map_followthrough_dispatcher_handoff_required_artifact={descriptor.get('required_result_artifact', '')}",
+                f"source_map_followthrough_dispatcher_handoff_journal_id={descriptor.get('journal_id', '')}",
+                f"source_map_followthrough_dispatcher_handoff_transaction_preflight_id={descriptor.get('transaction_preflight_id', '')}",
+                f"source_map_followthrough_dispatcher_handoff_approval_record_id={descriptor.get('approval_record_id', '')}",
+                f"source_map_followthrough_dispatcher_handoff_transaction_plan_id={descriptor.get('transaction_plan_id', '')}",
+                f"source_map_followthrough_dispatcher_handoff_bounded_gate_verified={descriptor.get('bounded_gate_verified', False)}",
+                f"source_map_followthrough_dispatcher_handoff_ready_for_review={descriptor.get('dispatcher_handoff_ready_for_review', False)}",
+                f"source_map_followthrough_dispatcher_handoff_ready_for_explicit_dispatch_review={descriptor.get('ready_for_explicit_dispatch_review', False)}",
+                "source_map_followthrough_dispatcher_handoff_read_only=True",
+                "source_map_followthrough_dispatcher_handoff_handoff_only=True",
+                f"source_map_followthrough_dispatcher_handoff_ready_to_dispatch_now={descriptor.get('ready_to_dispatch_now', False)}",
+                f"source_map_followthrough_dispatcher_handoff_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_followthrough_dispatcher_handoff_dispatcher_invoked={descriptor.get('dispatcher_invoked', False)}",
+                f"source_map_followthrough_dispatcher_handoff_dispatch_target_invoked={descriptor.get('dispatch_target_invoked', False)}",
+                f"source_map_followthrough_dispatcher_handoff_executor_invoked={descriptor.get('executor_invoked', False)}",
+                f"source_map_followthrough_dispatcher_handoff_apply_preflight_invoked={descriptor.get('apply_preflight_invoked', False)}",
+                f"source_map_followthrough_dispatcher_handoff_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_dispatcher_handoff_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_dispatcher_handoff_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_dispatcher_handoff_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_dispatcher_handoff_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_dispatcher_handoff_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_dispatcher_handoff_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_dispatcher_handoff_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_dispatcher_handoff_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-dispatcher-handoff.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map follow-through dispatcher handoff descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "dispatch_surface": descriptor.get("dispatch_surface", ""),
+                    "required_result_artifact": descriptor.get("required_result_artifact", ""),
+                    "journal_id": descriptor.get("journal_id", ""),
+                    "transaction_preflight_id": descriptor.get("transaction_preflight_id", ""),
+                    "approval_record_id": descriptor.get("approval_record_id", ""),
+                    "transaction_plan_id": descriptor.get("transaction_plan_id", ""),
+                    "bounded_gate_verified": bool(descriptor.get("bounded_gate_verified", False)),
+                    "dispatcher_handoff_ready_for_review": bool(descriptor.get("dispatcher_handoff_ready_for_review", False)),
+                    "ready_for_explicit_dispatch_review": bool(descriptor.get("ready_for_explicit_dispatch_review", False)),
+                    "review_only": True,
+                    "read_only": True,
+                    "dispatcher_handoff_only": True,
+                    "ready_to_dispatch_now": False,
+                    "ready_to_execute_now": False,
+                    "dispatcher_invoked": False,
+                    "dispatch_target_invoked": False,
+                    "executor_invoked": False,
+                    "selected_executor_invoked": False,
+                    "apply_preflight_invoked": False,
+                    "will_invoke_dispatcher": False,
+                    "will_invoke_dispatch_target": False,
+                    "will_invoke_selected_executor": False,
+                    "will_run_apply_preflight": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_dispatch_supported": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "dispatcher_handoff": handoff_payload,
+                    "selected_executor_review_contract": executor_contract,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatcher_apply_preflight"
+                actions = ["review_source_map_followthrough_dispatcher_handoff"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_source_map_followthrough_dispatcher_handoff_blockers"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_dispatcher_handoff_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_dispatch_bounded_executor_gate_request(protection_name, context):
+            spec = SourceMapFollowthroughDispatchBoundedExecutorGateSpec.from_context(context)
+            result = SourceMapFollowthroughDispatchBoundedExecutorGateManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            bounded_input = descriptor.get("bounded_dispatch_input") if isinstance(descriptor.get("bounded_dispatch_input"), dict) else {}
+            future_contract = descriptor.get("future_dispatcher_contract") if isinstance(descriptor.get("future_dispatcher_contract"), dict) else {}
+            verification = [
+                f"source_map_followthrough_dispatch_bounded_executor_gate_status={result.status}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_dispatch_surface={descriptor.get('dispatch_surface', '')}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_required_artifact={descriptor.get('required_result_artifact', '')}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_journal_id={descriptor.get('journal_id', '')}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_transaction_preflight_id={descriptor.get('transaction_preflight_id', '')}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_approval_record_id={descriptor.get('approval_record_id', '')}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_transaction_plan_id={descriptor.get('transaction_plan_id', '')}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_transaction_journal_verified={descriptor.get('transaction_journal_verified', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_ready_for_review={descriptor.get('bounded_executor_gate_ready_for_review', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_ready_for_dispatcher_handoff_review={descriptor.get('ready_for_dispatcher_handoff_review', False)}",
+                "source_map_followthrough_dispatch_bounded_executor_gate_read_only=True",
+                "source_map_followthrough_dispatch_bounded_executor_gate_gate_only=True",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_ready_to_dispatch_now={descriptor.get('ready_to_dispatch_now', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_dispatch_target_invoked={descriptor.get('dispatch_target_invoked', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_executor_invoked={descriptor.get('executor_invoked', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_future_dispatcher_implemented={future_contract.get('implemented', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_dispatch_bounded_executor_gate_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_dispatch_bounded_executor_gate_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_dispatch_bounded_executor_gate_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-dispatch-bounded-executor-gate.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map follow-through dispatch bounded executor gate descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "dispatch_surface": descriptor.get("dispatch_surface", ""),
+                    "required_result_artifact": descriptor.get("required_result_artifact", ""),
+                    "journal_id": descriptor.get("journal_id", ""),
+                    "transaction_preflight_id": descriptor.get("transaction_preflight_id", ""),
+                    "approval_record_id": descriptor.get("approval_record_id", ""),
+                    "transaction_plan_id": descriptor.get("transaction_plan_id", ""),
+                    "transaction_journal_verified": bool(descriptor.get("transaction_journal_verified", False)),
+                    "bounded_executor_gate_ready_for_review": bool(descriptor.get("bounded_executor_gate_ready_for_review", False)),
+                    "ready_for_dispatcher_handoff_review": bool(descriptor.get("ready_for_dispatcher_handoff_review", False)),
+                    "review_only": True,
+                    "read_only": True,
+                    "bounded_executor_gate_only": True,
+                    "ready_to_dispatch_now": False,
+                    "ready_to_execute_now": False,
+                    "dispatch_target_invoked": False,
+                    "executor_invoked": False,
+                    "will_invoke_dispatch_target": False,
+                    "will_invoke_next_action": False,
+                    "will_run_apply_preflight": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_dispatch_supported": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "future_dispatcher_contract": future_contract,
+                    "bounded_dispatch_input": bounded_input,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatcher_handoff"
+                actions = ["review_source_map_followthrough_dispatch_bounded_executor_gate"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_source_map_followthrough_dispatch_bounded_executor_gate_blockers"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_dispatch_bounded_executor_gate_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_dispatch_transaction_preflight_request(protection_name, context):
+            spec = SourceMapFollowthroughDispatchTransactionPreflightSpec.from_context(context)
+            result = SourceMapFollowthroughDispatchTransactionPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            transaction_preflight = descriptor.get("transaction_preflight") if isinstance(descriptor.get("transaction_preflight"), dict) else {}
+            journal_writer_gate = descriptor.get("journal_writer_gate") if isinstance(descriptor.get("journal_writer_gate"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_followthrough_dispatch_transaction_preflight_status={result.status}",
+                f"source_map_followthrough_dispatch_transaction_preflight_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_dispatch_transaction_preflight_dispatch_surface={descriptor.get('dispatch_surface', '')}",
+                f"source_map_followthrough_dispatch_transaction_preflight_required_artifact={descriptor.get('planned_required_artifact', '')}",
+                f"source_map_followthrough_dispatch_transaction_preflight_approval_plan_id={descriptor.get('approval_plan_id', '')}",
+                f"source_map_followthrough_dispatch_transaction_preflight_approval_record_id={descriptor.get('approval_record_id', '')}",
+                f"source_map_followthrough_dispatch_transaction_preflight_transaction_plan_id={descriptor.get('transaction_plan_id', '')}",
+                f"source_map_followthrough_dispatch_transaction_preflight_approval_record_verified={descriptor.get('approval_record_verified', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_transaction_plan_verified={descriptor.get('transaction_plan_verified', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_ready_for_review={descriptor.get('transaction_preflight_ready_for_review', False)}",
+                f"source_map_followthrough_dispatch_journal_writer_gate_ready_for_review={descriptor.get('journal_writer_gate_ready_for_review', False)}",
+                "source_map_followthrough_dispatch_transaction_preflight_read_only=True",
+                "source_map_followthrough_dispatch_transaction_preflight_preflight_only=True",
+                "source_map_followthrough_dispatch_transaction_preflight_journal_writer_gate_only=True",
+                f"source_map_followthrough_dispatch_transaction_preflight_ready_to_write_now={descriptor.get('ready_to_write_now', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_ready_to_dispatch_now={descriptor.get('ready_to_dispatch_now', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_transaction_started={descriptor.get('transaction_started', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_journal_written={descriptor.get('journal_written', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_will_write_transaction_journal={descriptor.get('will_write_transaction_journal', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_will_invoke_dispatch_target={descriptor.get('will_invoke_dispatch_target', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_dispatch_transaction_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_dispatch_transaction_preflight_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_dispatch_transaction_preflight_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-dispatch-transaction-preflight.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map follow-through dispatch transaction preflight descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "dispatch_surface": descriptor.get("dispatch_surface", ""),
+                    "planned_required_artifact": descriptor.get("planned_required_artifact", ""),
+                    "approval_plan_id": descriptor.get("approval_plan_id", ""),
+                    "approval_record_id": descriptor.get("approval_record_id", ""),
+                    "transaction_plan_id": descriptor.get("transaction_plan_id", ""),
+                    "approval_record_verified": bool(descriptor.get("approval_record_verified", False)),
+                    "transaction_plan_verified": bool(descriptor.get("transaction_plan_verified", False)),
+                    "transaction_preflight_ready_for_review": bool(descriptor.get("transaction_preflight_ready_for_review", False)),
+                    "journal_writer_gate_ready_for_review": bool(descriptor.get("journal_writer_gate_ready_for_review", False)),
+                    "review_only": True,
+                    "read_only": True,
+                    "preflight_only": True,
+                    "transaction_preflight_only": True,
+                    "journal_writer_gate_only": True,
+                    "ready_to_write_now": False,
+                    "ready_to_dispatch_now": False,
+                    "transaction_started": False,
+                    "journal_written": False,
+                    "will_write_transaction_journal": False,
+                    "will_start_transaction": False,
+                    "will_invoke_dispatch_target": False,
+                    "will_invoke_next_action": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_dispatch_supported": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "transaction_preflight": transaction_preflight,
+                    "journal_writer_gate": journal_writer_gate,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatch_transaction_journal_writer"
+                actions = ["review_source_map_followthrough_dispatch_transaction_preflight"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_source_map_followthrough_dispatch_transaction_preflight_blockers"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_dispatch_transaction_preflight_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_dispatch_approval_plan_request(protection_name, context):
+            spec = SourceMapFollowthroughDispatchApprovalPlanSpec.from_context(context)
+            result = SourceMapFollowthroughDispatchApprovalPlanManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            approval_plan = descriptor.get("approval_plan") if isinstance(descriptor.get("approval_plan"), dict) else {}
+            transaction_plan = descriptor.get("transaction_plan") if isinstance(descriptor.get("transaction_plan"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_followthrough_dispatch_approval_plan_status={result.status}",
+                f"source_map_followthrough_dispatch_approval_plan_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_dispatch_approval_plan_dispatch_surface={descriptor.get('dispatch_surface', '')}",
+                f"source_map_followthrough_dispatch_approval_plan_required_artifact={descriptor.get('planned_required_artifact', '')}",
+                f"source_map_followthrough_dispatch_approval_plan_ready_for_review={descriptor.get('approval_plan_ready_for_review', False)}",
+                f"source_map_followthrough_dispatch_transaction_plan_ready_for_review={descriptor.get('transaction_plan_ready_for_review', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_id={approval_plan.get('approval_plan_id', '')}",
+                f"source_map_followthrough_dispatch_transaction_plan_id={transaction_plan.get('transaction_plan_id', '')}",
+                "source_map_followthrough_dispatch_approval_plan_review_only=True",
+                "source_map_followthrough_dispatch_approval_plan_approval_plan_only=True",
+                "source_map_followthrough_dispatch_approval_plan_transaction_plan_only=True",
+                "source_map_followthrough_dispatch_approval_plan_plan_only=True",
+                f"source_map_followthrough_dispatch_approval_plan_ready_to_dispatch_now={descriptor.get('ready_to_dispatch_now', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_approval_recorded={descriptor.get('approval_recorded', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_transaction_started={descriptor.get('transaction_started', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_journal_written={descriptor.get('journal_written', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_will_write_approval_record={descriptor.get('will_write_approval_record', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_will_start_transaction={descriptor.get('will_start_transaction', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_will_invoke_dispatch_target={descriptor.get('will_invoke_dispatch_target', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_dispatch_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_dispatch_approval_plan_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_dispatch_approval_plan_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-dispatch-approval-plan.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map follow-through dispatch approval and transaction plan descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "dispatch_surface": descriptor.get("dispatch_surface", ""),
+                    "planned_required_artifact": descriptor.get("planned_required_artifact", ""),
+                    "approval_plan_ready_for_review": bool(descriptor.get("approval_plan_ready_for_review", False)),
+                    "transaction_plan_ready_for_review": bool(descriptor.get("transaction_plan_ready_for_review", False)),
+                    "approval_plan_id": approval_plan.get("approval_plan_id", ""),
+                    "transaction_plan_id": transaction_plan.get("transaction_plan_id", ""),
+                    "review_only": True,
+                    "approval_plan_only": True,
+                    "transaction_plan_only": True,
+                    "plan_only": True,
+                    "ready_to_dispatch_now": False,
+                    "approval_recorded": False,
+                    "transaction_started": False,
+                    "journal_written": False,
+                    "will_write_approval_record": False,
+                    "will_start_transaction": False,
+                    "will_invoke_dispatch_target": False,
+                    "will_invoke_next_action": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_dispatch_supported": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatch_approval_plan_before_recording_approval"
+                actions = ["review_source_map_followthrough_dispatch_approval_plan"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_source_map_followthrough_dispatch_approval_plan_blockers"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_dispatch_approval_plan_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_dispatch_preflight_request(protection_name, context):
+            spec = SourceMapFollowthroughDispatchPreflightSpec.from_context(context)
+            result = SourceMapFollowthroughDispatchPreflightManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            dispatcher_input = descriptor.get("dispatcher_input") if isinstance(descriptor.get("dispatcher_input"), dict) else {}
+            dispatch_target = descriptor.get("dispatch_target") if isinstance(descriptor.get("dispatch_target"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_followthrough_dispatch_preflight_status={result.status}",
+                f"source_map_followthrough_dispatch_preflight_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_dispatch_preflight_planned_next_action={descriptor.get('planned_next_action', '')}",
+                f"source_map_followthrough_dispatch_preflight_planned_required_artifact={descriptor.get('planned_required_artifact', '')}",
+                f"source_map_followthrough_dispatch_preflight_dispatch_surface={dispatch_target.get('dispatch_surface', '')}",
+                f"source_map_followthrough_dispatch_preflight_dispatcher_input_ready_for_review={descriptor.get('dispatcher_input_ready_for_review', False)}",
+                f"source_map_followthrough_dispatch_preflight_dispatcher_invoked={dispatcher_input.get('dispatcher_invoked', False)}",
+                "source_map_followthrough_dispatch_preflight_review_only=True",
+                "source_map_followthrough_dispatch_preflight_preflight_only=True",
+                "source_map_followthrough_dispatch_preflight_plan_only=True",
+                "source_map_followthrough_dispatch_preflight_orchestration_only=True",
+                "source_map_followthrough_dispatch_preflight_handoff_only=True",
+                f"source_map_followthrough_dispatch_preflight_will_invoke_dispatch_target={descriptor.get('will_invoke_dispatch_target', False)}",
+                f"source_map_followthrough_dispatch_preflight_will_invoke_next_action={descriptor.get('will_invoke_next_action', False)}",
+                f"source_map_followthrough_dispatch_preflight_will_record_approval={descriptor.get('will_record_approval', False)}",
+                f"source_map_followthrough_dispatch_preflight_will_run_apply_preflight={descriptor.get('will_run_apply_preflight', False)}",
+                f"source_map_followthrough_dispatch_preflight_will_execute_debugger={descriptor.get('will_execute_debugger', False)}",
+                f"source_map_followthrough_dispatch_preflight_will_install_hook={descriptor.get('will_install_hook', False)}",
+                f"source_map_followthrough_dispatch_preflight_will_run_rebuild={descriptor.get('will_run_rebuild', False)}",
+                f"source_map_followthrough_dispatch_preflight_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_dispatch_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_dispatch_preflight_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_dispatch_preflight_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_followthrough_dispatch_preflight_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_dispatch_preflight_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_dispatch_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_dispatch_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_dispatch_preflight_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_dispatch_preflight_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-dispatch-preflight.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map follow-through dispatch preflight descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "planned_next_action": descriptor.get("planned_next_action", ""),
+                    "planned_required_artifact": descriptor.get("planned_required_artifact", ""),
+                    "dispatch_surface": dispatch_target.get("dispatch_surface", ""),
+                    "dispatcher_input_ready_for_review": bool(descriptor.get("dispatcher_input_ready_for_review", False)),
+                    "review_only": True,
+                    "preflight_only": True,
+                    "plan_only": True,
+                    "dispatch_preflight_only": True,
+                    "orchestration_only": True,
+                    "handoff_only": True,
+                    "will_invoke_dispatch_target": False,
+                    "will_invoke_next_action": False,
+                    "will_record_approval": False,
+                    "will_run_apply_preflight": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_dispatch_supported": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatch_preflight_before_explicit_executor_call"
+                actions = ["review_source_map_followthrough_dispatch_preflight"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_source_map_followthrough_dispatch_preflight_blockers"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_dispatch_preflight_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_one_step_plan_request(protection_name, context):
+            spec = SourceMapFollowthroughOneStepPlanSpec.from_context(context)
+            result = SourceMapFollowthroughOneStepPlanManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            planned_step = descriptor.get("planned_step") if isinstance(descriptor.get("planned_step"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_followthrough_one_step_plan_status={result.status}",
+                f"source_map_followthrough_one_step_plan_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_one_step_plan_source_chain_completed_stage={descriptor.get('source_chain_completed_stage', '')}",
+                f"source_map_followthrough_one_step_plan_source_chain_next_stage={descriptor.get('source_chain_next_stage', '')}",
+                f"source_map_followthrough_one_step_plan_source_chain_next_action={descriptor.get('source_chain_next_action', '')}",
+                f"source_map_followthrough_one_step_plan_next_required_artifact={descriptor.get('source_chain_next_required_artifact', '')}",
+                f"source_map_followthrough_one_step_plan_planned_step_ready_for_review={descriptor.get('planned_step_ready_for_review', False)}",
+                f"source_map_followthrough_one_step_plan_step_id={planned_step.get('step_id', '')}",
+                "source_map_followthrough_one_step_plan_review_only=True",
+                "source_map_followthrough_one_step_plan_plan_only=True",
+                "source_map_followthrough_one_step_plan_orchestration_only=True",
+                "source_map_followthrough_one_step_plan_handoff_only=True",
+                f"source_map_followthrough_one_step_plan_will_invoke_next_action={descriptor.get('will_invoke_next_action', False)}",
+                f"source_map_followthrough_one_step_plan_will_record_approval={descriptor.get('will_record_approval', False)}",
+                f"source_map_followthrough_one_step_plan_will_run_apply_preflight={descriptor.get('will_run_apply_preflight', False)}",
+                f"source_map_followthrough_one_step_plan_will_execute_debugger={descriptor.get('will_execute_debugger', False)}",
+                f"source_map_followthrough_one_step_plan_will_install_hook={descriptor.get('will_install_hook', False)}",
+                f"source_map_followthrough_one_step_plan_will_run_rebuild={descriptor.get('will_run_rebuild', False)}",
+                f"source_map_followthrough_one_step_plan_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_one_step_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_one_step_plan_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_one_step_plan_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_followthrough_one_step_plan_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_one_step_plan_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_one_step_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_one_step_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_one_step_plan_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_one_step_plan_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-one-step-plan.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map follow-through one-step orchestration plan.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "source_chain_completed_stage": descriptor.get("source_chain_completed_stage", ""),
+                    "source_chain_next_stage": descriptor.get("source_chain_next_stage", ""),
+                    "source_chain_next_action": descriptor.get("source_chain_next_action", ""),
+                    "source_chain_next_required_artifact": descriptor.get("source_chain_next_required_artifact", ""),
+                    "planned_step_ready_for_review": bool(descriptor.get("planned_step_ready_for_review", False)),
+                    "step_id": planned_step.get("step_id", ""),
+                    "review_only": True,
+                    "plan_only": True,
+                    "one_step_plan_only": True,
+                    "orchestration_only": True,
+                    "handoff_only": True,
+                    "will_invoke_next_action": False,
+                    "will_record_approval": False,
+                    "will_run_apply_preflight": False,
+                    "will_execute_debugger": False,
+                    "will_install_source_logpoint": False,
+                    "will_install_hook": False,
+                    "will_run_rebuild": False,
+                    "automatic_followthrough_supported": False,
+                    "automatic_execution_supported": False,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                    "side_effect_policy": policy,
+                    "descriptor": descriptor,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_one_step_plan_before_next_action"
+                actions = ["review_source_map_followthrough_one_step_plan"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_source_map_followthrough_one_step_plan_blockers"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_one_step_plan_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_chain_readiness_request(protection_name, context):
+            spec = SourceMapFollowthroughChainReadinessSpec.from_context(context)
+            result = SourceMapFollowthroughChainReadinessManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_followthrough_chain_readiness_status={result.status}",
+                f"source_map_followthrough_chain_readiness_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_chain_readiness_completed_stage={descriptor.get('completed_stage', '')}",
+                f"source_map_followthrough_chain_readiness_next_stage={descriptor.get('next_stage', '')}",
+                f"source_map_followthrough_chain_readiness_next_required_artifact={descriptor.get('next_required_artifact', '')}",
+                f"source_map_followthrough_chain_readiness_selected_executor_result_ready={descriptor.get('selected_executor_result_ready', False)}",
+                f"source_map_followthrough_chain_readiness_ready_for_selected_executor_review={descriptor.get('ready_for_selected_executor_review', False)}",
+                "source_map_followthrough_chain_readiness_review_only=True",
+                "source_map_followthrough_chain_readiness_plan_only=True",
+                "source_map_followthrough_chain_readiness_orchestration_only=True",
+                "source_map_followthrough_chain_readiness_handoff_only=True",
+                f"source_map_followthrough_chain_readiness_automatic_followthrough_supported={descriptor.get('automatic_followthrough_supported', False)}",
+                f"source_map_followthrough_chain_readiness_browser_started={policy.get('browser_started', False)}",
+                f"source_map_followthrough_chain_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_chain_readiness_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_chain_readiness_logpoint_installed={policy.get('logpoint_installed', False)}",
+                f"source_map_followthrough_chain_readiness_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_followthrough_chain_readiness_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_followthrough_chain_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_chain_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_chain_readiness_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_chain_readiness_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-chain-readiness.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map follow-through chain readiness descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "completed_stage": descriptor.get("completed_stage", ""),
+                    "next_stage": descriptor.get("next_stage", ""),
+                    "next_required_artifact": descriptor.get("next_required_artifact", ""),
+                    "next_required_action": descriptor.get("next_required_action", ""),
+                    "selected_executor_result_ready": bool(descriptor.get("selected_executor_result_ready", False)),
+                    "ready_for_selected_executor_review": bool(descriptor.get("ready_for_selected_executor_review", False)),
+                    "review_only": True,
+                    "plan_only": True,
+                    "readiness_descriptor_only": True,
+                    "orchestration_only": True,
+                    "handoff_only": True,
+                    "automatic_followthrough_supported": False,
+                    "raw_source_content_exported": False,
+                    "preview_exported": False,
+                    "fetch_source_map": False,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_followthrough_chain_readiness"
+                actions = ["review_source_map_followthrough_chain_readiness"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_followthrough_chain_evidence"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_chain_readiness_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_selected_executor_application_handoff_request(protection_name, context):
+            spec = SourceMapSelectedExecutorApplicationHandoffSpec.from_context(context)
+            result = SourceMapSelectedExecutorApplicationHandoffManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            review_input = descriptor.get("application_review_input") if isinstance(descriptor.get("application_review_input"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_selected_executor_application_handoff_status={result.status}",
+                f"source_map_selected_executor_application_handoff_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_selected_executor_application_handoff_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_selected_executor_application_handoff_selected_gate={descriptor.get('selected_review_gate', '')}",
+                f"source_map_selected_executor_application_handoff_application_surface={descriptor.get('application_surface', '')}",
+                f"source_map_selected_executor_application_handoff_application_input_key={descriptor.get('application_input_key', '')}",
+                f"source_map_selected_executor_application_handoff_ready_for_application_review={descriptor.get('ready_for_application_review', False)}",
+                f"source_map_selected_executor_application_handoff_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_selected_executor_application_handoff_approval_record_verified={descriptor.get('approval_record_verified', False)}",
+                f"source_map_selected_executor_application_handoff_executor_input_ready={descriptor.get('executor_input_ready', False)}",
+                f"source_map_selected_executor_application_handoff_source_digest={descriptor.get('source_apply_preflight_digest_sha256', '')}",
+                f"source_map_selected_executor_application_handoff_future_result_artifact={descriptor.get('future_result_artifact', '')}",
+                "source_map_selected_executor_application_handoff_review_only=True",
+                "source_map_selected_executor_application_handoff_plan_only=True",
+                "source_map_selected_executor_application_handoff_handoff_only=True",
+                f"source_map_selected_executor_application_handoff_browser_started={policy.get('browser_started', False)}",
+                f"source_map_selected_executor_application_handoff_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"source_map_selected_executor_application_handoff_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"source_map_selected_executor_application_handoff_logpoint_installed={policy.get('logpoint_installed', policy.get('source_logpoint_installed', False))}",
+                f"source_map_selected_executor_application_handoff_hook_installed={policy.get('hook_installed', False)}",
+                f"source_map_selected_executor_application_handoff_rebuild_executed={policy.get('rebuild_executed', False)}",
+                f"source_map_selected_executor_application_handoff_surface_executor_invoked={policy.get('surface_executor_invoked', False)}",
+                f"source_map_selected_executor_application_handoff_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_selected_executor_application_handoff_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_selected_executor_application_handoff_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_selected_executor_application_handoff_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-selected-executor-application-handoff.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map selected executor application handoff descriptor.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "selected_review_gate": descriptor.get("selected_review_gate", ""),
+                    "application_surface": descriptor.get("application_surface", ""),
+                    "application_review_action": descriptor.get("application_review_action", ""),
+                    "application_input_key": descriptor.get("application_input_key", ""),
+                    "required_approval_flags": descriptor.get("required_approval_flags", []),
+                    "future_action": descriptor.get("future_action", ""),
+                    "future_result_artifact": descriptor.get("future_result_artifact", ""),
+                    "source_apply_preflight_digest_sha256": descriptor.get("source_apply_preflight_digest_sha256", ""),
+                    "application_review_input_schema_version": review_input.get("schema_version", ""),
+                    "approval_record_verified": bool(descriptor.get("approval_record_verified", False)),
+                    "executor_input_ready": bool(descriptor.get("executor_input_ready", False)),
+                    "ready_for_application_review": bool(descriptor.get("ready_for_application_review", False)),
+                    "ready_to_execute_now": False,
+                    "review_only": True,
+                    "plan_only": True,
+                    "handoff_only": True,
+                    "application_handoff_only": True,
+                    "browser_started": False,
+                    "cdp_command_sent": False,
+                    "runtime_evaluated": False,
+                    "logpoint_installed": False,
+                    "hook_installed": False,
+                    "rebuild_executed": False,
+                    "surface_executor_invoked": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or descriptor.get("application_review_action") or "review_source_map_selected_executor_application"
+                actions = ["review_source_map_selected_executor_application_handoff"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_ready_source_map_selected_executor_apply_preflight"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_selected_executor_application_handoff_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_selected_executor_result_checkpoint_request(protection_name, context):
+            spec = SourceMapSelectedExecutorResultCheckpointSpec.from_context(context)
+            result = SourceMapSelectedExecutorResultCheckpointManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            checkpoint_review = descriptor.get("checkpoint_review") if isinstance(descriptor.get("checkpoint_review"), dict) else {}
+            observed = descriptor.get("observed_application_side_effects") if isinstance(descriptor.get("observed_application_side_effects"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_selected_executor_result_checkpoint_status={result.status}",
+                f"source_map_selected_executor_result_checkpoint_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_selected_executor_result_checkpoint_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_selected_executor_result_checkpoint_selected_gate={descriptor.get('selected_review_gate', '')}",
+                f"source_map_selected_executor_result_checkpoint_application_surface={descriptor.get('application_surface', '')}",
+                f"source_map_selected_executor_result_checkpoint_application_result_status={descriptor.get('application_result_status', '')}",
+                f"source_map_selected_executor_result_checkpoint_application_result_verified={descriptor.get('application_result_verified', False)}",
+                f"source_map_selected_executor_result_checkpoint_ready_for_next_explicit_review={descriptor.get('ready_for_next_explicit_review', False)}",
+                f"source_map_selected_executor_result_checkpoint_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_selected_executor_result_checkpoint_result_success_key={descriptor.get('result_success_key', '')}",
+                f"source_map_selected_executor_result_checkpoint_result_success={descriptor.get('result_success', False)}",
+                f"source_map_selected_executor_result_checkpoint_result_digest={descriptor.get('application_result_digest_sha256', '')}",
+                f"source_map_selected_executor_result_checkpoint_handoff_verified={descriptor.get('application_handoff_verified', False)}",
+                f"source_map_selected_executor_result_checkpoint_review_kind={checkpoint_review.get('result_kind', '')}",
+                f"source_map_selected_executor_result_checkpoint_terminal_candidate={checkpoint_review.get('terminal_checkpoint_candidate', False)}",
+                "source_map_selected_executor_result_checkpoint_review_only=True",
+                "source_map_selected_executor_result_checkpoint_checkpoint_only=True",
+                f"source_map_selected_executor_result_checkpoint_observed_browser_started={observed.get('browser_started', False)}",
+                f"source_map_selected_executor_result_checkpoint_observed_cdp_command_sent={observed.get('cdp_command_sent', False)}",
+                f"source_map_selected_executor_result_checkpoint_observed_runtime_evaluated={observed.get('runtime_evaluated', False)}",
+                f"source_map_selected_executor_result_checkpoint_browser_started_by_checkpoint={policy.get('browser_started', False)}",
+                f"source_map_selected_executor_result_checkpoint_cdp_command_sent_by_checkpoint={policy.get('cdp_command_sent', False)}",
+                f"source_map_selected_executor_result_checkpoint_runtime_evaluated_by_checkpoint={policy.get('runtime_evaluated', False)}",
+                f"source_map_selected_executor_result_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_selected_executor_result_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_selected_executor_result_checkpoint_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_selected_executor_result_checkpoint_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-selected-executor-result-checkpoint.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime review-only Source Map selected executor application result checkpoint.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "selected_review_gate": descriptor.get("selected_review_gate", ""),
+                    "application_surface": descriptor.get("application_surface", ""),
+                    "application_result_artifact": descriptor.get("application_result_artifact", ""),
+                    "application_result_status": descriptor.get("application_result_status", ""),
+                    "application_result_digest_sha256": descriptor.get("application_result_digest_sha256", ""),
+                    "application_result_verified": bool(descriptor.get("application_result_verified", False)),
+                    "application_handoff_verified": bool(descriptor.get("application_handoff_verified", False)),
+                    "result_success_key": descriptor.get("result_success_key", ""),
+                    "result_success": bool(descriptor.get("result_success", False)),
+                    "ready_for_followthrough_checkpoint_review": bool(descriptor.get("ready_for_followthrough_checkpoint_review", False)),
+                    "ready_for_next_explicit_review": bool(descriptor.get("ready_for_next_explicit_review", False)),
+                    "ready_to_execute_now": False,
+                    "execute_next_automatically": False,
+                    "automatic_followthrough_supported": False,
+                    "review_only": True,
+                    "checkpoint_only": True,
+                    "browser_started_by_checkpoint": False,
+                    "cdp_command_sent_by_checkpoint": False,
+                    "runtime_evaluated_by_checkpoint": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_selected_executor_result_checkpoint"
+                actions = ["review_source_map_selected_executor_result_checkpoint"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_selected_executor_application_result"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_selected_executor_result_checkpoint_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_followthrough_completion_checkpoint_request(protection_name, context):
+            spec = SourceMapFollowthroughCompletionCheckpointSpec.from_context(context)
+            result = SourceMapFollowthroughCompletionCheckpointManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            completion_review = descriptor.get("completion_review") if isinstance(descriptor.get("completion_review"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_followthrough_completion_checkpoint_status={result.status}",
+                f"source_map_followthrough_completion_checkpoint_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_followthrough_completion_checkpoint_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_followthrough_completion_checkpoint_selected_gate={descriptor.get('selected_review_gate', '')}",
+                f"source_map_followthrough_completion_checkpoint_application_surface={descriptor.get('application_surface', '')}",
+                f"source_map_followthrough_completion_checkpoint_completion_status={descriptor.get('completion_status', '')}",
+                f"source_map_followthrough_completion_checkpoint_terminal_review_candidate={descriptor.get('terminal_review_candidate', False)}",
+                f"source_map_followthrough_completion_checkpoint_followup_required={descriptor.get('followup_required', False)}",
+                f"source_map_followthrough_completion_checkpoint_ready_for_completion_review={descriptor.get('ready_for_completion_review', False)}",
+                f"source_map_followthrough_completion_checkpoint_ready_for_next_explicit_review={descriptor.get('ready_for_next_explicit_review', False)}",
+                f"source_map_followthrough_completion_checkpoint_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_followthrough_completion_checkpoint_recommended_review_action={completion_review.get('recommended_review_action', '')}",
+                f"source_map_followthrough_completion_checkpoint_source_result_checkpoint_digest={descriptor.get('source_result_checkpoint_digest_sha256', '')}",
+                f"source_map_followthrough_completion_checkpoint_source_chain_readiness_digest={descriptor.get('source_chain_readiness_digest_sha256', '')}",
+                "source_map_followthrough_completion_checkpoint_review_only=True",
+                "source_map_followthrough_completion_checkpoint_checkpoint_only=True",
+                "source_map_followthrough_completion_checkpoint_completion_checkpoint_only=True",
+                f"source_map_followthrough_completion_checkpoint_browser_started_by_completion={policy.get('browser_started', False)}",
+                f"source_map_followthrough_completion_checkpoint_cdp_command_sent_by_completion={policy.get('cdp_command_sent', False)}",
+                f"source_map_followthrough_completion_checkpoint_runtime_evaluated_by_completion={policy.get('runtime_evaluated', False)}",
+                f"source_map_followthrough_completion_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_followthrough_completion_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_followthrough_completion_checkpoint_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_followthrough_completion_checkpoint_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-followthrough-completion-checkpoint.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map follow-through completion / next-action checkpoint.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "selected_review_gate": descriptor.get("selected_review_gate", ""),
+                    "application_surface": descriptor.get("application_surface", ""),
+                    "completion_status": descriptor.get("completion_status", ""),
+                    "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)),
+                    "followup_required": bool(descriptor.get("followup_required", False)),
+                    "recommended_review_action": completion_review.get("recommended_review_action", ""),
+                    "source_result_checkpoint_digest_sha256": descriptor.get("source_result_checkpoint_digest_sha256", ""),
+                    "source_chain_readiness_digest_sha256": descriptor.get("source_chain_readiness_digest_sha256", ""),
+                    "ready_for_completion_review": bool(descriptor.get("ready_for_completion_review", False)),
+                    "ready_for_next_explicit_review": bool(descriptor.get("ready_for_next_explicit_review", False)),
+                    "ready_to_execute_now": False,
+                    "execute_next_automatically": False,
+                    "automatic_followthrough_supported": False,
+                    "review_only": True,
+                    "checkpoint_only": True,
+                    "completion_checkpoint_only": True,
+                    "browser_started_by_completion": False,
+                    "cdp_command_sent_by_completion": False,
+                    "runtime_evaluated_by_completion": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or completion_review.get("recommended_review_action") or "review_source_map_followthrough_completion_checkpoint"
+                actions = ["review_source_map_followthrough_completion_checkpoint"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_selected_executor_result_checkpoint"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_followthrough_completion_checkpoint_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_terminal_review_final_audit_request(protection_name, context):
+            spec = SourceMapTerminalReviewFinalAuditSpec.from_context(context)
+            result = SourceMapTerminalReviewFinalAuditManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            rollup = descriptor.get("final_audit_rollup") if isinstance(descriptor.get("final_audit_rollup"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_terminal_review_final_audit_status={result.status}",
+                f"source_map_terminal_review_final_audit_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_terminal_review_final_audit_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_terminal_review_final_audit_closure_status={descriptor.get('closure_status', '')}",
+                f"source_map_terminal_review_final_audit_final_audit_status={descriptor.get('final_audit_status', '')}",
+                f"source_map_terminal_review_final_audit_terminal_review_candidate={descriptor.get('terminal_review_candidate', False)}",
+                f"source_map_terminal_review_final_audit_followup_required={descriptor.get('followup_required', False)}",
+                f"source_map_terminal_review_final_audit_ready_for_final_audit_review={descriptor.get('ready_for_final_audit_review', False)}",
+                f"source_map_terminal_review_final_audit_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_terminal_review_final_audit_recommended_review_action={descriptor.get('recommended_review_action', '')}",
+                f"source_map_terminal_review_final_audit_observed_review_action={descriptor.get('observed_review_action', '')}",
+                f"source_map_terminal_review_final_audit_source_closure_digest={descriptor.get('source_closure_checkpoint_digest_sha256', '')}",
+                f"source_map_terminal_review_final_audit_source_package_digest={descriptor.get('source_terminal_review_package_digest_sha256', '')}",
+                "source_map_terminal_review_final_audit_review_only=True",
+                "source_map_terminal_review_final_audit_audit_rollup_only=True",
+                "source_map_terminal_review_final_audit_final_audit_only=True",
+                f"source_map_terminal_review_final_audit_recommended_action_executed_by_rollup={descriptor.get('recommended_action_executed_by_rollup', False)}",
+                f"source_map_terminal_review_final_audit_browser_started_by_rollup={policy.get('browser_started', False)}",
+                f"source_map_terminal_review_final_audit_cdp_command_sent_by_rollup={policy.get('cdp_command_sent', False)}",
+                f"source_map_terminal_review_final_audit_runtime_evaluated_by_rollup={policy.get('runtime_evaluated', False)}",
+                f"source_map_terminal_review_final_audit_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_terminal_review_final_audit_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_terminal_review_final_audit_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_terminal_review_final_audit_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-terminal-review-final-audit.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map terminal review closure summary / final audit rollup.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "closure_status": descriptor.get("closure_status", ""),
+                    "final_audit_status": descriptor.get("final_audit_status", ""),
+                    "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)),
+                    "followup_required": bool(descriptor.get("followup_required", False)),
+                    "recommended_review_action": descriptor.get("recommended_review_action", ""),
+                    "observed_review_action": descriptor.get("observed_review_action", ""),
+                    "source_closure_checkpoint_digest_sha256": descriptor.get("source_closure_checkpoint_digest_sha256", ""),
+                    "source_terminal_review_package_digest_sha256": descriptor.get("source_terminal_review_package_digest_sha256", ""),
+                    "final_audit_rollup_schema_version": rollup.get("schema_version", ""),
+                    "ready_for_final_audit_review": bool(descriptor.get("ready_for_final_audit_review", False)),
+                    "ready_to_execute_now": False,
+                    "execute_next_automatically": False,
+                    "automatic_followthrough_supported": False,
+                    "recommended_action_executed_by_rollup": False,
+                    "review_only": True,
+                    "audit_rollup_only": True,
+                    "final_audit_only": True,
+                    "browser_started_by_rollup": False,
+                    "cdp_command_sent_by_rollup": False,
+                    "runtime_evaluated_by_rollup": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_terminal_review_final_audit"
+                actions = ["review_source_map_terminal_review_final_audit"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_terminal_review_closure_checkpoint"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_terminal_review_final_audit_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_terminal_review_closure_checkpoint_request(protection_name, context):
+            spec = SourceMapTerminalReviewClosureCheckpointSpec.from_context(context)
+            result = SourceMapTerminalReviewClosureCheckpointManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            closure_audit = descriptor.get("closure_audit") if isinstance(descriptor.get("closure_audit"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_terminal_review_closure_checkpoint_status={result.status}",
+                f"source_map_terminal_review_closure_checkpoint_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_terminal_review_closure_checkpoint_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_terminal_review_closure_checkpoint_completion_status={descriptor.get('completion_status', '')}",
+                f"source_map_terminal_review_closure_checkpoint_closure_status={descriptor.get('closure_status', '')}",
+                f"source_map_terminal_review_closure_checkpoint_terminal_review_candidate={descriptor.get('terminal_review_candidate', False)}",
+                f"source_map_terminal_review_closure_checkpoint_followup_required={descriptor.get('followup_required', False)}",
+                f"source_map_terminal_review_closure_checkpoint_ready_for_closure_audit_review={descriptor.get('ready_for_closure_audit_review', False)}",
+                f"source_map_terminal_review_closure_checkpoint_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_terminal_review_closure_checkpoint_recommended_review_action={descriptor.get('recommended_review_action', '')}",
+                f"source_map_terminal_review_closure_checkpoint_observed_review_action={descriptor.get('observed_review_action', '')}",
+                f"source_map_terminal_review_closure_checkpoint_source_package_digest={descriptor.get('source_terminal_review_package_digest_sha256', '')}",
+                f"source_map_terminal_review_closure_checkpoint_observed_result_digest={descriptor.get('source_observed_result_digest_sha256', '')}",
+                "source_map_terminal_review_closure_checkpoint_review_only=True",
+                "source_map_terminal_review_closure_checkpoint_audit_checkpoint_only=True",
+                "source_map_terminal_review_closure_checkpoint_closure_checkpoint_only=True",
+                f"source_map_terminal_review_closure_checkpoint_recommended_action_executed_by_checkpoint={descriptor.get('recommended_action_executed_by_checkpoint', False)}",
+                f"source_map_terminal_review_closure_checkpoint_browser_started_by_checkpoint={policy.get('browser_started', False)}",
+                f"source_map_terminal_review_closure_checkpoint_cdp_command_sent_by_checkpoint={policy.get('cdp_command_sent', False)}",
+                f"source_map_terminal_review_closure_checkpoint_runtime_evaluated_by_checkpoint={policy.get('runtime_evaluated', False)}",
+                f"source_map_terminal_review_closure_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_terminal_review_closure_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_terminal_review_closure_checkpoint_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_terminal_review_closure_checkpoint_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-terminal-review-closure-checkpoint.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map terminal review observed-result / closure audit checkpoint.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "completion_status": descriptor.get("completion_status", ""),
+                    "closure_status": descriptor.get("closure_status", ""),
+                    "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)),
+                    "followup_required": bool(descriptor.get("followup_required", False)),
+                    "recommended_review_action": descriptor.get("recommended_review_action", ""),
+                    "observed_review_action": descriptor.get("observed_review_action", ""),
+                    "source_terminal_review_package_digest_sha256": descriptor.get("source_terminal_review_package_digest_sha256", ""),
+                    "source_observed_result_digest_sha256": descriptor.get("source_observed_result_digest_sha256", ""),
+                    "closure_audit_schema_version": closure_audit.get("schema_version", ""),
+                    "ready_for_closure_audit_review": bool(descriptor.get("ready_for_closure_audit_review", False)),
+                    "ready_to_execute_now": False,
+                    "execute_next_automatically": False,
+                    "automatic_followthrough_supported": False,
+                    "recommended_action_executed_by_checkpoint": False,
+                    "review_only": True,
+                    "audit_checkpoint_only": True,
+                    "closure_checkpoint_only": True,
+                    "browser_started_by_checkpoint": False,
+                    "cdp_command_sent_by_checkpoint": False,
+                    "runtime_evaluated_by_checkpoint": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_terminal_review_closure_checkpoint"
+                actions = ["review_source_map_terminal_review_closure_checkpoint"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "record_source_map_terminal_review_observed_result"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_terminal_review_closure_checkpoint_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_source_map_terminal_review_package_request(protection_name, context):
+            spec = SourceMapTerminalReviewPackageSpec.from_context(context)
+            result = SourceMapTerminalReviewPackageManager().review(spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            package = descriptor.get("terminal_review_package") if isinstance(descriptor.get("terminal_review_package"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+            if not isinstance(policy, dict):
+                policy = {}
+            verification = [
+                f"source_map_terminal_review_package_status={result.status}",
+                f"source_map_terminal_review_package_selected_action_id={descriptor.get('selected_action_id', '')}",
+                f"source_map_terminal_review_package_selected_consumer={descriptor.get('selected_consumer', '')}",
+                f"source_map_terminal_review_package_completion_status={descriptor.get('completion_status', '')}",
+                f"source_map_terminal_review_package_terminal_review_candidate={descriptor.get('terminal_review_candidate', False)}",
+                f"source_map_terminal_review_package_followup_required={descriptor.get('followup_required', False)}",
+                f"source_map_terminal_review_package_ready_for_terminal_review={descriptor.get('ready_for_terminal_review', False)}",
+                f"source_map_terminal_review_package_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+                f"source_map_terminal_review_package_recommended_review_action={package.get('recommended_review_action', '')}",
+                f"source_map_terminal_review_package_package_kind={package.get('package_kind', '')}",
+                f"source_map_terminal_review_package_source_completion_checkpoint_digest={descriptor.get('source_completion_checkpoint_digest_sha256', '')}",
+                "source_map_terminal_review_package_review_only=True",
+                "source_map_terminal_review_package_audit_handoff_only=True",
+                "source_map_terminal_review_package_terminal_review_package_only=True",
+                f"source_map_terminal_review_package_recommended_action_executed={descriptor.get('recommended_action_executed', False)}",
+                f"source_map_terminal_review_package_browser_started_by_package={policy.get('browser_started', False)}",
+                f"source_map_terminal_review_package_cdp_command_sent_by_package={policy.get('cdp_command_sent', False)}",
+                f"source_map_terminal_review_package_runtime_evaluated_by_package={policy.get('runtime_evaluated', False)}",
+                f"source_map_terminal_review_package_calls_mcp={policy.get('calls_mcp', False)}",
+                f"source_map_terminal_review_package_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"source_map_terminal_review_package_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_map_terminal_review_package_error={result.error}")
+            artifact = ArtifactRef(
+                path="virtual://workspace/source-map-terminal-review-package.json",
+                kind=ArtifactKind.JSON,
+                description="Native Web runtime read-only Source Map terminal review package / audit handoff.",
+                metadata={
+                    "status": result.status,
+                    "selected_action_id": descriptor.get("selected_action_id", ""),
+                    "selected_consumer": descriptor.get("selected_consumer", ""),
+                    "completion_status": descriptor.get("completion_status", ""),
+                    "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)),
+                    "followup_required": bool(descriptor.get("followup_required", False)),
+                    "package_kind": package.get("package_kind", ""),
+                    "recommended_review_action": package.get("recommended_review_action", ""),
+                    "source_completion_checkpoint_digest_sha256": descriptor.get("source_completion_checkpoint_digest_sha256", ""),
+                    "ready_for_terminal_review": bool(descriptor.get("ready_for_terminal_review", False)),
+                    "ready_for_audit_handoff_review": bool(descriptor.get("ready_for_audit_handoff_review", False)),
+                    "ready_to_execute_now": False,
+                    "execute_next_automatically": False,
+                    "automatic_followthrough_supported": False,
+                    "recommended_action_executed": False,
+                    "review_only": True,
+                    "audit_handoff_only": True,
+                    "terminal_review_package_only": True,
+                    "browser_started_by_package": False,
+                    "cdp_command_sent_by_package": False,
+                    "runtime_evaluated_by_package": False,
+                    "calls_mcp": False,
+                    "mobile_runtime_used": False,
+                },
+            )
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_source_map_terminal_review_package"
+                actions = ["review_source_map_terminal_review_package"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_source_map_followthrough_completion_checkpoint"
+                actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_source_map_terminal_review_package_descriptor"
+                actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=actions,
+                verification=verification,
+                status=status,
+                artifacts=[artifact],
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
         if self._is_source_map_selected_executor_apply_preflight_request(protection_name, context):
             spec = SourceMapSelectedExecutorApplyPreflightSpec.from_context(context)
             result = SourceMapSelectedExecutorApplyPreflightManager().review(spec)
@@ -951,6 +5114,14 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"source_map_selected_executor_apply_preflight_selected_gate={descriptor.get('selected_review_gate', '')}",
                 f"source_map_selected_executor_apply_preflight_approval_record_verified={descriptor.get('approval_record_verified', False)}",
                 f"source_map_selected_executor_apply_preflight_executor_input_ready={descriptor.get('executor_input_ready', False)}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_result_verified={descriptor.get('dispatcher_result_verified', False)}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_decision_recorded={descriptor.get('dispatcher_decision_recorded', False)}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_result_id={descriptor.get('dispatcher_result_id', '')}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_result_optional={descriptor.get('dispatcher_result_optional', True)}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_result_handoff_only={descriptor.get('dispatcher_result_handoff_only', True)}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_result_selected_executor_invoked={descriptor.get('dispatcher_result_selected_executor_invoked', False)}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_result_selected_executor_apply_preflight_invoked={descriptor.get('dispatcher_result_selected_executor_apply_preflight_invoked', False)}",
+                f"source_map_selected_executor_apply_preflight_dispatcher_result_dispatch_target_invoked={descriptor.get('dispatcher_result_dispatch_target_invoked', False)}",
                 f"source_map_selected_executor_apply_preflight_ready_for_selected_executor_review={descriptor.get('ready_for_selected_executor_review', False)}",
                 f"source_map_selected_executor_apply_preflight_ready_to_apply_now={descriptor.get('ready_to_apply_now', False)}",
                 "source_map_selected_executor_apply_preflight_review_only=True",
@@ -989,6 +5160,14 @@ class NativeWebRuntime(WebReverseRuntime):
                     "selected_review_gate": descriptor.get("selected_review_gate", ""),
                     "approval_record_verified": bool(descriptor.get("approval_record_verified", False)),
                     "executor_input_ready": bool(descriptor.get("executor_input_ready", False)),
+                    "dispatcher_result_verified": bool(descriptor.get("dispatcher_result_verified", False)),
+                    "dispatcher_decision_recorded": bool(descriptor.get("dispatcher_decision_recorded", False)),
+                    "dispatcher_result_id": descriptor.get("dispatcher_result_id", ""),
+                    "dispatcher_result_optional": bool(descriptor.get("dispatcher_result_optional", True)),
+                    "dispatcher_result_handoff_only": bool(descriptor.get("dispatcher_result_handoff_only", True)),
+                    "dispatcher_result_selected_executor_invoked": False,
+                    "dispatcher_result_selected_executor_apply_preflight_invoked": False,
+                    "dispatcher_result_dispatch_target_invoked": False,
                     "ready_for_selected_executor_review": bool(descriptor.get("ready_for_selected_executor_review", False)),
                     "ready_to_apply_now": False,
                     "future_action": descriptor.get("future_action", apply_plan.get("future_action", "")),
@@ -1143,6 +5322,10 @@ class NativeWebRuntime(WebReverseRuntime):
                 f"source_map_selected_executor_input_review_selected_action_id={descriptor.get('selected_action_id', '')}",
                 f"source_map_selected_executor_input_review_selected_consumer={descriptor.get('selected_consumer', '')}",
                 f"source_map_selected_executor_input_review_selected_surface={descriptor.get('selected_followthrough_review_surface', '')}",
+                f"source_map_selected_executor_input_review_source_debugger_candidate_selection_id={descriptor.get('source_debugger_candidate_selection_id', '')}",
+                f"source_map_selected_executor_input_review_source_debugger_candidate_selection_ready={descriptor.get('source_debugger_candidate_selection_ready', False)}",
+                f"source_map_selected_executor_input_review_source_hook_candidate_selection_id={descriptor.get('source_hook_candidate_selection_id', '')}",
+                f"source_map_selected_executor_input_review_source_hook_candidate_selection_ready={descriptor.get('source_hook_candidate_selection_ready', False)}",
                 f"source_map_selected_executor_input_review_package_ready={descriptor.get('executor_review_package_ready', False)}",
                 f"source_map_selected_executor_input_review_ready_for_executor_review={descriptor.get('ready_for_executor_review', False)}",
                 f"source_map_selected_executor_input_review_gate={gate.get('gate', '')}",
@@ -1177,6 +5360,10 @@ class NativeWebRuntime(WebReverseRuntime):
                     "selected_action_id": descriptor.get("selected_action_id", ""),
                     "selected_consumer": descriptor.get("selected_consumer", ""),
                     "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""),
+                    "source_debugger_candidate_selection_id": descriptor.get("source_debugger_candidate_selection_id", ""),
+                    "source_debugger_candidate_selection_ready": bool(descriptor.get("source_debugger_candidate_selection_ready", False)),
+                    "source_hook_candidate_selection_id": descriptor.get("source_hook_candidate_selection_id", ""),
+                    "source_hook_candidate_selection_ready": bool(descriptor.get("source_hook_candidate_selection_ready", False)),
                     "executor_review_package_ready": bool(descriptor.get("executor_review_package_ready", False)),
                     "ready_for_executor_review": bool(descriptor.get("ready_for_executor_review", False)),
                     "review_gate": gate.get("gate", ""),
@@ -2455,6 +6642,149 @@ class NativeWebRuntime(WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_collect_request(protection_name, context):
+            spec = HeapSnapshotCollectSpec.from_context(context)
+            result = HeapSnapshotCollectManager().collect(page, spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            metadata = descriptor.get("snapshot_metadata") if isinstance(descriptor.get("snapshot_metadata"), dict) else {}
+            cdp = descriptor.get("cdp") if isinstance(descriptor.get("cdp"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_collect_status={result.status}",
+                f"heap_snapshot_collect_review_approved={bool(descriptor.get('review_approved'))}",
+                f"heap_snapshot_collect_explicit_collection={bool(descriptor.get('explicit_collection'))}",
+                f"heap_snapshot_collect_collected={bool(descriptor.get('heap_snapshot_collected'))}",
+                f"heap_snapshot_collect_digest={metadata.get('snapshot_digest')}",
+                f"heap_snapshot_collect_byte_count={metadata.get('snapshot_byte_count')}",
+                f"heap_snapshot_collect_chunk_count={metadata.get('chunk_count')}",
+                f"heap_snapshot_collect_chunk_stream_observed={metadata.get('chunk_stream_observed')}",
+                f"heap_snapshot_collect_cdp_commands={cdp.get('commands_sent', [])}",
+                f"heap_snapshot_collect_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_collect_heap_profiler_enabled={policy.get('heap_profiler_enabled', False)}",
+                f"heap_snapshot_collect_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_collect_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_collect_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_collect_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_collect_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_collect_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_collect_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_collect_reason={result.reason}")
+            if result.error:
+                verification.append(f"heap_snapshot_collect_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-collect.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit review-gated CDP HeapProfiler snapshot metadata collection.",
+                    metadata={
+                        "status": result.status,
+                        "heap_snapshot_collected": bool(descriptor.get("heap_snapshot_collected")),
+                        "snapshot_digest": metadata.get("snapshot_digest"),
+                        "snapshot_byte_count": metadata.get("snapshot_byte_count"),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            if result.status == "collected":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_heap_snapshot_collect_before_heap_diff"
+            elif result.status in {"blocked", "unsupported"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_heap_snapshot_collect_blockers"
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_heap_snapshot_collect_descriptor"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["collect_heap_snapshot_metadata"] if result.status == "collected" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "collected" else ConfidenceLevel.LOW,
+            )
+        if self._is_runtime_object_graph_diff_request(protection_name, context):
+            spec = RuntimeObjectGraphDiffSpec.from_context(context)
+            result = RuntimeObjectGraphDiffManager().collect(page, spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            diff = descriptor.get("diff") if isinstance(descriptor.get("diff"), dict) else {}
+            risk = descriptor.get("risk_summary") if isinstance(descriptor.get("risk_summary"), dict) else {}
+            collection = descriptor.get("runtime_collection") if isinstance(descriptor.get("runtime_collection"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            root_path = spec.root_path if spec else "<missing>"
+            change_count = int(diff.get("change_count") or descriptor.get("change_count") or 0)
+            categories = diff.get("categories") if isinstance(diff.get("categories"), list) else []
+            verification = [
+                f"runtime_object_graph_diff_status={result.status}",
+                f"runtime_object_graph_diff_root_path={root_path}",
+                f"runtime_object_graph_diff_changed={bool(diff.get('changed', descriptor.get('changed', False)))}",
+                f"runtime_object_graph_diff_change_count={change_count}",
+                f"runtime_object_graph_diff_categories={categories}",
+                f"runtime_object_graph_diff_risk={risk.get('risk', 'low')}",
+                f"runtime_object_graph_diff_explicit_collection={bool(descriptor.get('explicit_runtime_collection'))}",
+                f"runtime_object_graph_diff_snapshot_source={collection.get('snapshot_source')}",
+                f"runtime_object_graph_diff_default_recon={policy.get('default_recon', False)}",
+                f"runtime_object_graph_diff_browser_started={policy.get('browser_started', False)}",
+                f"runtime_object_graph_diff_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"runtime_object_graph_diff_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"runtime_object_graph_diff_trigger_executed={policy.get('trigger_executed', False)}",
+                f"runtime_object_graph_diff_getter_invocation={policy.get('getter_invocation', False)}",
+                f"runtime_object_graph_diff_prototype_traversal={policy.get('prototype_traversal', False)}",
+                f"runtime_object_graph_diff_full_heap_snapshot={policy.get('full_heap_snapshot', False)}",
+                f"runtime_object_graph_diff_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"runtime_object_graph_diff_calls_mcp={policy.get('calls_mcp', False)}",
+                f"runtime_object_graph_diff_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"runtime_object_graph_diff_reason={result.reason}")
+            if result.error:
+                verification.append(f"runtime_object_graph_diff_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/runtime-object-graph-diff.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime-collected scoped object graph diff around an explicit object root.",
+                    metadata={
+                        "status": result.status,
+                        "root_path": root_path,
+                        "changed": bool(diff.get("changed", descriptor.get("changed", False))),
+                        "change_count": change_count,
+                        "categories": categories,
+                        "risk": risk.get("risk", "low"),
+                        "runtime_evaluated": policy.get("runtime_evaluated", False),
+                        "full_heap_snapshot": policy.get("full_heap_snapshot", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_runtime_object_graph_diff_before_hook_or_replay"
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_supported_runtime_object_root_path"
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_runtime_object_graph_diff_descriptor"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["collect_runtime_object_graph_diff"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
         if self._is_page_mutation_audit_request(protection_name, context):
             spec = PageMutationAuditSpec.from_context(context)
@@ -8580,1919 +12910,256 @@ class NativeWebRuntime(WebReverseRuntime):
     def _looks_like_url(value: str) -> bool:
         return value.startswith("http://") or value.startswith("https://")
 
-    @staticmethod
-    def _is_breakpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {"breakpoint", "set-breakpoint", "debugger-breakpoint"}:
-            return True
-        return any(key in context for key in ("url_pattern", "script_url", "line_number", "lineNumber"))
+
+
+
+
+
+
+
 
     @staticmethod
-    def _is_paused_session_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_paused_session_automatic_loop_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_executor_approval_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_executor_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_continuation_workflow_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_pre_action_subscribe_and_action_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_next_paused_event_capture_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_one_action_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_live_callframe_recovery_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_attach_probe_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_live_continuation_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_target_attach_readiness_request(protection_name, context):
-            return False
-        if normalized in {
-            "paused-session",
-            "pause-session",
-            "debugger-session",
-            "resume-paused-session",
-            "inspect-paused-session",
-            "evaluate-paused-session",
-            "step-paused-session",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_action",
-                "pausedSessionAction",
-                "debugger_session_action",
-                "debuggerSessionAction",
-                "session_action",
-            )
+    def _source_map_hook_apply_preflight(context: dict[str, Any]) -> dict[str, Any]:
+        return NativeWebRuntime._dict_alias(
+            context,
+            "source_map_selected_executor_apply_preflight",
+            "sourceMapSelectedExecutorApplyPreflight",
+            "source_map_selected_executor_application_preflight",
+            "sourceMapSelectedExecutorApplicationPreflight",
+            "source_map_hook_apply_preflight",
+            "sourceMapHookApplyPreflight",
+            "source_map_hook_install_apply_preflight",
+            "sourceMapHookInstallApplyPreflight",
         )
 
     @staticmethod
-    def _is_paused_session_automatic_loop_followup_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-followup-checkpoint",
-            "review-paused-session-automatic-loop-followup-checkpoint",
-            "paused-session-automatic-loop-execution-followup",
-            "checkpoint-paused-session-automatic-loop-execution",
-            "paused-session-automatic-loop-checkpoint-review",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_followup_checkpoint",
-                "pausedSessionAutomaticLoopFollowupCheckpoint",
-                "paused-session-automatic-loop-followup-checkpoint",
-                "paused_session_automatic_loop_execution_followup",
-                "pausedSessionAutomaticLoopExecutionFollowup",
-                "checkpoint_paused_session_automatic_loop_execution",
-                "checkpointPausedSessionAutomaticLoopExecution",
-            )
+    def _source_map_hook_install_input(context: dict[str, Any], apply_preflight: dict[str, Any] | None = None) -> dict[str, Any]:
+        explicit = NativeWebRuntime._dict_alias(
+            context,
+            "source_map_hook_install_input",
+            "sourceMapHookInstallInput",
+            "hook_install_input",
+            "hookInstallInput",
+            "reviewed_hook_install_input",
+            "reviewedHookInstallInput",
+        )
+        if not explicit:
+            keys = {
+                "hook_kind",
+                "hookKind",
+                "function_name",
+                "functionName",
+                "target_function",
+                "targetFunction",
+                "hook_function",
+                "hookFunction",
+                "function_paths",
+                "functionPaths",
+                "function_path",
+                "functionPath",
+                "hook_paths",
+                "hookPaths",
+                "candidate_id",
+                "candidateId",
+                "module_id",
+                "moduleId",
+                "webpack_module_id",
+                "webpackModuleId",
+                "export_name",
+                "exportName",
+                "module_export",
+                "moduleExport",
+                "require_path",
+                "requirePath",
+                "capture_args",
+                "captureArgs",
+                "capture_result",
+                "captureResult",
+                "max_preview_length",
+                "maxPreviewLength",
+                "trigger_expression",
+                "triggerExpression",
+                "cdp_command",
+                "cdpCommand",
+            }
+            explicit = {key: value for key, value in context.items() if key in keys}
+        if not explicit and isinstance(apply_preflight, dict):
+            executor_input = apply_preflight.get("executor_input")
+            if isinstance(executor_input, dict):
+                install_input = executor_input.get("hook_install_input") or executor_input.get("hookInstallInput")
+                if isinstance(install_input, dict):
+                    explicit = dict(install_input)
+        return explicit
+
+    @staticmethod
+    def _source_map_hook_install_spec(hook_input: dict[str, Any]) -> tuple[str, FunctionHookSpec | ModuleHookSpec | None]:
+        raw_kind = str(hook_input.get("hook_kind") or hook_input.get("hookKind") or "").strip().lower()
+        module_spec = ModuleHookSpec.from_context(hook_input)
+        function_spec = FunctionHookSpec.from_context(hook_input)
+        if raw_kind in {"module", "module-export", "webpack-module", "module_hook", "module-hook"}:
+            return "module", module_spec
+        if raw_kind in {"function", "function-path", "function_hook", "function-hook", "global-function"}:
+            return "function", function_spec
+        if module_spec is not None:
+            return "module", module_spec
+        if function_spec is not None:
+            return "function", function_spec
+        return "", None
+
+    @staticmethod
+    def _source_map_debugger_apply_preflight(context: dict[str, Any]) -> dict[str, Any]:
+        return NativeWebRuntime._dict_alias(
+            context,
+            "source_map_selected_executor_apply_preflight",
+            "sourceMapSelectedExecutorApplyPreflight",
+            "source_map_selected_executor_application_preflight",
+            "sourceMapSelectedExecutorApplicationPreflight",
+            "source_map_debugger_apply_preflight",
+            "sourceMapDebuggerApplyPreflight",
+            "source_map_debugger_location_apply_preflight",
+            "sourceMapDebuggerLocationApplyPreflight",
         )
 
     @staticmethod
-    def _is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_following_iteration_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-next-iteration-followup-checkpoint",
-            "review-paused-session-automatic-loop-next-iteration-followup-checkpoint",
-            "paused-session-automatic-loop-next-iteration-execution-followup",
-            "checkpoint-paused-session-automatic-loop-next-iteration-execution",
-            "paused-session-automatic-loop-next-iteration-checkpoint-review",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_next_iteration_followup_checkpoint",
-                "pausedSessionAutomaticLoopNextIterationFollowupCheckpoint",
-                "paused-session-automatic-loop-next-iteration-followup-checkpoint",
-                "paused_session_automatic_loop_next_iteration_execution_followup",
-                "pausedSessionAutomaticLoopNextIterationExecutionFollowup",
-                "checkpoint_paused_session_automatic_loop_next_iteration_execution",
-                "checkpointPausedSessionAutomaticLoopNextIterationExecution",
-            )
+    def _source_map_debugger_location_input(context: dict[str, Any], apply_preflight: dict[str, Any] | None = None) -> dict[str, Any]:
+        explicit = NativeWebRuntime._dict_alias(
+            context,
+            "source_map_debugger_location_input",
+            "sourceMapDebuggerLocationInput",
+            "debugger_location_input",
+            "debuggerLocationInput",
+            "reviewed_debugger_location_input",
+            "reviewedDebuggerLocationInput",
         )
+        if not explicit:
+            keys = {
+                "location",
+                "url_pattern",
+                "urlPattern",
+                "url",
+                "script_url",
+                "scriptUrl",
+                "line_number",
+                "lineNumber",
+                "generated_line_number",
+                "generatedLineNumber",
+                "generated_line",
+                "generatedLine",
+                "column_number",
+                "columnNumber",
+                "generated_column_number",
+                "generatedColumnNumber",
+                "generated_column",
+                "generatedColumn",
+                "condition",
+                "trigger_expression",
+                "triggerExpression",
+                "wait_after_trigger_ms",
+                "waitAfterTriggerMs",
+                "debugger_actions",
+                "debuggerActions",
+                "pause_actions",
+                "pauseActions",
+                "step_actions",
+                "stepActions",
+                "auto_resume",
+                "autoResume",
+                "preserve_pause_state",
+                "preservePauseState",
+                "keep_paused",
+                "keepPaused",
+                "persist_paused_session",
+                "persistPausedSession",
+            }
+            explicit = {key: value for key, value in context.items() if key in keys}
+        if not explicit and isinstance(apply_preflight, dict):
+            executor_input = apply_preflight.get("executor_input")
+            if isinstance(executor_input, dict):
+                explicit = dict(executor_input)
+        return explicit
 
     @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-executor-approval-plan",
-            "plan-paused-session-automatic-loop-multi-iteration-executor-approval",
-            "review-paused-session-automatic-loop-multi-iteration-executor-approval-plan",
-            "paused-session-automatic-loop-bounded-multi-iteration-executor-approval-plan",
-            "automatic-loop-multi-iteration-executor-approval-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_executor_approval_plan",
-                "pausedSessionAutomaticLoopMultiIterationExecutorApprovalPlan",
-                "paused-session-automatic-loop-multi-iteration-executor-approval-plan",
-                "plan_paused_session_automatic_loop_multi_iteration_executor_approval",
-                "planPausedSessionAutomaticLoopMultiIterationExecutorApproval",
-                "review_paused_session_automatic_loop_multi_iteration_executor_approval_plan",
-                "reviewPausedSessionAutomaticLoopMultiIterationExecutorApprovalPlan",
-                "automatic_loop_multi_iteration_executor_approval_plan",
-                "automaticLoopMultiIterationExecutorApprovalPlan",
-            )
+    def _source_map_debugger_breakpoint_context(debugger_input: dict[str, Any]) -> dict[str, Any]:
+        location = debugger_input.get("location") if isinstance(debugger_input.get("location"), dict) else {}
+        merged: dict[str, Any] = dict(debugger_input)
+        for key, value in location.items():
+            merged.setdefault(key, value)
+        url_pattern = (
+            merged.get("url_pattern")
+            or merged.get("urlPattern")
+            or merged.get("script_url")
+            or merged.get("scriptUrl")
+            or merged.get("url")
+            or location.get("url_pattern")
+            or location.get("urlPattern")
+            or location.get("script_url")
+            or location.get("scriptUrl")
+            or location.get("url")
         )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-execution",
-            "execute-paused-session-automatic-loop-multi-iteration",
-            "execute-bounded-paused-session-automatic-loop-multi-iteration",
-            "reviewed-paused-session-automatic-loop-multi-iteration-execution",
-            "paused-session-automatic-loop-multi-iteration-executor",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_execution",
-                "pausedSessionAutomaticLoopMultiIterationExecution",
-                "paused-session-automatic-loop-multi-iteration-execution",
-                "execute_paused_session_automatic_loop_multi_iteration",
-                "executePausedSessionAutomaticLoopMultiIteration",
-                "execute_bounded_paused_session_automatic_loop_multi_iteration",
-                "executeBoundedPausedSessionAutomaticLoopMultiIteration",
-            )
+        line_number = (
+            merged.get("generated_line_number")
+            if merged.get("generated_line_number") is not None
+            else merged.get("generatedLineNumber")
+            if merged.get("generatedLineNumber") is not None
+            else merged.get("generated_line")
+            if merged.get("generated_line") is not None
+            else merged.get("generatedLine")
+            if merged.get("generatedLine") is not None
+            else merged.get("line_number")
+            if merged.get("line_number") is not None
+            else merged.get("lineNumber")
         )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_next_step_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-followup-checkpoint",
-            "review-paused-session-automatic-loop-multi-iteration-followup-checkpoint",
-            "paused-session-automatic-loop-multi-iteration-execution-followup",
-            "checkpoint-paused-session-automatic-loop-multi-iteration-execution",
-            "paused-session-automatic-loop-multi-iteration-checkpoint-review",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_followup_checkpoint",
-                "pausedSessionAutomaticLoopMultiIterationFollowupCheckpoint",
-                "paused-session-automatic-loop-multi-iteration-followup-checkpoint",
-                "paused_session_automatic_loop_multi_iteration_execution_followup",
-                "pausedSessionAutomaticLoopMultiIterationExecutionFollowup",
-                "checkpoint_paused_session_automatic_loop_multi_iteration_execution",
-                "checkpointPausedSessionAutomaticLoopMultiIterationExecution",
-            )
+        column_number = (
+            merged.get("generated_column_number")
+            if merged.get("generated_column_number") is not None
+            else merged.get("generatedColumnNumber")
+            if merged.get("generatedColumnNumber") is not None
+            else merged.get("generated_column")
+            if merged.get("generated_column") is not None
+            else merged.get("generatedColumn")
+            if merged.get("generatedColumn") is not None
+            else merged.get("column_number")
+            if merged.get("column_number") is not None
+            else merged.get("columnNumber")
         )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_next_step_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-next-step-plan",
-            "review-paused-session-automatic-loop-multi-iteration-next-step-plan",
-            "plan-next-paused-session-automatic-loop-multi-iteration-step",
-            "review-next-paused-session-automatic-loop-multi-iteration-step",
-            "paused-session-automatic-loop-multi-iteration-next-step-review",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_next_step_plan",
-                "pausedSessionAutomaticLoopMultiIterationNextStepPlan",
-                "paused-session-automatic-loop-multi-iteration-next-step-plan",
-                "plan_next_paused_session_automatic_loop_multi_iteration_step",
-                "planNextPausedSessionAutomaticLoopMultiIterationStep",
-                "review_next_paused_session_automatic_loop_multi_iteration_step",
-                "reviewNextPausedSessionAutomaticLoopMultiIterationStep",
-            )
+        result: dict[str, Any] = {}
+        if url_pattern:
+            result["url_pattern"] = str(url_pattern)
+        if line_number is not None:
+            result["line_number"] = int(line_number)
+        if column_number is not None:
+            result["column_number"] = int(column_number)
+        passthrough_keys = (
+            "condition",
+            "trigger_expression",
+            "triggerExpression",
+            "wait_after_trigger_ms",
+            "waitAfterTriggerMs",
+            "debugger_actions",
+            "debuggerActions",
+            "pause_actions",
+            "pauseActions",
+            "step_actions",
+            "stepActions",
+            "callframe_evaluations",
+            "callframeEvaluations",
+            "evaluate_on_callframe",
+            "evaluateOnCallFrame",
+            "auto_resume",
+            "autoResume",
+            "preserve_pause_state",
+            "preservePauseState",
+            "keep_paused",
+            "keepPaused",
+            "persist_paused_session",
+            "persistPausedSession",
+            "paused_session_store_dir",
+            "pausedSessionStoreDir",
         )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-executor-input-preflight",
-            "review-paused-session-automatic-loop-multi-iteration-executor-input-preflight",
-            "preflight-paused-session-automatic-loop-multi-iteration-executor-input",
-            "review-next-paused-session-automatic-loop-multi-iteration-executor-input",
-            "paused-session-automatic-loop-multi-iteration-executor-input-review",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_executor_input_preflight",
-                "pausedSessionAutomaticLoopMultiIterationExecutorInputPreflight",
-                "paused-session-automatic-loop-multi-iteration-executor-input-preflight",
-                "preflight_paused_session_automatic_loop_multi_iteration_executor_input",
-                "preflightPausedSessionAutomaticLoopMultiIterationExecutorInput",
-                "review_next_paused_session_automatic_loop_multi_iteration_executor_input",
-                "reviewNextPausedSessionAutomaticLoopMultiIterationExecutorInput",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_next_step_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-execution-plan",
-            "plan-paused-session-automatic-loop-multi-iteration-execution",
-            "review-paused-session-automatic-loop-multi-iteration-execution-plan",
-            "paused-session-automatic-loop-bounded-multi-iteration-execution-plan",
-            "automatic-loop-multi-iteration-execution-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_execution_plan",
-                "pausedSessionAutomaticLoopMultiIterationExecutionPlan",
-                "paused-session-automatic-loop-multi-iteration-execution-plan",
-                "plan_paused_session_automatic_loop_multi_iteration_execution",
-                "planPausedSessionAutomaticLoopMultiIterationExecution",
-                "review_paused_session_automatic_loop_multi_iteration_execution_plan",
-                "reviewPausedSessionAutomaticLoopMultiIterationExecutionPlan",
-                "automatic_loop_multi_iteration_execution_plan",
-                "automaticLoopMultiIterationExecutionPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_executor_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_execution_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-executor-preflight",
-            "preflight-paused-session-automatic-loop-multi-iteration-executor",
-            "review-paused-session-automatic-loop-multi-iteration-executor-preflight",
-            "paused-session-automatic-loop-bounded-multi-iteration-executor-preflight",
-            "automatic-loop-multi-iteration-executor-preflight",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_executor_preflight",
-                "pausedSessionAutomaticLoopMultiIterationExecutorPreflight",
-                "paused-session-automatic-loop-multi-iteration-executor-preflight",
-                "preflight_paused_session_automatic_loop_multi_iteration_executor",
-                "preflightPausedSessionAutomaticLoopMultiIterationExecutor",
-                "review_paused_session_automatic_loop_multi_iteration_executor_preflight",
-                "reviewPausedSessionAutomaticLoopMultiIterationExecutorPreflight",
-                "automatic_loop_multi_iteration_executor_preflight",
-                "automaticLoopMultiIterationExecutorPreflight",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_multi_iteration_policy_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_executor_preflight_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-multi-iteration-policy",
-            "review-paused-session-automatic-loop-multi-iteration-policy",
-            "plan-paused-session-automatic-loop-multi-iteration-policy",
-            "review-paused-session-automatic-loop-bounded-multi-iteration-policy",
-            "paused-session-automatic-loop-budget-policy",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_multi_iteration_policy",
-                "pausedSessionAutomaticLoopMultiIterationPolicy",
-                "paused-session-automatic-loop-multi-iteration-policy",
-                "plan_paused_session_automatic_loop_multi_iteration_policy",
-                "planPausedSessionAutomaticLoopMultiIterationPolicy",
-                "review_paused_session_automatic_loop_multi_iteration_policy",
-                "reviewPausedSessionAutomaticLoopMultiIterationPolicy",
-                "automatic_loop_multi_iteration_policy",
-                "automaticLoopMultiIterationPolicy",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_following_iteration_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_multi_iteration_policy_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-following-iteration-plan",
-            "review-paused-session-automatic-loop-following-iteration-plan",
-            "plan-following-paused-session-automatic-loop-iteration",
-            "review-following-paused-session-automatic-loop-iteration",
-            "paused-session-automatic-loop-following-iteration-review",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_following_iteration_plan",
-                "pausedSessionAutomaticLoopFollowingIterationPlan",
-                "paused-session-automatic-loop-following-iteration-plan",
-                "plan_following_paused_session_automatic_loop_iteration",
-                "planFollowingPausedSessionAutomaticLoopIteration",
-                "review_following_paused_session_automatic_loop_iteration",
-                "reviewFollowingPausedSessionAutomaticLoopIteration",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_next_iteration_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-next-iteration-execution",
-            "execute-paused-session-automatic-loop-next-iteration",
-            "execute-next-paused-session-automatic-loop-iteration",
-            "reviewed-paused-session-automatic-loop-next-iteration-execution",
-            "paused-session-automatic-loop-next-iteration-executor",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_next_iteration_execution",
-                "pausedSessionAutomaticLoopNextIterationExecution",
-                "paused-session-automatic-loop-next-iteration-execution",
-                "execute_paused_session_automatic_loop_next_iteration",
-                "executePausedSessionAutomaticLoopNextIteration",
-                "execute_next_paused_session_automatic_loop_iteration",
-                "executeNextPausedSessionAutomaticLoopIteration",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_next_iteration_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_following_iteration_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-next-iteration-plan",
-            "review-paused-session-automatic-loop-next-iteration-plan",
-            "plan-next-paused-session-automatic-loop-iteration",
-            "review-next-paused-session-automatic-loop-iteration",
-            "paused-session-automatic-loop-next-iteration-review",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_next_iteration_plan",
-                "pausedSessionAutomaticLoopNextIterationPlan",
-                "paused-session-automatic-loop-next-iteration-plan",
-                "plan_next_paused_session_automatic_loop_iteration",
-                "planNextPausedSessionAutomaticLoopIteration",
-                "review_next_paused_session_automatic_loop_iteration",
-                "reviewNextPausedSessionAutomaticLoopIteration",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_next_iteration_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_followup_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_execution_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-execution",
-            "execute-paused-session-automatic-loop",
-            "execute-bounded-paused-session-automatic-loop",
-            "paused-session-bounded-automatic-loop-execution",
-            "reviewed-paused-session-automatic-loop-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_execution",
-                "pausedSessionAutomaticLoopExecution",
-                "paused-session-automatic-loop-execution",
-                "execute_paused_session_automatic_loop",
-                "executePausedSessionAutomaticLoop",
-                "execute_bounded_paused_session_automatic_loop",
-                "executeBoundedPausedSessionAutomaticLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_executor_approval_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-executor-approval-plan",
-            "plan-paused-session-automatic-loop-executor-approval",
-            "review-paused-session-automatic-loop-executor-approval-plan",
-            "automatic-paused-session-loop-executor-approval-plan",
-            "paused-session-bounded-automatic-loop-executor-approval-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_executor_approval_plan",
-                "pausedSessionAutomaticLoopExecutorApprovalPlan",
-                "paused-session-automatic-loop-executor-approval-plan",
-                "plan_paused_session_automatic_loop_executor_approval",
-                "planPausedSessionAutomaticLoopExecutorApproval",
-                "automatic_loop_executor_approval_plan",
-                "automaticLoopExecutorApprovalPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_executor_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_executor_approval_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-executor-preflight",
-            "preflight-paused-session-automatic-loop-executor",
-            "review-paused-session-automatic-loop-executor-preflight",
-            "automatic-paused-session-loop-executor-preflight",
-            "paused-session-bounded-automatic-loop-executor-preflight",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_executor_preflight",
-                "pausedSessionAutomaticLoopExecutorPreflight",
-                "paused-session-automatic-loop-executor-preflight",
-                "preflight_paused_session_automatic_loop_executor",
-                "preflightPausedSessionAutomaticLoopExecutor",
-                "automatic_loop_executor_preflight",
-                "automaticLoopExecutorPreflight",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_executor_preflight_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-execution-plan",
-            "plan-paused-session-automatic-loop-execution",
-            "paused-session-bounded-automatic-loop-execution-plan",
-            "review-paused-session-automatic-loop-execution-plan",
-            "automatic-paused-session-loop-execution-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_execution_plan",
-                "pausedSessionAutomaticLoopExecutionPlan",
-                "paused-session-automatic-loop-execution-plan",
-                "plan_paused_session_automatic_loop_execution",
-                "planPausedSessionAutomaticLoopExecution",
-                "automatic_loop_execution_plan",
-                "automaticLoopExecutionPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_automatic_loop_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_paused_session_automatic_loop_execution_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-automatic-loop-readiness",
-            "paused-session-multi-step-automatic-loop-readiness",
-            "review-paused-session-automatic-loop-readiness",
-            "paused-session-automatic-continuation-loop-readiness",
-            "automatic-paused-session-loop-readiness",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_automatic_loop_readiness",
-                "pausedSessionAutomaticLoopReadiness",
-                "paused-session-automatic-loop-readiness",
-                "paused_session_multi_step_automatic_loop_readiness",
-                "pausedSessionMultiStepAutomaticLoopReadiness",
-                "review_paused_session_automatic_loop_readiness",
-                "reviewPausedSessionAutomaticLoopReadiness",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_multi_step_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_readiness_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-multi-step-loop-execution",
-            "pause-session-multi-step-loop-execution",
-            "debugger-paused-session-multi-step-loop-execution",
-            "execute-paused-session-loop-iteration",
-            "execute-paused-session-continuation-loop",
-            "execute-paused-session-continuation-loop-iteration",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_multi_step_loop_execution",
-                "pausedSessionMultiStepLoopExecution",
-                "paused-session-multi-step-loop-execution",
-                "execute_paused_session_loop_iteration",
-                "executePausedSessionLoopIteration",
-                "execute_paused_session_continuation_loop",
-                "executePausedSessionContinuationLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_multi_step_loop_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_automatic_loop_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-multi-step-loop-plan",
-            "pause-session-multi-step-loop-plan",
-            "debugger-paused-session-multi-step-loop-plan",
-            "paused-session-continuation-loop-plan",
-            "multi-step-continuation-loop-plan",
-            "plan-paused-session-continuation-loop",
-            "review-paused-session-continuation-loop",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_multi_step_loop_plan",
-                "pausedSessionMultiStepLoopPlan",
-                "paused-session-multi-step-loop-plan",
-                "paused_session_continuation_loop_plan",
-                "pausedSessionContinuationLoopPlan",
-                "multi_step_continuation_loop_plan",
-                "multiStepContinuationLoopPlan",
-                "plan_paused_session_continuation_loop",
-                "planPausedSessionContinuationLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_cross_process_session_lifecycle_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-cross-process-session-lifecycle",
-            "pause-session-cross-process-session-lifecycle",
-            "debugger-paused-session-cross-process-session-lifecycle",
-            "cross-process-paused-session-lifecycle",
-            "cross-process-session-lifecycle",
-            "paused-session-lifecycle",
-            "review-paused-session-lifecycle",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_cross_process_session_lifecycle",
-                "pausedSessionCrossProcessSessionLifecycle",
-                "paused-session-cross-process-session-lifecycle",
-                "cross_process_session_lifecycle",
-                "crossProcessSessionLifecycle",
-                "review_paused_session_lifecycle",
-                "reviewPausedSessionLifecycle",
-                "paused_session_lifecycle",
-                "pausedSessionLifecycle",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_multi_step_continuation_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-multi-step-continuation-execution",
-            "pause-session-multi-step-continuation-execution",
-            "debugger-paused-session-multi-step-continuation-execution",
-            "execute-paused-session-continuation-iteration",
-            "cross-process-multi-step-continuation-execution",
-            "execute-multi-step-continuation-iteration",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_multi_step_continuation_execution",
-                "pausedSessionMultiStepContinuationExecution",
-                "paused-session-multi-step-continuation-execution",
-                "execute_paused_session_continuation_iteration",
-                "executePausedSessionContinuationIteration",
-                "cross_process_multi_step_continuation_execution",
-                "crossProcessMultiStepContinuationExecution",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_multi_step_continuation_workflow_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_continuation_execution_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-multi-step-continuation-workflow",
-            "pause-session-multi-step-continuation-workflow",
-            "debugger-paused-session-multi-step-continuation-workflow",
-            "multi-step-paused-session-continuation",
-            "cross-process-multi-step-continuation",
-            "paused-session-continuation-workflow",
-            "plan-paused-session-continuation-workflow",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_multi_step_continuation_workflow",
-                "pausedSessionMultiStepContinuationWorkflow",
-                "paused-session-multi-step-continuation-workflow",
-                "multi_step_paused_session_continuation",
-                "multiStepPausedSessionContinuation",
-                "paused_session_continuation_workflow",
-                "pausedSessionContinuationWorkflow",
-                "cross_process_multi_step_continuation",
-                "crossProcessMultiStepContinuation",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_pre_action_subscribe_and_action_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-pre-action-subscribe-and-action",
-            "pause-session-pre-action-subscribe-and-action",
-            "debugger-paused-session-pre-action-subscribe-and-action",
-            "cross-process-pre-action-subscribe-and-action",
-            "pre-action-subscribe-and-action",
-            "subscribe-and-action-orchestration",
-            "pre-subscribe-cross-process-one-action",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_pre_action_subscribe_and_action",
-                "pausedSessionPreActionSubscribeAndAction",
-                "paused-session-pre-action-subscribe-and-action",
-                "pre_action_subscribe_and_action",
-                "preActionSubscribeAndAction",
-                "subscribe_and_action_orchestration",
-                "subscribeAndActionOrchestration",
-                "pre_subscribe_cross_process_one_action",
-                "preSubscribeCrossProcessOneAction",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_cross_process_continuation_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-cross-process-continuation-checkpoint",
-            "pause-session-cross-process-continuation-checkpoint",
-            "debugger-paused-session-cross-process-continuation-checkpoint",
-            "cross-process-continuation-checkpoint",
-            "paused-session-continuation-checkpoint",
-            "review-cross-process-continuation-checkpoint",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_cross_process_continuation_checkpoint",
-                "pausedSessionCrossProcessContinuationCheckpoint",
-                "paused-session-cross-process-continuation-checkpoint",
-                "cross_process_continuation_checkpoint",
-                "crossProcessContinuationCheckpoint",
-                "paused_session_continuation_checkpoint",
-                "pausedSessionContinuationCheckpoint",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_next_paused_event_capture_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-next-paused-event-capture-execution",
-            "pause-session-next-paused-event-capture-execution",
-            "debugger-paused-session-next-paused-event-capture-execution",
-            "cross-process-next-paused-event-capture-execution",
-            "next-paused-event-capture-execution",
-            "execute-next-paused-event-capture",
-            "reviewed-next-paused-event-capture-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_next_paused_event_capture_execution",
-                "pausedSessionNextPausedEventCaptureExecution",
-                "paused-session-next-paused-event-capture-execution",
-                "next_paused_event_capture_execution",
-                "nextPausedEventCaptureExecution",
-                "execute_next_paused_event_capture",
-                "executeNextPausedEventCapture",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_next_paused_event_capture_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_paused_session_cross_process_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
-            return False
-        if normalized in {
-            "paused-session-next-paused-event-capture-plan",
-            "pause-session-next-paused-event-capture-plan",
-            "debugger-paused-session-next-paused-event-capture-plan",
-            "cross-process-next-paused-event-capture-plan",
-            "next-paused-event-capture-plan",
-            "plan-next-paused-event-capture",
-            "review-next-paused-event-capture-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_next_paused_event_capture_plan",
-                "pausedSessionNextPausedEventCapturePlan",
-                "paused-session-next-paused-event-capture-plan",
-                "next_paused_event_capture_plan",
-                "nextPausedEventCapturePlan",
-                "plan_next_paused_event_capture",
-                "planNextPausedEventCapture",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_cross_process_one_action_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-cross-process-one-action",
-            "pause-session-cross-process-one-action",
-            "debugger-paused-session-cross-process-one-action",
-            "cross-process-paused-session-one-action",
-            "cross-process-one-action",
-            "execute-cross-process-one-action",
-            "execute-cross-process-paused-session-action",
-            "reviewed-cross-process-one-action",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_cross_process_one_action",
-                "pausedSessionCrossProcessOneAction",
-                "paused-session-cross-process-one-action",
-                "cross_process_one_action",
-                "crossProcessOneAction",
-                "execute_cross_process_one_action",
-                "executeCrossProcessOneAction",
-                "cross_process_paused_session_action",
-                "crossProcessPausedSessionAction",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_live_callframe_recovery_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-live-callframe-recovery",
-            "pause-session-live-callframe-recovery",
-            "debugger-paused-session-live-callframe-recovery",
-            "cross-process-live-callframe-recovery",
-            "recover-live-callframe-after-attach",
-            "review-live-callframe-recovery",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_live_callframe_recovery",
-                "pausedSessionLiveCallframeRecovery",
-                "paused-session-live-callframe-recovery",
-                "cross_process_live_callframe_recovery",
-                "crossProcessLiveCallframeRecovery",
-                "recover_live_callframe_after_attach",
-                "recoverLiveCallframeAfterAttach",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_cross_process_attach_probe_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-cross-process-attach-probe",
-            "pause-session-cross-process-attach-probe",
-            "debugger-paused-session-cross-process-attach-probe",
-            "cross-process-paused-session-attach-probe",
-            "probe-cross-process-paused-session-attach",
-            "execute-cross-process-attach-probe",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_cross_process_attach_probe",
-                "pausedSessionCrossProcessAttachProbe",
-                "paused-session-cross-process-attach-probe",
-                "cross_process_paused_session_attach_probe",
-                "crossProcessPausedSessionAttachProbe",
-                "execute_cross_process_attach_probe",
-                "executeCrossProcessAttachProbe",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_cross_process_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-cross-process-execution-plan",
-            "pause-session-cross-process-execution-plan",
-            "debugger-paused-session-cross-process-execution-plan",
-            "cross-process-paused-session-execution-plan",
-            "plan-cross-process-paused-session-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_cross_process_execution_plan",
-                "pausedSessionCrossProcessExecutionPlan",
-                "paused-session-cross-process-execution-plan",
-                "cross_process_paused_session_execution_plan",
-                "crossProcessPausedSessionExecutionPlan",
-                "plan_cross_process_paused_session_execution",
-                "planCrossProcessPausedSessionExecution",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_live_continuation_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-live-continuation-preflight",
-            "pause-session-live-continuation-preflight",
-            "debugger-paused-session-live-preflight",
-            "cross-process-paused-session-live-preflight",
-            "preflight-paused-session-live-continuation",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_live_continuation_preflight",
-                "pausedSessionLiveContinuationPreflight",
-                "paused-session-live-continuation-preflight",
-                "cross_process_paused_session_live_preflight",
-                "crossProcessPausedSessionLivePreflight",
-                "preflight_paused_session_live_continuation",
-                "preflightPausedSessionLiveContinuation",
-            )
-        )
-
-    @staticmethod
-    def _is_paused_session_target_attach_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_multi_step_loop_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_paused_session_cross_process_session_lifecycle_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "paused-session-target-attach-readiness",
-            "pause-session-target-attach-readiness",
-            "debugger-paused-session-target-attach-readiness",
-            "cross-process-paused-session-target-attach-readiness",
-            "cross-process-target-attach-readiness",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "paused_session_target_attach_readiness",
-                "pausedSessionTargetAttachReadiness",
-                "paused-session-target-attach-readiness",
-                "cross_process_target_attach_readiness",
-                "crossProcessTargetAttachReadiness",
-                "cross_process_paused_session_target_attach_readiness",
-                "crossProcessPausedSessionTargetAttachReadiness",
-            )
-        )
-
-    @staticmethod
-    def _is_object_graph_diff_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "object-graph-diff",
-            "js-object-graph-diff",
-            "review-object-graph-diff",
-            "heap-object-graph-diff",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "object_graph_diff",
-                "objectGraphDiff",
-                "js_object_graph_diff",
-                "jsObjectGraphDiff",
-                "review_object_graph_diff",
-                "reviewObjectGraphDiff",
-            )
-        )
-
-    @staticmethod
-    def _is_object_root_mutation_audit_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "object-root-mutation-audit",
-            "object-mutation-audit",
-            "js-object-mutation-audit",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "object_root_mutation_audit",
-                "objectRootMutationAudit",
-                "object_mutation_audit",
-                "objectMutationAudit",
-                "object_root",
-                "objectRoot",
-                "object_root_path",
-                "objectRootPath",
-                "root_path",
-                "rootPath",
-                "js_object_root",
-                "jsObjectRoot",
-            )
-        )
-
-    @staticmethod
-    def _is_page_mutation_audit_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "page-mutation-audit",
-            "page-mutation",
-            "audit-page-mutation",
-            "mutation-audit-page",
-            "dom-mutation-audit",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "page_mutation_audit",
-                "pageMutationAudit",
-                "audit_page_mutation",
-                "auditPageMutation",
-                "selected_globals",
-                "selectedGlobals",
-                "global_names",
-                "globalNames",
-            )
-        )
-
-    @staticmethod
-    def _is_flow_timeline_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "flow-timeline",
-            "cross-request-timeline",
-            "request-flow-timeline",
-            "continue-flow-timeline",
-            "timeline-continuation",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "flow_timeline",
-                "flowTimeline",
-                "previous_flow_timeline",
-                "previousFlowTimeline",
-                "flow_events",
-                "flowEvents",
-                "timeline_inputs",
-                "timelineInputs",
-            )
-        )
-
-    @staticmethod
-    def _is_mutation_observer_timeline_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "mutation-observer",
-            "mutation-observer-timeline",
-            "mutation-timeline",
-            "page-mutation-timeline",
-            "dom-mutation-timeline",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "mutation_observer_timeline",
-                "mutationObserverTimeline",
-                "mutation_timeline",
-                "mutationTimeline",
-                "observer_wait_ms",
-                "observerWaitMs",
-                "mutation_record_limit",
-                "mutationRecordLimit",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_scope_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_replacement_plan_request(protection_name, context):
-            return False
-        if normalized in {
-            "closure-scope",
-            "closure-scope-discovery",
-            "closure-function",
-            "closure-function-discovery",
-            "closure-functions",
-            "discover-closure-functions",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_function_names",
-                "closureFunctionNames",
-                "closure_query",
-                "closureQuery",
-                "closure_scope_discovery",
-                "closureScopeDiscovery",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_continuation_next_iteration_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        names = {
-            "closure-wrapper-continuation-next-iteration-execution",
-            "execute-closure-wrapper-continuation-next-iteration",
-            "reviewed-closure-wrapper-continuation-next-iteration-execution",
-            "wrapper-continuation-next-iteration-execution",
-            "closure-function-wrapper-continuation-next-iteration-execution",
-        }
-        if protection_name in names:
-            return True
-        return any(
-            bool(context.get(key))
-            for key in (
-                "closure_wrapper_continuation_next_iteration_execution",
-                "closureWrapperContinuationNextIterationExecution",
-                "closure-wrapper-continuation-next-iteration-execution",
-                "execute_closure_wrapper_continuation_next_iteration",
-                "executeClosureWrapperContinuationNextIteration",
-                "wrapper_continuation_next_iteration_execution",
-                "wrapperContinuationNextIterationExecution",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_continuation_execution_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "closure-wrapper-continuation-execution-plan",
-            "closure-wrapper-continuation-execution-review",
-            "plan-closure-wrapper-continuation-execution",
-            "wrapper-continuation-execution-plan",
-            "closure-function-wrapper-continuation-execution-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_continuation_execution_plan",
-                "closureWrapperContinuationExecutionPlan",
-                "closure-wrapper-continuation-execution-plan",
-                "plan_closure_wrapper_continuation_execution",
-                "planClosureWrapperContinuationExecution",
-                "wrapper_continuation_execution_plan",
-                "wrapperContinuationExecutionPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_continuation_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "closure-wrapper-continuation-execution",
-            "execute-closure-wrapper-continuation",
-            "reviewed-closure-wrapper-continuation-execution",
-            "wrapper-continuation-execution",
-            "closure-function-wrapper-continuation-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_continuation_execution",
-                "closureWrapperContinuationExecution",
-                "closure-wrapper-continuation-execution",
-                "execute_closure_wrapper_continuation",
-                "executeClosureWrapperContinuation",
-                "wrapper_continuation_execution",
-                "wrapperContinuationExecution",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_continuation_next_iteration_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "closure-wrapper-continuation-next-iteration-plan",
-            "plan-closure-wrapper-continuation-next-iteration",
-            "review-closure-wrapper-continuation-next-iteration",
-            "wrapper-continuation-next-iteration-plan",
-            "closure-function-wrapper-continuation-next-iteration-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_continuation_next_iteration_plan",
-                "closureWrapperContinuationNextIterationPlan",
-                "closure-wrapper-continuation-next-iteration-plan",
-                "plan_closure_wrapper_continuation_next_iteration",
-                "planClosureWrapperContinuationNextIteration",
-                "wrapper_continuation_next_iteration_plan",
-                "wrapperContinuationNextIterationPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_continuation_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "closure-wrapper-continuation-checkpoint",
-            "checkpoint-closure-wrapper-continuation",
-            "review-closure-wrapper-continuation-checkpoint",
-            "wrapper-continuation-checkpoint",
-            "closure-function-wrapper-continuation-checkpoint",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_continuation_checkpoint",
-                "closureWrapperContinuationCheckpoint",
-                "closure-wrapper-continuation-checkpoint",
-                "checkpoint_closure_wrapper_continuation",
-                "checkpointClosureWrapperContinuation",
-                "wrapper_continuation_checkpoint",
-                "wrapperContinuationCheckpoint",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_continuation_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "closure-wrapper-continuation-readiness",
-            "closure-wrapper-continuation-review",
-            "review-closure-wrapper-continuation",
-            "wrapper-continuation-readiness",
-            "closure-function-wrapper-continuation-readiness",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_continuation_readiness",
-                "closureWrapperContinuationReadiness",
-                "closure-wrapper-continuation-readiness",
-                "review_closure_wrapper_continuation",
-                "reviewClosureWrapperContinuation",
-                "wrapper_continuation_readiness",
-                "wrapperContinuationReadiness",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_replacement_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
-            return False
-        if normalized in {
-            "closure-wrapper-replacement-plan",
-            "closure-wrapper-preflight",
-            "closure-function-wrapper-plan",
-            "plan-closure-wrapper-replacement",
-            "review-closure-wrapper-replacement",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_replacement_plan",
-                "closureWrapperReplacementPlan",
-                "closure_wrapper_preflight",
-                "closureWrapperPreflight",
-                "closure_function_candidates",
-                "closureFunctionCandidates",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_replacement_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
-            return False
-        if normalized in {
-            "closure-wrapper-replacement-execution",
-            "execute-closure-wrapper-replacement",
-            "reviewed-closure-wrapper-replacement",
-            "closure-function-wrapper-execution",
-            "install-closure-wrapper",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_replacement_execution",
-                "closureWrapperReplacementExecution",
-                "execute_closure_wrapper_replacement",
-                "executeClosureWrapperReplacement",
-                "reviewed_closure_wrapper_replacement",
-                "reviewedClosureWrapperReplacement",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_restore_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
-            return False
-        if normalized in {
-            "closure-wrapper-restore-execution",
-            "execute-closure-wrapper-restore",
-            "reviewed-closure-wrapper-restore",
-            "closure-function-wrapper-restore",
-            "restore-closure-wrapper",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_restore_execution",
-                "closureWrapperRestoreExecution",
-                "execute_closure_wrapper_restore",
-                "executeClosureWrapperRestore",
-                "reviewed_closure_wrapper_restore",
-                "reviewedClosureWrapperRestore",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_event_harvest_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
-            return False
-        if normalized in {
-            "closure-wrapper-events",
-            "closure-wrapper-event-harvest",
-            "harvest-closure-wrapper-events",
-            "closure-function-wrapper-events",
-            "inspect-closure-wrapper-events",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_events",
-                "closureWrapperEvents",
-                "closure_wrapper_event_harvest",
-                "closureWrapperEventHarvest",
-                "harvest_closure_wrapper_events",
-                "harvestClosureWrapperEvents",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_assignment_safety_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            return False
-        if normalized in {
-            "closure-wrapper-assignment-safety",
-            "closure-wrapper-assignment-safety-proof",
-            "prove-closure-wrapper-assignment-safety",
-            "review-closure-wrapper-assignment-safety",
-            "closure-function-wrapper-assignment-safety",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "prove_closure_wrapper_assignment_safety",
-                "proveClosureWrapperAssignmentSafety",
-                "closure_wrapper_assignment_safety_proof_request",
-                "closureWrapperAssignmentSafetyProofRequest",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_runtime_mutability_result_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "closure-scope",
-            "closure-scope-discovery",
-            "closure-function",
-            "closure-function-discovery",
-            "closure-functions",
-            "discover-closure-functions",
-            "closure-wrapper-replacement-plan",
-            "closure-wrapper-preflight",
-            "closure-function-wrapper-plan",
-            "plan-closure-wrapper-replacement",
-            "review-closure-wrapper-replacement",
-            "closure-wrapper-assignment-safety",
-            "closure-wrapper-assignment-safety-proof",
-            "prove-closure-wrapper-assignment-safety",
-            "review-closure-wrapper-assignment-safety",
-            "closure-function-wrapper-assignment-safety",
-            "closure-wrapper-runtime-mutability-preflight",
-            "closure-wrapper-mutability-preflight",
-            "preflight-closure-wrapper-runtime-mutability",
-            "review-closure-wrapper-runtime-mutability",
-            "closure-function-wrapper-runtime-mutability-preflight",
-            "closure-wrapper-replacement-execution",
-            "execute-closure-wrapper-replacement",
-            "reviewed-closure-wrapper-replacement",
-            "closure-function-wrapper-execution",
-            "install-closure-wrapper",
-            "closure-wrapper-restore-execution",
-            "execute-closure-wrapper-restore",
-            "reviewed-closure-wrapper-restore",
-            "closure-function-wrapper-restore",
-            "restore-closure-wrapper",
-            "closure-wrapper-events",
-            "closure-wrapper-event-harvest",
-            "harvest-closure-wrapper-events",
-            "closure-function-wrapper-events",
-            "inspect-closure-wrapper-events",
-        }:
-            return False
-        if normalized in {
-            "closure-wrapper-runtime-mutability-result",
-            "closure-wrapper-runtime-mutability-probe-result",
-            "execute-closure-wrapper-runtime-mutability-probe",
-            "reviewed-closure-wrapper-runtime-mutability-probe",
-            "closure-function-wrapper-runtime-mutability-result",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_runtime_mutability_result",
-                "closureWrapperRuntimeMutabilityResult",
-                "execute_closure_wrapper_runtime_mutability_probe",
-                "executeClosureWrapperRuntimeMutabilityProbe",
-                "closure_wrapper_mutability_result",
-                "closureWrapperMutabilityResult",
-            )
-        )
-
-    @staticmethod
-    def _is_closure_wrapper_runtime_mutability_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            return False
-        if normalized in {
-            "closure-wrapper-runtime-mutability-preflight",
-            "closure-wrapper-mutability-preflight",
-            "preflight-closure-wrapper-runtime-mutability",
-            "review-closure-wrapper-runtime-mutability",
-            "closure-function-wrapper-runtime-mutability-preflight",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "closure_wrapper_runtime_mutability_preflight",
-                "closureWrapperRuntimeMutabilityPreflight",
-                "preflight_closure_wrapper_runtime_mutability",
-                "preflightClosureWrapperRuntimeMutability",
-                "closure_wrapper_mutability_preflight",
-                "closureWrapperMutabilityPreflight",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_fetch_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {"source-map-fetch", "fetch-source-map", "source-map-url"}:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_url",
-                "sourceMapUrl",
-                "source_mapping_url",
-                "sourceMappingURL",
-                "fetch_source_map",
-                "fetchSourceMap",
-                "fetch_indexed_section_urls",
-                "fetchIndexedSectionUrls",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_lookup_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-lookup",
-            "source-map-consumer",
-            "source-map-generated-lookup",
-            "generated-source-map-lookup",
-            "original-source-map-lookup",
-            "review-source-map-lookup",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_lookup",
-                "sourceMapLookup",
-                "source_map_consumer",
-                "sourceMapConsumer",
-                "source_map_generated_lookup",
-                "sourceMapGeneratedLookup",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_source_content_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-source-content",
-            "source-map-sources-content",
-            "source-map-content",
-            "source-map-source",
-            "review-source-map-source-content",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_source_content",
-                "sourceMapSourceContent",
-                "source_map_sources_content",
-                "sourceMapSourcesContent",
-                "review_source_map_source_content",
-                "reviewSourceMapSourceContent",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_typed_payload_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-typed-payload-preflight",
-            "source-map-consumer-typed-payload-preflight",
-            "source-map-followthrough-preflight",
-            "source-map-follow-through-preflight",
-            "review-source-map-typed-payload-preflight",
-            "preflight-source-map-typed-payloads",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_typed_payload_preflight",
-                "sourceMapTypedPayloadPreflight",
-                "source_map_consumer_typed_payload_preflight",
-                "sourceMapConsumerTypedPayloadPreflight",
-                "source_map_followthrough_preflight",
-                "sourceMapFollowthroughPreflight",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_followthrough_review_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-followthrough-review",
-            "source-map-typed-payload-followthrough-review",
-            "source-map-consumer-followthrough-review",
-            "review-source-map-followthrough",
-            "review-source-map-typed-payload-followthrough",
-            "source-map-followthrough-review-surface",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_followthrough_review",
-                "sourceMapFollowthroughReview",
-                "source_map_typed_payload_followthrough_review",
-                "sourceMapTypedPayloadFollowthroughReview",
-                "source_map_followthrough_review_surface",
-                "sourceMapFollowthroughReviewSurface",
-                "source_map_consumer_followthrough_review",
-                "sourceMapConsumerFollowthroughReview",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_selected_executor_input_review_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-selected-executor-input-review",
-            "source-map-followthrough-executor-input-review",
-            "source-map-selected-followthrough-review",
-            "review-source-map-selected-executor-input",
-            "review-selected-source-map-executor-input",
-            "preflight-selected-source-map-followthrough-executor-input",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_selected_executor_input_review",
-                "sourceMapSelectedExecutorInputReview",
-                "source_map_followthrough_executor_input_review",
-                "sourceMapFollowthroughExecutorInputReview",
-                "source_map_selected_followthrough_review",
-                "sourceMapSelectedFollowthroughReview",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_selected_executor_apply_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-selected-executor-apply-preflight",
-            "source-map-selected-executor-application-preflight",
-            "source-map-followthrough-apply-preflight",
-            "review-source-map-selected-executor-apply-preflight",
-            "preflight-source-map-selected-executor-apply",
-            "review-selected-source-map-executor-apply-preflight",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_selected_executor_apply_preflight",
-                "sourceMapSelectedExecutorApplyPreflight",
-                "source_map_selected_executor_application_preflight",
-                "sourceMapSelectedExecutorApplicationPreflight",
-                "source_map_followthrough_apply_preflight",
-                "sourceMapFollowthroughApplyPreflight",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_source_logpoint_application_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-source-logpoint-application",
-            "source-map-source-logpoint-install",
-            "source-map-selected-source-logpoint-application",
-            "source-map-selected-source-logpoint-executor-application",
-            "apply-source-map-source-logpoint",
-            "install-reviewed-source-map-source-logpoint",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_source_logpoint_application",
-                "sourceMapSourceLogpointApplication",
-                "source_map_source_logpoint_install",
-                "sourceMapSourceLogpointInstall",
-                "source_map_selected_source_logpoint_application",
-                "sourceMapSelectedSourceLogpointApplication",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_rebuild_metadata_application_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-rebuild-application",
-            "source-map-rebuild-metadata-application",
-            "source-map-rebuild-result",
-            "source-map-selected-rebuild-application",
-            "source-map-selected-rebuild-executor-application",
-            "apply-source-map-rebuild-metadata",
-            "run-reviewed-source-map-rebuild-metadata-generation",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_rebuild_application",
-                "sourceMapRebuildApplication",
-                "source_map_rebuild_metadata_application",
-                "sourceMapRebuildMetadataApplication",
-                "source_map_selected_rebuild_application",
-                "sourceMapSelectedRebuildApplication",
-            )
-        )
+        for key in passthrough_keys:
+            if key in merged:
+                result[key] = merged[key]
+        return result
 
     @staticmethod
     def _source_map_rebuild_metadata_apply_preflight(context: dict[str, Any]) -> dict[str, Any]:
@@ -10551,6 +13218,163 @@ class NativeWebRuntime(WebReverseRuntime):
         if explicit.get("previewExported") is not None and explicit.get("preview_exported") is None:
             explicit["preview_exported"] = explicit["previewExported"]
         return explicit
+
+    @staticmethod
+    def _source_map_rebuild_generation_metadata_result(context: dict[str, Any]) -> dict[str, Any]:
+        return NativeWebRuntime._dict_alias(
+            context,
+            "source_map_rebuild_result",
+            "sourceMapRebuildResult",
+            "source-map-rebuild-result",
+            "source_map_rebuild_metadata_result",
+            "sourceMapRebuildMetadataResult",
+            "reviewed_source_map_rebuild_metadata_result",
+            "reviewedSourceMapRebuildMetadataResult",
+        )
+
+    @staticmethod
+    def _source_map_rebuild_generation_object_input(context: dict[str, Any], *keys: str) -> tuple[dict[str, Any], str | None]:
+        for key in keys:
+            if key not in context:
+                continue
+            value = context.get(key)
+            if isinstance(value, dict):
+                return dict(value), None
+            if isinstance(value, str):
+                try:
+                    decoded = json.loads(value)
+                except json.JSONDecodeError as exc:
+                    return {}, f"{key}: invalid JSON object text: {exc}"
+                if not isinstance(decoded, dict):
+                    return {}, f"{key}: JSON input must decode to an object"
+                return decoded, None
+            if value is not None:
+                return {}, f"{key}: input must be a JSON object or JSON object text"
+        return {}, None
+
+    @staticmethod
+    def _source_map_rebuild_generation_has_forbidden_keys(value: Any) -> bool:
+        forbidden = {
+            "raw_source_content",
+            "rawSourceContent",
+            "source_content",
+            "sourceContent",
+            "sourcesContent",
+            "source_preview",
+            "sourcePreview",
+            "preview",
+            "source_map_payload",
+            "sourceMapPayload",
+            "source_map_url",
+            "sourceMapUrl",
+            "sourceMappingURL",
+            "fetch_source_map",
+            "fetchSourceMap",
+            "cdp_command",
+            "cdpCommand",
+            "launch_browser",
+            "launchBrowser",
+            "call_mcp",
+            "calls_mcp",
+            "callsMcp",
+            "mobile_runtime",
+            "mobileRuntime",
+        }
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in forbidden and item not in (None, False, "", [], {}):
+                    return True
+                if NativeWebRuntime._source_map_rebuild_generation_has_forbidden_keys(item):
+                    return True
+        elif isinstance(value, list):
+            return any(NativeWebRuntime._source_map_rebuild_generation_has_forbidden_keys(item) for item in value)
+        return False
+
+    @staticmethod
+    def _source_map_rebuild_generation_blockers(
+        context: dict[str, Any],
+        metadata_result: dict[str, Any],
+        artifact_root: str,
+        task_card_payload: dict[str, Any],
+        final_result_payload: dict[str, Any],
+        task_card_error: str | None,
+        final_result_error: str | None,
+    ) -> list[str]:
+        blockers: list[str] = []
+        if context.get("mode") != "apply":
+            blockers.append("source_map_rebuild_generation_requires_apply_mode")
+        if context.get("review_approved", context.get("reviewApproved")) is not True:
+            blockers.append("source_map_rebuild_generation_review_not_approved")
+        if (
+            context.get(
+                "approve_source_map_rebuild_generation",
+                context.get("approveSourceMapRebuildGeneration", context.get("approve_rebuild_generation", context.get("approveRebuildGeneration"))),
+            )
+            is not True
+        ):
+            blockers.append("source_map_rebuild_generation_not_approved")
+        if not str(context.get("reviewer") or "").strip():
+            blockers.append("source_map_rebuild_generation_reviewer_missing")
+        if not artifact_root:
+            blockers.append("source_map_rebuild_generation_artifact_root_missing")
+        elif artifact_root.startswith(("http://", "https://", "virtual://", "workspace://")):
+            blockers.append("source_map_rebuild_generation_artifact_root_must_be_local_path")
+        if not metadata_result:
+            blockers.append("source_map_rebuild_metadata_result_missing")
+        else:
+            if metadata_result.get("schema_version") != "reverse-deepagent.source-map-rebuild-result.v1":
+                blockers.append("source_map_rebuild_metadata_result_schema_mismatch")
+            if metadata_result.get("status") not in {"success", "applied", "ready_for_rebuild_review"}:
+                blockers.append("source_map_rebuild_metadata_result_not_successful")
+            if metadata_result.get("rebuild_metadata_applied") is not True:
+                blockers.append("source_map_rebuild_metadata_result_not_applied")
+            if metadata_result.get("metadata_only") is not True:
+                blockers.append("source_map_rebuild_metadata_result_not_metadata_only")
+            if metadata_result.get("raw_source_content_exported") is True or metadata_result.get("raw_source_content_included") is True:
+                blockers.append("source_map_rebuild_metadata_result_contains_raw_source")
+            if metadata_result.get("preview_exported") is True:
+                blockers.append("source_map_rebuild_metadata_result_contains_preview")
+            if metadata_result.get("source_map_fetched") is True:
+                blockers.append("source_map_rebuild_metadata_result_fetched_source_map")
+            if metadata_result.get("calls_mcp") is True:
+                blockers.append("source_map_rebuild_metadata_result_calls_mcp")
+            if metadata_result.get("mobile_runtime_used") is True:
+                blockers.append("source_map_rebuild_metadata_result_mobile_runtime_used")
+        if task_card_error:
+            blockers.append("source_map_rebuild_generation_task_card_json_invalid")
+        if final_result_error:
+            blockers.append("source_map_rebuild_generation_final_result_json_invalid")
+        if not task_card_payload:
+            blockers.append("source_map_rebuild_generation_task_card_missing")
+        else:
+            try:
+                TaskCard.model_validate(task_card_payload)
+            except Exception:
+                blockers.append("source_map_rebuild_generation_task_card_invalid")
+        if not final_result_payload:
+            blockers.append("source_map_rebuild_generation_final_result_missing")
+        else:
+            try:
+                FinalResult.model_validate(final_result_payload)
+            except Exception:
+                blockers.append("source_map_rebuild_generation_final_result_invalid")
+        if NativeWebRuntime._source_map_rebuild_generation_has_forbidden_keys(context):
+            blockers.append("source_map_rebuild_generation_forbidden_side_effect_input")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _source_map_rebuild_generation_next_action(blockers: list[str]) -> str:
+        if any(item.startswith("source_map_rebuild_metadata_result") for item in blockers):
+            return "provide_successful_source_map_rebuild_metadata_result"
+        if any("approved" in item or "reviewer" in item or "apply_mode" in item for item in blockers):
+            return "approve_source_map_rebuild_generation_before_apply"
+        if any("artifact_root" in item for item in blockers):
+            return "provide_local_artifact_root_for_rebuild_generation"
+        if any("task_card" in item or "final_result" in item for item in blockers):
+            return "provide_reviewed_task_card_and_final_result_for_rebuild_generation"
+        if any("forbidden_side_effect" in item for item in blockers):
+            return "remove_raw_source_fetch_browser_cdp_mcp_or_mobile_inputs"
+        return "fix_source_map_rebuild_generation_inputs"
 
     @staticmethod
     def _source_map_source_logpoint_apply_preflight(context: dict[str, Any]) -> dict[str, Any]:
@@ -10626,6 +13450,149 @@ class NativeWebRuntime(WebReverseRuntime):
             if isinstance(value, dict):
                 return value
         return {}
+
+    @staticmethod
+    def _source_map_debugger_application_blockers(
+        context: dict[str, Any],
+        apply_preflight: dict[str, Any],
+        debugger_input: dict[str, Any],
+        breakpoint_context: dict[str, Any],
+    ) -> list[str]:
+        blockers: list[str] = []
+        if not apply_preflight:
+            blockers.append("source_map_selected_executor_apply_preflight_missing")
+        else:
+            if apply_preflight.get("schema_version") != "reverse-deepagent.source-map-selected-executor-apply-preflight.v1":
+                blockers.append("source_map_selected_executor_apply_preflight_schema_mismatch")
+            if apply_preflight.get("status") not in {"ready_for_review", "ready"}:
+                blockers.append("source_map_selected_executor_apply_preflight_not_ready")
+            if apply_preflight.get("selected_consumer") != "debugger":
+                blockers.append("source_map_selected_executor_consumer_not_debugger")
+            if apply_preflight.get("selected_review_gate") != "explicit_debugger_location_review":
+                blockers.append("source_map_selected_executor_review_gate_mismatch")
+            if apply_preflight.get("approval_record_verified") is not True:
+                blockers.append("source_map_selected_executor_approval_record_not_verified")
+            if apply_preflight.get("executor_input_ready") is not True or apply_preflight.get("ready_for_selected_executor_review") is not True:
+                blockers.append("source_map_selected_executor_apply_preflight_input_not_ready")
+            if apply_preflight.get("ready_to_apply_now") is True:
+                blockers.append("source_map_selected_executor_apply_preflight_claims_ready_to_apply")
+            if apply_preflight.get("surface_executor_invoked") is True or apply_preflight.get("debugger_executed") is True:
+                blockers.append("source_map_selected_executor_apply_preflight_execution_claim_detected")
+            future = apply_preflight.get("future_executor_contract") if isinstance(apply_preflight.get("future_executor_contract"), dict) else {}
+            if future.get("implemented") is not False:
+                blockers.append("source_map_selected_executor_future_contract_unexpected")
+            executor_input = apply_preflight.get("executor_input") if isinstance(apply_preflight.get("executor_input"), dict) else {}
+            blockers.extend(SourceMapTypedPayloadPreflightManager._debugger_blockers("debugger-location-review", executor_input))
+        if context.get("mode") != "apply":
+            blockers.append("source_map_debugger_application_requires_apply_mode")
+        if context.get("review_approved", context.get("reviewApproved")) is not True:
+            blockers.append("source_map_debugger_application_review_not_approved")
+        if (
+            context.get(
+                "approve_source_map_debugger_action",
+                context.get(
+                    "approveSourceMapDebuggerAction",
+                    context.get(
+                        "approve_source_map_debugger_location_action",
+                        context.get(
+                            "approveSourceMapDebuggerLocationAction",
+                            context.get("approve_debugger_location_action", context.get("approveDebuggerLocationAction")),
+                        ),
+                    ),
+                ),
+            )
+            is not True
+        ):
+            blockers.append("source_map_debugger_action_not_approved")
+        if not str(context.get("reviewer") or "").strip():
+            blockers.append("source_map_debugger_reviewer_missing")
+        if not debugger_input:
+            blockers.append("source_map_debugger_location_input_missing")
+        else:
+            blockers.extend(SourceMapTypedPayloadPreflightManager._debugger_blockers("debugger-location-review", debugger_input))
+        if not breakpoint_context.get("url_pattern"):
+            blockers.append("source_map_debugger_location_url_pattern_missing")
+        if breakpoint_context.get("line_number") is None:
+            blockers.append("source_map_debugger_location_line_number_missing")
+        if debugger_input.get("cdp_command") is not None:
+            blockers.append("source_map_debugger_location_cdp_command_must_be_absent")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _source_map_debugger_application_next_action(blockers: list[str]) -> str:
+        if any(item.startswith("source_map_selected_executor_apply_preflight") or item.startswith("source_map_selected_executor_") for item in blockers):
+            return "provide_ready_source_map_selected_executor_apply_preflight"
+        if any("approved" in item or "reviewer" in item or "apply_mode" in item for item in blockers):
+            return "approve_source_map_debugger_location_before_apply"
+        if any(item.startswith("source_map_debugger_location") or item.startswith("debugger_") for item in blockers):
+            return "provide_reviewed_source_map_debugger_location_input"
+        return "fix_source_map_debugger_application_inputs"
+
+    @staticmethod
+    def _source_map_hook_application_blockers(
+        context: dict[str, Any],
+        apply_preflight: dict[str, Any],
+        hook_input: dict[str, Any],
+        hook_kind: str,
+        hook_spec: FunctionHookSpec | ModuleHookSpec | None,
+    ) -> list[str]:
+        blockers: list[str] = []
+        if not apply_preflight:
+            blockers.append("source_map_selected_executor_apply_preflight_missing")
+        else:
+            if apply_preflight.get("schema_version") != "reverse-deepagent.source-map-selected-executor-apply-preflight.v1":
+                blockers.append("source_map_selected_executor_apply_preflight_schema_mismatch")
+            if apply_preflight.get("status") not in {"ready_for_review", "ready"}:
+                blockers.append("source_map_selected_executor_apply_preflight_not_ready")
+            if apply_preflight.get("selected_consumer") != "hook":
+                blockers.append("source_map_selected_executor_consumer_not_hook")
+            if apply_preflight.get("selected_review_gate") != "explicit_hook_symbol_scope_review":
+                blockers.append("source_map_selected_executor_review_gate_mismatch")
+            if apply_preflight.get("approval_record_verified") is not True:
+                blockers.append("source_map_selected_executor_approval_record_not_verified")
+            if apply_preflight.get("executor_input_ready") is not True or apply_preflight.get("ready_for_selected_executor_review") is not True:
+                blockers.append("source_map_selected_executor_apply_preflight_input_not_ready")
+            if apply_preflight.get("ready_to_apply_now") is True:
+                blockers.append("source_map_selected_executor_apply_preflight_claims_ready_to_apply")
+            if apply_preflight.get("surface_executor_invoked") is True or apply_preflight.get("hook_installed") is True:
+                blockers.append("source_map_selected_executor_apply_preflight_execution_claim_detected")
+            future = apply_preflight.get("future_executor_contract") if isinstance(apply_preflight.get("future_executor_contract"), dict) else {}
+            if future.get("implemented") is not False:
+                blockers.append("source_map_selected_executor_future_contract_unexpected")
+            executor_input = apply_preflight.get("executor_input") if isinstance(apply_preflight.get("executor_input"), dict) else {}
+            blockers.extend(SourceMapTypedPayloadPreflightManager._hook_blockers("hook-symbol-scope-review", executor_input))
+        if context.get("mode") != "apply":
+            blockers.append("source_map_hook_application_requires_apply_mode")
+        if context.get("review_approved", context.get("reviewApproved")) is not True:
+            blockers.append("source_map_hook_application_review_not_approved")
+        if (
+            context.get(
+                "approve_source_map_hook_install",
+                context.get("approveSourceMapHookInstall", context.get("approve_hook_install", context.get("approveHookInstall"))),
+            )
+            is not True
+        ):
+            blockers.append("source_map_hook_install_not_approved")
+        if not str(context.get("reviewer") or "").strip():
+            blockers.append("source_map_hook_reviewer_missing")
+        if not hook_input:
+            blockers.append("source_map_hook_install_input_missing")
+        else:
+            if hook_input.get("cdp_command") is not None or hook_input.get("cdpCommand") is not None:
+                blockers.append("source_map_hook_install_cdp_command_must_be_absent")
+        if hook_kind not in {"function", "module"} or hook_spec is None:
+            blockers.append("source_map_hook_install_input_unsupported")
+        return list(dict.fromkeys(blockers))
+
+    @staticmethod
+    def _source_map_hook_application_next_action(blockers: list[str]) -> str:
+        if any(item.startswith("source_map_selected_executor_apply_preflight") or item.startswith("source_map_selected_executor_") for item in blockers):
+            return "provide_ready_source_map_selected_executor_apply_preflight"
+        if any("approved" in item or "reviewer" in item or "apply_mode" in item for item in blockers):
+            return "approve_source_map_hook_install_before_apply"
+        if any(item.startswith("source_map_hook_install") for item in blockers):
+            return "provide_reviewed_source_map_hook_install_input"
+        return "fix_source_map_hook_application_inputs"
 
     @staticmethod
     def _source_map_rebuild_metadata_application_blockers(context: dict[str, Any], apply_preflight: dict[str, Any], metadata_input: dict[str, Any]) -> list[str]:
@@ -10751,1501 +13718,6 @@ class NativeWebRuntime(WebReverseRuntime):
         if any(item.startswith("source_logpoint") for item in blockers):
             return "provide_reviewed_source_logpoint_install_input"
         return "fix_source_map_source_logpoint_application_inputs"
-
-    @staticmethod
-    def _is_source_map_selected_executor_approval_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-selected-executor-approval-plan",
-            "source-map-selected-executor-apply-plan",
-            "source-map-followthrough-approval-plan",
-            "review-source-map-selected-executor-approval-plan",
-            "plan-source-map-selected-executor-apply",
-            "review-selected-source-map-executor-approval",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_selected_executor_approval_plan",
-                "sourceMapSelectedExecutorApprovalPlan",
-                "source_map_selected_executor_apply_plan",
-                "sourceMapSelectedExecutorApplyPlan",
-                "source_map_followthrough_approval_plan",
-                "sourceMapFollowthroughApprovalPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_followthrough_surface_selection_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-followthrough-surface-selection",
-            "source-map-followthrough-surface-review",
-            "source-map-followthrough-surface-selector",
-            "select-source-map-followthrough-surface",
-            "review-source-map-followthrough-surface-selection",
-            "review-selected-source-map-followthrough-surface",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_followthrough_surface_selection",
-                "sourceMapFollowthroughSurfaceSelection",
-                "source_map_followthrough_surface_review",
-                "sourceMapFollowthroughSurfaceReview",
-                "source_map_followthrough_surface_selector",
-                "sourceMapFollowthroughSurfaceSelector",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_consumer_materialization_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-consumer-materialization",
-            "source-map-materialization",
-            "source-map-action-materialization",
-            "review-source-map-consumer-materialization",
-            "materialize-source-map-consumers",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_consumer_materialization",
-                "sourceMapConsumerMaterialization",
-                "source_map_materialization",
-                "sourceMapMaterialization",
-                "source_map_action_materialization",
-                "sourceMapActionMaterialization",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_consumer_action_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-consumer-action-plan",
-            "source-map-action-plan",
-            "source-map-followup-plan",
-            "review-source-map-consumer-action-plan",
-            "plan-source-map-consumers",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_consumer_action_plan",
-                "sourceMapConsumerActionPlan",
-                "source_map_action_plan",
-                "sourceMapActionPlan",
-                "source_map_followup_plan",
-                "sourceMapFollowupPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_source_map_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "source-map-readiness",
-            "source-map-review-readiness",
-            "source-map-debugger-readiness",
-            "review-source-map-readiness",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "source_map_readiness",
-                "sourceMapReadiness",
-                "review_source_map_readiness",
-                "reviewSourceMapReadiness",
-                "source_map_debugger_readiness",
-                "sourceMapDebuggerReadiness",
-            )
-        )
-
-    @staticmethod
-    def _is_bundler_symbol_scope_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {"bundler-symbol-scope", "source-map-symbol-scope", "review-bundler-symbol-scope", "plan-source-symbol-scope"}:
-            return True
-        return any(
-            key in context
-            for key in (
-                "bundler_symbol_scope",
-                "bundlerSymbolScope",
-                "source_map_symbol_scope",
-                "sourceMapSymbolScope",
-                "review_bundler_symbol_scope",
-                "reviewBundlerSymbolScope",
-            )
-        )
-
-    @staticmethod
-    def _is_source_logpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {"source-logpoint", "logpoint"}:
-            return True
-        return any(
-            key in context
-            for key in (
-                "log_expression",
-                "logExpression",
-                "source_expression",
-                "sourceExpression",
-                "logpoint_id",
-                "logpointId",
-            )
-        )
-
-    @staticmethod
-    def _is_module_discovery_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {"discover-module", "discover-modules", "module-discovery", "webpack-discovery"}:
-            return True
-        return any(
-            key in context
-            for key in (
-                "discover_modules",
-                "discoverModules",
-                "module_discovery",
-                "moduleDiscovery",
-                "module_query",
-                "moduleQuery",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_traversal_workflow_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-recursive-traversal-plan",
-            "module-federation-traversal-recursion-plan",
-            "plan-module-federation-recursive-traversal",
-            "federation-recursive-traversal-plan",
-            "remote-module-recursive-traversal-plan",
-            "module-federation-recursive-traversal-followup",
-            "execute-module-federation-recursive-traversal-followup",
-            "module-federation-recursive-traversal-checkpoint",
-            "reviewed-module-federation-recursive-traversal-followup",
-            "module-federation-recursive-traversal-execution",
-            "execute-module-federation-recursive-traversal-next-step",
-            "reviewed-module-federation-recursive-traversal-execution",
-        } or any(
-            key in context
-            for key in (
-                "module_federation_recursive_traversal_plan",
-                "moduleFederationRecursiveTraversalPlan",
-                "module-federation-recursive-traversal-plan",
-                "module_federation_traversal_recursion_plan",
-                "moduleFederationTraversalRecursionPlan",
-                "plan_module_federation_recursive_traversal",
-                "planModuleFederationRecursiveTraversal",
-                "federation_recursive_traversal_plan",
-                "federationRecursiveTraversalPlan",
-                "module_federation_recursive_traversal_followup",
-                "moduleFederationRecursiveTraversalFollowup",
-                "module-federation-recursive-traversal-followup",
-                "execute_module_federation_recursive_traversal_followup",
-                "executeModuleFederationRecursiveTraversalFollowup",
-                "module_federation_recursive_traversal_execution",
-                "moduleFederationRecursiveTraversalExecution",
-                "module-federation-recursive-traversal-execution",
-                "execute_module_federation_recursive_traversal_next_step",
-                "executeModuleFederationRecursiveTraversalNextStep",
-            )
-        ):
-            return False
-        if normalized in {
-            "module-federation-traversal-workflow-execution",
-            "module-federation-remote-traversal-workflow-execution",
-            "federation-traversal-workflow-execution",
-            "remote-module-traversal-workflow-execution",
-            "execute-module-federation-traversal-workflow",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_traversal_workflow_execution",
-                "moduleFederationTraversalWorkflowExecution",
-                "module-federation-traversal-workflow-execution",
-                "federation_traversal_workflow_execution",
-                "federationTraversalWorkflowExecution",
-                "execute_module_federation_traversal_workflow",
-                "executeModuleFederationTraversalWorkflow",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_recursive_traversal_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-recursive-traversal-followup",
-            "execute-module-federation-recursive-traversal-followup",
-            "module-federation-recursive-traversal-checkpoint",
-            "reviewed-module-federation-recursive-traversal-followup",
-            "module-federation-recursive-traversal-execution",
-            "execute-module-federation-recursive-traversal-next-step",
-            "reviewed-module-federation-recursive-traversal-execution",
-        } or any(
-            key in context
-            for key in (
-                "module_federation_recursive_traversal_followup",
-                "moduleFederationRecursiveTraversalFollowup",
-                "module-federation-recursive-traversal-followup",
-                "execute_module_federation_recursive_traversal_followup",
-                "executeModuleFederationRecursiveTraversalFollowup",
-                "module_federation_recursive_traversal_execution",
-                "moduleFederationRecursiveTraversalExecution",
-                "module-federation-recursive-traversal-execution",
-                "execute_module_federation_recursive_traversal_next_step",
-                "executeModuleFederationRecursiveTraversalNextStep",
-            )
-        ):
-            return False
-        if normalized in {
-            "module-federation-recursive-traversal-plan",
-            "module-federation-traversal-recursion-plan",
-            "plan-module-federation-recursive-traversal",
-            "federation-recursive-traversal-plan",
-            "remote-module-recursive-traversal-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_recursive_traversal_plan",
-                "moduleFederationRecursiveTraversalPlan",
-                "module-federation-recursive-traversal-plan",
-                "module_federation_traversal_recursion_plan",
-                "moduleFederationTraversalRecursionPlan",
-                "plan_module_federation_recursive_traversal",
-                "planModuleFederationRecursiveTraversal",
-                "federation_recursive_traversal_plan",
-                "federationRecursiveTraversalPlan",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_recursive_traversal_followup_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-recursive-traversal-execution",
-            "execute-module-federation-recursive-traversal-next-step",
-            "reviewed-module-federation-recursive-traversal-execution",
-        } or any(
-            key in context
-            for key in (
-                "module_federation_recursive_traversal_execution",
-                "moduleFederationRecursiveTraversalExecution",
-                "module-federation-recursive-traversal-execution",
-                "execute_module_federation_recursive_traversal_next_step",
-                "executeModuleFederationRecursiveTraversalNextStep",
-            )
-        ):
-            return False
-        if normalized in {
-            "module-federation-recursive-traversal-followup",
-            "execute-module-federation-recursive-traversal-followup",
-            "module-federation-recursive-traversal-checkpoint",
-            "reviewed-module-federation-recursive-traversal-followup",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_recursive_traversal_followup",
-                "moduleFederationRecursiveTraversalFollowup",
-                "module-federation-recursive-traversal-followup",
-                "execute_module_federation_recursive_traversal_followup",
-                "executeModuleFederationRecursiveTraversalFollowup",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_recursive_continuation_journal_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_module_federation_recursive_continuation_checkpoint_request(protection_name, context):
-            return False
-        if normalized in {
-            "module-federation-recursive-continuation-journal",
-            "module-federation-recursive-traversal-continuation-journal",
-            "plan-module-federation-recursive-continuation",
-            "append-module-federation-recursive-continuation-journal",
-            "reviewed-module-federation-recursive-continuation-journal",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_recursive_continuation_journal",
-                "moduleFederationRecursiveContinuationJournal",
-                "module-federation-recursive-continuation-journal",
-                "module_federation_recursive_traversal_continuation_journal",
-                "moduleFederationRecursiveTraversalContinuationJournal",
-                "module-federation-recursive-traversal-continuation-journal",
-                "append_module_federation_recursive_continuation_journal",
-                "appendModuleFederationRecursiveContinuationJournal",
-            )
-        )
-
-    @staticmethod
-    def _is_recursive_continuation_readiness_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "recursive-continuation-readiness",
-            "traversal-continuation-readiness",
-            "review-recursive-continuation-readiness",
-            "review-traversal-continuation-readiness",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "recursive_continuation_readiness",
-                "recursiveContinuationReadiness",
-                "recursive-continuation-readiness",
-                "traversal_continuation_readiness",
-                "traversalContinuationReadiness",
-                "review_recursive_continuation_readiness",
-                "reviewRecursiveContinuationReadiness",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_recursive_continuation_checkpoint_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-recursive-continuation-checkpoint",
-            "module-federation-recursive-traversal-continuation-checkpoint",
-            "execute-module-federation-recursive-continuation-checkpoint",
-            "execute-module-federation-recursive-traversal-continuation-checkpoint",
-            "reviewed-module-federation-recursive-continuation-checkpoint",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_recursive_continuation_checkpoint",
-                "moduleFederationRecursiveContinuationCheckpoint",
-                "module-federation-recursive-continuation-checkpoint",
-                "module_federation_recursive_traversal_continuation_checkpoint",
-                "moduleFederationRecursiveTraversalContinuationCheckpoint",
-                "module-federation-recursive-traversal-continuation-checkpoint",
-                "execute_module_federation_recursive_continuation_checkpoint",
-                "executeModuleFederationRecursiveContinuationCheckpoint",
-                "reviewed_module_federation_recursive_continuation_checkpoint",
-                "reviewedModuleFederationRecursiveContinuationCheckpoint",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_recursive_traversal_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-recursive-traversal-execution",
-            "execute-module-federation-recursive-traversal-next-step",
-            "reviewed-module-federation-recursive-traversal-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_recursive_traversal_execution",
-                "moduleFederationRecursiveTraversalExecution",
-                "module-federation-recursive-traversal-execution",
-                "execute_module_federation_recursive_traversal",
-                "executeModuleFederationRecursiveTraversal",
-                "execute_module_federation_recursive_traversal_next_step",
-                "executeModuleFederationRecursiveTraversalNextStep",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_traversal_graph_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-traversal-workflow-plan",
-            "module-federation-remote-traversal-workflow-plan",
-            "federation-traversal-workflow-plan",
-            "remote-module-traversal-workflow-plan",
-            "plan-module-federation-traversal-workflow",
-            "module-federation-traversal-workflow-execution",
-            "execute-module-federation-traversal-workflow",
-            "module-federation-recursive-traversal-plan",
-            "module-federation-traversal-recursion-plan",
-            "plan-module-federation-recursive-traversal",
-            "module-federation-recursive-traversal-followup",
-            "execute-module-federation-recursive-traversal-followup",
-            "module-federation-recursive-traversal-checkpoint",
-            "module-federation-recursive-traversal-execution",
-            "execute-module-federation-recursive-traversal-next-step",
-            "reviewed-module-federation-recursive-traversal-execution",
-        } or any(key in context for key in (
-            "module_federation_traversal_workflow_execution",
-            "moduleFederationTraversalWorkflowExecution",
-            "module-federation-traversal-workflow-execution",
-            "execute_module_federation_traversal_workflow",
-            "executeModuleFederationTraversalWorkflow",
-            "module_federation_recursive_traversal_plan",
-            "moduleFederationRecursiveTraversalPlan",
-            "module-federation-recursive-traversal-plan",
-            "module_federation_traversal_recursion_plan",
-            "moduleFederationTraversalRecursionPlan",
-            "plan_module_federation_recursive_traversal",
-            "planModuleFederationRecursiveTraversal",
-            "module_federation_recursive_traversal_followup",
-            "moduleFederationRecursiveTraversalFollowup",
-            "module-federation-recursive-traversal-followup",
-            "execute_module_federation_recursive_traversal_followup",
-            "executeModuleFederationRecursiveTraversalFollowup",
-            "module_federation_recursive_traversal_execution",
-            "moduleFederationRecursiveTraversalExecution",
-            "module-federation-recursive-traversal-execution",
-            "execute_module_federation_recursive_traversal_next_step",
-            "executeModuleFederationRecursiveTraversalNextStep",
-            "module_federation_traversal_workflow_plan",
-            "moduleFederationTraversalWorkflowPlan",
-            "module-federation-traversal-workflow-plan",
-            "federation_traversal_workflow_plan",
-            "federationTraversalWorkflowPlan",
-            "plan_module_federation_traversal_workflow",
-            "planModuleFederationTraversalWorkflow",
-        )):
-            return False
-        if normalized in {
-            "module-federation-traversal-graph",
-            "module-federation-remote-traversal-graph",
-            "federation-traversal-graph",
-            "remote-module-traversal-graph",
-            "plan-module-federation-traversal-graph",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_traversal_graph",
-                "moduleFederationTraversalGraph",
-                "module-federation-traversal-graph",
-                "federation_traversal_graph",
-                "federationTraversalGraph",
-                "remote_module_traversal_graph",
-                "remoteModuleTraversalGraph",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_traversal_workflow_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-traversal-workflow-plan",
-            "module-federation-remote-traversal-workflow-plan",
-            "federation-traversal-workflow-plan",
-            "remote-module-traversal-workflow-plan",
-            "plan-module-federation-traversal-workflow",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_traversal_workflow_plan",
-                "moduleFederationTraversalWorkflowPlan",
-                "module-federation-traversal-workflow-plan",
-                "federation_traversal_workflow_plan",
-                "federationTraversalWorkflowPlan",
-                "plan_module_federation_traversal_workflow",
-                "planModuleFederationTraversalWorkflow",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_get_init_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-get-init",
-            "module-federation-get-init-plan",
-            "federation-get-init",
-            "federation-get-init-plan",
-            "module-federation-plan",
-            "federation-analysis-plan",
-            "module-federation-export-hook-plan",
-            "module-federation-export-hooks",
-            "remote-export-hook-plan",
-            "remote-export-hooks",
-            "module-federation-export-hook-install",
-            "module-federation-remote-export-hook",
-            "remote-export-hook-install",
-            "hook-module-federation-remote-export",
-            "reviewed-remote-export-hook",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_get_init",
-                "moduleFederationGetInit",
-                "federation_get_init_plan",
-                "federationGetInitPlan",
-                "module_federation_plan",
-                "moduleFederationPlan",
-                "module_federation_candidate",
-                "moduleFederationCandidate",
-                "module_federation_candidates",
-                "moduleFederationCandidates",
-                "federation_candidate",
-                "federationCandidate",
-                "federation_candidates",
-                "federationCandidates",
-                "federation_modules",
-                "federationModules",
-                "exposed_modules",
-                "exposedModules",
-                "execute_module_federation_export_hook",
-                "executeModuleFederationExportHook",
-                "hook_module_federation_remote_export",
-                "hookModuleFederationRemoteExport",
-                "install_remote_export_hook",
-                "installRemoteExportHook",
-                "reviewed_remote_export_hook",
-                "reviewedRemoteExportHook",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_get_init_probe_request(context: dict[str, Any]) -> bool:
-        return any(
-            bool(context.get(key))
-            for key in (
-                "execute_module_federation_get_init",
-                "executeModuleFederationGetInit",
-                "probe_module_federation_get_init",
-                "probeModuleFederationGetInit",
-                "execute_get_init",
-                "executeGetInit",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_factory_invoke_request(context: dict[str, Any]) -> bool:
-        return any(
-            bool(context.get(key))
-            for key in (
-                "execute_module_federation_factory",
-                "executeModuleFederationFactory",
-                "invoke_module_federation_factory",
-                "invokeModuleFederationFactory",
-                "execute_remote_factory",
-                "executeRemoteFactory",
-                "invoke_remote_factory",
-                "invokeRemoteFactory",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_export_hook_install_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-export-hook-install",
-            "module-federation-remote-export-hook",
-            "remote-export-hook-install",
-            "hook-module-federation-remote-export",
-            "reviewed-remote-export-hook",
-        }:
-            return True
-        return any(
-            bool(context.get(key))
-            for key in (
-                "execute_module_federation_export_hook",
-                "executeModuleFederationExportHook",
-                "hook_module_federation_remote_export",
-                "hookModuleFederationRemoteExport",
-                "install_remote_export_hook",
-                "installRemoteExportHook",
-                "reviewed_remote_export_hook",
-                "reviewedRemoteExportHook",
-            )
-        )
-
-    @staticmethod
-    def _is_module_federation_export_hook_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "module-federation-export-hook-plan",
-            "module-federation-export-hooks",
-            "remote-export-hook-plan",
-            "remote-export-hooks",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_federation_export_hook_plan",
-                "moduleFederationExportHookPlan",
-                "remote_export_hook_plan",
-                "remoteExportHookPlan",
-                "module_federation_factory_invoke_result",
-                "moduleFederationFactoryInvokeResult",
-                "module-federation-factory-invoke-result",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-execution",
-            "execute-custom-loader",
-            "reviewed-custom-loader-execution",
-            "custom-loader-execute",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_execution",
-                "customLoaderExecution",
-                "execute_custom_loader",
-                "executeCustomLoader",
-                "reviewed_custom_loader_execution",
-                "reviewedCustomLoaderExecution",
-            )
-        ) and any(
-            key in context
-            for key in (
-                "custom_loader_execution_preflight",
-                "customLoaderExecutionPreflight",
-                "custom-loader-execution-preflight",
-                "custom_loader_preflight",
-                "customLoaderPreflight",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_continuation_workflow_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-continuation-workflow",
-            "custom-loader-continuation-plan",
-            "plan-custom-loader-continuation",
-            "review-custom-loader-continuation-workflow",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_continuation_workflow",
-                "customLoaderContinuationWorkflow",
-                "custom-loader-continuation-workflow",
-                "plan_custom_loader_continuation_workflow",
-                "planCustomLoaderContinuationWorkflow",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_continuation_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-continuation-execution",
-            "execute-custom-loader-continuation-step",
-            "custom-loader-continuation-step",
-            "reviewed-custom-loader-continuation-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_continuation_execution",
-                "customLoaderContinuationExecution",
-                "custom-loader-continuation-execution",
-                "execute_custom_loader_continuation_step",
-                "executeCustomLoaderContinuationStep",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_traversal_workflow_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-traversal-workflow-execution",
-            "execute-custom-loader-traversal-workflow",
-            "custom-loader-traversal-workflow-step",
-            "reviewed-custom-loader-traversal-workflow-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_traversal_workflow_execution",
-                "customLoaderTraversalWorkflowExecution",
-                "custom-loader-traversal-workflow-execution",
-                "execute_custom_loader_traversal_workflow",
-                "executeCustomLoaderTraversalWorkflow",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_traversal_loop_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-traversal-loop-execution",
-            "execute-custom-loader-traversal-loop",
-            "custom-loader-bounded-loop-execution",
-            "reviewed-custom-loader-traversal-loop-execution",
-            "custom-loader-recursive-traversal-plan",
-            "custom-loader-traversal-recursion-plan",
-            "plan-custom-loader-recursive-traversal",
-        } or any(
-            key in context
-            for key in (
-                "custom_loader_traversal_loop_execution",
-                "customLoaderTraversalLoopExecution",
-                "custom-loader-traversal-loop-execution",
-                "execute_custom_loader_traversal_loop",
-                "executeCustomLoaderTraversalLoop",
-                "custom_loader_recursive_traversal_plan",
-                "customLoaderRecursiveTraversalPlan",
-                "custom-loader-recursive-traversal-plan",
-                "custom_loader_traversal_recursion_plan",
-                "customLoaderTraversalRecursionPlan",
-                "plan_custom_loader_recursive_traversal",
-                "planCustomLoaderRecursiveTraversal",
-            )
-        ):
-            return False
-        if normalized in {
-            "custom-loader-traversal-loop-plan",
-            "custom-loader-deep-traversal-loop",
-            "plan-custom-loader-traversal-loop",
-            "custom-loader-bounded-traversal-loop",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_traversal_loop_plan",
-                "customLoaderTraversalLoopPlan",
-                "custom-loader-traversal-loop-plan",
-                "custom_loader_deep_traversal_loop",
-                "customLoaderDeepTraversalLoop",
-                "plan_custom_loader_traversal_loop",
-                "planCustomLoaderTraversalLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_recursive_traversal_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-recursive-traversal-execution",
-            "execute-custom-loader-recursive-traversal",
-            "execute-custom-loader-recursive-traversal-next-loop",
-            "reviewed-custom-loader-recursive-traversal-execution",
-            "custom-loader-recursive-traversal-followup",
-            "execute-custom-loader-recursive-traversal-followup",
-            "custom-loader-recursive-traversal-checkpoint",
-            "reviewed-custom-loader-recursive-traversal-followup",
-        } or any(
-            key in context
-            for key in (
-                "custom_loader_recursive_traversal_execution",
-                "customLoaderRecursiveTraversalExecution",
-                "custom-loader-recursive-traversal-execution",
-                "execute_custom_loader_recursive_traversal",
-                "executeCustomLoaderRecursiveTraversal",
-                "custom_loader_recursive_traversal_followup",
-                "customLoaderRecursiveTraversalFollowup",
-                "custom-loader-recursive-traversal-followup",
-                "execute_custom_loader_recursive_traversal_followup",
-                "executeCustomLoaderRecursiveTraversalFollowup",
-            )
-        ):
-            return False
-        if normalized in {
-            "custom-loader-recursive-traversal-plan",
-            "custom-loader-traversal-recursion-plan",
-            "plan-custom-loader-recursive-traversal",
-            "custom-loader-deeper-recursive-traversal",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_recursive_traversal_plan",
-                "customLoaderRecursiveTraversalPlan",
-                "custom-loader-recursive-traversal-plan",
-                "custom_loader_traversal_recursion_plan",
-                "customLoaderTraversalRecursionPlan",
-                "plan_custom_loader_recursive_traversal",
-                "planCustomLoaderRecursiveTraversal",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_recursive_traversal_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-recursive-traversal-execution",
-            "execute-custom-loader-recursive-traversal",
-            "execute-custom-loader-recursive-traversal-next-loop",
-            "reviewed-custom-loader-recursive-traversal-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_recursive_traversal_execution",
-                "customLoaderRecursiveTraversalExecution",
-                "custom-loader-recursive-traversal-execution",
-                "execute_custom_loader_recursive_traversal",
-                "executeCustomLoaderRecursiveTraversal",
-                "execute_custom_loader_recursive_traversal_next_loop",
-                "executeCustomLoaderRecursiveTraversalNextLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_recursive_traversal_followup_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-recursive-traversal-execution",
-            "execute-custom-loader-recursive-traversal",
-            "execute-custom-loader-recursive-traversal-next-loop",
-            "reviewed-custom-loader-recursive-traversal-execution",
-        } or any(
-            key in context
-            for key in (
-                "custom_loader_recursive_traversal_execution",
-                "customLoaderRecursiveTraversalExecution",
-                "custom-loader-recursive-traversal-execution",
-                "execute_custom_loader_recursive_traversal",
-                "executeCustomLoaderRecursiveTraversal",
-            )
-        ):
-            return False
-        if normalized in {
-            "custom-loader-recursive-traversal-followup",
-            "execute-custom-loader-recursive-traversal-followup",
-            "custom-loader-recursive-traversal-checkpoint",
-            "reviewed-custom-loader-recursive-traversal-followup",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_recursive_traversal_followup",
-                "customLoaderRecursiveTraversalFollowup",
-                "custom-loader-recursive-traversal-followup",
-                "execute_custom_loader_recursive_traversal_followup",
-                "executeCustomLoaderRecursiveTraversalFollowup",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_traversal_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-traversal-loop-execution",
-            "execute-custom-loader-traversal-loop",
-            "custom-loader-bounded-loop-execution",
-            "reviewed-custom-loader-traversal-loop-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_traversal_loop_execution",
-                "customLoaderTraversalLoopExecution",
-                "custom-loader-traversal-loop-execution",
-                "execute_custom_loader_traversal_loop",
-                "executeCustomLoaderTraversalLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_traversal_workflow_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-traversal-workflow-plan",
-            "custom-loader-deep-traversal-workflow",
-            "plan-custom-loader-traversal-workflow",
-            "custom-loader-multi-step-traversal-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_traversal_workflow_plan",
-                "customLoaderTraversalWorkflowPlan",
-                "custom-loader-traversal-workflow-plan",
-                "custom_loader_deep_traversal_workflow",
-                "customLoaderDeepTraversalWorkflow",
-                "plan_custom_loader_traversal_workflow",
-                "planCustomLoaderTraversalWorkflow",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_traversal_graph_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-traversal-graph",
-            "custom-loader-continuation-queue",
-            "plan-custom-loader-deep-traversal",
-            "custom-loader-deep-traversal-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_traversal_graph",
-                "customLoaderTraversalGraph",
-                "custom-loader-traversal-graph",
-                "custom_loader_continuation_queue",
-                "customLoaderContinuationQueue",
-                "plan_custom_loader_deep_traversal",
-                "planCustomLoaderDeepTraversal",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_continuation_journal_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-continuation-journal",
-            "append-custom-loader-continuation-journal",
-            "custom-loader-continuation-journal-append",
-            "review-custom-loader-continuation-journal",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_continuation_journal",
-                "customLoaderContinuationJournal",
-                "custom-loader-continuation-journal",
-                "append_custom_loader_continuation_journal",
-                "appendCustomLoaderContinuationJournal",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_execution_preflight_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-execution-preflight",
-            "custom-loader-preflight",
-            "preflight-custom-loader-execution",
-            "review-custom-loader-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_execution_preflight",
-                "customLoaderExecutionPreflight",
-                "execute_custom_loader",
-                "executeCustomLoader",
-                "custom_loader_traversal_plan",
-                "customLoaderTraversalPlan",
-                "custom-loader-traversal-plan",
-            )
-        ) and any(
-            key in context
-            for key in (
-                "selected_custom_loader_candidate",
-                "selectedCustomLoaderCandidate",
-                "selected_loader_candidate",
-                "selectedLoaderCandidate",
-                "selected_candidate",
-                "selectedCandidate",
-                "candidate_index",
-                "candidateIndex",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_traversal_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if (
-            normalized.startswith("async-chunk-")
-            or "async-chunk-recursive-traversal" in normalized
-            or normalized in {"deep-async-chunk-traversal", "plan-async-chunk-deep-traversal"}
-            or any(key in context for key in (
-                "async_chunk_recursive_traversal_plan",
-                "asyncChunkRecursiveTraversalPlan",
-                "async_chunk_recursive_traversal_followup",
-                "asyncChunkRecursiveTraversalFollowup",
-                "async_chunk_recursive_traversal_execution",
-                "asyncChunkRecursiveTraversalExecution",
-                "execute_async_chunk_recursive_traversal",
-                "executeAsyncChunkRecursiveTraversal",
-            ))
-        ):
-            return False
-        if normalized in {
-            "custom-loader-traversal",
-            "custom-loader-traversal-plan",
-            "loader-traversal-plan",
-            "custom-loader-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_traversal",
-                "customLoaderTraversal",
-                "loader_traversal_plan",
-                "loaderTraversalPlan",
-                "custom_loader_candidate",
-                "customLoaderCandidate",
-                "custom_loader_candidates",
-                "customLoaderCandidates",
-                "loader_candidates",
-                "loaderCandidates",
-                "chunk_graph",
-                "chunkGraph",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_traversal_graph_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-traversal-graph",
-            "async-chunk-graph-queue",
-            "plan-async-chunk-deep-traversal",
-            "async-chunk-deep-traversal-graph",
-            "deep-async-chunk-traversal",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_traversal_graph",
-                "asyncChunkTraversalGraph",
-                "async-chunk-traversal-graph",
-                "async_chunk_graph_queue",
-                "asyncChunkGraphQueue",
-                "plan_async_chunk_deep_traversal",
-                "planAsyncChunkDeepTraversal",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_recursive_traversal_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-recursive-traversal-execution",
-            "execute-async-chunk-recursive-traversal",
-            "execute-async-chunk-recursive-traversal-next-loop",
-            "reviewed-async-chunk-recursive-traversal-execution",
-            "async-chunk-recursive-traversal-followup",
-            "execute-async-chunk-recursive-traversal-followup",
-            "async-chunk-recursive-traversal-checkpoint",
-            "reviewed-async-chunk-recursive-traversal-followup",
-        } or any(
-            key in context
-            for key in (
-                "async_chunk_recursive_traversal_execution",
-                "asyncChunkRecursiveTraversalExecution",
-                "async-chunk-recursive-traversal-execution",
-                "execute_async_chunk_recursive_traversal",
-                "executeAsyncChunkRecursiveTraversal",
-                "async_chunk_recursive_traversal_followup",
-                "asyncChunkRecursiveTraversalFollowup",
-                "async-chunk-recursive-traversal-followup",
-                "execute_async_chunk_recursive_traversal_followup",
-                "executeAsyncChunkRecursiveTraversalFollowup",
-            )
-        ):
-            return False
-        if normalized in {
-            "async-chunk-recursive-traversal-plan",
-            "async-chunk-traversal-recursion-plan",
-            "plan-async-chunk-recursive-traversal",
-            "async-chunk-deeper-recursive-traversal",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_recursive_traversal_plan",
-                "asyncChunkRecursiveTraversalPlan",
-                "async-chunk-recursive-traversal-plan",
-                "async_chunk_traversal_recursion_plan",
-                "asyncChunkTraversalRecursionPlan",
-                "plan_async_chunk_recursive_traversal",
-                "planAsyncChunkRecursiveTraversal",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_recursive_traversal_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-recursive-traversal-execution",
-            "execute-async-chunk-recursive-traversal",
-            "execute-async-chunk-recursive-traversal-next-loop",
-            "reviewed-async-chunk-recursive-traversal-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_recursive_traversal_execution",
-                "asyncChunkRecursiveTraversalExecution",
-                "async-chunk-recursive-traversal-execution",
-                "execute_async_chunk_recursive_traversal",
-                "executeAsyncChunkRecursiveTraversal",
-                "execute_async_chunk_recursive_traversal_next_loop",
-                "executeAsyncChunkRecursiveTraversalNextLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_recursive_traversal_followup_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-recursive-traversal-execution",
-            "execute-async-chunk-recursive-traversal",
-            "execute-async-chunk-recursive-traversal-next-loop",
-            "reviewed-async-chunk-recursive-traversal-execution",
-        } or any(
-            key in context
-            for key in (
-                "async_chunk_recursive_traversal_execution",
-                "asyncChunkRecursiveTraversalExecution",
-                "async-chunk-recursive-traversal-execution",
-                "execute_async_chunk_recursive_traversal",
-                "executeAsyncChunkRecursiveTraversal",
-            )
-        ):
-            return False
-        if normalized in {
-            "async-chunk-recursive-traversal-followup",
-            "execute-async-chunk-recursive-traversal-followup",
-            "async-chunk-recursive-traversal-checkpoint",
-            "reviewed-async-chunk-recursive-traversal-followup",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_recursive_traversal_followup",
-                "asyncChunkRecursiveTraversalFollowup",
-                "async-chunk-recursive-traversal-followup",
-                "execute_async_chunk_recursive_traversal_followup",
-                "executeAsyncChunkRecursiveTraversalFollowup",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_traversal_loop_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-recursive-traversal-plan",
-            "async-chunk-traversal-recursion-plan",
-            "plan-async-chunk-recursive-traversal",
-            "async-chunk-recursive-traversal-followup",
-            "execute-async-chunk-recursive-traversal-followup",
-            "async-chunk-recursive-traversal-checkpoint",
-            "async-chunk-recursive-traversal-execution",
-            "execute-async-chunk-recursive-traversal",
-            "execute-async-chunk-recursive-traversal-next-loop",
-        } or any(key in context for key in (
-            "async_chunk_recursive_traversal_plan",
-            "asyncChunkRecursiveTraversalPlan",
-            "async_chunk_recursive_traversal_followup",
-            "asyncChunkRecursiveTraversalFollowup",
-            "async_chunk_recursive_traversal_execution",
-            "asyncChunkRecursiveTraversalExecution",
-            "execute_async_chunk_recursive_traversal",
-            "executeAsyncChunkRecursiveTraversal",
-        )):
-            return False
-        if normalized in {
-            "async-chunk-traversal-loop-plan",
-            "async-chunk-deep-traversal-loop",
-            "plan-async-chunk-traversal-loop",
-            "async-chunk-bounded-traversal-loop",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_traversal_loop_plan",
-                "asyncChunkTraversalLoopPlan",
-                "async-chunk-traversal-loop-plan",
-                "async_chunk_deep_traversal_loop",
-                "asyncChunkDeepTraversalLoop",
-                "plan_async_chunk_traversal_loop",
-                "planAsyncChunkTraversalLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_traversal_loop_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-recursive-traversal-execution",
-            "execute-async-chunk-recursive-traversal",
-            "execute-async-chunk-recursive-traversal-next-loop",
-            "async-chunk-recursive-traversal-followup",
-            "execute-async-chunk-recursive-traversal-followup",
-        } or any(key in context for key in (
-            "async_chunk_recursive_traversal_execution",
-            "asyncChunkRecursiveTraversalExecution",
-            "execute_async_chunk_recursive_traversal",
-            "executeAsyncChunkRecursiveTraversal",
-            "async_chunk_recursive_traversal_followup",
-            "asyncChunkRecursiveTraversalFollowup",
-        )):
-            return False
-        if normalized in {
-            "async-chunk-traversal-loop-execution",
-            "execute-async-chunk-traversal-loop",
-            "async-chunk-bounded-loop-execution",
-            "reviewed-async-chunk-traversal-loop-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_traversal_loop_execution",
-                "asyncChunkTraversalLoopExecution",
-                "async-chunk-traversal-loop-execution",
-                "execute_async_chunk_traversal_loop",
-                "executeAsyncChunkTraversalLoop",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_traversal_workflow_execution_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-traversal-workflow-execution",
-            "execute-async-chunk-traversal-workflow",
-            "async-chunk-traversal-workflow-step",
-            "reviewed-async-chunk-traversal-workflow-execution",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_traversal_workflow_execution",
-                "asyncChunkTraversalWorkflowExecution",
-                "async-chunk-traversal-workflow-execution",
-                "execute_async_chunk_traversal_workflow",
-                "executeAsyncChunkTraversalWorkflow",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_traversal_workflow_plan_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-traversal-workflow-plan",
-            "async-chunk-deep-traversal-workflow",
-            "plan-async-chunk-traversal-workflow",
-            "async-chunk-multi-step-traversal-plan",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_traversal_workflow_plan",
-                "asyncChunkTraversalWorkflowPlan",
-                "async-chunk-traversal-workflow-plan",
-                "async_chunk_deep_traversal_workflow",
-                "asyncChunkDeepTraversalWorkflow",
-                "plan_async_chunk_traversal_workflow",
-                "planAsyncChunkTraversalWorkflow",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_load_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {"async-chunk-load", "load-async-chunk", "chunk-load", "webpack-chunk-load"}:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_load",
-                "asyncChunkLoad",
-                "execute_chunk_load",
-                "executeChunkLoad",
-                "chunk_candidate",
-                "chunkCandidate",
-                "chunk_id",
-                "chunkId",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_module_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-module-hook",
-            "async-chunk-hook-module",
-            "hook-async-chunk-module",
-            "reviewed-async-chunk-module-hook",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "execute_async_chunk_module_hook",
-                "executeAsyncChunkModuleHook",
-                "hook_async_chunk_module",
-                "hookAsyncChunkModule",
-                "reviewed_async_chunk_module_hook",
-                "reviewedAsyncChunkModuleHook",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_module_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-module-hook",
-            "custom-loader-hook-module",
-            "hook-custom-loader-module",
-            "reviewed-custom-loader-module-hook",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "execute_custom_loader_module_hook",
-                "executeCustomLoaderModuleHook",
-                "hook_custom_loader_module",
-                "hookCustomLoaderModule",
-                "reviewed_custom_loader_module_hook",
-                "reviewedCustomLoaderModuleHook",
-            )
-        )
-
-    @staticmethod
-    def _is_async_chunk_module_diff_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "async-chunk-module-diff",
-            "async-chunk-hook-candidates",
-            "chunk-module-diff",
-            "chunk-hook-candidates",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "async_chunk_module_diff",
-                "asyncChunkModuleDiff",
-                "async_chunk_hook_candidates",
-                "asyncChunkHookCandidates",
-            )
-        )
-
-    @staticmethod
-    def _is_custom_loader_module_diff_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {
-            "custom-loader-module-diff",
-            "custom-loader-hook-candidates",
-            "custom-loader-execution-module-diff",
-            "custom-loader-execution-diff",
-        }:
-            return True
-        return any(
-            key in context
-            for key in (
-                "custom_loader_module_diff",
-                "customLoaderModuleDiff",
-                "custom_loader_hook_candidates",
-                "customLoaderHookCandidates",
-            )
-        )
-
-    @staticmethod
-    def _is_function_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if NativeWebRuntime._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_assignment_safety_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_event_harvest_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_restore_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_replacement_execution_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_wrapper_replacement_plan_request(protection_name, context):
-            return False
-        if NativeWebRuntime._is_closure_scope_discovery_request(protection_name, context):
-            return False
-        if normalized in {"discover-module", "discover-modules", "module-discovery", "webpack-discovery"} or any(
-            key in context
-            for key in (
-                "discover_modules",
-                "discoverModules",
-                "module_discovery",
-                "moduleDiscovery",
-                "module_query",
-                "moduleQuery",
-            )
-        ):
-            return False
-        if normalized in {"hook-module", "module-hook", "webpack-module-hook", "module-export-hook"} or any(
-            key in context
-            for key in (
-                "module_id",
-                "moduleId",
-                "webpack_module_id",
-                "webpackModuleId",
-                "export_name",
-                "exportName",
-            )
-        ):
-            return False
-        if normalized in {"hook-function", "function-hook", "target-function-hook"}:
-            return True
-        return any(
-            key in context
-            for key in (
-                "function_name",
-                "functionName",
-                "function_path",
-                "functionPath",
-                "function_paths",
-                "functionPaths",
-                "hook_paths",
-                "hookPaths",
-                "candidate_id",
-                "candidateId",
-            )
-        )
-
-    @staticmethod
-    def _is_module_hook_request(protection_name: str, context: dict[str, Any]) -> bool:
-        normalized = protection_name.strip().lower()
-        if normalized in {"hook-module", "module-hook", "webpack-module-hook", "module-export-hook"}:
-            return True
-        return any(
-            key in context
-            for key in (
-                "module_id",
-                "moduleId",
-                "webpack_module_id",
-                "webpackModuleId",
-                "export_name",
-                "exportName",
-            )
-        )
 
     @staticmethod
     def _build_recon_flow_timeline(
