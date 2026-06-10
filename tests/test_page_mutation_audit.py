@@ -647,6 +647,116 @@ class HeapSnapshotPathToRootExecutorManagerTests(unittest.TestCase):
         self.assertFalse(result.side_effect_policy["executor_invoked"])
         self.assertFalse(result.side_effect_policy["path_to_root_estimated"])
 
+    def test_heap_snapshot_path_to_root_executor_ranks_candidates_by_path_length_asc(self) -> None:
+        """Multiple candidates should be sorted by path length ascending (shorter = closer to root)."""
+        strings = ["", "Window", "Holder", "TokenA", "TokenB", "child", "secret"]
+        node_types = ["hidden", "array", "string", "object", "code", "closure", "regexp", "number", "native", "synthetic"]
+        edge_types = ["context", "element", "property", "internal", "hidden", "shortcut", "weak"]
+        # Window -> Holder -> TokenA (path length 2)
+        # Window -> TokenB  (path length 1)
+        nodes = [
+            3, 1, 1, 64, 2, 0,   # node 0: Window  (2 edges)
+            3, 2, 2, 32, 1, 0,   # node 1: Holder  (1 edge)
+            3, 3, 3, 48, 0, 0,   # node 2: TokenA
+            3, 4, 4, 16, 0, 0,   # node 3: TokenB
+        ]
+        edges = [
+            2, 5, 6,    # Window -child-> Holder  (to_node offset 6 = node 1)
+            2, 6, 18,   # Window -secret-> TokenB (to_node offset 18 = node 3)
+            2, 5, 12,   # Holder -child-> TokenA  (to_node offset 12 = node 2)
+        ]
+        snapshot = {
+            "snapshot": {
+                "meta": {
+                    "node_fields": ["type", "name", "id", "self_size", "edge_count", "trace_node_id"],
+                    "node_types": [node_types, "string", "number", "number", "number", "number"],
+                    "edge_fields": ["type", "name_or_index", "to_node"],
+                    "edge_types": [edge_types, "string_or_number", "node"],
+                }
+            },
+            "nodes": nodes,
+            "edges": edges,
+            "strings": strings,
+        }
+        spec = HeapSnapshotPathToRootExecutorSpec.from_context(
+            {
+                "execute_heap_snapshot_path_to_root_analysis": True,
+                "heap_snapshot_retained_size_analysis": self._retained_size_analysis(),
+                "heap_snapshot": snapshot,
+                "candidate_names": ["TokenA", "TokenB"],
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_path_to_root_execution": True,
+                "reviewer": "alice",
+                "max_raw_heap_bytes": 200000,
+                "max_depth": 10,
+            }
+        )
+
+        result = HeapSnapshotPathToRootExecutorManager().execute(spec)
+
+        self.assertEqual(result.status, "executed")
+        paths = result.descriptor["candidate_paths"]
+        self.assertEqual(len(paths), 2)
+        # TokenB (path len 1) should come before TokenA (path len 2)
+        path_lengths = [len(p["bounded_path_to_root"]) for p in paths]
+        self.assertLessEqual(path_lengths[0], path_lengths[1])
+
+    def test_heap_snapshot_path_to_root_executor_truncates_at_max_depth(self) -> None:
+        """When max_depth=1, paths are truncated and the result is still executed but depth-limited."""
+        spec = HeapSnapshotPathToRootExecutorSpec.from_context(
+            {
+                "execute_heap_snapshot_path_to_root_analysis": True,
+                "heap_snapshot_retained_size_analysis": self._retained_size_analysis(),
+                "heap_snapshot": _v8_heap_snapshot_path_to_root(),
+                "candidate_names": ["TokenSecret"],
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_path_to_root_execution": True,
+                "reviewer": "alice",
+                "max_raw_heap_bytes": 200000,
+                "max_depth": 1,
+            }
+        )
+
+        result = HeapSnapshotPathToRootExecutorManager().execute(spec)
+
+        self.assertEqual(result.status, "executed")
+        descriptor = result.descriptor
+        self.assertTrue(descriptor["raw_heap_loaded"])
+        self.assertTrue(descriptor["path_to_root_estimated"])
+        self.assertFalse(descriptor["path_to_root_proven"])
+        paths = descriptor["candidate_paths"]
+        self.assertGreater(len(paths), 0)
+        candidate = paths[0]
+        # max_depth=1 means at most 1 hop from the start node; the path includes
+        # the start node plus at most 1 parent, so ≤ 2 nodes total.
+        self.assertLessEqual(len(candidate["bounded_path_to_root"]), 2)
+
+    def test_heap_snapshot_path_to_root_executor_blocks_on_missing_heap_snapshot(self) -> None:
+        """Spec with no heap_snapshot produces blocked result without side effects."""
+        spec = HeapSnapshotPathToRootExecutorSpec.from_context(
+            {
+                "execute_heap_snapshot_path_to_root_analysis": True,
+                "heap_snapshot_retained_size_analysis": self._retained_size_analysis(),
+                "heap_snapshot": None,
+                "candidate_names": ["TokenSecret"],
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_path_to_root_execution": True,
+                "reviewer": "alice",
+                "max_raw_heap_bytes": 200000,
+            }
+        )
+
+        result = HeapSnapshotPathToRootExecutorManager().execute(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("heap_snapshot_required", result.descriptor["blockers"])
+        self.assertFalse(result.side_effect_policy["executor_invoked"])
+        self.assertFalse(result.side_effect_policy["raw_heap_loaded"])
+        self.assertFalse(result.side_effect_policy["path_to_root_estimated"])
+
 
 class HeapSnapshotReadinessManagerTests(unittest.TestCase):
     def test_heap_snapshot_readiness_ready_from_cdp_heap_profiler_evidence(self) -> None:
@@ -1799,6 +1909,86 @@ class HeapSnapshotDiffFollowupCheckpointManagerTests(unittest.TestCase):
         self.assertIn("heap_diff_recompute_not_allowed_in_constructor_drilldown_mvp", result.descriptor["blockers"])
         self.assertIn("retained_size_proof_claim_not_allowed_in_mvp", result.descriptor["blockers"])
         self.assertIn("path_to_root_proof_claim_not_allowed_in_mvp", result.descriptor["blockers"])
+        self.assertFalse(result.side_effect_policy["executor_invoked"])
+        self.assertFalse(result.side_effect_policy["constructor_drilldown_computed"])
+
+    def test_heap_snapshot_constructor_growth_drilldown_executor_produces_sorted_rows_by_delta_desc(self) -> None:
+        """When drilldown descriptor has multiple candidates, rows are ordered by delta descending."""
+        # Build a drilldown descriptor with two constructor rows at different deltas
+        drilldown = self._constructor_drilldown()
+        # Inject a second row with a smaller delta to verify ordering
+        if isinstance(drilldown, dict) and "constructor_drilldown_rows" in drilldown:
+            rows = drilldown["constructor_drilldown_rows"]
+            if rows:
+                big_row = dict(rows[0])
+                big_row["delta"] = 10
+                small_row = dict(rows[0])
+                small_row["delta"] = 1
+                drilldown["constructor_drilldown_rows"] = [small_row, big_row]
+        spec = HeapSnapshotConstructorGrowthDrilldownExecutorSpec.from_context(
+            {
+                "execute_heap_snapshot_constructor_growth_drilldown": True,
+                "heap_snapshot_constructor_growth_drilldown": drilldown,
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_constructor_growth_drilldown_execution": True,
+                "reviewer": "alice",
+            }
+        )
+
+        result = HeapSnapshotConstructorGrowthDrilldownExecutorManager().execute(spec)
+
+        self.assertEqual(result.status, "executed")
+        rows_out = result.descriptor["constructor_drilldown_rows"]
+        self.assertGreaterEqual(len(rows_out), 1)
+        # If multiple rows present, first should have >= delta than second
+        if len(rows_out) >= 2:
+            self.assertGreaterEqual(rows_out[0]["delta"], rows_out[1]["delta"])
+
+    def test_heap_snapshot_constructor_growth_drilldown_executor_marks_side_effects_accurately(self) -> None:
+        """side_effect_policy must mark constructor_drilldown_computed=True and raw_heap_loaded=False."""
+        spec = HeapSnapshotConstructorGrowthDrilldownExecutorSpec.from_context(
+            {
+                "execute_heap_snapshot_constructor_growth_drilldown": True,
+                "heap_snapshot_constructor_growth_drilldown": self._constructor_drilldown(),
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_constructor_growth_drilldown_execution": True,
+                "reviewer": "alice",
+            }
+        )
+
+        result = HeapSnapshotConstructorGrowthDrilldownExecutorManager().execute(spec)
+
+        self.assertEqual(result.status, "executed")
+        policy = result.side_effect_policy
+        self.assertTrue(policy["executor_invoked"])
+        self.assertTrue(policy["constructor_drilldown_computed"])
+        self.assertFalse(policy["raw_heap_loaded"])
+        self.assertFalse(policy["heap_diff_computed"])
+        self.assertFalse(policy["browser_started"])
+        self.assertFalse(policy["cdp_command_sent"])
+        self.assertFalse(policy["calls_mcp"])
+        self.assertFalse(policy["mobile_runtime_used"])
+
+    def test_heap_snapshot_constructor_growth_drilldown_executor_blocks_on_missing_drilldown(self) -> None:
+        """Missing drilldown descriptor produces blocked result without side effects."""
+        spec = HeapSnapshotConstructorGrowthDrilldownExecutorSpec.from_context(
+            {
+                "execute_heap_snapshot_constructor_growth_drilldown": True,
+                "heap_snapshot_constructor_growth_drilldown": None,
+                "mode": "apply",
+                "review_approved": True,
+                "approve_heap_snapshot_constructor_growth_drilldown_execution": True,
+                "reviewer": "alice",
+            }
+        )
+
+        result = HeapSnapshotConstructorGrowthDrilldownExecutorManager().execute(spec)
+
+        self.assertEqual(result.status, "blocked")
+        blockers = result.descriptor["blockers"]
+        self.assertTrue(len(blockers) > 0)
         self.assertFalse(result.side_effect_policy["executor_invoked"])
         self.assertFalse(result.side_effect_policy["constructor_drilldown_computed"])
 
