@@ -58,8 +58,22 @@ This rollout is complete only when:
 
 ## Execution result
 
-Pending worker PRs.
+| Worker | PR | Merge commit | Result | Main-agent verification |
+| --- | --- | --- | --- | --- |
+| Worker D | [#26](https://github.com/Facetomyself/reverse-deepagent/pull/26) | `d2319726` | Merged | `tests.test_external_delivery_provider_plugin_s3_compatible`, `tests.test_external_delivery_registry`, `tests.test_doctor`, `compileall`, `git diff --check` |
+| Worker F | [#25](https://github.com/Facetomyself/reverse-deepagent/pull/25) | `624b6561` | Merged | `tests.test_browser_provider_plugin_antidetect_cdp`, `tests.test_browser_smoke_matrix`, `tests.test_browser_provider_registry`, `tests.test_doctor`, `compileall`, `git diff --check` |
+| Worker E | [#24](https://github.com/Facetomyself/reverse-deepagent/pull/24) | `b6e70725` | Merged after main-agent hardening commit `992fcedf` | `tests.test_external_delivery_provider_plugin_gitlab_release`, `tests.test_external_delivery_provider_plugin_s3_compatible`, `tests.test_external_delivery_registry`, `tests.test_doctor`, `compileall`, `git diff --check`; main review added file-path preflight and safe relative upload URL checks before merge |
+
+## Scope moved to baseline
+
+- S3-compatible external delivery now has an optional provider package baseline with metadata-only registration, reviewed HTTP PUT / presigned URL support, dry-run no-network behavior, explicit apply approval, and secret-safe metadata. SigV4 signing, bucket management, ACLs, and real object-storage smoke remain follow-ups.
+- AntiDetect hosted CDP now has a vendor-neutral allocator contract baseline: `start()` is review-gated and can consume an injected allocator or reviewed allocation descriptor, while metadata / doctor paths remain side-effect-free. Vendor SDK integrations and real vendor smoke remain follow-ups.
+- GitLab Release now supports opt-in binary asset upload after release record creation, with dry-run no file reads, second explicit upload approval, Project Uploads plus Release asset link flow, pre-release file-path validation, safe relative upload URL checks, and conservative partial-failure metadata. Automatic retry / reconciliation remains a follow-up.
 
 ## Final validation status
 
-Pending worker PR review, merge, and full validation.
+Passed on 2026-06-12 after merging PR #26, PR #25, and PR #24, then updating ROADMAP / status documentation:
+
+- `git diff --check`
+- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q src/reverse_deepagent tests packages/reverse-deepagent-browser-provider-antidetect-cdp/src packages/reverse-deepagent-external-delivery-provider-gitlab-release/src packages/reverse-deepagent-external-delivery-provider-s3-compatible/src`
+- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest discover -s tests -v` (`1725` tests, `2` skipped)
