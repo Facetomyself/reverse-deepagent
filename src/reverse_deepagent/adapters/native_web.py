@@ -910,895 +910,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
-        if self._is_module_federation_recursive_continuation_checkpoint_request(protection_name, context):
-            spec = ModuleFederationRecursiveContinuationCheckpointSpec.from_context(context)
-            result = ModuleFederationRecursiveContinuationCheckpointManager().execute(spec)
-            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            stages = checkpoint.get("stages") if isinstance(checkpoint.get("stages"), list) else []
-            latest_entry = checkpoint.get("latest_entry") if isinstance(checkpoint.get("latest_entry"), dict) else {}
-            verification = [
-                f"module_federation_recursive_continuation_checkpoint_status={result.status}",
-                f"module_federation_recursive_continuation_checkpoint_reason={result.reason or ''}",
-                f"module_federation_recursive_continuation_checkpoint_stage_count={len(stages)}",
-                f"module_federation_recursive_continuation_checkpoint_source_journal_status={checkpoint.get('source_journal_status')}",
-                f"module_federation_recursive_continuation_checkpoint_source_journal_record_count={checkpoint.get('source_journal_record_count', 0)}",
-                f"module_federation_recursive_continuation_checkpoint_selected_node_id={latest_entry.get('selected_node_id')}",
-                f"module_federation_recursive_continuation_checkpoint_review_approved={policy.get('review_approved', False)}",
-                f"module_federation_recursive_continuation_checkpoint_verifies_latest_recursive_execution={policy.get('verifies_latest_recursive_execution', False)}",
-                f"module_federation_recursive_continuation_checkpoint_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"module_federation_recursive_continuation_checkpoint_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"module_federation_recursive_continuation_checkpoint_next_execution_review_planned={policy.get('next_execution_review_planned', False)}",
-                f"module_federation_recursive_continuation_checkpoint_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
-                f"module_federation_recursive_continuation_checkpoint_remote_code_executed={policy.get('remote_code_executed', False)}",
-                f"module_federation_recursive_continuation_checkpoint_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"module_federation_recursive_continuation_checkpoint_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-recursive-continuation-checkpoint.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated Module Federation recursive continuation checkpoint execution.",
-                    metadata={
-                        "status": result.status,
-                        "checkpoint_status": checkpoint.get("status"),
-                        "stage_count": len(stages),
-                        "source_journal_status": checkpoint.get("source_journal_status"),
-                        "source_journal_record_count": checkpoint.get("source_journal_record_count", 0),
-                        "selected_node_id": latest_entry.get("selected_node_id"),
-                        "selected_action": latest_entry.get("selected_action"),
-                        "next_action": checkpoint.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "bounded_recursion": policy.get("bounded_recursion", True),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "workflow_replanned": policy.get("workflow_replanned", False),
-                        "next_execution_review_planned": policy.get("next_execution_review_planned", False),
-                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
-                        "remote_code_executed": policy.get("remote_code_executed", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_execution_review_ready", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_module_federation_recursive_continuation_checkpoint"] if policy.get("review_approved", False) and not policy.get("plan_only_by_default", True) else ["plan_module_federation_recursive_continuation_checkpoint"]
-                next_action = checkpoint.get("next_action", "review_module_federation_recursive_continuation_checkpoint")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_recursive_continuation_checkpoint"]
-                next_action = checkpoint.get("next_action", "resolve_module_federation_recursive_continuation_checkpoint_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = checkpoint.get("next_action", "inspect_module_federation_recursive_continuation_checkpoint_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_execution_review_ready", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_recursive_continuation_journal_request(protection_name, context):
-            spec = ModuleFederationRecursiveContinuationJournalSpec.from_context(context)
-            result = ModuleFederationRecursiveContinuationJournalManager().plan_or_append(spec)
-            journal = result.journal if isinstance(result.journal, dict) else {}
-            entry = result.entry if isinstance(result.entry, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            checkpoint_plan = journal.get("next_checkpoint_plan") if isinstance(journal.get("next_checkpoint_plan"), dict) else {}
-            verification = [
-                f"module_federation_recursive_continuation_journal_status={result.status}",
-                f"module_federation_recursive_continuation_journal_reason={result.reason or ''}",
-                f"module_federation_recursive_continuation_journal_record_count={journal.get('record_count', 0)}",
-                f"module_federation_recursive_continuation_journal_existing_record_count={journal.get('existing_record_count', 0)}",
-                f"module_federation_recursive_continuation_journal_writes_journal={journal.get('writes_journal_now', False)}",
-                f"module_federation_recursive_continuation_journal_execution_status={entry.get('recursive_execution_status')}",
-                f"module_federation_recursive_continuation_journal_workflow_execution_status={entry.get('workflow_execution_status')}",
-                f"module_federation_recursive_continuation_journal_selected_node_id={entry.get('selected_node_id')}",
-                f"module_federation_recursive_continuation_journal_review_approved={policy.get('review_approved', False)}",
-                f"module_federation_recursive_continuation_journal_remote_factory_invoked_by_journal={policy.get('remote_factory_invoked_by_journal', False)}",
-                f"module_federation_recursive_continuation_journal_remote_code_executed_by_journal={policy.get('remote_code_executed_by_journal', False)}",
-                f"module_federation_recursive_continuation_journal_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"module_federation_recursive_continuation_journal_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"module_federation_recursive_continuation_journal_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"module_federation_recursive_continuation_journal_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-recursive-continuation-journal.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated Module Federation recursive continuation journal and next checkpoint plan.",
-                    metadata={
-                        "status": result.status,
-                        "journal_status": journal.get("status"),
-                        "record_count": journal.get("record_count", 0),
-                        "existing_record_count": journal.get("existing_record_count", 0),
-                        "writes_journal_now": journal.get("writes_journal_now", False),
-                        "execution_fingerprint": entry.get("execution_fingerprint"),
-                        "recursive_execution_status": entry.get("recursive_execution_status"),
-                        "workflow_execution_status": entry.get("workflow_execution_status"),
-                        "selected_node_id": entry.get("selected_node_id"),
-                        "selected_action": entry.get("selected_action"),
-                        "next_checkpoint_status": checkpoint_plan.get("status"),
-                        "max_iterations": journal.get("max_iterations"),
-                        "remaining_iteration_budget": journal.get("remaining_iteration_budget"),
-                        "review_approved": policy.get("review_approved", False),
-                        "writes_journal": policy.get("writes_journal", False),
-                        "remote_factory_invoked_by_journal": policy.get("remote_factory_invoked_by_journal", False),
-                        "remote_code_executed_by_journal": policy.get("remote_code_executed_by_journal", False),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "workflow_replanned": policy.get("workflow_replanned", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "journal_appended"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["append_module_federation_recursive_continuation_journal"] if journal.get("writes_journal_now", False) else ["plan_module_federation_recursive_continuation_journal"]
-                next_action = journal.get("next_action", "review_module_federation_recursive_continuation_journal_append")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_recursive_continuation_journal"]
-                next_action = journal.get("next_action", "revise_module_federation_recursive_continuation_journal_inputs")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = journal.get("next_action", "inspect_module_federation_recursive_continuation_journal_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "journal_appended"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_recursive_traversal_execution_request(protection_name, context):
-            spec = ModuleFederationRecursiveTraversalExecutionSpec.from_context(context)
-            result = ModuleFederationRecursiveTraversalExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
-            verification = [
-                f"module_federation_recursive_traversal_execution_status={result.status}",
-                f"module_federation_recursive_traversal_execution_reason={result.reason or ''}",
-                f"module_federation_recursive_traversal_execution_stage_count={len(stages)}",
-                f"module_federation_recursive_traversal_execution_workflow_execution_status={execution.get('workflow_execution_status')}",
-                f"module_federation_recursive_traversal_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"module_federation_recursive_traversal_execution_selected_node_id={execution.get('selected_node_id')}",
-                f"module_federation_recursive_traversal_execution_review_approved={policy.get('review_approved', False)}",
-                f"module_federation_recursive_traversal_execution_workflow_execution_started={policy.get('workflow_execution_started', False)}",
-                f"module_federation_recursive_traversal_execution_container_init_executed={policy.get('container_init_executed', False)}",
-                f"module_federation_recursive_traversal_execution_remote_get_called={policy.get('remote_get_called', False)}",
-                f"module_federation_recursive_traversal_execution_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
-                f"module_federation_recursive_traversal_execution_remote_code_executed={policy.get('remote_code_executed', False)}",
-                f"module_federation_recursive_traversal_execution_export_hook_plan_created={policy.get('export_hook_plan_created', False)}",
-                f"module_federation_recursive_traversal_execution_export_hook_installed={policy.get('export_hook_installed', False)}",
-                f"module_federation_recursive_traversal_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"module_federation_recursive_traversal_execution_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"module_federation_recursive_traversal_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"module_federation_recursive_traversal_execution_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-recursive-traversal-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated Module Federation recursive traversal next-step execution.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "workflow_execution_status": execution.get("workflow_execution_status"),
-                        "workflow_plan_id": execution.get("workflow_plan_id"),
-                        "source_graph_id": execution.get("source_graph_id"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_node_id": execution.get("selected_node_id"),
-                        "selected_action": execution.get("selected_action"),
-                        "stage_count": len(stages),
-                        "next_action": execution.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "bounded_recursion": policy.get("bounded_recursion", True),
-                        "workflow_execution_started": policy.get("workflow_execution_started", False),
-                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
-                        "remote_code_executed": policy.get("remote_code_executed", False),
-                        "export_hook_plan_created": policy.get("export_hook_plan_created", False),
-                        "export_hook_installed": policy.get("export_hook_installed", False),
-                        "execute_at_most_one_remote_step_per_review": policy.get("execute_at_most_one_remote_step_per_review", True),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "workflow_replanned": policy.get("workflow_replanned", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "next_step_execution_progressed", "next_step_export_hook_plan_ready", "next_step_export_hook_installed"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_module_federation_recursive_traversal_next_step"] if policy.get("workflow_execution_started", False) else ["plan_module_federation_recursive_traversal_execution_step"]
-                next_action = execution.get("next_action", "review_module_federation_recursive_traversal_execution_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_recursive_traversal_execution_step"]
-                next_action = execution.get("next_action", "resolve_module_federation_recursive_traversal_execution_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = execution.get("next_action", "inspect_module_federation_recursive_traversal_execution_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "next_step_execution_progressed", "next_step_export_hook_plan_ready", "next_step_export_hook_installed"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_traversal_workflow_execution_request(protection_name, context):
-            spec = ModuleFederationTraversalWorkflowExecutionSpec.from_context(context)
-            result = ModuleFederationTraversalWorkflowExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"module_federation_traversal_workflow_execution_status={result.status}",
-                f"module_federation_traversal_workflow_execution_reason={result.reason or ''}",
-                f"module_federation_traversal_workflow_execution_stage_count={len(stages)}",
-                f"module_federation_traversal_workflow_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"module_federation_traversal_workflow_execution_selected_node_id={execution.get('selected_node_id')}",
-                f"module_federation_traversal_workflow_execution_review_approved={policy.get('review_approved', False)}",
-                f"module_federation_traversal_workflow_execution_container_init_executed={policy.get('container_init_executed', False)}",
-                f"module_federation_traversal_workflow_execution_remote_get_called={policy.get('remote_get_called', False)}",
-                f"module_federation_traversal_workflow_execution_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
-                f"module_federation_traversal_workflow_execution_remote_code_executed={policy.get('remote_code_executed', False)}",
-                f"module_federation_traversal_workflow_execution_export_hook_plan_created={policy.get('export_hook_plan_created', False)}",
-                f"module_federation_traversal_workflow_execution_export_hook_installed={policy.get('export_hook_installed', False)}",
-                f"module_federation_traversal_workflow_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"module_federation_traversal_workflow_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"module_federation_traversal_workflow_execution_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"module_federation_traversal_workflow_execution_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-traversal-workflow-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated Module Federation traversal workflow execution baseline.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "workflow_plan_id": execution.get("workflow_plan_id"),
-                        "source_graph_id": execution.get("source_graph_id"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_node_id": execution.get("selected_node_id"),
-                        "selected_action": execution.get("selected_action"),
-                        "stage_count": len(stages),
-                        "next_action": execution.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
-                        "remote_code_executed": policy.get("remote_code_executed", False),
-                        "export_hook_plan_created": policy.get("export_hook_plan_created", False),
-                        "export_hook_installed": policy.get("export_hook_installed", False),
-                        "execute_at_most_one_remote_step_per_review": policy.get("execute_at_most_one_remote_step_per_review", True),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "factory_invoke_success", "export_hook_plan_ready", "export_hook_installed", "nested_get_init_plan_ready"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_module_federation_traversal_workflow_step" if result.status != "ready_for_review" else "plan_module_federation_traversal_workflow_execution_step"]
-                next_action = execution.get("next_action", "review_module_federation_traversal_workflow_execution_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_traversal_workflow_execution_step"]
-                next_action = execution.get("next_action", "resolve_module_federation_traversal_workflow_execution_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = execution.get("next_action", "inspect_module_federation_traversal_workflow_execution_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "factory_invoke_success", "export_hook_plan_ready", "export_hook_installed", "nested_get_init_plan_ready"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_recursive_traversal_plan_request(protection_name, context):
-            spec = ModuleFederationRecursiveTraversalPlanSpec.from_context(context)
-            result = ModuleFederationRecursiveTraversalPlanManager().plan(spec)
-            recursive_plan = result.recursive_plan if isinstance(result.recursive_plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"module_federation_recursive_traversal_plan_status={result.status}",
-                f"module_federation_recursive_traversal_plan_reason={result.reason or ''}",
-                f"module_federation_recursive_traversal_plan_latest_workflow_execution_status={recursive_plan.get('latest_workflow_execution_status')}",
-                f"module_federation_recursive_traversal_plan_latest_graph_queue_count={recursive_plan.get('latest_graph_queue_count', 0)}",
-                f"module_federation_recursive_traversal_plan_latest_workflow_planned_step_count={recursive_plan.get('latest_workflow_planned_step_count', 0)}",
-                f"module_federation_recursive_traversal_plan_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"module_federation_recursive_traversal_plan_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"module_federation_recursive_traversal_plan_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
-                f"module_federation_recursive_traversal_plan_remote_code_executed={policy.get('remote_code_executed', False)}",
-                f"module_federation_recursive_traversal_plan_export_hook_installed={policy.get('export_hook_installed', False)}",
-                f"module_federation_recursive_traversal_plan_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"module_federation_recursive_traversal_plan_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"module_federation_recursive_traversal_plan_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-recursive-traversal-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only Module Federation recursive traversal follow-up plan.",
-                    metadata={
-                        "status": result.status,
-                        "recursive_plan_status": recursive_plan.get("status"),
-                        "latest_workflow_execution_status": recursive_plan.get("latest_workflow_execution_status"),
-                        "latest_graph_status": recursive_plan.get("latest_graph_status"),
-                        "latest_graph_queue_count": recursive_plan.get("latest_graph_queue_count", 0),
-                        "latest_workflow_plan_status": recursive_plan.get("latest_workflow_plan_status"),
-                        "latest_workflow_planned_step_count": recursive_plan.get("latest_workflow_planned_step_count", 0),
-                        "next_action": recursive_plan.get("next_action"),
-                        "bounded_recursion": policy.get("bounded_recursion", True),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "workflow_replanned": policy.get("workflow_replanned", False),
-                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
-                        "remote_code_executed": policy.get("remote_code_executed", False),
-                        "export_hook_installed": policy.get("export_hook_installed", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                        "plan_only": policy.get("plan_only", True),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_step_review", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_module_federation_recursive_traversal_followup"]
-                next_action = recursive_plan.get("next_action", "review_module_federation_recursive_traversal_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_recursive_traversal_followup"]
-                next_action = recursive_plan.get("next_action", "resolve_module_federation_recursive_traversal_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = "inspect_module_federation_recursive_traversal_plan_request"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_step_review", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_recursive_traversal_followup_request(protection_name, context):
-            spec = ModuleFederationRecursiveTraversalFollowupSpec.from_context(context)
-            result = ModuleFederationRecursiveTraversalFollowupManager().follow_up(spec)
-            followup = result.followup if isinstance(result.followup, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            stages = followup.get("stages") if isinstance(followup.get("stages"), list) else []
-            verification = [
-                f"module_federation_recursive_traversal_followup_status={result.status}",
-                f"module_federation_recursive_traversal_followup_reason={result.reason or ''}",
-                f"module_federation_recursive_traversal_followup_stage_count={len(stages)}",
-                f"module_federation_recursive_traversal_followup_review_approved={policy.get('review_approved', False)}",
-                f"module_federation_recursive_traversal_followup_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"module_federation_recursive_traversal_followup_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"module_federation_recursive_traversal_followup_next_step_review_planned={policy.get('next_step_review_planned', False)}",
-                f"module_federation_recursive_traversal_followup_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
-                f"module_federation_recursive_traversal_followup_remote_code_executed={policy.get('remote_code_executed', False)}",
-                f"module_federation_recursive_traversal_followup_export_hook_installed={policy.get('export_hook_installed', False)}",
-                f"module_federation_recursive_traversal_followup_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"module_federation_recursive_traversal_followup_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-recursive-traversal-followup.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated Module Federation recursive traversal checkpoint follow-up.",
-                    metadata={
-                        "status": result.status,
-                        "followup_status": followup.get("status"),
-                        "stage_count": len(stages),
-                        "next_action": followup.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "bounded_recursion": policy.get("bounded_recursion", True),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "workflow_replanned": policy.get("workflow_replanned", False),
-                        "next_step_review_planned": policy.get("next_step_review_planned", False),
-                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
-                        "remote_code_executed": policy.get("remote_code_executed", False),
-                        "export_hook_installed": policy.get("export_hook_installed", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_step_review_ready", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_module_federation_recursive_traversal_followup_checkpoint"] if any(
-                    policy.get(flag, False) for flag in ("traversal_graph_rebuilt", "workflow_replanned", "next_step_review_planned")
-                ) else ["plan_module_federation_recursive_traversal_followup"]
-                next_action = followup.get("next_action", "review_module_federation_recursive_traversal_followup_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_recursive_traversal_followup"]
-                next_action = followup.get("next_action", "resolve_module_federation_recursive_traversal_followup_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = followup.get("next_action", "inspect_module_federation_recursive_traversal_followup_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_step_review_ready", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_traversal_graph_request(protection_name, context):
-            spec = ModuleFederationTraversalGraphSpec.from_context(context)
-            result = ModuleFederationTraversalGraphManager().build(spec)
-            graph = result.graph if isinstance(result.graph, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"module_federation_traversal_graph_status={result.status}",
-                f"module_federation_traversal_graph_reason={result.reason or ''}",
-                f"module_federation_traversal_graph_node_count={graph.get('node_count', 0)}",
-                f"module_federation_traversal_graph_queue_count={graph.get('queue_count', 0)}",
-                f"module_federation_traversal_graph_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
-                f"module_federation_traversal_graph_remote_code_executed={policy.get('remote_code_executed', False)}",
-                f"module_federation_traversal_graph_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"module_federation_traversal_graph_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-traversal-graph.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only Module Federation traversal graph.",
-                    metadata={
-                        "status": result.status,
-                        "graph_status": graph.get("status"),
-                        "node_count": graph.get("node_count", 0),
-                        "queue_count": graph.get("queue_count", 0),
-                        "review_required": graph.get("review_required", True),
-                        "plan_only": policy.get("plan_only", True),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_module_federation_traversal_graph"]
-                next_action = graph.get("next_action", "review_module_federation_traversal_graph")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_traversal_graph"]
-                next_action = graph.get("next_action", "provide_module_federation_traversal_inputs")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = "inspect_module_federation_traversal_graph_request"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_traversal_workflow_plan_request(protection_name, context):
-            spec = ModuleFederationTraversalWorkflowPlanSpec.from_context(context)
-            result = ModuleFederationTraversalWorkflowPlanManager().plan(spec)
-            workflow_plan = result.workflow_plan if isinstance(result.workflow_plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"module_federation_traversal_workflow_plan_status={result.status}",
-                f"module_federation_traversal_workflow_plan_reason={result.reason or ''}",
-                f"module_federation_traversal_workflow_planned_step_count={workflow_plan.get('planned_step_count', 0)}",
-                f"module_federation_traversal_workflow_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
-                f"module_federation_traversal_workflow_remote_code_executed={policy.get('remote_code_executed', False)}",
-                f"module_federation_traversal_workflow_executed={policy.get('workflow_executed', False)}",
-                f"module_federation_traversal_workflow_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-traversal-workflow-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only Module Federation traversal workflow plan.",
-                    metadata={
-                        "status": result.status,
-                        "workflow_plan_status": workflow_plan.get("status"),
-                        "planned_step_count": workflow_plan.get("planned_step_count", 0),
-                        "review_required": workflow_plan.get("review_required", True),
-                        "plan_only": policy.get("plan_only", True),
-                        "workflow_executed": policy.get("workflow_executed", False),
-                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_module_federation_traversal_workflow"]
-                next_action = workflow_plan.get("next_action", "review_module_federation_traversal_workflow_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_traversal_workflow"]
-                next_action = workflow_plan.get("next_action", "provide_module_federation_traversal_graph")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = "inspect_module_federation_traversal_workflow_plan_request"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_module_federation_get_init_request(protection_name, context):
-            if self._is_module_federation_export_hook_install_request(protection_name, context):
-                spec = ModuleFederationExportHookInstallSpec.from_context(context)
-                result = ModuleFederationExportHookInstallManager().install(page, spec)
-                installed_count = len(result.installed)
-                missing_count = len(result.missing)
-                event_count = len(result.events)
-                candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
-                verification = [
-                    f"module_federation_export_hook_install_status={result.status}",
-                    f"module_federation_export_hook_install_reason={result.reason or ''}",
-                    f"module_federation_export_hook_review_approved={result.side_effect_policy.get('review_approved', False)}",
-                    f"module_federation_export_hook_installed_count={installed_count}",
-                    f"module_federation_export_hook_missing_count={missing_count}",
-                    f"module_federation_export_hook_event_count={event_count}",
-                    f"module_federation_export_hook_remote_factory_invoked={result.side_effect_policy.get('remote_factory_invoked', False)}",
-                    f"module_federation_export_hook_recursive_federation_traversal={result.side_effect_policy.get('recursive_federation_traversal', False)}",
-                    f"context_keys={sorted(context.keys())}",
-                ]
-                if result.trigger:
-                    verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                    if result.trigger.get("error"):
-                        verification.append(f"trigger_error={result.trigger['error']}")
-                if result.error:
-                    verification.append(f"module_federation_export_hook_error={result.error}")
-                hook_path = candidate.get("hook_path") or candidate.get("hookPath") or f"{candidate.get('container_path') or candidate.get('containerPath')}:{candidate.get('exposed_name') or candidate.get('exposedName')}:{candidate.get('export_name') or candidate.get('exportName')}"
-                artifact_paths = [
-                    ArtifactRef(
-                        path="virtual://workspace/function-hooks.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime reviewed Module Federation remote export hook install result.",
-                        metadata={
-                            "status": result.status,
-                            "installed_count": installed_count,
-                            "missing_count": missing_count,
-                            "container_path": candidate.get("container_path") or candidate.get("containerPath") or "<missing>",
-                            "exposed_name": candidate.get("exposed_name") or candidate.get("exposedName") or "<missing>",
-                            "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
-                            "hook_path": hook_path,
-                            "source": "module_federation_export_hook_plan",
-                            "review_approved": result.side_effect_policy.get("review_approved", False),
-                        },
-                    ),
-                    ArtifactRef(
-                        path="virtual://workspace/function-hook-timeline.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime reviewed Module Federation remote export hook timeline.",
-                        metadata={
-                            "status": "success" if event_count else "not_observed",
-                            "event_count": event_count,
-                            "container_path": candidate.get("container_path") or candidate.get("containerPath") or "<missing>",
-                            "exposed_name": candidate.get("exposed_name") or candidate.get("exposedName") or "<missing>",
-                            "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
-                            "hook_path": hook_path,
-                            "source": "module_federation_export_hook_plan",
-                        },
-                    ),
-                ]
-                if result.status == "success":
-                    status = ExecutionStatus.SUCCESS
-                    next_action = "inspect_module_federation_export_hook_events" if event_count else "invoke_hooked_remote_export_or_wait_for_events"
-                elif result.reason == "review_approval_required":
-                    status = ExecutionStatus.PARTIAL
-                    next_action = "approve_module_federation_export_hook_candidate"
-                elif result.reason == "review_module_federation_export_hook_plan":
-                    status = ExecutionStatus.PARTIAL
-                    next_action = "review_module_federation_export_hook_plan"
-                else:
-                    status = ExecutionStatus.FAILED if result.status in {"failed", "unsupported"} else ExecutionStatus.PARTIAL
-                    next_action = "inspect_module_federation_export_hook_failure"
-                return ProtectionResult(
-                    protection_name=protection_name,
-                    applied_actions=(
-                        [f"hook_module_federation_remote_export:{candidate.get('container_path') or candidate.get('containerPath')}:{candidate.get('exposed_name') or candidate.get('exposedName')}:{candidate.get('export_name') or candidate.get('exportName')}"]
-                        if installed_count
-                        else []
-                    ),
-                    verification=verification,
-                    status=status,
-                    artifacts=artifact_paths,
-                    next_action=next_action,
-                    confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
-                )
-            if self._is_module_federation_export_hook_plan_request(protection_name, context):
-                spec = ModuleFederationExportHookPlanSpec.from_context(context)
-                result = ModuleFederationExportHookPlanManager().plan(spec)
-                plan = result.plan if isinstance(result.plan, dict) else {}
-                verification = [
-                    f"module_federation_export_hook_plan_status={result.status}",
-                    f"module_federation_export_hook_candidate_count={plan.get('candidate_count', 0)}",
-                    f"module_federation_export_hook_hookable_candidate_count={plan.get('hookable_candidate_count', 0)}",
-                    f"module_federation_export_hook_automatic_hook_installation={plan.get('automatic_hook_installation', False)}",
-                    f"module_federation_export_hook_recursive_federation_traversal={plan.get('recursive_federation_traversal', False)}",
-                    f"context_keys={sorted(context.keys())}",
-                ]
-                if result.reason:
-                    verification.append(f"module_federation_export_hook_plan_reason={result.reason}")
-                artifact_paths = [
-                    ArtifactRef(
-                        path="virtual://workspace/module-federation-export-hook-plan.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime review-only Module Federation remote export hook selection plan.",
-                        metadata={
-                            "status": result.status,
-                            "candidate_count": plan.get("candidate_count", 0),
-                            "hookable_candidate_count": plan.get("hookable_candidate_count", 0),
-                            "review_required": plan.get("review_required", True),
-                            "automatic_hook_installation": plan.get("automatic_hook_installation", False),
-                            "recursive_federation_traversal": plan.get("recursive_federation_traversal", False),
-                        },
-                    )
-                ]
-                return ProtectionResult(
-                    protection_name=protection_name,
-                    applied_actions=["plan_module_federation_export_hooks"] if result.status == "planned" else [],
-                    verification=verification,
-                    status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
-                    artifacts=artifact_paths,
-                    next_action=plan.get("next_action", "inspect_remote_export_shapes_before_hooking"),
-                    confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
-                )
-            if self._is_module_federation_factory_invoke_request(context):
-                spec = ModuleFederationFactoryInvokeSpec.from_context(context)
-                result = ModuleFederationFactoryInvokeManager().plan_or_invoke(page, spec)
-                get_init_execution = result.get_init_execution if isinstance(result.get_init_execution, dict) else {}
-                factory_execution = result.factory_execution if isinstance(result.factory_execution, dict) else {}
-                plan = result.plan if isinstance(result.plan, dict) else {}
-                verification = [
-                    f"module_federation_factory_invoke_status={result.status}",
-                    f"module_federation_get_init_plan_status={plan.get('status', 'missing')}",
-                    f"module_federation_get_init_execution_attempted={get_init_execution.get('attempted', False)}",
-                    f"module_federation_get_init_remote_get_called={get_init_execution.get('remoteGetCalled', False)}",
-                    f"module_federation_factory_execution_attempted={factory_execution.get('attempted', False)}",
-                    f"module_federation_factory_execution_ok={factory_execution.get('ok', False)}",
-                    f"module_federation_factory_remote_factory_invoked={factory_execution.get('remoteFactoryInvoked', False)}",
-                    f"module_federation_factory_remote_code_executed={factory_execution.get('remoteCodeExecuted', False)}",
-                    f"context_keys={sorted(context.keys())}",
-                ]
-                if factory_execution.get("exportNames") is not None:
-                    verification.append(f"module_federation_factory_export_count={len(factory_execution.get('exportNames') or [])}")
-                if factory_execution.get("moduleType"):
-                    verification.append(f"module_federation_factory_module_type={factory_execution.get('moduleType')}")
-                if factory_execution.get("reason"):
-                    verification.append(f"module_federation_factory_execution_reason={factory_execution['reason']}")
-                if result.reason:
-                    verification.append(f"module_federation_factory_reason={result.reason}")
-                if result.error:
-                    verification.append(f"module_federation_factory_error={result.error}")
-                artifact_paths = [
-                    ArtifactRef(
-                        path="virtual://workspace/module-federation-get-init-plan.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime review-only Module Federation get/init plan.",
-                        metadata={
-                            "status": result.status,
-                            "plan_status": plan.get("status"),
-                            "candidate_count": plan.get("candidate_count", 0),
-                            "container_count": plan.get("container_count", 0),
-                            "exposed_module_count": plan.get("exposed_module_count", 0),
-                            "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
-                            "blocked_execution_count": plan.get("blocked_execution_count", 0),
-                            "review_required": plan.get("review_required", True),
-                        },
-                    ),
-                    ArtifactRef(
-                        path="virtual://workspace/module-federation-factory-invoke-result.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime review-gated Module Federation remote factory invocation evidence.",
-                        metadata={
-                            "status": result.status,
-                            "get_init_attempted": get_init_execution.get("attempted", False),
-                            "factory_attempted": factory_execution.get("attempted", False),
-                            "factory_ok": factory_execution.get("ok", False),
-                            "remote_factory_invoked": factory_execution.get("remoteFactoryInvoked", False),
-                            "remote_code_executed": factory_execution.get("remoteCodeExecuted", False),
-                            "export_count": len(factory_execution.get("exportNames") or []),
-                            "module_type": factory_execution.get("moduleType"),
-                        },
-                    ),
-                ]
-                if result.status == "success":
-                    next_action = "review_module_federation_factory_exports_before_hooking"
-                    status = ExecutionStatus.SUCCESS
-                    applied_actions = ["invoke_module_federation_factory"]
-                elif result.status == "planned":
-                    next_action = "review_module_federation_factory_invoke_plan"
-                    status = ExecutionStatus.SUCCESS
-                    applied_actions = ["plan_module_federation_factory_invoke"]
-                elif result.status == "blocked":
-                    next_action = "approve_module_federation_factory_or_choose_function_path_candidate"
-                    status = ExecutionStatus.PARTIAL
-                    applied_actions = ["plan_module_federation_factory_invoke"]
-                else:
-                    next_action = "inspect_module_federation_factory_invoke_failure"
-                    status = ExecutionStatus.FAILED
-                    applied_actions = []
-                return ProtectionResult(
-                    protection_name=protection_name,
-                    applied_actions=applied_actions,
-                    verification=verification,
-                    status=status,
-                    artifacts=artifact_paths,
-                    next_action=next_action,
-                    confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
-                )
-            if self._is_module_federation_get_init_probe_request(context):
-                spec = ModuleFederationGetInitProbeSpec.from_context(context)
-                result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
-                execution = result.execution if isinstance(result.execution, dict) else {}
-                plan = result.plan if isinstance(result.plan, dict) else {}
-                verification = [
-                    f"module_federation_get_init_probe_status={result.status}",
-                    f"module_federation_get_init_plan_status={plan.get('status', 'missing')}",
-                    f"module_federation_get_init_execution_attempted={execution.get('attempted', False)}",
-                    f"module_federation_get_init_execution_ok={execution.get('ok', False)}",
-                    f"module_federation_get_init_container_init_called={execution.get('containerInitCalled', False)}",
-                    f"module_federation_get_init_remote_get_called={execution.get('remoteGetCalled', False)}",
-                    f"module_federation_get_init_remote_factory_invoked={execution.get('remoteFactoryInvoked', False)}",
-                    f"context_keys={sorted(context.keys())}",
-                ]
-                if execution.get("addedSharedScopeKeys") is not None:
-                    verification.append(f"module_federation_get_init_added_shared_scope_key_count={len(execution.get('addedSharedScopeKeys') or [])}")
-                if execution.get("factoryType"):
-                    verification.append(f"module_federation_get_init_factory_type={execution.get('factoryType')}")
-                if execution.get("reason"):
-                    verification.append(f"module_federation_get_init_execution_reason={execution['reason']}")
-                if result.reason:
-                    verification.append(f"module_federation_get_init_reason={result.reason}")
-                if result.error:
-                    verification.append(f"module_federation_get_init_error={result.error}")
-                artifact_paths = [
-                    ArtifactRef(
-                        path="virtual://workspace/module-federation-get-init-plan.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime review-only Module Federation get/init plan.",
-                        metadata={
-                            "status": result.status,
-                            "plan_status": plan.get("status"),
-                            "candidate_count": plan.get("candidate_count", 0),
-                            "container_count": plan.get("container_count", 0),
-                            "exposed_module_count": plan.get("exposed_module_count", 0),
-                            "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
-                            "blocked_execution_count": plan.get("blocked_execution_count", 0),
-                            "review_required": plan.get("review_required", True),
-                        },
-                    ),
-                    ArtifactRef(
-                        path="virtual://workspace/module-federation-get-init-result.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime review-gated Module Federation init/get probe evidence.",
-                        metadata={
-                            "status": result.status,
-                            "execution_attempted": execution.get("attempted", False),
-                            "execution_ok": execution.get("ok", False),
-                            "container_init_called": execution.get("containerInitCalled", False),
-                            "remote_get_called": execution.get("remoteGetCalled", False),
-                            "remote_factory_invoked": execution.get("remoteFactoryInvoked", False),
-                            "added_shared_scope_key_count": len(execution.get("addedSharedScopeKeys") or []),
-                            "factory_type": execution.get("factoryType"),
-                        },
-                    ),
-                ]
-                if result.status == "success":
-                    next_action = "review_module_federation_get_init_probe_before_factory_invocation"
-                    status = ExecutionStatus.SUCCESS
-                    applied_actions = ["probe_module_federation_get_init"]
-                elif result.status == "planned":
-                    next_action = "review_module_federation_get_init_plan"
-                    status = ExecutionStatus.SUCCESS
-                    applied_actions = ["plan_module_federation_get_init"]
-                elif result.status == "blocked":
-                    next_action = "approve_module_federation_get_init_or_choose_function_path_candidate"
-                    status = ExecutionStatus.PARTIAL
-                    applied_actions = ["plan_module_federation_get_init"]
-                else:
-                    next_action = "inspect_module_federation_get_init_probe_failure"
-                    status = ExecutionStatus.FAILED
-                    applied_actions = []
-                return ProtectionResult(
-                    protection_name=protection_name,
-                    applied_actions=applied_actions,
-                    verification=verification,
-                    status=status,
-                    artifacts=artifact_paths,
-                    next_action=next_action,
-                    confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
-                )
-            spec = ModuleFederationGetInitPlanSpec.from_context(context)
-            result = ModuleFederationGetInitPlanManager().plan(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            verification = [
-                f"module_federation_get_init_plan_status={result.status}",
-                f"module_federation_get_init_candidate_count={plan.get('candidate_count', 0)}",
-                f"module_federation_get_init_container_count={plan.get('container_count', 0)}",
-                f"module_federation_get_init_exposed_module_count={plan.get('exposed_module_count', 0)}",
-                f"module_federation_get_init_function_path_candidate_count={plan.get('function_path_candidate_count', 0)}",
-                f"module_federation_get_init_blocked_execution_count={plan.get('blocked_execution_count', 0)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"module_federation_get_init_reason={result.reason}")
-            if result.error:
-                verification.append(f"module_federation_get_init_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-federation-get-init-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only Module Federation get/init plan.",
-                    metadata={
-                        "status": result.status,
-                        "plan_status": plan.get("status"),
-                        "candidate_count": plan.get("candidate_count", 0),
-                        "container_count": plan.get("container_count", 0),
-                        "exposed_module_count": plan.get("exposed_module_count", 0),
-                        "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
-                        "blocked_execution_count": plan.get("blocked_execution_count", 0),
-                        "review_required": plan.get("review_required", True),
-                        "plan_only": result.side_effect_policy.get("plan_only", True),
-                    },
-                )
-            ]
-            if result.status == "planned":
-                next_action = "review_module_federation_get_init_plan"
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_module_federation_get_init"]
-            elif result.status == "blocked":
-                next_action = "provide_module_federation_candidates_from_module_discovery"
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_module_federation_get_init"]
-            else:
-                next_action = "inspect_module_federation_get_init_request"
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
-            )
+        result = self._dispatch_module_federation(protection_name, context, page)
+        if result is not None:
+            return result
         if self._is_custom_loader_continuation_execution_request(protection_name, context):
             spec = CustomLoaderContinuationExecutionSpec.from_context(context)
             result = CustomLoaderContinuationExecutionManager().execute(page, spec)
@@ -3824,6 +2938,902 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
             next_action="resume_recon" if install.ok else "ensure_browser_provider_or_hook_capability",
             confidence=ConfidenceLevel.MEDIUM if install.ok else ConfidenceLevel.LOW,
         )
+
+    def _dispatch_module_federation(
+        self,
+        protection_name: str,
+        context: dict,
+        page: Any,
+    ) -> ProtectionResult | None:
+        if self._is_module_federation_recursive_continuation_checkpoint_request(protection_name, context):
+            spec = ModuleFederationRecursiveContinuationCheckpointSpec.from_context(context)
+            result = ModuleFederationRecursiveContinuationCheckpointManager().execute(spec)
+            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = checkpoint.get("stages") if isinstance(checkpoint.get("stages"), list) else []
+            latest_entry = checkpoint.get("latest_entry") if isinstance(checkpoint.get("latest_entry"), dict) else {}
+            verification = [
+                f"module_federation_recursive_continuation_checkpoint_status={result.status}",
+                f"module_federation_recursive_continuation_checkpoint_reason={result.reason or ''}",
+                f"module_federation_recursive_continuation_checkpoint_stage_count={len(stages)}",
+                f"module_federation_recursive_continuation_checkpoint_source_journal_status={checkpoint.get('source_journal_status')}",
+                f"module_federation_recursive_continuation_checkpoint_source_journal_record_count={checkpoint.get('source_journal_record_count', 0)}",
+                f"module_federation_recursive_continuation_checkpoint_selected_node_id={latest_entry.get('selected_node_id')}",
+                f"module_federation_recursive_continuation_checkpoint_review_approved={policy.get('review_approved', False)}",
+                f"module_federation_recursive_continuation_checkpoint_verifies_latest_recursive_execution={policy.get('verifies_latest_recursive_execution', False)}",
+                f"module_federation_recursive_continuation_checkpoint_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_recursive_continuation_checkpoint_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"module_federation_recursive_continuation_checkpoint_next_execution_review_planned={policy.get('next_execution_review_planned', False)}",
+                f"module_federation_recursive_continuation_checkpoint_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_recursive_continuation_checkpoint_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_recursive_continuation_checkpoint_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_recursive_continuation_checkpoint_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-recursive-continuation-checkpoint.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated Module Federation recursive continuation checkpoint execution.",
+                    metadata={
+                        "status": result.status,
+                        "checkpoint_status": checkpoint.get("status"),
+                        "stage_count": len(stages),
+                        "source_journal_status": checkpoint.get("source_journal_status"),
+                        "source_journal_record_count": checkpoint.get("source_journal_record_count", 0),
+                        "selected_node_id": latest_entry.get("selected_node_id"),
+                        "selected_action": latest_entry.get("selected_action"),
+                        "next_action": checkpoint.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "next_execution_review_planned": policy.get("next_execution_review_planned", False),
+                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
+                        "remote_code_executed": policy.get("remote_code_executed", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_execution_review_ready", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_module_federation_recursive_continuation_checkpoint"] if policy.get("review_approved", False) and not policy.get("plan_only_by_default", True) else ["plan_module_federation_recursive_continuation_checkpoint"]
+                next_action = checkpoint.get("next_action", "review_module_federation_recursive_continuation_checkpoint")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_recursive_continuation_checkpoint"]
+                next_action = checkpoint.get("next_action", "resolve_module_federation_recursive_continuation_checkpoint_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = checkpoint.get("next_action", "inspect_module_federation_recursive_continuation_checkpoint_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_execution_review_ready", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_recursive_continuation_journal_request(protection_name, context):
+            spec = ModuleFederationRecursiveContinuationJournalSpec.from_context(context)
+            result = ModuleFederationRecursiveContinuationJournalManager().plan_or_append(spec)
+            journal = result.journal if isinstance(result.journal, dict) else {}
+            entry = result.entry if isinstance(result.entry, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            checkpoint_plan = journal.get("next_checkpoint_plan") if isinstance(journal.get("next_checkpoint_plan"), dict) else {}
+            verification = [
+                f"module_federation_recursive_continuation_journal_status={result.status}",
+                f"module_federation_recursive_continuation_journal_reason={result.reason or ''}",
+                f"module_federation_recursive_continuation_journal_record_count={journal.get('record_count', 0)}",
+                f"module_federation_recursive_continuation_journal_existing_record_count={journal.get('existing_record_count', 0)}",
+                f"module_federation_recursive_continuation_journal_writes_journal={journal.get('writes_journal_now', False)}",
+                f"module_federation_recursive_continuation_journal_execution_status={entry.get('recursive_execution_status')}",
+                f"module_federation_recursive_continuation_journal_workflow_execution_status={entry.get('workflow_execution_status')}",
+                f"module_federation_recursive_continuation_journal_selected_node_id={entry.get('selected_node_id')}",
+                f"module_federation_recursive_continuation_journal_review_approved={policy.get('review_approved', False)}",
+                f"module_federation_recursive_continuation_journal_remote_factory_invoked_by_journal={policy.get('remote_factory_invoked_by_journal', False)}",
+                f"module_federation_recursive_continuation_journal_remote_code_executed_by_journal={policy.get('remote_code_executed_by_journal', False)}",
+                f"module_federation_recursive_continuation_journal_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_recursive_continuation_journal_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"module_federation_recursive_continuation_journal_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_recursive_continuation_journal_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-recursive-continuation-journal.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated Module Federation recursive continuation journal and next checkpoint plan.",
+                    metadata={
+                        "status": result.status,
+                        "journal_status": journal.get("status"),
+                        "record_count": journal.get("record_count", 0),
+                        "existing_record_count": journal.get("existing_record_count", 0),
+                        "writes_journal_now": journal.get("writes_journal_now", False),
+                        "execution_fingerprint": entry.get("execution_fingerprint"),
+                        "recursive_execution_status": entry.get("recursive_execution_status"),
+                        "workflow_execution_status": entry.get("workflow_execution_status"),
+                        "selected_node_id": entry.get("selected_node_id"),
+                        "selected_action": entry.get("selected_action"),
+                        "next_checkpoint_status": checkpoint_plan.get("status"),
+                        "max_iterations": journal.get("max_iterations"),
+                        "remaining_iteration_budget": journal.get("remaining_iteration_budget"),
+                        "review_approved": policy.get("review_approved", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "remote_factory_invoked_by_journal": policy.get("remote_factory_invoked_by_journal", False),
+                        "remote_code_executed_by_journal": policy.get("remote_code_executed_by_journal", False),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["append_module_federation_recursive_continuation_journal"] if journal.get("writes_journal_now", False) else ["plan_module_federation_recursive_continuation_journal"]
+                next_action = journal.get("next_action", "review_module_federation_recursive_continuation_journal_append")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_recursive_continuation_journal"]
+                next_action = journal.get("next_action", "revise_module_federation_recursive_continuation_journal_inputs")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = journal.get("next_action", "inspect_module_federation_recursive_continuation_journal_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "journal_appended"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_recursive_traversal_execution_request(protection_name, context):
+            spec = ModuleFederationRecursiveTraversalExecutionSpec.from_context(context)
+            result = ModuleFederationRecursiveTraversalExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            verification = [
+                f"module_federation_recursive_traversal_execution_status={result.status}",
+                f"module_federation_recursive_traversal_execution_reason={result.reason or ''}",
+                f"module_federation_recursive_traversal_execution_stage_count={len(stages)}",
+                f"module_federation_recursive_traversal_execution_workflow_execution_status={execution.get('workflow_execution_status')}",
+                f"module_federation_recursive_traversal_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"module_federation_recursive_traversal_execution_selected_node_id={execution.get('selected_node_id')}",
+                f"module_federation_recursive_traversal_execution_review_approved={policy.get('review_approved', False)}",
+                f"module_federation_recursive_traversal_execution_workflow_execution_started={policy.get('workflow_execution_started', False)}",
+                f"module_federation_recursive_traversal_execution_container_init_executed={policy.get('container_init_executed', False)}",
+                f"module_federation_recursive_traversal_execution_remote_get_called={policy.get('remote_get_called', False)}",
+                f"module_federation_recursive_traversal_execution_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_recursive_traversal_execution_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_recursive_traversal_execution_export_hook_plan_created={policy.get('export_hook_plan_created', False)}",
+                f"module_federation_recursive_traversal_execution_export_hook_installed={policy.get('export_hook_installed', False)}",
+                f"module_federation_recursive_traversal_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_recursive_traversal_execution_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"module_federation_recursive_traversal_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_recursive_traversal_execution_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-recursive-traversal-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated Module Federation recursive traversal next-step execution.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "workflow_execution_status": execution.get("workflow_execution_status"),
+                        "workflow_plan_id": execution.get("workflow_plan_id"),
+                        "source_graph_id": execution.get("source_graph_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_node_id": execution.get("selected_node_id"),
+                        "selected_action": execution.get("selected_action"),
+                        "stage_count": len(stages),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "workflow_execution_started": policy.get("workflow_execution_started", False),
+                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
+                        "remote_code_executed": policy.get("remote_code_executed", False),
+                        "export_hook_plan_created": policy.get("export_hook_plan_created", False),
+                        "export_hook_installed": policy.get("export_hook_installed", False),
+                        "execute_at_most_one_remote_step_per_review": policy.get("execute_at_most_one_remote_step_per_review", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "next_step_execution_progressed", "next_step_export_hook_plan_ready", "next_step_export_hook_installed"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_module_federation_recursive_traversal_next_step"] if policy.get("workflow_execution_started", False) else ["plan_module_federation_recursive_traversal_execution_step"]
+                next_action = execution.get("next_action", "review_module_federation_recursive_traversal_execution_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_recursive_traversal_execution_step"]
+                next_action = execution.get("next_action", "resolve_module_federation_recursive_traversal_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_module_federation_recursive_traversal_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "next_step_execution_progressed", "next_step_export_hook_plan_ready", "next_step_export_hook_installed"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_traversal_workflow_execution_request(protection_name, context):
+            spec = ModuleFederationTraversalWorkflowExecutionSpec.from_context(context)
+            result = ModuleFederationTraversalWorkflowExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"module_federation_traversal_workflow_execution_status={result.status}",
+                f"module_federation_traversal_workflow_execution_reason={result.reason or ''}",
+                f"module_federation_traversal_workflow_execution_stage_count={len(stages)}",
+                f"module_federation_traversal_workflow_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"module_federation_traversal_workflow_execution_selected_node_id={execution.get('selected_node_id')}",
+                f"module_federation_traversal_workflow_execution_review_approved={policy.get('review_approved', False)}",
+                f"module_federation_traversal_workflow_execution_container_init_executed={policy.get('container_init_executed', False)}",
+                f"module_federation_traversal_workflow_execution_remote_get_called={policy.get('remote_get_called', False)}",
+                f"module_federation_traversal_workflow_execution_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_traversal_workflow_execution_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_traversal_workflow_execution_export_hook_plan_created={policy.get('export_hook_plan_created', False)}",
+                f"module_federation_traversal_workflow_execution_export_hook_installed={policy.get('export_hook_installed', False)}",
+                f"module_federation_traversal_workflow_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_traversal_workflow_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_traversal_workflow_execution_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"module_federation_traversal_workflow_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-traversal-workflow-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated Module Federation traversal workflow execution baseline.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "workflow_plan_id": execution.get("workflow_plan_id"),
+                        "source_graph_id": execution.get("source_graph_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_node_id": execution.get("selected_node_id"),
+                        "selected_action": execution.get("selected_action"),
+                        "stage_count": len(stages),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
+                        "remote_code_executed": policy.get("remote_code_executed", False),
+                        "export_hook_plan_created": policy.get("export_hook_plan_created", False),
+                        "export_hook_installed": policy.get("export_hook_installed", False),
+                        "execute_at_most_one_remote_step_per_review": policy.get("execute_at_most_one_remote_step_per_review", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "factory_invoke_success", "export_hook_plan_ready", "export_hook_installed", "nested_get_init_plan_ready"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_module_federation_traversal_workflow_step" if result.status != "ready_for_review" else "plan_module_federation_traversal_workflow_execution_step"]
+                next_action = execution.get("next_action", "review_module_federation_traversal_workflow_execution_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_traversal_workflow_execution_step"]
+                next_action = execution.get("next_action", "resolve_module_federation_traversal_workflow_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_module_federation_traversal_workflow_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "factory_invoke_success", "export_hook_plan_ready", "export_hook_installed", "nested_get_init_plan_ready"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_recursive_traversal_plan_request(protection_name, context):
+            spec = ModuleFederationRecursiveTraversalPlanSpec.from_context(context)
+            result = ModuleFederationRecursiveTraversalPlanManager().plan(spec)
+            recursive_plan = result.recursive_plan if isinstance(result.recursive_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"module_federation_recursive_traversal_plan_status={result.status}",
+                f"module_federation_recursive_traversal_plan_reason={result.reason or ''}",
+                f"module_federation_recursive_traversal_plan_latest_workflow_execution_status={recursive_plan.get('latest_workflow_execution_status')}",
+                f"module_federation_recursive_traversal_plan_latest_graph_queue_count={recursive_plan.get('latest_graph_queue_count', 0)}",
+                f"module_federation_recursive_traversal_plan_latest_workflow_planned_step_count={recursive_plan.get('latest_workflow_planned_step_count', 0)}",
+                f"module_federation_recursive_traversal_plan_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_recursive_traversal_plan_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"module_federation_recursive_traversal_plan_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_recursive_traversal_plan_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_recursive_traversal_plan_export_hook_installed={policy.get('export_hook_installed', False)}",
+                f"module_federation_recursive_traversal_plan_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_recursive_traversal_plan_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"module_federation_recursive_traversal_plan_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-recursive-traversal-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Module Federation recursive traversal follow-up plan.",
+                    metadata={
+                        "status": result.status,
+                        "recursive_plan_status": recursive_plan.get("status"),
+                        "latest_workflow_execution_status": recursive_plan.get("latest_workflow_execution_status"),
+                        "latest_graph_status": recursive_plan.get("latest_graph_status"),
+                        "latest_graph_queue_count": recursive_plan.get("latest_graph_queue_count", 0),
+                        "latest_workflow_plan_status": recursive_plan.get("latest_workflow_plan_status"),
+                        "latest_workflow_planned_step_count": recursive_plan.get("latest_workflow_planned_step_count", 0),
+                        "next_action": recursive_plan.get("next_action"),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
+                        "remote_code_executed": policy.get("remote_code_executed", False),
+                        "export_hook_installed": policy.get("export_hook_installed", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                        "plan_only": policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_step_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_module_federation_recursive_traversal_followup"]
+                next_action = recursive_plan.get("next_action", "review_module_federation_recursive_traversal_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_recursive_traversal_followup"]
+                next_action = recursive_plan.get("next_action", "resolve_module_federation_recursive_traversal_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_module_federation_recursive_traversal_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_step_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_recursive_traversal_followup_request(protection_name, context):
+            spec = ModuleFederationRecursiveTraversalFollowupSpec.from_context(context)
+            result = ModuleFederationRecursiveTraversalFollowupManager().follow_up(spec)
+            followup = result.followup if isinstance(result.followup, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = followup.get("stages") if isinstance(followup.get("stages"), list) else []
+            verification = [
+                f"module_federation_recursive_traversal_followup_status={result.status}",
+                f"module_federation_recursive_traversal_followup_reason={result.reason or ''}",
+                f"module_federation_recursive_traversal_followup_stage_count={len(stages)}",
+                f"module_federation_recursive_traversal_followup_review_approved={policy.get('review_approved', False)}",
+                f"module_federation_recursive_traversal_followup_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"module_federation_recursive_traversal_followup_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"module_federation_recursive_traversal_followup_next_step_review_planned={policy.get('next_step_review_planned', False)}",
+                f"module_federation_recursive_traversal_followup_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_recursive_traversal_followup_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_recursive_traversal_followup_export_hook_installed={policy.get('export_hook_installed', False)}",
+                f"module_federation_recursive_traversal_followup_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_recursive_traversal_followup_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-recursive-traversal-followup.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated Module Federation recursive traversal checkpoint follow-up.",
+                    metadata={
+                        "status": result.status,
+                        "followup_status": followup.get("status"),
+                        "stage_count": len(stages),
+                        "next_action": followup.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "next_step_review_planned": policy.get("next_step_review_planned", False),
+                        "remote_factory_invoked": policy.get("remote_factory_invoked", False),
+                        "remote_code_executed": policy.get("remote_code_executed", False),
+                        "export_hook_installed": policy.get("export_hook_installed", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_step_review_ready", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_module_federation_recursive_traversal_followup_checkpoint"] if any(
+                    policy.get(flag, False) for flag in ("traversal_graph_rebuilt", "workflow_replanned", "next_step_review_planned")
+                ) else ["plan_module_federation_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "review_module_federation_recursive_traversal_followup_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "resolve_module_federation_recursive_traversal_followup_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = followup.get("next_action", "inspect_module_federation_recursive_traversal_followup_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_step_review_ready", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_traversal_graph_request(protection_name, context):
+            spec = ModuleFederationTraversalGraphSpec.from_context(context)
+            result = ModuleFederationTraversalGraphManager().build(spec)
+            graph = result.graph if isinstance(result.graph, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"module_federation_traversal_graph_status={result.status}",
+                f"module_federation_traversal_graph_reason={result.reason or ''}",
+                f"module_federation_traversal_graph_node_count={graph.get('node_count', 0)}",
+                f"module_federation_traversal_graph_queue_count={graph.get('queue_count', 0)}",
+                f"module_federation_traversal_graph_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_traversal_graph_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_traversal_graph_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"module_federation_traversal_graph_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-traversal-graph.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Module Federation traversal graph.",
+                    metadata={
+                        "status": result.status,
+                        "graph_status": graph.get("status"),
+                        "node_count": graph.get("node_count", 0),
+                        "queue_count": graph.get("queue_count", 0),
+                        "review_required": graph.get("review_required", True),
+                        "plan_only": policy.get("plan_only", True),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_module_federation_traversal_graph"]
+                next_action = graph.get("next_action", "review_module_federation_traversal_graph")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_traversal_graph"]
+                next_action = graph.get("next_action", "provide_module_federation_traversal_inputs")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_module_federation_traversal_graph_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_traversal_workflow_plan_request(protection_name, context):
+            spec = ModuleFederationTraversalWorkflowPlanSpec.from_context(context)
+            result = ModuleFederationTraversalWorkflowPlanManager().plan(spec)
+            workflow_plan = result.workflow_plan if isinstance(result.workflow_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"module_federation_traversal_workflow_plan_status={result.status}",
+                f"module_federation_traversal_workflow_plan_reason={result.reason or ''}",
+                f"module_federation_traversal_workflow_planned_step_count={workflow_plan.get('planned_step_count', 0)}",
+                f"module_federation_traversal_workflow_remote_factory_invoked={policy.get('remote_factory_invoked', False)}",
+                f"module_federation_traversal_workflow_remote_code_executed={policy.get('remote_code_executed', False)}",
+                f"module_federation_traversal_workflow_executed={policy.get('workflow_executed', False)}",
+                f"module_federation_traversal_workflow_recursive_federation_traversal={policy.get('recursive_federation_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-traversal-workflow-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Module Federation traversal workflow plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_plan_status": workflow_plan.get("status"),
+                        "planned_step_count": workflow_plan.get("planned_step_count", 0),
+                        "review_required": workflow_plan.get("review_required", True),
+                        "plan_only": policy.get("plan_only", True),
+                        "workflow_executed": policy.get("workflow_executed", False),
+                        "recursive_federation_traversal": policy.get("recursive_federation_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_module_federation_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "review_module_federation_traversal_workflow_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "provide_module_federation_traversal_graph")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_module_federation_traversal_workflow_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_module_federation_get_init_request(protection_name, context):
+            if self._is_module_federation_export_hook_install_request(protection_name, context):
+                spec = ModuleFederationExportHookInstallSpec.from_context(context)
+                result = ModuleFederationExportHookInstallManager().install(page, spec)
+                installed_count = len(result.installed)
+                missing_count = len(result.missing)
+                event_count = len(result.events)
+                candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+                verification = [
+                    f"module_federation_export_hook_install_status={result.status}",
+                    f"module_federation_export_hook_install_reason={result.reason or ''}",
+                    f"module_federation_export_hook_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                    f"module_federation_export_hook_installed_count={installed_count}",
+                    f"module_federation_export_hook_missing_count={missing_count}",
+                    f"module_federation_export_hook_event_count={event_count}",
+                    f"module_federation_export_hook_remote_factory_invoked={result.side_effect_policy.get('remote_factory_invoked', False)}",
+                    f"module_federation_export_hook_recursive_federation_traversal={result.side_effect_policy.get('recursive_federation_traversal', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if result.trigger:
+                    verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                    if result.trigger.get("error"):
+                        verification.append(f"trigger_error={result.trigger['error']}")
+                if result.error:
+                    verification.append(f"module_federation_export_hook_error={result.error}")
+                hook_path = candidate.get("hook_path") or candidate.get("hookPath") or f"{candidate.get('container_path') or candidate.get('containerPath')}:{candidate.get('exposed_name') or candidate.get('exposedName')}:{candidate.get('export_name') or candidate.get('exportName')}"
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/function-hooks.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime reviewed Module Federation remote export hook install result.",
+                        metadata={
+                            "status": result.status,
+                            "installed_count": installed_count,
+                            "missing_count": missing_count,
+                            "container_path": candidate.get("container_path") or candidate.get("containerPath") or "<missing>",
+                            "exposed_name": candidate.get("exposed_name") or candidate.get("exposedName") or "<missing>",
+                            "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                            "hook_path": hook_path,
+                            "source": "module_federation_export_hook_plan",
+                            "review_approved": result.side_effect_policy.get("review_approved", False),
+                        },
+                    ),
+                    ArtifactRef(
+                        path="virtual://workspace/function-hook-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime reviewed Module Federation remote export hook timeline.",
+                        metadata={
+                            "status": "success" if event_count else "not_observed",
+                            "event_count": event_count,
+                            "container_path": candidate.get("container_path") or candidate.get("containerPath") or "<missing>",
+                            "exposed_name": candidate.get("exposed_name") or candidate.get("exposedName") or "<missing>",
+                            "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                            "hook_path": hook_path,
+                            "source": "module_federation_export_hook_plan",
+                        },
+                    ),
+                ]
+                if result.status == "success":
+                    status = ExecutionStatus.SUCCESS
+                    next_action = "inspect_module_federation_export_hook_events" if event_count else "invoke_hooked_remote_export_or_wait_for_events"
+                elif result.reason == "review_approval_required":
+                    status = ExecutionStatus.PARTIAL
+                    next_action = "approve_module_federation_export_hook_candidate"
+                elif result.reason == "review_module_federation_export_hook_plan":
+                    status = ExecutionStatus.PARTIAL
+                    next_action = "review_module_federation_export_hook_plan"
+                else:
+                    status = ExecutionStatus.FAILED if result.status in {"failed", "unsupported"} else ExecutionStatus.PARTIAL
+                    next_action = "inspect_module_federation_export_hook_failure"
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=(
+                        [f"hook_module_federation_remote_export:{candidate.get('container_path') or candidate.get('containerPath')}:{candidate.get('exposed_name') or candidate.get('exposedName')}:{candidate.get('export_name') or candidate.get('exportName')}"]
+                        if installed_count
+                        else []
+                    ),
+                    verification=verification,
+                    status=status,
+                    artifacts=artifact_paths,
+                    next_action=next_action,
+                    confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+                )
+            if self._is_module_federation_export_hook_plan_request(protection_name, context):
+                spec = ModuleFederationExportHookPlanSpec.from_context(context)
+                result = ModuleFederationExportHookPlanManager().plan(spec)
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                verification = [
+                    f"module_federation_export_hook_plan_status={result.status}",
+                    f"module_federation_export_hook_candidate_count={plan.get('candidate_count', 0)}",
+                    f"module_federation_export_hook_hookable_candidate_count={plan.get('hookable_candidate_count', 0)}",
+                    f"module_federation_export_hook_automatic_hook_installation={plan.get('automatic_hook_installation', False)}",
+                    f"module_federation_export_hook_recursive_federation_traversal={plan.get('recursive_federation_traversal', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if result.reason:
+                    verification.append(f"module_federation_export_hook_plan_reason={result.reason}")
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-export-hook-plan.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-only Module Federation remote export hook selection plan.",
+                        metadata={
+                            "status": result.status,
+                            "candidate_count": plan.get("candidate_count", 0),
+                            "hookable_candidate_count": plan.get("hookable_candidate_count", 0),
+                            "review_required": plan.get("review_required", True),
+                            "automatic_hook_installation": plan.get("automatic_hook_installation", False),
+                            "recursive_federation_traversal": plan.get("recursive_federation_traversal", False),
+                        },
+                    )
+                ]
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=["plan_module_federation_export_hooks"] if result.status == "planned" else [],
+                    verification=verification,
+                    status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
+                    artifacts=artifact_paths,
+                    next_action=plan.get("next_action", "inspect_remote_export_shapes_before_hooking"),
+                    confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+                )
+            if self._is_module_federation_factory_invoke_request(context):
+                spec = ModuleFederationFactoryInvokeSpec.from_context(context)
+                result = ModuleFederationFactoryInvokeManager().plan_or_invoke(page, spec)
+                get_init_execution = result.get_init_execution if isinstance(result.get_init_execution, dict) else {}
+                factory_execution = result.factory_execution if isinstance(result.factory_execution, dict) else {}
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                verification = [
+                    f"module_federation_factory_invoke_status={result.status}",
+                    f"module_federation_get_init_plan_status={plan.get('status', 'missing')}",
+                    f"module_federation_get_init_execution_attempted={get_init_execution.get('attempted', False)}",
+                    f"module_federation_get_init_remote_get_called={get_init_execution.get('remoteGetCalled', False)}",
+                    f"module_federation_factory_execution_attempted={factory_execution.get('attempted', False)}",
+                    f"module_federation_factory_execution_ok={factory_execution.get('ok', False)}",
+                    f"module_federation_factory_remote_factory_invoked={factory_execution.get('remoteFactoryInvoked', False)}",
+                    f"module_federation_factory_remote_code_executed={factory_execution.get('remoteCodeExecuted', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if factory_execution.get("exportNames") is not None:
+                    verification.append(f"module_federation_factory_export_count={len(factory_execution.get('exportNames') or [])}")
+                if factory_execution.get("moduleType"):
+                    verification.append(f"module_federation_factory_module_type={factory_execution.get('moduleType')}")
+                if factory_execution.get("reason"):
+                    verification.append(f"module_federation_factory_execution_reason={factory_execution['reason']}")
+                if result.reason:
+                    verification.append(f"module_federation_factory_reason={result.reason}")
+                if result.error:
+                    verification.append(f"module_federation_factory_error={result.error}")
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-get-init-plan.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-only Module Federation get/init plan.",
+                        metadata={
+                            "status": result.status,
+                            "plan_status": plan.get("status"),
+                            "candidate_count": plan.get("candidate_count", 0),
+                            "container_count": plan.get("container_count", 0),
+                            "exposed_module_count": plan.get("exposed_module_count", 0),
+                            "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
+                            "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                            "review_required": plan.get("review_required", True),
+                        },
+                    ),
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-factory-invoke-result.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-gated Module Federation remote factory invocation evidence.",
+                        metadata={
+                            "status": result.status,
+                            "get_init_attempted": get_init_execution.get("attempted", False),
+                            "factory_attempted": factory_execution.get("attempted", False),
+                            "factory_ok": factory_execution.get("ok", False),
+                            "remote_factory_invoked": factory_execution.get("remoteFactoryInvoked", False),
+                            "remote_code_executed": factory_execution.get("remoteCodeExecuted", False),
+                            "export_count": len(factory_execution.get("exportNames") or []),
+                            "module_type": factory_execution.get("moduleType"),
+                        },
+                    ),
+                ]
+                if result.status == "success":
+                    next_action = "review_module_federation_factory_exports_before_hooking"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["invoke_module_federation_factory"]
+                elif result.status == "planned":
+                    next_action = "review_module_federation_factory_invoke_plan"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["plan_module_federation_factory_invoke"]
+                elif result.status == "blocked":
+                    next_action = "approve_module_federation_factory_or_choose_function_path_candidate"
+                    status = ExecutionStatus.PARTIAL
+                    applied_actions = ["plan_module_federation_factory_invoke"]
+                else:
+                    next_action = "inspect_module_federation_factory_invoke_failure"
+                    status = ExecutionStatus.FAILED
+                    applied_actions = []
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=applied_actions,
+                    verification=verification,
+                    status=status,
+                    artifacts=artifact_paths,
+                    next_action=next_action,
+                    confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
+                )
+            if self._is_module_federation_get_init_probe_request(context):
+                spec = ModuleFederationGetInitProbeSpec.from_context(context)
+                result = ModuleFederationGetInitProbeManager().plan_or_probe(page, spec)
+                execution = result.execution if isinstance(result.execution, dict) else {}
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                verification = [
+                    f"module_federation_get_init_probe_status={result.status}",
+                    f"module_federation_get_init_plan_status={plan.get('status', 'missing')}",
+                    f"module_federation_get_init_execution_attempted={execution.get('attempted', False)}",
+                    f"module_federation_get_init_execution_ok={execution.get('ok', False)}",
+                    f"module_federation_get_init_container_init_called={execution.get('containerInitCalled', False)}",
+                    f"module_federation_get_init_remote_get_called={execution.get('remoteGetCalled', False)}",
+                    f"module_federation_get_init_remote_factory_invoked={execution.get('remoteFactoryInvoked', False)}",
+                    f"context_keys={sorted(context.keys())}",
+                ]
+                if execution.get("addedSharedScopeKeys") is not None:
+                    verification.append(f"module_federation_get_init_added_shared_scope_key_count={len(execution.get('addedSharedScopeKeys') or [])}")
+                if execution.get("factoryType"):
+                    verification.append(f"module_federation_get_init_factory_type={execution.get('factoryType')}")
+                if execution.get("reason"):
+                    verification.append(f"module_federation_get_init_execution_reason={execution['reason']}")
+                if result.reason:
+                    verification.append(f"module_federation_get_init_reason={result.reason}")
+                if result.error:
+                    verification.append(f"module_federation_get_init_error={result.error}")
+                artifact_paths = [
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-get-init-plan.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-only Module Federation get/init plan.",
+                        metadata={
+                            "status": result.status,
+                            "plan_status": plan.get("status"),
+                            "candidate_count": plan.get("candidate_count", 0),
+                            "container_count": plan.get("container_count", 0),
+                            "exposed_module_count": plan.get("exposed_module_count", 0),
+                            "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
+                            "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                            "review_required": plan.get("review_required", True),
+                        },
+                    ),
+                    ArtifactRef(
+                        path="virtual://workspace/module-federation-get-init-result.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime review-gated Module Federation init/get probe evidence.",
+                        metadata={
+                            "status": result.status,
+                            "execution_attempted": execution.get("attempted", False),
+                            "execution_ok": execution.get("ok", False),
+                            "container_init_called": execution.get("containerInitCalled", False),
+                            "remote_get_called": execution.get("remoteGetCalled", False),
+                            "remote_factory_invoked": execution.get("remoteFactoryInvoked", False),
+                            "added_shared_scope_key_count": len(execution.get("addedSharedScopeKeys") or []),
+                            "factory_type": execution.get("factoryType"),
+                        },
+                    ),
+                ]
+                if result.status == "success":
+                    next_action = "review_module_federation_get_init_probe_before_factory_invocation"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["probe_module_federation_get_init"]
+                elif result.status == "planned":
+                    next_action = "review_module_federation_get_init_plan"
+                    status = ExecutionStatus.SUCCESS
+                    applied_actions = ["plan_module_federation_get_init"]
+                elif result.status == "blocked":
+                    next_action = "approve_module_federation_get_init_or_choose_function_path_candidate"
+                    status = ExecutionStatus.PARTIAL
+                    applied_actions = ["plan_module_federation_get_init"]
+                else:
+                    next_action = "inspect_module_federation_get_init_probe_failure"
+                    status = ExecutionStatus.FAILED
+                    applied_actions = []
+                return ProtectionResult(
+                    protection_name=protection_name,
+                    applied_actions=applied_actions,
+                    verification=verification,
+                    status=status,
+                    artifacts=artifact_paths,
+                    next_action=next_action,
+                    confidence=ConfidenceLevel.MEDIUM if result.status in {"planned", "success"} else ConfidenceLevel.LOW,
+                )
+            spec = ModuleFederationGetInitPlanSpec.from_context(context)
+            result = ModuleFederationGetInitPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            verification = [
+                f"module_federation_get_init_plan_status={result.status}",
+                f"module_federation_get_init_candidate_count={plan.get('candidate_count', 0)}",
+                f"module_federation_get_init_container_count={plan.get('container_count', 0)}",
+                f"module_federation_get_init_exposed_module_count={plan.get('exposed_module_count', 0)}",
+                f"module_federation_get_init_function_path_candidate_count={plan.get('function_path_candidate_count', 0)}",
+                f"module_federation_get_init_blocked_execution_count={plan.get('blocked_execution_count', 0)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"module_federation_get_init_reason={result.reason}")
+            if result.error:
+                verification.append(f"module_federation_get_init_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-federation-get-init-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only Module Federation get/init plan.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "candidate_count": plan.get("candidate_count", 0),
+                        "container_count": plan.get("container_count", 0),
+                        "exposed_module_count": plan.get("exposed_module_count", 0),
+                        "function_path_candidate_count": plan.get("function_path_candidate_count", 0),
+                        "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                        "review_required": plan.get("review_required", True),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status == "planned":
+                next_action = "review_module_federation_get_init_plan"
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_module_federation_get_init"]
+            elif result.status == "blocked":
+                next_action = "provide_module_federation_candidates_from_module_discovery"
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_module_federation_get_init"]
+            else:
+                next_action = "inspect_module_federation_get_init_request"
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
 
     def _dispatch_source(self, protection_name: str, context: dict) -> "ProtectionResult | None":
         if self._is_source_map_hook_candidate_selection_request(protection_name, context):
