@@ -41,9 +41,9 @@ class FakeRawPage:
         if "fetch(" in expression and "/assets/app.js" in expression:
             return "function buildExternalSign(){ return 'external'; }"
         return {
-            "cookie": "sid=redacted",
-            "localStorage": {"theme": "dark"},
-            "sessionStorage": {"nonce": "123"},
+            "cookie": "sid=raw-session; csrf=raw-csrf",
+            "localStorage": {"theme": "dark", "auth_token": "raw-local-auth-token"},
+            "sessionStorage": {"nonce": "123", "session": "raw-session-storage-secret"},
             "navigator": {"userAgent": "fake", "webdriver": False},
             "timezoneOffset": -480,
         }
@@ -66,7 +66,17 @@ class FakeRequest:
         self.url = url
         self.method = "POST"
         self.resource_type = "xhr"
-        self.headers = {"x-demo": "1"}
+        self.requestId = "request-123"
+        self.headers = {
+            "x-demo": "1",
+            "Authorization": "Bearer raw-authorization-token",
+            "Cookie": "sid=raw-cookie; csrf=raw-csrf-cookie",
+            "Proxy-Authorization": "Basic raw-proxy-authorization",
+            "X-API-Key": "raw-api-key",
+            "csrf_token": "raw-csrf-token",
+            "auth_token": "raw-header-auth-token",
+            "session": "raw-header-session",
+        }
 
 
 class FakeResponse:
@@ -74,7 +84,10 @@ class FakeResponse:
         self.request = request
         self.status = 200
         self.ok = True
-        self.headers = {"content-type": "application/json"}
+        self.headers = {
+            "content-type": "application/json",
+            "Set-Cookie": "sid=raw-set-cookie; HttpOnly",
+        }
 
 
 class BrowserCollectorTests(unittest.TestCase):
@@ -92,7 +105,18 @@ class BrowserCollectorTests(unittest.TestCase):
         storage = StorageCollector().collect(page)
         self.assertTrue(storage["ok"])
         self.assertEqual(storage["localStorage"]["theme"], "dark")
+        self.assertIn("auth_token", storage["localStorage"])
+        self.assertEqual(storage["sessionStorage"]["nonce"], "123")
+        self.assertIn("session", storage["sessionStorage"])
         self.assertFalse(storage["navigator"]["webdriver"])
+        storage_snapshot = str(storage)
+        for raw_secret in (
+            "raw-session",
+            "raw-csrf",
+            "raw-local-auth-token",
+            "raw-session-storage-secret",
+        ):
+            self.assertNotIn(raw_secret, storage_snapshot)
 
         inventory = ScriptCollector().collect(page)
         self.assertEqual(inventory["count"], 2)
@@ -132,6 +156,32 @@ class BrowserCollectorTests(unittest.TestCase):
         self.assertEqual(item["method"], "POST")
         self.assertEqual(item["status"], 200)
         self.assertEqual(item["resource_type"], "xhr")
+        self.assertEqual(item["requestId"], "request-123")
+        self.assertEqual(item["headers"]["x-demo"], "1")
+        for header_name in (
+            "Authorization",
+            "Cookie",
+            "Proxy-Authorization",
+            "X-API-Key",
+            "csrf_token",
+            "auth_token",
+            "session",
+        ):
+            self.assertIn(header_name, item["headers"])
+        self.assertIn("Set-Cookie", item["response_headers"])
+        network_snapshot_text = str(network_snapshot)
+        for raw_secret in (
+            "raw-authorization-token",
+            "raw-cookie",
+            "raw-csrf-cookie",
+            "raw-proxy-authorization",
+            "raw-api-key",
+            "raw-csrf-token",
+            "raw-header-auth-token",
+            "raw-header-session",
+            "raw-set-cookie",
+        ):
+            self.assertNotIn(raw_secret, network_snapshot_text)
 
 
 if __name__ == "__main__":

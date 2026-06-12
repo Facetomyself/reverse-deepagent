@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from reverse_deepagent.browser.base import BrowserPage
+from reverse_deepagent.browser.redaction import redact_mapping
 
 
 def _raw_page(page: BrowserPage) -> Any:
@@ -17,6 +18,10 @@ def _safe_call(obj: Any, attr: str, default: Any = None) -> Any:
         except Exception:
             return default
     return value if value is not None else default
+
+
+def _redact_headers(headers: Any) -> dict[str, Any]:
+    return redact_mapping(headers or {})
 
 
 class NetworkCollector:
@@ -48,7 +53,7 @@ class NetworkCollector:
             "url": url,
             "method": str(_safe_call(request, "method", "GET")),
             "resource_type": _safe_call(request, "resource_type"),
-            "headers": _safe_call(request, "headers", {}) or {},
+            "headers": _redact_headers(_safe_call(request, "headers", {})),
         }
         if request_id:
             self._requests[key]["requestId"] = request_id
@@ -64,7 +69,7 @@ class NetworkCollector:
             "url": url,
             "status": _safe_call(response, "status"),
             "ok": _safe_call(response, "ok"),
-            "response_headers": _safe_call(response, "headers", {}) or {},
+            "response_headers": _redact_headers(_safe_call(response, "headers", {})),
         }
 
     def snapshot(self) -> dict[str, Any]:
