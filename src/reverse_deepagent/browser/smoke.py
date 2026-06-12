@@ -295,6 +295,47 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             "or creating sessions during metadata listing"
         ),
     ),
+    BrowserProviderProductionReadinessRule(
+        rule_id="antidetect_cdp_contract_declared",
+        severity="warning",
+        provider_ids=("antidetect-cdp",),
+        transports=("antidetect-cdp",),
+        requires_all=(
+            "supports_connect",
+            "supports_persistent_context",
+            "supports_cdp",
+            "supports_proxy",
+            "supports_stealth",
+            "supports_humanize",
+            "supports_extensions",
+            "supports_mobile_emulation",
+            "supports_response_body",
+            "supports_request_initiator",
+            "supports_script_source",
+            "supports_websocket_frames",
+            "supports_breakpoints",
+            "supports_runtime_eval",
+            "managed_browser",
+        ),
+        metadata_equals=(
+            ("readiness_tier", "review-required"),
+            ("health_check_mode", "explicit-antidetect-cdp-contract-smoke"),
+            ("profile_lifecycle", "anti-detect-service-profile-owned"),
+            ("session_recovery", "explicit-endpoint-or-profile-session-reattach"),
+        ),
+        required_metadata_keys=(
+            "stealth_policy",
+            "account_boundary_policy",
+            "endpoint_security_policy",
+            "allocation_lifecycle_policy",
+            "profile_persistence_policy",
+        ),
+        message=(
+            "antidetect-cdp should declare an attach-only hosted anti-detect CDP contract with reviewed "
+            "stealth/profile/account-boundary/endpoint/allocation metadata; metadata listing must not read "
+            "secrets, allocate vendor sessions, probe endpoints, or start browsers"
+        ),
+    ),
 )
 
 
