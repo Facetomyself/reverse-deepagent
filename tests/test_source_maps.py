@@ -295,9 +295,19 @@ class SourceMapHookCandidateRefinementManagerTests(unittest.TestCase):
         self.assertEqual(descriptor["source_scope_candidate_count"], 1)
         self.assertEqual(descriptor["candidate_count"], 2)
         self.assertEqual(descriptor["ready_for_hook_install_review_count"], 2)
+        self.assertEqual(descriptor["candidate_ranking"]["schema_version"], "reverse-deepagent.source-map-candidate-ranking-summary.v1")
+        self.assertTrue(descriptor["candidate_ranking"]["review_only"])
+        self.assertTrue(descriptor["candidate_ranking"]["deterministic"])
+        self.assertEqual(descriptor["candidate_ranking"]["ranked_candidate_count"], 2)
         kinds = {item["hook_kind"] for item in descriptor["candidates"]}
         self.assertEqual(kinds, {"function", "module"})
         function_candidate = next(item for item in descriptor["candidates"] if item["hook_kind"] == "function")
+        self.assertEqual(function_candidate["ranking"]["rank"], 1)
+        self.assertGreater(function_candidate["ranking"]["score"], 80)
+        self.assertIn("symbol_scope_function_candidate", function_candidate["ranking"]["reasons"])
+        self.assertTrue(function_candidate["ranking"]["review_only"])
+        self.assertFalse(function_candidate["ranking"]["installs_hook"])
+        self.assertFalse(function_candidate["ranking"]["uses_raw_source"])
         self.assertEqual(function_candidate["suggested_hook_install_input"]["function_name"], "buildSign")
         self.assertEqual(function_candidate["suggested_hook_install_input"]["function_paths"], ["window.buildSign"])
         self.assertFalse(function_candidate["suggested_hook_install_input"]["install_supported_now"])
@@ -325,6 +335,29 @@ class SourceMapHookCandidateRefinementManagerTests(unittest.TestCase):
         self.assertIn("bundler_symbol_scope_has_no_scope_candidates", result.descriptor["blockers"])
         self.assertFalse(result.side_effect_policy["browser_started"])
         self.assertFalse(result.side_effect_policy["hook_installed"])
+
+    def test_hook_candidate_ranking_downgrades_missing_followthrough_signals_without_side_effects(self) -> None:
+        spec = SourceMapHookCandidateRefinementSpec.from_context(
+            {
+                "source_map_hook_candidates": True,
+                "bundler_symbol_scope": self._symbol_scope(),
+            }
+        )
+
+        result = SourceMapHookCandidateRefinementManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["candidate_count"], 1)
+        candidate = descriptor["candidates"][0]
+        self.assertFalse(candidate["ready_for_hook_install_review"])
+        self.assertLess(candidate["ranking"]["score"], 90)
+        self.assertIn("review_input_missing", candidate["ranking"]["reasons"])
+        self.assertIn("sources_content_metadata_missing", candidate["ranking"]["reasons"])
+        self.assertFalse(candidate["ranking"]["signals"]["sources_content_metadata_available"])
+        self.assertFalse(descriptor["side_effect_policy"]["browser_started"])
+        self.assertFalse(descriptor["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(descriptor["side_effect_policy"]["hook_installed"])
 
 
 class SourceMapHookCandidateSelectionManagerTests(unittest.TestCase):
@@ -441,9 +474,17 @@ class SourceMapDebuggerCandidateReviewManagerTests(unittest.TestCase):
         self.assertEqual(descriptor["source_scope_candidate_count"], 1)
         self.assertEqual(descriptor["candidate_count"], 1)
         self.assertEqual(descriptor["ready_for_debugger_location_review_count"], 1)
+        self.assertEqual(descriptor["candidate_ranking"]["schema_version"], "reverse-deepagent.source-map-candidate-ranking-summary.v1")
+        self.assertTrue(descriptor["candidate_ranking"]["review_only"])
+        self.assertTrue(descriptor["candidate_ranking"]["deterministic"])
         candidate = descriptor["candidates"][0]
         self.assertEqual(candidate["candidate_kind"], "source-map-symbol-generated-location")
         self.assertTrue(candidate["ready_for_debugger_location_review"])
+        self.assertEqual(candidate["ranking"]["rank"], 1)
+        self.assertGreater(candidate["ranking"]["score"], 70)
+        self.assertIn("symbol_scope_generated_location_candidate", candidate["ranking"]["reasons"])
+        self.assertFalse(candidate["ranking"]["installs_debugger"])
+        self.assertFalse(candidate["ranking"]["uses_raw_source"])
         suggested = candidate["suggested_debugger_location_input"]
         self.assertEqual(suggested["url_pattern"], "https://example.test/assets/app.js")
         self.assertEqual(suggested["line_number"], 0)
@@ -467,6 +508,86 @@ class SourceMapDebuggerCandidateReviewManagerTests(unittest.TestCase):
         self.assertIn("source_map_debugger_candidate_source_evidence_missing", result.descriptor["blockers"])
         self.assertFalse(result.side_effect_policy["browser_started"])
         self.assertFalse(result.side_effect_policy["cdp_command_sent"])
+
+    def test_debugger_candidate_ranking_prefers_lookup_exact_and_remains_stable(self) -> None:
+        source_map = {
+            "version": 3,
+            "sourceRoot": "webpack://demo",
+            "sources": ["./src/sign.ts"],
+            "sourcesContent": ["export function buildSign(){ return 'x'; }\n"],
+            "names": ["buildSign"],
+            "mappings": encode_vlq_segment([0, 0, 0, 0, 0]),
+        }
+        lookup = SourceMapLookupManager().lookup(
+            SourceMapLookupSpec.from_context(
+                {
+                    "source_map_lookup": True,
+                    "source_map": source_map,
+                    "generated_line": 0,
+                    "generated_column": 0,
+                }
+            )
+        ).descriptor
+        source_content = SourceMapSourceContentManager().review(
+            SourceMapSourceContentSpec.from_context(
+                {
+                    "source_map_source_content": True,
+                    "source_map": source_map,
+                    "original_source": "webpack://demo/src/sign.ts",
+                    "include_source_preview": True,
+                }
+            )
+        ).descriptor
+        context = {
+            "source_map_debugger_candidates": True,
+            "script_url": "https://example.test/assets/app.js",
+            "bundler_symbol_scope": self._symbol_scope(),
+            "source_map_lookup": lookup,
+            "source_map_source_content": source_content,
+            "debugger_location_candidates": [
+                {"url_pattern": "https://example.test/assets/app.js", "line_number": 12}
+            ],
+        }
+
+        first = SourceMapDebuggerCandidateReviewManager().review(SourceMapDebuggerCandidateReviewSpec.from_context(context)).descriptor
+        second = SourceMapDebuggerCandidateReviewManager().review(SourceMapDebuggerCandidateReviewSpec.from_context(context)).descriptor
+
+        self.assertEqual(first["candidate_ranking"]["candidate_order"], second["candidate_ranking"]["candidate_order"])
+        self.assertEqual(first["candidates"][0]["candidate_kind"], "source-map-lookup-location")
+        self.assertEqual(first["candidates"][0]["ranking"]["rank"], 1)
+        self.assertIn("source_map_lookup_candidate", first["candidates"][0]["ranking"]["reasons"])
+        self.assertIn("sources_content_metadata_available", first["candidates"][0]["ranking"]["reasons"])
+        self.assertTrue(first["candidates"][0]["ranking"]["signals"]["lookup_mapping_found"])
+        payload = json.dumps(first, sort_keys=True)
+        self.assertNotIn("export function buildSign", payload)
+        self.assertFalse(first["side_effect_policy"]["browser_started"])
+        self.assertFalse(first["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(first["side_effect_policy"]["breakpoint_installed"])
+
+    def test_debugger_candidate_ranking_conservatively_downgrades_missing_signals(self) -> None:
+        spec = SourceMapDebuggerCandidateReviewSpec.from_context(
+            {
+                "source_map_debugger_candidates": True,
+                "debugger_location_candidates": [
+                    {"url_pattern": "https://example.test/assets/app.js", "line_number": 42}
+                ],
+            }
+        )
+
+        result = SourceMapDebuggerCandidateReviewManager().review(spec)
+
+        self.assertEqual(result.status, "ready_for_review")
+        candidate = result.descriptor["candidates"][0]
+        self.assertEqual(candidate["ranking"]["rank"], 1)
+        self.assertLess(candidate["ranking"]["score"], 55)
+        self.assertEqual(candidate["ranking"]["label"], "low")
+        self.assertIn("symbol_name_missing", candidate["ranking"]["reasons"])
+        self.assertIn("source_map_lookup_mapping_missing", candidate["ranking"]["reasons"])
+        self.assertIn("sources_content_metadata_missing", candidate["ranking"]["reasons"])
+        self.assertFalse(candidate["ranking"]["signals"]["lookup_mapping_found"])
+        self.assertFalse(candidate["ranking"]["signals"]["sources_content_metadata_available"])
+        self.assertFalse(result.descriptor["side_effect_policy"]["browser_started"])
+        self.assertFalse(result.descriptor["side_effect_policy"]["cdp_command_sent"])
 
 
 class SourceMapDebuggerCandidateSelectionManagerTests(unittest.TestCase):
