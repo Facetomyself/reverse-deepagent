@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reverse-deepagent-external-delivery-provider-s3-compatible"
+version = "0.1.0"
+description = "S3-compatible ExternalDeliveryProvider plugin package for reverse-deepagent."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "reverse-deepagent==0.1.0",
+]
+
+[project.entry-points."reverse_deepagent.external_delivery_providers"]
+s3-compatible = "reverse_deepagent_external_delivery_provider_s3_compatible:external_delivery_provider_registration"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
