@@ -9891,10 +9891,25 @@ class SourceMapTerminalReviewActionDecisionManager:
         ):
             if source.get(key) is True:
                 blockers.append(f"source_map_terminal_review_source_{key}_forbidden")
+        for key in (
+            "raw_source_exported",
+            "exports_raw_source",
+            "raw_source_content_exported",
+            "raw_source_content_included",
+            "preview_exported",
+        ):
+            if source.get(key) is True:
+                blockers.append("source_map_terminal_review_source_raw_source_material_forbidden")
+        for key in ("raw_source", "raw_source_content", "sourcesContent"):
+            if source.get(key):
+                blockers.append("source_map_terminal_review_source_raw_source_material_forbidden")
         policy = source.get("side_effect_policy") if isinstance(source.get("side_effect_policy"), dict) else {}
         for key in ("calls_mcp", "mobile_runtime_used", "browser_started", "cdp_command_sent", "runtime_evaluated"):
             if policy.get(key) is True:
                 blockers.append(f"source_map_terminal_review_source_policy_{key}_forbidden")
+        for key in ("exports_raw_source", "raw_source_exported", "raw_source_content_exported", "preview_exported"):
+            if policy.get(key) is True:
+                blockers.append("source_map_terminal_review_source_raw_source_material_forbidden")
         return blockers
 
     @classmethod

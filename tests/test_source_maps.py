@@ -2880,6 +2880,9 @@ class SourceMapTerminalReviewActionDecisionManagerTests(unittest.TestCase):
 
         result = SourceMapTerminalReviewActionDecisionManager().record(spec)
 
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_terminal_review_source_raw_source_material_forbidden", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["terminal_review_action_recorded"])
         rendered = json.dumps(result.descriptor, sort_keys=True, ensure_ascii=False)
         self.assertNotIn("function secret", rendered)
         self.assertNotIn("sourcesContent", rendered)
