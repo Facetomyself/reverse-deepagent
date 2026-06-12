@@ -158,32 +158,55 @@ class GitLabReleaseExternalDeliveryProviderPluginTests(unittest.TestCase):
         self.assertNotIn("group%2Fprivate-project", serialized)
         self.assertNotIn("not-read", serialized)
 
-    def test_metadata_redacts_credentialed_and_queried_api_url(self) -> None:
+    def test_metadata_redacts_and_blocks_credentialed_or_queried_api_url(self) -> None:
+        calls: list[dict[str, object]] = []
+
         with _import_plugin_module() as module:
+            def fail_if_called(url: str, body: bytes, headers: dict[str, str], method: str, timeout_seconds: float):
+                calls.append({"url": url, "body": body, "headers": headers, "method": method, "timeout_seconds": timeout_seconds})
+                raise AssertionError("inline-secret api_base_url must be blocked before network IO")
+
             provider = module.create_gitlab_release_external_delivery_provider(
                 project_path="secret-group/secret-project",
                 tag_name="v2.0.0",
                 access_token="glpat-redaction-secret",
                 api_base_url="https://oauth2:url-secret@gitlab.example.test/api/v4?private_token=query-secret",
+                approve_gitlab_release_delivery=True,
+                http_requester=fail_if_called,
             )
-            result = provider.deliver(
+            dry_run_result = provider.deliver(
                 _package(),
                 dry_run=True,
                 result_path="/tmp/external-delivery-result.json",
                 created_at="2026-06-01T00:00:04+00:00",
             )
+            apply_result = provider.deliver(
+                _package(mode="apply"),
+                dry_run=False,
+                result_path="/tmp/external-delivery-result.json",
+                created_at="2026-06-01T00:00:05+00:00",
+            )
 
-        self.assertEqual(result.status, "planned")
-        self.assertTrue(result.metadata["api_query_redacted"])
-        self.assertTrue(result.metadata["api_credentials_redacted"])
-        serialized = json.dumps(result.to_dict(), ensure_ascii=False)
-        self.assertNotIn("glpat-redaction-secret", serialized)
-        self.assertNotIn("url-secret", serialized)
-        self.assertNotIn("query-secret", serialized)
-        self.assertNotIn("secret-group/secret-project", serialized)
-        self.assertNotIn("private_token", serialized)
-        self.assertNotIn("?", result.metadata["api_base_url"] or "")
-        self.assertNotIn("@", result.metadata["api_base_url"] or "")
+        self.assertEqual(calls, [])
+        for result in (dry_run_result, apply_result):
+            self.assertEqual(result.status, "blocked")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertFalse(result.metadata["network_attempted"])
+            self.assertIn("gitlab_api_url_has_no_inline_secret_material", result.blocking_reasons)
+            self.assertTrue(result.metadata["api_query_redacted"])
+            self.assertTrue(result.metadata["api_credentials_redacted"])
+            inline_secret_check = next(check for check in result.checks if check["name"] == "gitlab_api_url_has_no_inline_secret_material")
+            self.assertFalse(inline_secret_check["passed"])
+            self.assertTrue(inline_secret_check["details"]["query_redacted"])
+            self.assertTrue(inline_secret_check["details"]["credentials_redacted"])
+            serialized = json.dumps(result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("glpat-redaction-secret", serialized)
+            self.assertNotIn("url-secret", serialized)
+            self.assertNotIn("query-secret", serialized)
+            self.assertNotIn("secret-group/secret-project", serialized)
+            self.assertNotIn("private_token", serialized)
+            self.assertNotIn("?", result.metadata["api_base_url"] or "")
+            self.assertNotIn("@", result.metadata["api_base_url"] or "")
 
 
 def _package(*, mode: str = "apply") -> ExternalDeliveryPackage:

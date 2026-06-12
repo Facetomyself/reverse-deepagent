@@ -73,6 +73,9 @@ class GitLabReleaseExternalDeliveryProvider:
         release_url = _gitlab_release_url(api_base_url, project_path)
         redacted_api_base_url = _redact_url_for_metadata(api_base_url)
         redacted_release_url = _redact_url_for_metadata(release_url)
+        api_query_present = _url_has_query(api_base_url)
+        api_credentials_present = _url_has_credentials(api_base_url)
+        api_inline_secret_material_absent = not (api_query_present or api_credentials_present)
         local_ready = not package.local_errors
         auth_configured = bool(str(self.access_token or "").strip())
         api_scheme_supported = _http_scheme_supported(api_base_url)
@@ -104,6 +107,15 @@ class GitLabReleaseExternalDeliveryProvider:
                 "name": "gitlab_api_url_scheme_supported",
                 "passed": api_scheme_supported,
                 "details": {"supported_schemes": ["http", "https"], "api_base_url": redacted_api_base_url},
+            },
+            {
+                "name": "gitlab_api_url_has_no_inline_secret_material",
+                "passed": api_inline_secret_material_absent,
+                "details": {
+                    "api_base_url": redacted_api_base_url,
+                    "query_redacted": api_query_present,
+                    "credentials_redacted": api_credentials_present,
+                },
             },
             {
                 "name": "gitlab_release_apply_intent_reviewed",
@@ -194,8 +206,8 @@ class GitLabReleaseExternalDeliveryProvider:
                 "asset_name": asset_name,
                 "api_base_url": redacted_api_base_url,
                 "release_api_url": redacted_release_url,
-                "api_query_redacted": _url_has_query(api_base_url),
-                "api_credentials_redacted": _url_has_credentials(api_base_url),
+                "api_query_redacted": api_query_present,
+                "api_credentials_redacted": api_credentials_present,
                 "request_body_digest_sha256": request_body_digest,
                 "request_status_code": release_status_code,
                 "request_error": release_error,
