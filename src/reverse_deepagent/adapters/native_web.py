@@ -559,284 +559,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
             )
-        if self._is_mutation_observer_timeline_request(protection_name, context):
-            spec = MutationObserverTimelineSpec.from_context(context)
-            result = MutationObserverTimelineManager().observe(page, spec)
-            record_count = len(result.records)
-            mutation_types = result.summary.get("types") if isinstance(result.summary.get("types"), list) else []
-            verification = [
-                f"mutation_observer_timeline_status={result.status}",
-                f"mutation_observer_record_count={record_count}",
-                f"mutation_observer_types={mutation_types}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.reason:
-                verification.append(f"mutation_observer_reason={result.reason}")
-            if result.error:
-                verification.append(f"mutation_observer_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/mutation-observer-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime MutationObserver timeline around an explicit trigger.",
-                    metadata={
-                        "status": result.status,
-                        "record_count": record_count,
-                        "types": mutation_types,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["observe_page_mutations"] if result.trigger.get("attempted") else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action="inspect_mutation_observer_timeline" if record_count else "trigger_dom_mutation_or_adjust_observer_scope",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
-            )
-        if self._is_object_root_mutation_audit_request(protection_name, context):
-            spec = ObjectRootMutationAuditSpec.from_context(context)
-            result = ObjectRootMutationAuditManager().audit(page, spec)
-            change_count = int(result.diff.get("change_count") or 0)
-            categories = result.diff.get("categories") if isinstance(result.diff.get("categories"), list) else []
-            root_path = spec.root_path if spec else "<missing>"
-            verification = [
-                f"object_root_mutation_audit_status={result.status}",
-                f"object_root_mutation_audit_root_path={root_path}",
-                f"object_root_mutation_audit_changed={bool(result.diff.get('changed'))}",
-                f"object_root_mutation_audit_change_count={change_count}",
-                f"object_root_mutation_audit_categories={categories}",
-                f"object_root_mutation_audit_getter_invocation={result.side_effect_policy.get('getter_invocation', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.reason:
-                verification.append(f"object_root_mutation_audit_reason={result.reason}")
-            if result.error:
-                verification.append(f"object_root_mutation_audit_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/object-root-mutation-audit.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime descriptor-safe object-root before/after mutation audit.",
-                    metadata={
-                        "status": result.status,
-                        "root_path": root_path,
-                        "changed": bool(result.diff.get("changed")),
-                        "change_count": change_count,
-                        "categories": categories,
-                        "getter_invocation": result.side_effect_policy.get("getter_invocation", False),
-                    },
-                )
-            ]
-            if result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                next_action = "provide_safe_dotted_object_root_path"
-            else:
-                status = ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED
-                next_action = "inspect_object_root_mutation_audit" if change_count else "provide_trigger_or_expand_object_snapshot_scope"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["audit_object_root_mutation"] if result.trigger.get("attempted") else [],
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
-            )
-        if self._is_heap_snapshot_collect_request(protection_name, context):
-            spec = HeapSnapshotCollectSpec.from_context(context)
-            result = HeapSnapshotCollectManager().collect(page, spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            metadata = descriptor.get("snapshot_metadata") if isinstance(descriptor.get("snapshot_metadata"), dict) else {}
-            cdp = descriptor.get("cdp") if isinstance(descriptor.get("cdp"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
-            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
-            verification = [
-                f"heap_snapshot_collect_status={result.status}",
-                f"heap_snapshot_collect_review_approved={bool(descriptor.get('review_approved'))}",
-                f"heap_snapshot_collect_explicit_collection={bool(descriptor.get('explicit_collection'))}",
-                f"heap_snapshot_collect_collected={bool(descriptor.get('heap_snapshot_collected'))}",
-                f"heap_snapshot_collect_digest={metadata.get('snapshot_digest')}",
-                f"heap_snapshot_collect_byte_count={metadata.get('snapshot_byte_count')}",
-                f"heap_snapshot_collect_chunk_count={metadata.get('chunk_count')}",
-                f"heap_snapshot_collect_chunk_stream_observed={metadata.get('chunk_stream_observed')}",
-                f"heap_snapshot_collect_cdp_commands={cdp.get('commands_sent', [])}",
-                f"heap_snapshot_collect_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"heap_snapshot_collect_heap_profiler_enabled={policy.get('heap_profiler_enabled', False)}",
-                f"heap_snapshot_collect_heap_diff_computed={policy.get('heap_diff_computed', False)}",
-                f"heap_snapshot_collect_raw_heap_exported={policy.get('raw_heap_exported', False)}",
-                f"heap_snapshot_collect_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"heap_snapshot_collect_calls_mcp={policy.get('calls_mcp', False)}",
-                f"heap_snapshot_collect_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"heap_snapshot_collect_blockers={','.join(str(item) for item in blockers)}",
-                f"heap_snapshot_collect_warnings={','.join(str(item) for item in warnings)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"heap_snapshot_collect_reason={result.reason}")
-            if result.error:
-                verification.append(f"heap_snapshot_collect_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/heap-snapshot-collect.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web explicit review-gated CDP HeapProfiler snapshot metadata collection.",
-                    metadata={
-                        "status": result.status,
-                        "heap_snapshot_collected": bool(descriptor.get("heap_snapshot_collected")),
-                        "snapshot_digest": metadata.get("snapshot_digest"),
-                        "snapshot_byte_count": metadata.get("snapshot_byte_count"),
-                        "raw_heap_exported": policy.get("raw_heap_exported", False),
-                        "heap_diff_computed": policy.get("heap_diff_computed", False),
-                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            if result.status == "collected":
-                status = ExecutionStatus.SUCCESS
-                next_action = descriptor.get("next_action") or "review_heap_snapshot_collect_before_heap_diff"
-            elif result.status in {"blocked", "unsupported"}:
-                status = ExecutionStatus.PARTIAL
-                next_action = descriptor.get("next_action") or "resolve_heap_snapshot_collect_blockers"
-            else:
-                status = ExecutionStatus.FAILED
-                next_action = "inspect_heap_snapshot_collect_descriptor"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["collect_heap_snapshot_metadata"] if result.status == "collected" else [],
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=str(next_action),
-                confidence=ConfidenceLevel.MEDIUM if result.status == "collected" else ConfidenceLevel.LOW,
-            )
-        if self._is_runtime_object_graph_diff_request(protection_name, context):
-            spec = RuntimeObjectGraphDiffSpec.from_context(context)
-            result = RuntimeObjectGraphDiffManager().collect(page, spec)
-            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
-            diff = descriptor.get("diff") if isinstance(descriptor.get("diff"), dict) else {}
-            risk = descriptor.get("risk_summary") if isinstance(descriptor.get("risk_summary"), dict) else {}
-            collection = descriptor.get("runtime_collection") if isinstance(descriptor.get("runtime_collection"), dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            root_path = spec.root_path if spec else "<missing>"
-            change_count = int(diff.get("change_count") or descriptor.get("change_count") or 0)
-            categories = diff.get("categories") if isinstance(diff.get("categories"), list) else []
-            verification = [
-                f"runtime_object_graph_diff_status={result.status}",
-                f"runtime_object_graph_diff_root_path={root_path}",
-                f"runtime_object_graph_diff_changed={bool(diff.get('changed', descriptor.get('changed', False)))}",
-                f"runtime_object_graph_diff_change_count={change_count}",
-                f"runtime_object_graph_diff_categories={categories}",
-                f"runtime_object_graph_diff_risk={risk.get('risk', 'low')}",
-                f"runtime_object_graph_diff_explicit_collection={bool(descriptor.get('explicit_runtime_collection'))}",
-                f"runtime_object_graph_diff_snapshot_source={collection.get('snapshot_source')}",
-                f"runtime_object_graph_diff_default_recon={policy.get('default_recon', False)}",
-                f"runtime_object_graph_diff_browser_started={policy.get('browser_started', False)}",
-                f"runtime_object_graph_diff_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"runtime_object_graph_diff_runtime_evaluated={policy.get('runtime_evaluated', False)}",
-                f"runtime_object_graph_diff_trigger_executed={policy.get('trigger_executed', False)}",
-                f"runtime_object_graph_diff_getter_invocation={policy.get('getter_invocation', False)}",
-                f"runtime_object_graph_diff_prototype_traversal={policy.get('prototype_traversal', False)}",
-                f"runtime_object_graph_diff_full_heap_snapshot={policy.get('full_heap_snapshot', False)}",
-                f"runtime_object_graph_diff_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
-                f"runtime_object_graph_diff_calls_mcp={policy.get('calls_mcp', False)}",
-                f"runtime_object_graph_diff_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"runtime_object_graph_diff_reason={result.reason}")
-            if result.error:
-                verification.append(f"runtime_object_graph_diff_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/runtime-object-graph-diff.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime-collected scoped object graph diff around an explicit object root.",
-                    metadata={
-                        "status": result.status,
-                        "root_path": root_path,
-                        "changed": bool(diff.get("changed", descriptor.get("changed", False))),
-                        "change_count": change_count,
-                        "categories": categories,
-                        "risk": risk.get("risk", "low"),
-                        "runtime_evaluated": policy.get("runtime_evaluated", False),
-                        "full_heap_snapshot": policy.get("full_heap_snapshot", False),
-                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
-                        "calls_mcp": policy.get("calls_mcp", False),
-                    },
-                )
-            ]
-            if result.status == "ready_for_review":
-                status = ExecutionStatus.SUCCESS
-                next_action = descriptor.get("next_action") or "review_runtime_object_graph_diff_before_hook_or_replay"
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                next_action = descriptor.get("next_action") or "provide_supported_runtime_object_root_path"
-            else:
-                status = ExecutionStatus.FAILED
-                next_action = "inspect_runtime_object_graph_diff_descriptor"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["collect_runtime_object_graph_diff"] if result.status == "ready_for_review" else [],
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=str(next_action),
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_page_mutation_audit_request(protection_name, context):
-            spec = PageMutationAuditSpec.from_context(context)
-            result = PageMutationAuditManager().audit(page, spec)
-            change_count = int(result.diff.get("change_count") or 0)
-            categories = result.diff.get("categories") if isinstance(result.diff.get("categories"), list) else []
-            verification = [
-                f"page_mutation_audit_status={result.status}",
-                f"page_mutation_audit_changed={bool(result.diff.get('changed'))}",
-                f"page_mutation_audit_change_count={change_count}",
-                f"page_mutation_audit_categories={categories}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.reason:
-                verification.append(f"page_mutation_audit_reason={result.reason}")
-            if result.error:
-                verification.append(f"page_mutation_audit_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/page-mutation-audit.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime page-level before/after mutation audit.",
-                    metadata={
-                        "status": result.status,
-                        "changed": bool(result.diff.get("changed")),
-                        "change_count": change_count,
-                        "categories": categories,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["audit_page_mutation"] if result.trigger.get("attempted") else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
-            )
+        _observation_review_result = self._dispatch_observation_review(protection_name, context, page)
+        if _observation_review_result is not None:
+            return _observation_review_result
         _paused_result = self._dispatch_paused_session(protection_name, context, page)
         if _paused_result is not None:
             return _paused_result
@@ -9189,6 +8914,287 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
+        return None
+
+    def _dispatch_observation_review(self, protection_name: str, context: dict, page: Any) -> ProtectionResult | None:
+        if self._is_mutation_observer_timeline_request(protection_name, context):
+            spec = MutationObserverTimelineSpec.from_context(context)
+            result = MutationObserverTimelineManager().observe(page, spec)
+            record_count = len(result.records)
+            mutation_types = result.summary.get("types") if isinstance(result.summary.get("types"), list) else []
+            verification = [
+                f"mutation_observer_timeline_status={result.status}",
+                f"mutation_observer_record_count={record_count}",
+                f"mutation_observer_types={mutation_types}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"mutation_observer_reason={result.reason}")
+            if result.error:
+                verification.append(f"mutation_observer_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/mutation-observer-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime MutationObserver timeline around an explicit trigger.",
+                    metadata={
+                        "status": result.status,
+                        "record_count": record_count,
+                        "types": mutation_types,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["observe_page_mutations"] if result.trigger.get("attempted") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action="inspect_mutation_observer_timeline" if record_count else "trigger_dom_mutation_or_adjust_observer_scope",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_object_root_mutation_audit_request(protection_name, context):
+            spec = ObjectRootMutationAuditSpec.from_context(context)
+            result = ObjectRootMutationAuditManager().audit(page, spec)
+            change_count = int(result.diff.get("change_count") or 0)
+            categories = result.diff.get("categories") if isinstance(result.diff.get("categories"), list) else []
+            root_path = spec.root_path if spec else "<missing>"
+            verification = [
+                f"object_root_mutation_audit_status={result.status}",
+                f"object_root_mutation_audit_root_path={root_path}",
+                f"object_root_mutation_audit_changed={bool(result.diff.get('changed'))}",
+                f"object_root_mutation_audit_change_count={change_count}",
+                f"object_root_mutation_audit_categories={categories}",
+                f"object_root_mutation_audit_getter_invocation={result.side_effect_policy.get('getter_invocation', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"object_root_mutation_audit_reason={result.reason}")
+            if result.error:
+                verification.append(f"object_root_mutation_audit_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/object-root-mutation-audit.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime descriptor-safe object-root before/after mutation audit.",
+                    metadata={
+                        "status": result.status,
+                        "root_path": root_path,
+                        "changed": bool(result.diff.get("changed")),
+                        "change_count": change_count,
+                        "categories": categories,
+                        "getter_invocation": result.side_effect_policy.get("getter_invocation", False),
+                    },
+                )
+            ]
+            if result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = "provide_safe_dotted_object_root_path"
+            else:
+                status = ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED
+                next_action = "inspect_object_root_mutation_audit" if change_count else "provide_trigger_or_expand_object_snapshot_scope"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["audit_object_root_mutation"] if result.trigger.get("attempted") else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_heap_snapshot_collect_request(protection_name, context):
+            spec = HeapSnapshotCollectSpec.from_context(context)
+            result = HeapSnapshotCollectManager().collect(page, spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            metadata = descriptor.get("snapshot_metadata") if isinstance(descriptor.get("snapshot_metadata"), dict) else {}
+            cdp = descriptor.get("cdp") if isinstance(descriptor.get("cdp"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = descriptor.get("blockers") if isinstance(descriptor.get("blockers"), list) else []
+            warnings = descriptor.get("warnings") if isinstance(descriptor.get("warnings"), list) else []
+            verification = [
+                f"heap_snapshot_collect_status={result.status}",
+                f"heap_snapshot_collect_review_approved={bool(descriptor.get('review_approved'))}",
+                f"heap_snapshot_collect_explicit_collection={bool(descriptor.get('explicit_collection'))}",
+                f"heap_snapshot_collect_collected={bool(descriptor.get('heap_snapshot_collected'))}",
+                f"heap_snapshot_collect_digest={metadata.get('snapshot_digest')}",
+                f"heap_snapshot_collect_byte_count={metadata.get('snapshot_byte_count')}",
+                f"heap_snapshot_collect_chunk_count={metadata.get('chunk_count')}",
+                f"heap_snapshot_collect_chunk_stream_observed={metadata.get('chunk_stream_observed')}",
+                f"heap_snapshot_collect_cdp_commands={cdp.get('commands_sent', [])}",
+                f"heap_snapshot_collect_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"heap_snapshot_collect_heap_profiler_enabled={policy.get('heap_profiler_enabled', False)}",
+                f"heap_snapshot_collect_heap_diff_computed={policy.get('heap_diff_computed', False)}",
+                f"heap_snapshot_collect_raw_heap_exported={policy.get('raw_heap_exported', False)}",
+                f"heap_snapshot_collect_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"heap_snapshot_collect_calls_mcp={policy.get('calls_mcp', False)}",
+                f"heap_snapshot_collect_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"heap_snapshot_collect_blockers={','.join(str(item) for item in blockers)}",
+                f"heap_snapshot_collect_warnings={','.join(str(item) for item in warnings)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"heap_snapshot_collect_reason={result.reason}")
+            if result.error:
+                verification.append(f"heap_snapshot_collect_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/heap-snapshot-collect.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web explicit review-gated CDP HeapProfiler snapshot metadata collection.",
+                    metadata={
+                        "status": result.status,
+                        "heap_snapshot_collected": bool(descriptor.get("heap_snapshot_collected")),
+                        "snapshot_digest": metadata.get("snapshot_digest"),
+                        "snapshot_byte_count": metadata.get("snapshot_byte_count"),
+                        "raw_heap_exported": policy.get("raw_heap_exported", False),
+                        "heap_diff_computed": policy.get("heap_diff_computed", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            if result.status == "collected":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_heap_snapshot_collect_before_heap_diff"
+            elif result.status in {"blocked", "unsupported"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "resolve_heap_snapshot_collect_blockers"
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_heap_snapshot_collect_descriptor"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["collect_heap_snapshot_metadata"] if result.status == "collected" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "collected" else ConfidenceLevel.LOW,
+            )
+        if self._is_runtime_object_graph_diff_request(protection_name, context):
+            spec = RuntimeObjectGraphDiffSpec.from_context(context)
+            result = RuntimeObjectGraphDiffManager().collect(page, spec)
+            descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+            diff = descriptor.get("diff") if isinstance(descriptor.get("diff"), dict) else {}
+            risk = descriptor.get("risk_summary") if isinstance(descriptor.get("risk_summary"), dict) else {}
+            collection = descriptor.get("runtime_collection") if isinstance(descriptor.get("runtime_collection"), dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            root_path = spec.root_path if spec else "<missing>"
+            change_count = int(diff.get("change_count") or descriptor.get("change_count") or 0)
+            categories = diff.get("categories") if isinstance(diff.get("categories"), list) else []
+            verification = [
+                f"runtime_object_graph_diff_status={result.status}",
+                f"runtime_object_graph_diff_root_path={root_path}",
+                f"runtime_object_graph_diff_changed={bool(diff.get('changed', descriptor.get('changed', False)))}",
+                f"runtime_object_graph_diff_change_count={change_count}",
+                f"runtime_object_graph_diff_categories={categories}",
+                f"runtime_object_graph_diff_risk={risk.get('risk', 'low')}",
+                f"runtime_object_graph_diff_explicit_collection={bool(descriptor.get('explicit_runtime_collection'))}",
+                f"runtime_object_graph_diff_snapshot_source={collection.get('snapshot_source')}",
+                f"runtime_object_graph_diff_default_recon={policy.get('default_recon', False)}",
+                f"runtime_object_graph_diff_browser_started={policy.get('browser_started', False)}",
+                f"runtime_object_graph_diff_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"runtime_object_graph_diff_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+                f"runtime_object_graph_diff_trigger_executed={policy.get('trigger_executed', False)}",
+                f"runtime_object_graph_diff_getter_invocation={policy.get('getter_invocation', False)}",
+                f"runtime_object_graph_diff_prototype_traversal={policy.get('prototype_traversal', False)}",
+                f"runtime_object_graph_diff_full_heap_snapshot={policy.get('full_heap_snapshot', False)}",
+                f"runtime_object_graph_diff_complete_heap_traversal={policy.get('complete_heap_traversal', False)}",
+                f"runtime_object_graph_diff_calls_mcp={policy.get('calls_mcp', False)}",
+                f"runtime_object_graph_diff_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"runtime_object_graph_diff_reason={result.reason}")
+            if result.error:
+                verification.append(f"runtime_object_graph_diff_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/runtime-object-graph-diff.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime-collected scoped object graph diff around an explicit object root.",
+                    metadata={
+                        "status": result.status,
+                        "root_path": root_path,
+                        "changed": bool(diff.get("changed", descriptor.get("changed", False))),
+                        "change_count": change_count,
+                        "categories": categories,
+                        "risk": risk.get("risk", "low"),
+                        "runtime_evaluated": policy.get("runtime_evaluated", False),
+                        "full_heap_snapshot": policy.get("full_heap_snapshot", False),
+                        "complete_heap_traversal": policy.get("complete_heap_traversal", False),
+                        "calls_mcp": policy.get("calls_mcp", False),
+                    },
+                )
+            ]
+            if result.status == "ready_for_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = descriptor.get("next_action") or "review_runtime_object_graph_diff_before_hook_or_replay"
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = descriptor.get("next_action") or "provide_supported_runtime_object_root_path"
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_runtime_object_graph_diff_descriptor"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["collect_runtime_object_graph_diff"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=str(next_action),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_page_mutation_audit_request(protection_name, context):
+            spec = PageMutationAuditSpec.from_context(context)
+            result = PageMutationAuditManager().audit(page, spec)
+            change_count = int(result.diff.get("change_count") or 0)
+            categories = result.diff.get("categories") if isinstance(result.diff.get("categories"), list) else []
+            verification = [
+                f"page_mutation_audit_status={result.status}",
+                f"page_mutation_audit_changed={bool(result.diff.get('changed'))}",
+                f"page_mutation_audit_change_count={change_count}",
+                f"page_mutation_audit_categories={categories}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"page_mutation_audit_reason={result.reason}")
+            if result.error:
+                verification.append(f"page_mutation_audit_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/page-mutation-audit.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime page-level before/after mutation audit.",
+                    metadata={
+                        "status": result.status,
+                        "changed": bool(result.diff.get("changed")),
+                        "change_count": change_count,
+                        "categories": categories,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["audit_page_mutation"] if result.trigger.get("attempted") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL if result.status == "partial" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
             )
         return None
 
