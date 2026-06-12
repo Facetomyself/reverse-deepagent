@@ -919,6 +919,46 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         result = self._dispatch_async_chunk(protection_name, context, page)
         if result is not None:
             return result
+        result = self._dispatch_module_tail(protection_name, context, page)
+        if result is not None:
+            return result
+        hooks = BrowserHookManager()
+        install = hooks.install(page)
+        snapshot = hooks.snapshot(page)
+        applied_actions = [f"install_hook:{name}" for name, enabled in install.installed.items() if enabled]
+        if not applied_actions and install.ok:
+            applied_actions = ["install_hook:runtime_baseline"]
+        verification = [
+            f"hook_install_ok={install.ok}",
+            f"hook_event_count={snapshot.event_count}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if install.error:
+            verification.append(f"hook_install_error={install.error}")
+        status = ExecutionStatus.SUCCESS if install.ok else ExecutionStatus.FAILED
+        return ProtectionResult(
+            protection_name=protection_name,
+            applied_actions=applied_actions,
+            verification=verification,
+            status=status,
+            artifacts=[
+                ArtifactRef(
+                    path="virtual://workspace/hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime hook install and event timeline.",
+                    metadata={"event_count": snapshot.event_count, "installed": install.installed, "protection_name": protection_name},
+                )
+            ],
+            next_action="resume_recon" if install.ok else "ensure_browser_provider_or_hook_capability",
+            confidence=ConfidenceLevel.MEDIUM if install.ok else ConfidenceLevel.LOW,
+        )
+
+    def _dispatch_module_tail(
+        self,
+        protection_name: str,
+        context: dict,
+        page: Any,
+    ) -> ProtectionResult | None:
         if self._is_custom_loader_module_hook_request(protection_name, context):
             spec = CustomLoaderModuleHookSpec.from_context(context)
             result = CustomLoaderModuleHookManager().install(page, spec)
@@ -1389,36 +1429,7 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status in {"success", "partial"} else ConfidenceLevel.LOW,
             )
-        hooks = BrowserHookManager()
-        install = hooks.install(page)
-        snapshot = hooks.snapshot(page)
-        applied_actions = [f"install_hook:{name}" for name, enabled in install.installed.items() if enabled]
-        if not applied_actions and install.ok:
-            applied_actions = ["install_hook:runtime_baseline"]
-        verification = [
-            f"hook_install_ok={install.ok}",
-            f"hook_event_count={snapshot.event_count}",
-            f"context_keys={sorted(context.keys())}",
-        ]
-        if install.error:
-            verification.append(f"hook_install_error={install.error}")
-        status = ExecutionStatus.SUCCESS if install.ok else ExecutionStatus.FAILED
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=applied_actions,
-            verification=verification,
-            status=status,
-            artifacts=[
-                ArtifactRef(
-                    path="virtual://workspace/hook-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime hook install and event timeline.",
-                    metadata={"event_count": snapshot.event_count, "installed": install.installed, "protection_name": protection_name},
-                )
-            ],
-            next_action="resume_recon" if install.ok else "ensure_browser_provider_or_hook_capability",
-            confidence=ConfidenceLevel.MEDIUM if install.ok else ConfidenceLevel.LOW,
-        )
+        return None
 
     def _dispatch_async_chunk(
         self,
