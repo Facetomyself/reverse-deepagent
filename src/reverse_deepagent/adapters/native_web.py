@@ -913,864 +913,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         result = self._dispatch_module_federation(protection_name, context, page)
         if result is not None:
             return result
-        if self._is_custom_loader_continuation_execution_request(protection_name, context):
-            spec = CustomLoaderContinuationExecutionSpec.from_context(context)
-            result = CustomLoaderContinuationExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"custom_loader_continuation_execution_status={result.status}",
-                f"custom_loader_continuation_execution_reason={result.reason or ''}",
-                f"custom_loader_continuation_execution_stage_count={len(stages)}",
-                f"custom_loader_continuation_execution_review_approved={policy.get('review_approved', False)}",
-                f"custom_loader_continuation_execution_preflight_executed={policy.get('preflight_executed', False)}",
-                f"custom_loader_continuation_execution_loader_invoked={policy.get('loader_invoked', False)}",
-                f"custom_loader_continuation_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
-                f"custom_loader_continuation_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
-                f"custom_loader_continuation_execution_writes_journal={policy.get('writes_journal', False)}",
-                f"custom_loader_continuation_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"custom_loader_continuation_execution_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-continuation-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime explicit one-step custom loader continuation execution workflow.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "workflow_id": execution.get("workflow_id"),
-                        "selected_candidate_index": execution.get("selected_candidate_index"),
-                        "stage_count": len(stages),
-                        "next_action": execution.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "preflight_executed": policy.get("preflight_executed", False),
-                        "loader_invoked": policy.get("loader_invoked", False),
-                        "module_diff_executed": policy.get("module_diff_executed", False),
-                        "module_hook_installed": policy.get("module_hook_installed", False),
-                        "writes_journal": policy.get("writes_journal", False),
-                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_custom_loader_continuation_step"]
-                next_action = execution.get("next_action", "review_custom_loader_continuation_execution_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_continuation_execution_step"]
-                next_action = execution.get("next_action", "resolve_custom_loader_continuation_execution_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = execution.get("next_action", "inspect_custom_loader_continuation_execution_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_recursive_traversal_plan_request(protection_name, context):
-            spec = CustomLoaderRecursiveTraversalPlanSpec.from_context(context)
-            result = CustomLoaderRecursiveTraversalPlanManager().plan(spec)
-            recursive_plan = result.recursive_plan if isinstance(result.recursive_plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"custom_loader_recursive_traversal_plan_status={result.status}",
-                f"custom_loader_recursive_traversal_plan_reason={result.reason or ''}",
-                f"custom_loader_recursive_traversal_plan_latest_loop_execution_status={recursive_plan.get('latest_loop_execution_status', '')}",
-                f"custom_loader_recursive_traversal_plan_latest_graph_queue_count={recursive_plan.get('latest_graph_queue_count', 0)}",
-                f"custom_loader_recursive_traversal_plan_latest_workflow_planned_step_count={recursive_plan.get('latest_workflow_planned_step_count', 0)}",
-                f"custom_loader_recursive_traversal_plan_bounded_recursion={policy.get('bounded_recursion', True)}",
-                f"custom_loader_recursive_traversal_plan_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"custom_loader_recursive_traversal_plan_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"custom_loader_recursive_traversal_plan_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-recursive-traversal-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only custom loader recursive traversal follow-up plan.",
-                    metadata={
-                        "status": result.status,
-                        "recursive_plan_status": recursive_plan.get("status"),
-                        "latest_loop_execution_status": recursive_plan.get("latest_loop_execution_status"),
-                        "latest_graph_status": recursive_plan.get("latest_graph_status"),
-                        "latest_graph_queue_count": recursive_plan.get("latest_graph_queue_count", 0),
-                        "latest_workflow_plan_status": recursive_plan.get("latest_workflow_plan_status"),
-                        "latest_workflow_planned_step_count": recursive_plan.get("latest_workflow_planned_step_count", 0),
-                        "next_action": recursive_plan.get("next_action"),
-                        "bounded_recursion": policy.get("bounded_recursion", True),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "plan_only": policy.get("plan_only", True),
-                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
-                next_action = recursive_plan.get("next_action", "review_custom_loader_recursive_traversal_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
-                next_action = recursive_plan.get("next_action", "resolve_custom_loader_recursive_traversal_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = "inspect_custom_loader_recursive_traversal_plan_request"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_recursive_traversal_execution_request(protection_name, context):
-            spec = CustomLoaderRecursiveTraversalExecutionSpec.from_context(context)
-            result = CustomLoaderRecursiveTraversalExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
-            verification = [
-                f"custom_loader_recursive_traversal_execution_status={result.status}",
-                f"custom_loader_recursive_traversal_execution_reason={result.reason or ''}",
-                f"custom_loader_recursive_traversal_execution_stage_count={len(stages)}",
-                f"custom_loader_recursive_traversal_execution_review_approved={policy.get('review_approved', False)}",
-                f"custom_loader_recursive_traversal_execution_loop_execution_started={policy.get('loop_execution_started', False)}",
-                f"custom_loader_recursive_traversal_execution_preflight_executed={policy.get('preflight_executed', False)}",
-                f"custom_loader_recursive_traversal_execution_loader_invoked={policy.get('loader_invoked', False)}",
-                f"custom_loader_recursive_traversal_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
-                f"custom_loader_recursive_traversal_execution_writes_journal={policy.get('writes_journal', False)}",
-                f"custom_loader_recursive_traversal_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"custom_loader_recursive_traversal_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-recursive-traversal-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated custom loader recursive traversal next-loop execution.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "loop_execution_status": execution.get("loop_execution_status"),
-                        "stage_count": len(stages),
-                        "next_action": execution.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "bounded_recursion": policy.get("bounded_recursion", True),
-                        "loop_execution_started": policy.get("loop_execution_started", False),
-                        "loader_invoked": policy.get("loader_invoked", False),
-                        "writes_journal": policy.get("writes_journal", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "next_loop_execution_progressed", "next_loop_journal_appended"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_custom_loader_recursive_traversal_next_loop"] if policy.get("loop_execution_started", False) else ["plan_custom_loader_recursive_traversal_execution"]
-                next_action = execution.get("next_action", "review_custom_loader_recursive_traversal_execution_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_recursive_traversal_execution"]
-                next_action = execution.get("next_action", "resolve_custom_loader_recursive_traversal_execution_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = execution.get("next_action", "inspect_custom_loader_recursive_traversal_execution_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "next_loop_execution_progressed", "next_loop_journal_appended"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_recursive_traversal_followup_request(protection_name, context):
-            spec = CustomLoaderRecursiveTraversalFollowupSpec.from_context(context)
-            result = CustomLoaderRecursiveTraversalFollowupManager().follow_up(spec)
-            followup = result.followup if isinstance(result.followup, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            stages = followup.get("stages") if isinstance(followup.get("stages"), list) else []
-            verification = [
-                f"custom_loader_recursive_traversal_followup_status={result.status}",
-                f"custom_loader_recursive_traversal_followup_reason={result.reason or ''}",
-                f"custom_loader_recursive_traversal_followup_stage_count={len(stages)}",
-                f"custom_loader_recursive_traversal_followup_review_approved={policy.get('review_approved', False)}",
-                f"custom_loader_recursive_traversal_followup_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"custom_loader_recursive_traversal_followup_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"custom_loader_recursive_traversal_followup_loop_plan_created={policy.get('loop_plan_created', False)}",
-                f"custom_loader_recursive_traversal_followup_loader_invoked={policy.get('loader_invoked', False)}",
-                f"custom_loader_recursive_traversal_followup_writes_journal={policy.get('writes_journal', False)}",
-                f"custom_loader_recursive_traversal_followup_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-recursive-traversal-followup.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated custom loader recursive traversal checkpoint follow-up.",
-                    metadata={
-                        "status": result.status,
-                        "followup_status": followup.get("status"),
-                        "stage_count": len(stages),
-                        "next_action": followup.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "bounded_recursion": policy.get("bounded_recursion", True),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "workflow_replanned": policy.get("workflow_replanned", False),
-                        "loop_plan_created": policy.get("loop_plan_created", False),
-                        "loader_invoked": policy.get("loader_invoked", False),
-                        "writes_journal": policy.get("writes_journal", False),
-                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_custom_loader_recursive_traversal_followup_checkpoint"] if any(
-                    policy.get(flag, False) for flag in ("traversal_graph_rebuilt", "workflow_replanned", "loop_plan_created")
-                ) else ["plan_custom_loader_recursive_traversal_followup"]
-                next_action = followup.get("next_action", "review_custom_loader_recursive_traversal_followup_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
-                next_action = followup.get("next_action", "resolve_custom_loader_recursive_traversal_followup_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = followup.get("next_action", "inspect_custom_loader_recursive_traversal_followup_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_traversal_loop_plan_request(protection_name, context):
-            spec = CustomLoaderTraversalLoopPlanSpec.from_context(context)
-            result = CustomLoaderTraversalLoopPlanManager().plan(spec)
-            loop_plan = result.loop_plan if isinstance(result.loop_plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"custom_loader_traversal_loop_plan_status={result.status}",
-                f"custom_loader_traversal_loop_plan_reason={result.reason or ''}",
-                f"custom_loader_traversal_loop_plan_iteration_count={loop_plan.get('planned_iteration_count', 0)}",
-                f"custom_loader_traversal_loop_plan_max_loop_iterations={loop_plan.get('max_loop_iterations', 0)}",
-                f"custom_loader_traversal_loop_plan_bounded_loop={policy.get('bounded_loop', True)}",
-                f"custom_loader_traversal_loop_plan_automatic_loop_execution={policy.get('automatic_loop_execution', False)}",
-                f"custom_loader_traversal_loop_plan_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
-                f"custom_loader_traversal_loop_plan_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-traversal-loop-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only bounded custom loader traversal loop plan.",
-                    metadata={
-                        "status": result.status,
-                        "loop_plan_status": loop_plan.get("status"),
-                        "planned_iteration_count": loop_plan.get("planned_iteration_count", 0),
-                        "max_loop_iterations": loop_plan.get("max_loop_iterations", 0),
-                        "source_workflow_plan_id": loop_plan.get("source_workflow_plan_id"),
-                        "source_graph_id": loop_plan.get("source_graph_id"),
-                        "latest_workflow_execution_status": loop_plan.get("latest_workflow_execution_status"),
-                        "next_action": loop_plan.get("next_action"),
-                        "bounded_loop": policy.get("bounded_loop", True),
-                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
-                        "execute_at_most_one_loader_step_per_review": policy.get("execute_at_most_one_loader_step_per_review", True),
-                        "automatic_loop_execution": policy.get("automatic_loop_execution", False),
-                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
-                        "plan_only": policy.get("plan_only", True),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_custom_loader_traversal_loop"]
-                next_action = loop_plan.get("next_action", "review_custom_loader_traversal_loop_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_traversal_loop"]
-                next_action = loop_plan.get("next_action", "revise_custom_loader_traversal_loop_inputs")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = "inspect_custom_loader_traversal_loop_plan_request"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_traversal_loop_execution_request(protection_name, context):
-            spec = CustomLoaderTraversalLoopExecutionSpec.from_context(context)
-            result = CustomLoaderTraversalLoopExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"custom_loader_traversal_loop_execution_status={result.status}",
-                f"custom_loader_traversal_loop_execution_reason={result.reason or ''}",
-                f"custom_loader_traversal_loop_execution_stage_count={len(stages)}",
-                f"custom_loader_traversal_loop_execution_selected_iteration_index={execution.get('selected_iteration_index')}",
-                f"custom_loader_traversal_loop_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"custom_loader_traversal_loop_execution_selected_candidate_index={execution.get('selected_candidate_index')}",
-                f"custom_loader_traversal_loop_execution_review_approved={policy.get('review_approved', False)}",
-                f"custom_loader_traversal_loop_execution_continuation_workflow_planned={policy.get('continuation_workflow_planned', False)}",
-                f"custom_loader_traversal_loop_execution_preflight_executed={policy.get('preflight_executed', False)}",
-                f"custom_loader_traversal_loop_execution_loader_invoked={policy.get('loader_invoked', False)}",
-                f"custom_loader_traversal_loop_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
-                f"custom_loader_traversal_loop_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
-                f"custom_loader_traversal_loop_execution_writes_journal={policy.get('writes_journal', False)}",
-                f"custom_loader_traversal_loop_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"custom_loader_traversal_loop_execution_workflow_replanned={policy.get('workflow_replanned', False)}",
-                f"custom_loader_traversal_loop_execution_automatic_loop_execution={policy.get('automatic_loop_execution', False)}",
-                f"custom_loader_traversal_loop_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
-                f"custom_loader_traversal_loop_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"custom_loader_traversal_loop_execution_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-traversal-loop-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated bounded custom loader traversal loop execution baseline.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "loop_plan_id": execution.get("loop_plan_id"),
-                        "source_workflow_plan_id": execution.get("source_workflow_plan_id"),
-                        "source_graph_id": execution.get("source_graph_id"),
-                        "selected_iteration_index": execution.get("selected_iteration_index"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_candidate_index": execution.get("selected_candidate_index"),
-                        "stage_count": len(stages),
-                        "workflow_execution_status": execution.get("workflow_execution_status"),
-                        "next_action": execution.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "continuation_workflow_planned": policy.get("continuation_workflow_planned", False),
-                        "preflight_executed": policy.get("preflight_executed", False),
-                        "loader_invoked": policy.get("loader_invoked", False),
-                        "module_diff_executed": policy.get("module_diff_executed", False),
-                        "module_hook_installed": policy.get("module_hook_installed", False),
-                        "writes_journal": policy.get("writes_journal", False),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "workflow_replanned": policy.get("workflow_replanned", False),
-                        "execute_at_most_one_loop_iteration_per_review": policy.get("execute_at_most_one_loop_iteration_per_review", True),
-                        "execute_at_most_one_loader_step_per_review": policy.get("execute_at_most_one_loader_step_per_review", True),
-                        "automatic_loop_execution": policy.get("automatic_loop_execution", False),
-                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
-                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_custom_loader_traversal_loop_iteration" if result.status != "ready_for_review" else "plan_custom_loader_traversal_loop_execution_iteration"]
-                next_action = execution.get("next_action", "review_custom_loader_traversal_loop_execution_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_traversal_loop_execution_iteration"]
-                next_action = execution.get("next_action", "resolve_custom_loader_traversal_loop_execution_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = execution.get("next_action", "inspect_custom_loader_traversal_loop_execution_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_traversal_workflow_execution_request(protection_name, context):
-            spec = CustomLoaderTraversalWorkflowExecutionSpec.from_context(context)
-            result = CustomLoaderTraversalWorkflowExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            verification = [
-                f"custom_loader_traversal_workflow_execution_status={result.status}",
-                f"custom_loader_traversal_workflow_execution_reason={result.reason or ''}",
-                f"custom_loader_traversal_workflow_execution_stage_count={len(stages)}",
-                f"custom_loader_traversal_workflow_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"custom_loader_traversal_workflow_execution_selected_candidate_index={execution.get('selected_candidate_index')}",
-                f"custom_loader_traversal_workflow_execution_review_approved={policy.get('review_approved', False)}",
-                f"custom_loader_traversal_workflow_execution_continuation_workflow_planned={policy.get('continuation_workflow_planned', False)}",
-                f"custom_loader_traversal_workflow_execution_preflight_executed={policy.get('preflight_executed', False)}",
-                f"custom_loader_traversal_workflow_execution_loader_invoked={policy.get('loader_invoked', False)}",
-                f"custom_loader_traversal_workflow_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
-                f"custom_loader_traversal_workflow_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
-                f"custom_loader_traversal_workflow_execution_writes_journal={policy.get('writes_journal', False)}",
-                f"custom_loader_traversal_workflow_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
-                f"custom_loader_traversal_workflow_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"custom_loader_traversal_workflow_execution_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-traversal-workflow-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated custom loader traversal workflow execution baseline.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "workflow_plan_id": execution.get("workflow_plan_id"),
-                        "source_graph_id": execution.get("source_graph_id"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_candidate_index": execution.get("selected_candidate_index"),
-                        "stage_count": len(stages),
-                        "next_action": execution.get("next_action"),
-                        "review_approved": policy.get("review_approved", False),
-                        "continuation_workflow_planned": policy.get("continuation_workflow_planned", False),
-                        "preflight_executed": policy.get("preflight_executed", False),
-                        "loader_invoked": policy.get("loader_invoked", False),
-                        "module_diff_executed": policy.get("module_diff_executed", False),
-                        "module_hook_installed": policy.get("module_hook_installed", False),
-                        "writes_journal": policy.get("writes_journal", False),
-                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
-                        "execute_at_most_one_loader_step_per_review": policy.get("execute_at_most_one_loader_step_per_review", True),
-                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["execute_custom_loader_traversal_workflow_step"]
-                next_action = execution.get("next_action", "review_custom_loader_traversal_workflow_execution_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_traversal_workflow_execution_step"]
-                next_action = execution.get("next_action", "resolve_custom_loader_traversal_workflow_execution_blockers")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = execution.get("next_action", "inspect_custom_loader_traversal_workflow_execution_request")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_traversal_workflow_plan_request(protection_name, context):
-            spec = CustomLoaderTraversalWorkflowPlanSpec.from_context(context)
-            result = CustomLoaderTraversalWorkflowPlanManager().plan(spec)
-            workflow_plan = result.workflow_plan if isinstance(result.workflow_plan, dict) else {}
-            verification = [
-                f"custom_loader_traversal_workflow_plan_status={result.status}",
-                f"custom_loader_traversal_workflow_plan_reason={result.reason or ''}",
-                f"custom_loader_traversal_workflow_plan_planned_step_count={workflow_plan.get('planned_step_count', 0)}",
-                f"custom_loader_traversal_workflow_plan_source_graph_queue_count={workflow_plan.get('source_graph_queue_count', 0)}",
-                f"custom_loader_traversal_workflow_plan_manual_checkpoint_required={result.side_effect_policy.get('manual_checkpoint_required', True)}",
-                f"custom_loader_traversal_workflow_plan_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-traversal-workflow-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only multi-step custom loader traversal workflow plan.",
-                    metadata={
-                        "status": result.status,
-                        "workflow_plan_status": workflow_plan.get("status"),
-                        "planned_step_count": workflow_plan.get("planned_step_count", 0),
-                        "source_graph_status": workflow_plan.get("source_graph_status"),
-                        "source_graph_queue_count": workflow_plan.get("source_graph_queue_count", 0),
-                        "max_planned_steps": workflow_plan.get("max_planned_steps"),
-                        "next_action": workflow_plan.get("next_action"),
-                        "manual_checkpoint_required": result.side_effect_policy.get("manual_checkpoint_required", True),
-                        "execute_at_most_one_loader_step_per_review": result.side_effect_policy.get("execute_at_most_one_loader_step_per_review", True),
-                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
-                        "plan_only": result.side_effect_policy.get("plan_only", True),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_custom_loader_traversal_workflow"]
-                next_action = workflow_plan.get("next_action", "review_custom_loader_traversal_workflow_plan")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_traversal_workflow"]
-                next_action = workflow_plan.get("next_action", "provide_custom_loader_traversal_graph_with_queue")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = "inspect_custom_loader_traversal_workflow_plan_request"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_traversal_graph_request(protection_name, context):
-            spec = CustomLoaderTraversalGraphSpec.from_context(context)
-            result = CustomLoaderTraversalGraphManager().plan(spec)
-            graph = result.graph if isinstance(result.graph, dict) else {}
-            verification = [
-                f"custom_loader_traversal_graph_status={result.status}",
-                f"custom_loader_traversal_graph_reason={result.reason or ''}",
-                f"custom_loader_traversal_graph_node_count={graph.get('node_count', 0)}",
-                f"custom_loader_traversal_graph_edge_count={graph.get('edge_count', 0)}",
-                f"custom_loader_traversal_graph_queue_count={graph.get('queue_count', 0)}",
-                f"custom_loader_traversal_graph_depth_blocked_count={graph.get('depth_blocked_count', 0)}",
-                f"custom_loader_traversal_graph_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-traversal-graph.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only deeper custom loader traversal graph and queue.",
-                    metadata={
-                        "status": result.status,
-                        "graph_status": graph.get("status"),
-                        "node_count": graph.get("node_count", 0),
-                        "edge_count": graph.get("edge_count", 0),
-                        "queue_count": graph.get("queue_count", 0),
-                        "journal_record_count": graph.get("journal_record_count", 0),
-                        "depth_blocked_count": graph.get("depth_blocked_count", 0),
-                        "duplicate_executed_count": graph.get("duplicate_executed_count", 0),
-                        "max_traversal_depth": graph.get("max_traversal_depth"),
-                        "next_action": graph.get("next_action"),
-                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
-                        "plan_only": result.side_effect_policy.get("plan_only", True),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "complete"}:
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_custom_loader_traversal_graph"]
-                next_action = graph.get("next_action", "review_custom_loader_traversal_graph_queue")
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_traversal_graph"]
-                next_action = graph.get("next_action", "provide_custom_loader_traversal_plan_and_journal")
-            else:
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-                next_action = "inspect_custom_loader_traversal_graph_request"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_execution_request(protection_name, context):
-            spec = CustomLoaderExecutionSpec.from_context(context)
-            result = CustomLoaderExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
-            loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or execution.get("loaderPath") or "")
-            verification = [
-                f"custom_loader_execution_status={result.status}",
-                f"custom_loader_execution_reason={result.reason or ''}",
-                f"custom_loader_execution_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
-                f"custom_loader_execution_ok={execution.get('ok', False)}",
-                f"custom_loader_execution_added_registry_key_count={len(execution.get('addedRegistryKeys') or [])}",
-                f"custom_loader_execution_added_cache_key_count={len(execution.get('addedCacheKeys') or [])}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"custom_loader_execution_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-execution-result.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime reviewed custom loader execution evidence.",
-                    metadata={
-                        "status": result.status,
-                        "execution_attempted": execution.get("attempted", False),
-                        "execution_ok": execution.get("ok", False),
-                        "loader_path": loader_path,
-                        "loader_invoked": result.side_effect_policy.get("loader_invoked", False),
-                        "added_registry_key_count": len(execution.get("addedRegistryKeys") or []),
-                        "added_cache_key_count": len(execution.get("addedCacheKeys") or []),
-                        "review_approved": result.side_effect_policy.get("review_approved", False),
-                    },
-                )
-            ]
-            if result.status == "success":
-                status = ExecutionStatus.SUCCESS
-                next_action = "inspect_custom_loader_execution_result_or_refresh_module_diff"
-                applied_actions = [f"execute_custom_loader:{loader_path or '<missing>'}"]
-            elif result.reason == "review_approval_required":
-                status = ExecutionStatus.PARTIAL
-                next_action = "approve_custom_loader_execution"
-                applied_actions = []
-            elif result.reason in {"missing_custom_loader_execution_preflight", "custom_loader_preflight_not_ready"}:
-                status = ExecutionStatus.PARTIAL
-                next_action = "run_custom_loader_execution_preflight"
-                applied_actions = []
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                next_action = "inspect_custom_loader_execution_request"
-                applied_actions = []
-            else:
-                status = ExecutionStatus.FAILED
-                next_action = "inspect_custom_loader_execution_failure"
-                applied_actions = []
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_continuation_journal_request(protection_name, context):
-            spec = CustomLoaderContinuationJournalSpec.from_context(context)
-            result = CustomLoaderContinuationJournalManager().plan_or_append(spec)
-            journal = result.journal if isinstance(result.journal, dict) else {}
-            entry = result.entry if isinstance(result.entry, dict) else {}
-            verification = [
-                f"custom_loader_continuation_journal_status={result.status}",
-                f"custom_loader_continuation_journal_reason={result.reason or ''}",
-                f"custom_loader_continuation_journal_review_approved={result.side_effect_policy.get('review_approved', False)}",
-                f"custom_loader_continuation_journal_writes_journal={result.side_effect_policy.get('writes_journal', False)}",
-                f"custom_loader_continuation_journal_record_count={journal.get('record_count', 0)}",
-                f"custom_loader_continuation_journal_stage_status={entry.get('stage_status', '')}",
-                f"custom_loader_continuation_journal_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-continuation-journal.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated custom loader continuation journal.",
-                    metadata={
-                        "status": result.status,
-                        "journal_status": journal.get("status"),
-                        "record_count": journal.get("record_count", 0),
-                        "existing_record_count": journal.get("existing_record_count", 0),
-                        "selected_candidate_index": entry.get("selected_candidate_index"),
-                        "candidate_fingerprint": entry.get("candidate_fingerprint"),
-                        "stage_status": entry.get("stage_status"),
-                        "review_required": journal.get("review_required", True),
-                        "review_approved": result.side_effect_policy.get("review_approved", False),
-                        "writes_journal": result.side_effect_policy.get("writes_journal", False),
-                        "blocking_count": len(journal.get("blocking_reasons") or []),
-                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "journal_appended"}:
-                status = ExecutionStatus.SUCCESS
-                next_action = journal.get("next_action", "review_custom_loader_continuation_journal_append")
-                applied_actions = ["append_custom_loader_continuation_journal"] if result.status == "journal_appended" else ["plan_custom_loader_continuation_journal_append"]
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                next_action = journal.get("next_action", "revise_custom_loader_continuation_journal_inputs")
-                applied_actions = ["plan_custom_loader_continuation_journal_append"]
-            else:
-                status = ExecutionStatus.FAILED
-                next_action = "inspect_custom_loader_continuation_journal_request"
-                applied_actions = []
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "journal_appended"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_continuation_workflow_request(protection_name, context):
-            spec = CustomLoaderContinuationWorkflowSpec.from_context(context)
-            result = CustomLoaderContinuationWorkflowManager().plan(spec)
-            workflow = result.workflow if isinstance(result.workflow, dict) else {}
-            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
-            verification = [
-                f"custom_loader_continuation_workflow_status={result.status}",
-                f"custom_loader_continuation_workflow_reason={result.reason or ''}",
-                f"custom_loader_continuation_workflow_review_approved={result.side_effect_policy.get('review_approved', False)}",
-                f"custom_loader_continuation_workflow_selected_candidate_index={workflow.get('selected_candidate_index')}",
-                f"custom_loader_continuation_workflow_blocking_count={len(workflow.get('blocking_reasons') or [])}",
-                f"custom_loader_continuation_workflow_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-continuation-workflow.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only custom loader continuation workflow plan.",
-                    metadata={
-                        "status": result.status,
-                        "workflow_status": workflow.get("status"),
-                        "selected_candidate_index": workflow.get("selected_candidate_index"),
-                        "loader_path": candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target"),
-                        "review_required": workflow.get("review_required", True),
-                        "review_approved": result.side_effect_policy.get("review_approved", False),
-                        "blocking_count": len(workflow.get("blocking_reasons") or []),
-                        "plan_only": result.side_effect_policy.get("plan_only", True),
-                        "writes_journal": result.side_effect_policy.get("writes_journal", False),
-                    },
-                )
-            ]
-            if result.status in {"ready_for_review", "approved_for_preflight"}:
-                status = ExecutionStatus.SUCCESS
-                next_action = workflow.get("next_action", "review_custom_loader_continuation_workflow")
-                applied_actions = ["plan_custom_loader_continuation_workflow"]
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                next_action = workflow.get("next_action", "revise_custom_loader_continuation_workflow_inputs")
-                applied_actions = ["plan_custom_loader_continuation_workflow"]
-            else:
-                status = ExecutionStatus.FAILED
-                next_action = "inspect_custom_loader_continuation_workflow_request"
-                applied_actions = []
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "approved_for_preflight"} else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_execution_preflight_request(protection_name, context):
-            spec = CustomLoaderExecutionPreflightSpec.from_context(context)
-            result = CustomLoaderExecutionPreflightManager().preflight(spec)
-            preflight = result.preflight if isinstance(result.preflight, dict) else {}
-            verification = [
-                f"custom_loader_execution_preflight_status={result.status}",
-                f"custom_loader_execution_preflight_reason={result.reason or ''}",
-                f"custom_loader_execution_preflight_review_approved={result.side_effect_policy.get('review_approved', False)}",
-                f"custom_loader_execution_preflight_blocking_count={len(preflight.get('blocking_reasons') or [])}",
-                f"custom_loader_execution_preflight_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-execution-preflight.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime side-effect-free custom loader execution preflight.",
-                    metadata={
-                        "status": result.status,
-                        "preflight_status": preflight.get("status"),
-                        "review_required": preflight.get("review_required", True),
-                        "review_approved": result.side_effect_policy.get("review_approved", False),
-                        "blocking_count": len(preflight.get("blocking_reasons") or []),
-                        "preflight_only": result.side_effect_policy.get("preflight_only", True),
-                    },
-                )
-            ]
-            if result.status == "ready_for_execution_review":
-                status = ExecutionStatus.SUCCESS
-                next_action = "execute_custom_loader_with_review_approval"
-                applied_actions = ["preflight_custom_loader_execution"]
-            elif result.status == "blocked":
-                status = ExecutionStatus.PARTIAL
-                next_action = preflight.get("next_action", "resolve_custom_loader_preflight_blockers")
-                applied_actions = ["preflight_custom_loader_execution"]
-            else:
-                status = ExecutionStatus.FAILED
-                next_action = "inspect_custom_loader_execution_preflight_request"
-                applied_actions = []
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_execution_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_traversal_request(protection_name, context):
-            spec = CustomLoaderTraversalPlanSpec.from_context(context)
-            result = CustomLoaderTraversalPlanManager().plan(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            verification = [
-                f"custom_loader_traversal_plan_status={result.status}",
-                f"custom_loader_traversal_candidate_count={plan.get('candidate_count', 0)}",
-                f"custom_loader_traversal_ready_for_review_count={plan.get('ready_for_review_count', 0)}",
-                f"custom_loader_traversal_blocked_execution_count={plan.get('blocked_execution_count', 0)}",
-                f"custom_loader_traversal_custom_candidate_count={plan.get('custom_candidate_count', 0)}",
-                f"custom_loader_traversal_ready_continuation_count={plan.get('ready_continuation_count', 0)}",
-                f"custom_loader_traversal_already_executed_count={plan.get('already_executed_count', 0)}",
-                f"custom_loader_traversal_previous_execution_count={plan.get('previous_execution_count', 0)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"custom_loader_traversal_reason={result.reason}")
-            if result.error:
-                verification.append(f"custom_loader_traversal_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-traversal-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only custom loader traversal plan.",
-                    metadata={
-                        "status": result.status,
-                        "plan_status": plan.get("status"),
-                        "candidate_count": plan.get("candidate_count", 0),
-                        "ready_for_review_count": plan.get("ready_for_review_count", 0),
-                        "blocked_execution_count": plan.get("blocked_execution_count", 0),
-                        "custom_candidate_count": plan.get("custom_candidate_count", 0),
-                        "ready_continuation_count": plan.get("ready_continuation_count", 0),
-                        "already_executed_count": plan.get("already_executed_count", 0),
-                        "previous_execution_count": plan.get("previous_execution_count", 0),
-                        "review_required": plan.get("review_required", True),
-                        "plan_only": result.side_effect_policy.get("plan_only", True),
-                    },
-                )
-            ]
-            if result.status == "planned":
-                next_action = plan.get("next_action", "review_custom_loader_traversal_plan")
-                status = ExecutionStatus.SUCCESS
-                applied_actions = ["plan_custom_loader_traversal"]
-            elif result.status == "blocked":
-                next_action = "provide_custom_loader_candidates_from_chunk_graph"
-                status = ExecutionStatus.PARTIAL
-                applied_actions = ["plan_custom_loader_traversal"]
-            else:
-                next_action = "inspect_custom_loader_traversal_request"
-                status = ExecutionStatus.FAILED
-                applied_actions = []
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
-            )
+        result = self._dispatch_custom_loader(protection_name, context, page)
+        if result is not None:
+            return result
         if self._is_async_chunk_recursive_traversal_plan_request(protection_name, context):
             spec = AsyncChunkRecursiveTraversalPlanSpec.from_context(context)
             result = AsyncChunkRecursiveTraversalPlanManager().plan(spec)
@@ -9161,6 +8306,867 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=preflight.get("next_action") or ("use_same_process_paused_session_for_live_actions" if result.status == "live_available" else "reproduce_pause_in_current_process_before_live_action"),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "live_available" else ConfidenceLevel.LOW,
+            )
+        return None
+
+    def _dispatch_custom_loader(self, protection_name: str, context: dict, page: Any) -> ProtectionResult | None:
+        if self._is_custom_loader_continuation_execution_request(protection_name, context):
+            spec = CustomLoaderContinuationExecutionSpec.from_context(context)
+            result = CustomLoaderContinuationExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"custom_loader_continuation_execution_status={result.status}",
+                f"custom_loader_continuation_execution_reason={result.reason or ''}",
+                f"custom_loader_continuation_execution_stage_count={len(stages)}",
+                f"custom_loader_continuation_execution_review_approved={policy.get('review_approved', False)}",
+                f"custom_loader_continuation_execution_preflight_executed={policy.get('preflight_executed', False)}",
+                f"custom_loader_continuation_execution_loader_invoked={policy.get('loader_invoked', False)}",
+                f"custom_loader_continuation_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
+                f"custom_loader_continuation_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
+                f"custom_loader_continuation_execution_writes_journal={policy.get('writes_journal', False)}",
+                f"custom_loader_continuation_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"custom_loader_continuation_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-continuation-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit one-step custom loader continuation execution workflow.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "workflow_id": execution.get("workflow_id"),
+                        "selected_candidate_index": execution.get("selected_candidate_index"),
+                        "stage_count": len(stages),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "preflight_executed": policy.get("preflight_executed", False),
+                        "loader_invoked": policy.get("loader_invoked", False),
+                        "module_diff_executed": policy.get("module_diff_executed", False),
+                        "module_hook_installed": policy.get("module_hook_installed", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_custom_loader_continuation_step"]
+                next_action = execution.get("next_action", "review_custom_loader_continuation_execution_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_continuation_execution_step"]
+                next_action = execution.get("next_action", "resolve_custom_loader_continuation_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_custom_loader_continuation_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_recursive_traversal_plan_request(protection_name, context):
+            spec = CustomLoaderRecursiveTraversalPlanSpec.from_context(context)
+            result = CustomLoaderRecursiveTraversalPlanManager().plan(spec)
+            recursive_plan = result.recursive_plan if isinstance(result.recursive_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"custom_loader_recursive_traversal_plan_status={result.status}",
+                f"custom_loader_recursive_traversal_plan_reason={result.reason or ''}",
+                f"custom_loader_recursive_traversal_plan_latest_loop_execution_status={recursive_plan.get('latest_loop_execution_status', '')}",
+                f"custom_loader_recursive_traversal_plan_latest_graph_queue_count={recursive_plan.get('latest_graph_queue_count', 0)}",
+                f"custom_loader_recursive_traversal_plan_latest_workflow_planned_step_count={recursive_plan.get('latest_workflow_planned_step_count', 0)}",
+                f"custom_loader_recursive_traversal_plan_bounded_recursion={policy.get('bounded_recursion', True)}",
+                f"custom_loader_recursive_traversal_plan_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"custom_loader_recursive_traversal_plan_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"custom_loader_recursive_traversal_plan_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-recursive-traversal-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader recursive traversal follow-up plan.",
+                    metadata={
+                        "status": result.status,
+                        "recursive_plan_status": recursive_plan.get("status"),
+                        "latest_loop_execution_status": recursive_plan.get("latest_loop_execution_status"),
+                        "latest_graph_status": recursive_plan.get("latest_graph_status"),
+                        "latest_graph_queue_count": recursive_plan.get("latest_graph_queue_count", 0),
+                        "latest_workflow_plan_status": recursive_plan.get("latest_workflow_plan_status"),
+                        "latest_workflow_planned_step_count": recursive_plan.get("latest_workflow_planned_step_count", 0),
+                        "next_action": recursive_plan.get("next_action"),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "plan_only": policy.get("plan_only", True),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = recursive_plan.get("next_action", "review_custom_loader_recursive_traversal_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = recursive_plan.get("next_action", "resolve_custom_loader_recursive_traversal_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_custom_loader_recursive_traversal_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_graph_rebuild", "ready_for_workflow_replan", "ready_for_next_loop_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_recursive_traversal_execution_request(protection_name, context):
+            spec = CustomLoaderRecursiveTraversalExecutionSpec.from_context(context)
+            result = CustomLoaderRecursiveTraversalExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            verification = [
+                f"custom_loader_recursive_traversal_execution_status={result.status}",
+                f"custom_loader_recursive_traversal_execution_reason={result.reason or ''}",
+                f"custom_loader_recursive_traversal_execution_stage_count={len(stages)}",
+                f"custom_loader_recursive_traversal_execution_review_approved={policy.get('review_approved', False)}",
+                f"custom_loader_recursive_traversal_execution_loop_execution_started={policy.get('loop_execution_started', False)}",
+                f"custom_loader_recursive_traversal_execution_preflight_executed={policy.get('preflight_executed', False)}",
+                f"custom_loader_recursive_traversal_execution_loader_invoked={policy.get('loader_invoked', False)}",
+                f"custom_loader_recursive_traversal_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
+                f"custom_loader_recursive_traversal_execution_writes_journal={policy.get('writes_journal', False)}",
+                f"custom_loader_recursive_traversal_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"custom_loader_recursive_traversal_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-recursive-traversal-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated custom loader recursive traversal next-loop execution.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "loop_execution_status": execution.get("loop_execution_status"),
+                        "stage_count": len(stages),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "loop_execution_started": policy.get("loop_execution_started", False),
+                        "loader_invoked": policy.get("loader_invoked", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "next_loop_execution_progressed", "next_loop_journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_custom_loader_recursive_traversal_next_loop"] if policy.get("loop_execution_started", False) else ["plan_custom_loader_recursive_traversal_execution"]
+                next_action = execution.get("next_action", "review_custom_loader_recursive_traversal_execution_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_recursive_traversal_execution"]
+                next_action = execution.get("next_action", "resolve_custom_loader_recursive_traversal_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_custom_loader_recursive_traversal_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "next_loop_execution_progressed", "next_loop_journal_appended"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_recursive_traversal_followup_request(protection_name, context):
+            spec = CustomLoaderRecursiveTraversalFollowupSpec.from_context(context)
+            result = CustomLoaderRecursiveTraversalFollowupManager().follow_up(spec)
+            followup = result.followup if isinstance(result.followup, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            stages = followup.get("stages") if isinstance(followup.get("stages"), list) else []
+            verification = [
+                f"custom_loader_recursive_traversal_followup_status={result.status}",
+                f"custom_loader_recursive_traversal_followup_reason={result.reason or ''}",
+                f"custom_loader_recursive_traversal_followup_stage_count={len(stages)}",
+                f"custom_loader_recursive_traversal_followup_review_approved={policy.get('review_approved', False)}",
+                f"custom_loader_recursive_traversal_followup_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"custom_loader_recursive_traversal_followup_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"custom_loader_recursive_traversal_followup_loop_plan_created={policy.get('loop_plan_created', False)}",
+                f"custom_loader_recursive_traversal_followup_loader_invoked={policy.get('loader_invoked', False)}",
+                f"custom_loader_recursive_traversal_followup_writes_journal={policy.get('writes_journal', False)}",
+                f"custom_loader_recursive_traversal_followup_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-recursive-traversal-followup.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated custom loader recursive traversal checkpoint follow-up.",
+                    metadata={
+                        "status": result.status,
+                        "followup_status": followup.get("status"),
+                        "stage_count": len(stages),
+                        "next_action": followup.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "bounded_recursion": policy.get("bounded_recursion", True),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "loop_plan_created": policy.get("loop_plan_created", False),
+                        "loader_invoked": policy.get("loader_invoked", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_custom_loader_recursive_traversal_followup_checkpoint"] if any(
+                    policy.get(flag, False) for flag in ("traversal_graph_rebuilt", "workflow_replanned", "loop_plan_created")
+                ) else ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "review_custom_loader_recursive_traversal_followup_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_recursive_traversal_followup"]
+                next_action = followup.get("next_action", "resolve_custom_loader_recursive_traversal_followup_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = followup.get("next_action", "inspect_custom_loader_recursive_traversal_followup_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "graph_rebuilt", "workflow_replanned", "next_loop_plan_ready"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_traversal_loop_plan_request(protection_name, context):
+            spec = CustomLoaderTraversalLoopPlanSpec.from_context(context)
+            result = CustomLoaderTraversalLoopPlanManager().plan(spec)
+            loop_plan = result.loop_plan if isinstance(result.loop_plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"custom_loader_traversal_loop_plan_status={result.status}",
+                f"custom_loader_traversal_loop_plan_reason={result.reason or ''}",
+                f"custom_loader_traversal_loop_plan_iteration_count={loop_plan.get('planned_iteration_count', 0)}",
+                f"custom_loader_traversal_loop_plan_max_loop_iterations={loop_plan.get('max_loop_iterations', 0)}",
+                f"custom_loader_traversal_loop_plan_bounded_loop={policy.get('bounded_loop', True)}",
+                f"custom_loader_traversal_loop_plan_automatic_loop_execution={policy.get('automatic_loop_execution', False)}",
+                f"custom_loader_traversal_loop_plan_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"custom_loader_traversal_loop_plan_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-loop-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only bounded custom loader traversal loop plan.",
+                    metadata={
+                        "status": result.status,
+                        "loop_plan_status": loop_plan.get("status"),
+                        "planned_iteration_count": loop_plan.get("planned_iteration_count", 0),
+                        "max_loop_iterations": loop_plan.get("max_loop_iterations", 0),
+                        "source_workflow_plan_id": loop_plan.get("source_workflow_plan_id"),
+                        "source_graph_id": loop_plan.get("source_graph_id"),
+                        "latest_workflow_execution_status": loop_plan.get("latest_workflow_execution_status"),
+                        "next_action": loop_plan.get("next_action"),
+                        "bounded_loop": policy.get("bounded_loop", True),
+                        "manual_checkpoint_required": policy.get("manual_checkpoint_required", True),
+                        "execute_at_most_one_loader_step_per_review": policy.get("execute_at_most_one_loader_step_per_review", True),
+                        "automatic_loop_execution": policy.get("automatic_loop_execution", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                        "plan_only": policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_traversal_loop"]
+                next_action = loop_plan.get("next_action", "review_custom_loader_traversal_loop_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_loop"]
+                next_action = loop_plan.get("next_action", "revise_custom_loader_traversal_loop_inputs")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_custom_loader_traversal_loop_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_traversal_loop_execution_request(protection_name, context):
+            spec = CustomLoaderTraversalLoopExecutionSpec.from_context(context)
+            result = CustomLoaderTraversalLoopExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"custom_loader_traversal_loop_execution_status={result.status}",
+                f"custom_loader_traversal_loop_execution_reason={result.reason or ''}",
+                f"custom_loader_traversal_loop_execution_stage_count={len(stages)}",
+                f"custom_loader_traversal_loop_execution_selected_iteration_index={execution.get('selected_iteration_index')}",
+                f"custom_loader_traversal_loop_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"custom_loader_traversal_loop_execution_selected_candidate_index={execution.get('selected_candidate_index')}",
+                f"custom_loader_traversal_loop_execution_review_approved={policy.get('review_approved', False)}",
+                f"custom_loader_traversal_loop_execution_continuation_workflow_planned={policy.get('continuation_workflow_planned', False)}",
+                f"custom_loader_traversal_loop_execution_preflight_executed={policy.get('preflight_executed', False)}",
+                f"custom_loader_traversal_loop_execution_loader_invoked={policy.get('loader_invoked', False)}",
+                f"custom_loader_traversal_loop_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
+                f"custom_loader_traversal_loop_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
+                f"custom_loader_traversal_loop_execution_writes_journal={policy.get('writes_journal', False)}",
+                f"custom_loader_traversal_loop_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"custom_loader_traversal_loop_execution_workflow_replanned={policy.get('workflow_replanned', False)}",
+                f"custom_loader_traversal_loop_execution_automatic_loop_execution={policy.get('automatic_loop_execution', False)}",
+                f"custom_loader_traversal_loop_execution_automatic_queue_advance={policy.get('automatic_queue_advance', False)}",
+                f"custom_loader_traversal_loop_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"custom_loader_traversal_loop_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-loop-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated bounded custom loader traversal loop execution baseline.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "loop_plan_id": execution.get("loop_plan_id"),
+                        "source_workflow_plan_id": execution.get("source_workflow_plan_id"),
+                        "source_graph_id": execution.get("source_graph_id"),
+                        "selected_iteration_index": execution.get("selected_iteration_index"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_candidate_index": execution.get("selected_candidate_index"),
+                        "stage_count": len(stages),
+                        "workflow_execution_status": execution.get("workflow_execution_status"),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "continuation_workflow_planned": policy.get("continuation_workflow_planned", False),
+                        "preflight_executed": policy.get("preflight_executed", False),
+                        "loader_invoked": policy.get("loader_invoked", False),
+                        "module_diff_executed": policy.get("module_diff_executed", False),
+                        "module_hook_installed": policy.get("module_hook_installed", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "workflow_replanned": policy.get("workflow_replanned", False),
+                        "execute_at_most_one_loop_iteration_per_review": policy.get("execute_at_most_one_loop_iteration_per_review", True),
+                        "execute_at_most_one_loader_step_per_review": policy.get("execute_at_most_one_loader_step_per_review", True),
+                        "automatic_loop_execution": policy.get("automatic_loop_execution", False),
+                        "automatic_queue_advance": policy.get("automatic_queue_advance", False),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_custom_loader_traversal_loop_iteration" if result.status != "ready_for_review" else "plan_custom_loader_traversal_loop_execution_iteration"]
+                next_action = execution.get("next_action", "review_custom_loader_traversal_loop_execution_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_loop_execution_iteration"]
+                next_action = execution.get("next_action", "resolve_custom_loader_traversal_loop_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_custom_loader_traversal_loop_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_traversal_workflow_execution_request(protection_name, context):
+            spec = CustomLoaderTraversalWorkflowExecutionSpec.from_context(context)
+            result = CustomLoaderTraversalWorkflowExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            stages = execution.get("stages") if isinstance(execution.get("stages"), list) else []
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            verification = [
+                f"custom_loader_traversal_workflow_execution_status={result.status}",
+                f"custom_loader_traversal_workflow_execution_reason={result.reason or ''}",
+                f"custom_loader_traversal_workflow_execution_stage_count={len(stages)}",
+                f"custom_loader_traversal_workflow_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"custom_loader_traversal_workflow_execution_selected_candidate_index={execution.get('selected_candidate_index')}",
+                f"custom_loader_traversal_workflow_execution_review_approved={policy.get('review_approved', False)}",
+                f"custom_loader_traversal_workflow_execution_continuation_workflow_planned={policy.get('continuation_workflow_planned', False)}",
+                f"custom_loader_traversal_workflow_execution_preflight_executed={policy.get('preflight_executed', False)}",
+                f"custom_loader_traversal_workflow_execution_loader_invoked={policy.get('loader_invoked', False)}",
+                f"custom_loader_traversal_workflow_execution_module_diff_executed={policy.get('module_diff_executed', False)}",
+                f"custom_loader_traversal_workflow_execution_module_hook_installed={policy.get('module_hook_installed', False)}",
+                f"custom_loader_traversal_workflow_execution_writes_journal={policy.get('writes_journal', False)}",
+                f"custom_loader_traversal_workflow_execution_traversal_graph_rebuilt={policy.get('traversal_graph_rebuilt', False)}",
+                f"custom_loader_traversal_workflow_execution_automatic_recursive_traversal={policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"custom_loader_traversal_workflow_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-workflow-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated custom loader traversal workflow execution baseline.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "workflow_plan_id": execution.get("workflow_plan_id"),
+                        "source_graph_id": execution.get("source_graph_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_candidate_index": execution.get("selected_candidate_index"),
+                        "stage_count": len(stages),
+                        "next_action": execution.get("next_action"),
+                        "review_approved": policy.get("review_approved", False),
+                        "continuation_workflow_planned": policy.get("continuation_workflow_planned", False),
+                        "preflight_executed": policy.get("preflight_executed", False),
+                        "loader_invoked": policy.get("loader_invoked", False),
+                        "module_diff_executed": policy.get("module_diff_executed", False),
+                        "module_hook_installed": policy.get("module_hook_installed", False),
+                        "writes_journal": policy.get("writes_journal", False),
+                        "traversal_graph_rebuilt": policy.get("traversal_graph_rebuilt", False),
+                        "execute_at_most_one_loader_step_per_review": policy.get("execute_at_most_one_loader_step_per_review", True),
+                        "automatic_recursive_traversal": policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["execute_custom_loader_traversal_workflow_step"]
+                next_action = execution.get("next_action", "review_custom_loader_traversal_workflow_execution_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_workflow_execution_step"]
+                next_action = execution.get("next_action", "resolve_custom_loader_traversal_workflow_execution_blockers")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = execution.get("next_action", "inspect_custom_loader_traversal_workflow_execution_request")
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "continuation_workflow_ready", "continuation_workflow_approved", "preflight_ready", "execution_complete", "module_diff_ready", "module_hook_recorded", "journal_appended"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_traversal_workflow_plan_request(protection_name, context):
+            spec = CustomLoaderTraversalWorkflowPlanSpec.from_context(context)
+            result = CustomLoaderTraversalWorkflowPlanManager().plan(spec)
+            workflow_plan = result.workflow_plan if isinstance(result.workflow_plan, dict) else {}
+            verification = [
+                f"custom_loader_traversal_workflow_plan_status={result.status}",
+                f"custom_loader_traversal_workflow_plan_reason={result.reason or ''}",
+                f"custom_loader_traversal_workflow_plan_planned_step_count={workflow_plan.get('planned_step_count', 0)}",
+                f"custom_loader_traversal_workflow_plan_source_graph_queue_count={workflow_plan.get('source_graph_queue_count', 0)}",
+                f"custom_loader_traversal_workflow_plan_manual_checkpoint_required={result.side_effect_policy.get('manual_checkpoint_required', True)}",
+                f"custom_loader_traversal_workflow_plan_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-workflow-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only multi-step custom loader traversal workflow plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_plan_status": workflow_plan.get("status"),
+                        "planned_step_count": workflow_plan.get("planned_step_count", 0),
+                        "source_graph_status": workflow_plan.get("source_graph_status"),
+                        "source_graph_queue_count": workflow_plan.get("source_graph_queue_count", 0),
+                        "max_planned_steps": workflow_plan.get("max_planned_steps"),
+                        "next_action": workflow_plan.get("next_action"),
+                        "manual_checkpoint_required": result.side_effect_policy.get("manual_checkpoint_required", True),
+                        "execute_at_most_one_loader_step_per_review": result.side_effect_policy.get("execute_at_most_one_loader_step_per_review", True),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "review_custom_loader_traversal_workflow_plan")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_workflow"]
+                next_action = workflow_plan.get("next_action", "provide_custom_loader_traversal_graph_with_queue")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_custom_loader_traversal_workflow_plan_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_traversal_graph_request(protection_name, context):
+            spec = CustomLoaderTraversalGraphSpec.from_context(context)
+            result = CustomLoaderTraversalGraphManager().plan(spec)
+            graph = result.graph if isinstance(result.graph, dict) else {}
+            verification = [
+                f"custom_loader_traversal_graph_status={result.status}",
+                f"custom_loader_traversal_graph_reason={result.reason or ''}",
+                f"custom_loader_traversal_graph_node_count={graph.get('node_count', 0)}",
+                f"custom_loader_traversal_graph_edge_count={graph.get('edge_count', 0)}",
+                f"custom_loader_traversal_graph_queue_count={graph.get('queue_count', 0)}",
+                f"custom_loader_traversal_graph_depth_blocked_count={graph.get('depth_blocked_count', 0)}",
+                f"custom_loader_traversal_graph_automatic_recursive_traversal={result.side_effect_policy.get('automatic_recursive_traversal', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-graph.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only deeper custom loader traversal graph and queue.",
+                    metadata={
+                        "status": result.status,
+                        "graph_status": graph.get("status"),
+                        "node_count": graph.get("node_count", 0),
+                        "edge_count": graph.get("edge_count", 0),
+                        "queue_count": graph.get("queue_count", 0),
+                        "journal_record_count": graph.get("journal_record_count", 0),
+                        "depth_blocked_count": graph.get("depth_blocked_count", 0),
+                        "duplicate_executed_count": graph.get("duplicate_executed_count", 0),
+                        "max_traversal_depth": graph.get("max_traversal_depth"),
+                        "next_action": graph.get("next_action"),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "complete"}:
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_traversal_graph"]
+                next_action = graph.get("next_action", "review_custom_loader_traversal_graph_queue")
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal_graph"]
+                next_action = graph.get("next_action", "provide_custom_loader_traversal_plan_and_journal")
+            else:
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+                next_action = "inspect_custom_loader_traversal_graph_request"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "complete"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_execution_request(protection_name, context):
+            spec = CustomLoaderExecutionSpec.from_context(context)
+            result = CustomLoaderExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+            loader_path = str(candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target") or execution.get("loaderPath") or "")
+            verification = [
+                f"custom_loader_execution_status={result.status}",
+                f"custom_loader_execution_reason={result.reason or ''}",
+                f"custom_loader_execution_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"custom_loader_execution_ok={execution.get('ok', False)}",
+                f"custom_loader_execution_added_registry_key_count={len(execution.get('addedRegistryKeys') or [])}",
+                f"custom_loader_execution_added_cache_key_count={len(execution.get('addedCacheKeys') or [])}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"custom_loader_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-execution-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed custom loader execution evidence.",
+                    metadata={
+                        "status": result.status,
+                        "execution_attempted": execution.get("attempted", False),
+                        "execution_ok": execution.get("ok", False),
+                        "loader_path": loader_path,
+                        "loader_invoked": result.side_effect_policy.get("loader_invoked", False),
+                        "added_registry_key_count": len(execution.get("addedRegistryKeys") or []),
+                        "added_cache_key_count": len(execution.get("addedCacheKeys") or []),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                    },
+                )
+            ]
+            if result.status == "success":
+                status = ExecutionStatus.SUCCESS
+                next_action = "inspect_custom_loader_execution_result_or_refresh_module_diff"
+                applied_actions = [f"execute_custom_loader:{loader_path or '<missing>'}"]
+            elif result.reason == "review_approval_required":
+                status = ExecutionStatus.PARTIAL
+                next_action = "approve_custom_loader_execution"
+                applied_actions = []
+            elif result.reason in {"missing_custom_loader_execution_preflight", "custom_loader_preflight_not_ready"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = "run_custom_loader_execution_preflight"
+                applied_actions = []
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = "inspect_custom_loader_execution_request"
+                applied_actions = []
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_execution_failure"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_continuation_journal_request(protection_name, context):
+            spec = CustomLoaderContinuationJournalSpec.from_context(context)
+            result = CustomLoaderContinuationJournalManager().plan_or_append(spec)
+            journal = result.journal if isinstance(result.journal, dict) else {}
+            entry = result.entry if isinstance(result.entry, dict) else {}
+            verification = [
+                f"custom_loader_continuation_journal_status={result.status}",
+                f"custom_loader_continuation_journal_reason={result.reason or ''}",
+                f"custom_loader_continuation_journal_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"custom_loader_continuation_journal_writes_journal={result.side_effect_policy.get('writes_journal', False)}",
+                f"custom_loader_continuation_journal_record_count={journal.get('record_count', 0)}",
+                f"custom_loader_continuation_journal_stage_status={entry.get('stage_status', '')}",
+                f"custom_loader_continuation_journal_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-continuation-journal.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated custom loader continuation journal.",
+                    metadata={
+                        "status": result.status,
+                        "journal_status": journal.get("status"),
+                        "record_count": journal.get("record_count", 0),
+                        "existing_record_count": journal.get("existing_record_count", 0),
+                        "selected_candidate_index": entry.get("selected_candidate_index"),
+                        "candidate_fingerprint": entry.get("candidate_fingerprint"),
+                        "stage_status": entry.get("stage_status"),
+                        "review_required": journal.get("review_required", True),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                        "writes_journal": result.side_effect_policy.get("writes_journal", False),
+                        "blocking_count": len(journal.get("blocking_reasons") or []),
+                        "automatic_recursive_traversal": result.side_effect_policy.get("automatic_recursive_traversal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "journal_appended"}:
+                status = ExecutionStatus.SUCCESS
+                next_action = journal.get("next_action", "review_custom_loader_continuation_journal_append")
+                applied_actions = ["append_custom_loader_continuation_journal"] if result.status == "journal_appended" else ["plan_custom_loader_continuation_journal_append"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = journal.get("next_action", "revise_custom_loader_continuation_journal_inputs")
+                applied_actions = ["plan_custom_loader_continuation_journal_append"]
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_continuation_journal_request"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "journal_appended"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_continuation_workflow_request(protection_name, context):
+            spec = CustomLoaderContinuationWorkflowSpec.from_context(context)
+            result = CustomLoaderContinuationWorkflowManager().plan(spec)
+            workflow = result.workflow if isinstance(result.workflow, dict) else {}
+            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+            verification = [
+                f"custom_loader_continuation_workflow_status={result.status}",
+                f"custom_loader_continuation_workflow_reason={result.reason or ''}",
+                f"custom_loader_continuation_workflow_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"custom_loader_continuation_workflow_selected_candidate_index={workflow.get('selected_candidate_index')}",
+                f"custom_loader_continuation_workflow_blocking_count={len(workflow.get('blocking_reasons') or [])}",
+                f"custom_loader_continuation_workflow_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-continuation-workflow.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader continuation workflow plan.",
+                    metadata={
+                        "status": result.status,
+                        "workflow_status": workflow.get("status"),
+                        "selected_candidate_index": workflow.get("selected_candidate_index"),
+                        "loader_path": candidate.get("loader_path") or candidate.get("loaderPath") or candidate.get("target"),
+                        "review_required": workflow.get("review_required", True),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                        "blocking_count": len(workflow.get("blocking_reasons") or []),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                        "writes_journal": result.side_effect_policy.get("writes_journal", False),
+                    },
+                )
+            ]
+            if result.status in {"ready_for_review", "approved_for_preflight"}:
+                status = ExecutionStatus.SUCCESS
+                next_action = workflow.get("next_action", "review_custom_loader_continuation_workflow")
+                applied_actions = ["plan_custom_loader_continuation_workflow"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = workflow.get("next_action", "revise_custom_loader_continuation_workflow_inputs")
+                applied_actions = ["plan_custom_loader_continuation_workflow"]
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_continuation_workflow_request"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"ready_for_review", "approved_for_preflight"} else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_execution_preflight_request(protection_name, context):
+            spec = CustomLoaderExecutionPreflightSpec.from_context(context)
+            result = CustomLoaderExecutionPreflightManager().preflight(spec)
+            preflight = result.preflight if isinstance(result.preflight, dict) else {}
+            verification = [
+                f"custom_loader_execution_preflight_status={result.status}",
+                f"custom_loader_execution_preflight_reason={result.reason or ''}",
+                f"custom_loader_execution_preflight_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"custom_loader_execution_preflight_blocking_count={len(preflight.get('blocking_reasons') or [])}",
+                f"custom_loader_execution_preflight_loader_invoked={result.side_effect_policy.get('loader_invoked', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-execution-preflight.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime side-effect-free custom loader execution preflight.",
+                    metadata={
+                        "status": result.status,
+                        "preflight_status": preflight.get("status"),
+                        "review_required": preflight.get("review_required", True),
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                        "blocking_count": len(preflight.get("blocking_reasons") or []),
+                        "preflight_only": result.side_effect_policy.get("preflight_only", True),
+                    },
+                )
+            ]
+            if result.status == "ready_for_execution_review":
+                status = ExecutionStatus.SUCCESS
+                next_action = "execute_custom_loader_with_review_approval"
+                applied_actions = ["preflight_custom_loader_execution"]
+            elif result.status == "blocked":
+                status = ExecutionStatus.PARTIAL
+                next_action = preflight.get("next_action", "resolve_custom_loader_preflight_blockers")
+                applied_actions = ["preflight_custom_loader_execution"]
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = "inspect_custom_loader_execution_preflight_request"
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_execution_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_traversal_request(protection_name, context):
+            spec = CustomLoaderTraversalPlanSpec.from_context(context)
+            result = CustomLoaderTraversalPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            verification = [
+                f"custom_loader_traversal_plan_status={result.status}",
+                f"custom_loader_traversal_candidate_count={plan.get('candidate_count', 0)}",
+                f"custom_loader_traversal_ready_for_review_count={plan.get('ready_for_review_count', 0)}",
+                f"custom_loader_traversal_blocked_execution_count={plan.get('blocked_execution_count', 0)}",
+                f"custom_loader_traversal_custom_candidate_count={plan.get('custom_candidate_count', 0)}",
+                f"custom_loader_traversal_ready_continuation_count={plan.get('ready_continuation_count', 0)}",
+                f"custom_loader_traversal_already_executed_count={plan.get('already_executed_count', 0)}",
+                f"custom_loader_traversal_previous_execution_count={plan.get('previous_execution_count', 0)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"custom_loader_traversal_reason={result.reason}")
+            if result.error:
+                verification.append(f"custom_loader_traversal_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-traversal-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader traversal plan.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "candidate_count": plan.get("candidate_count", 0),
+                        "ready_for_review_count": plan.get("ready_for_review_count", 0),
+                        "blocked_execution_count": plan.get("blocked_execution_count", 0),
+                        "custom_candidate_count": plan.get("custom_candidate_count", 0),
+                        "ready_continuation_count": plan.get("ready_continuation_count", 0),
+                        "already_executed_count": plan.get("already_executed_count", 0),
+                        "previous_execution_count": plan.get("previous_execution_count", 0),
+                        "review_required": plan.get("review_required", True),
+                        "plan_only": result.side_effect_policy.get("plan_only", True),
+                    },
+                )
+            ]
+            if result.status == "planned":
+                next_action = plan.get("next_action", "review_custom_loader_traversal_plan")
+                status = ExecutionStatus.SUCCESS
+                applied_actions = ["plan_custom_loader_traversal"]
+            elif result.status == "blocked":
+                next_action = "provide_custom_loader_candidates_from_chunk_graph"
+                status = ExecutionStatus.PARTIAL
+                applied_actions = ["plan_custom_loader_traversal"]
+            else:
+                next_action = "inspect_custom_loader_traversal_request"
+                status = ExecutionStatus.FAILED
+                applied_actions = []
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
             )
         return None
 
