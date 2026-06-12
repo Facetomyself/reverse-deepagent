@@ -68,8 +68,7 @@ fi
 
 extra_args=()
 if [[ -n "$EXTRA_CHROME_ARGS" ]]; then
-  # shellcheck disable=SC2206
-  extra_args=( $EXTRA_CHROME_ARGS )
+  read -r -a extra_args <<< "$EXTRA_CHROME_ARGS"
 fi
 
 open_args=(
