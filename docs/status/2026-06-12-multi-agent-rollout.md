@@ -49,3 +49,25 @@ This rollout is complete only when:
 - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python -m compileall -q src/reverse_deepagent tests` passes.
 - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v` passes, or any failure is explicitly attributed to an external service gate outside the pure-Python test suite.
 - ROADMAP / status docs are updated to reflect which unfinished items moved from active gap to baseline shipped.
+
+## Execution result
+
+| Worker | PR | Merge commit | Result | Main-agent verification |
+| --- | --- | --- | --- | --- |
+| Worker A | [#21](https://github.com/Facetomyself/reverse-deepagent/pull/21) | `3a07f7c8` | Merged | `tests.test_source_maps`, `compileall`, `git diff --check` |
+| Worker C | [#23](https://github.com/Facetomyself/reverse-deepagent/pull/23) | `5e134704` | Merged | `tests.test_browser_provider_plugin_antidetect_cdp`, `tests.test_browser_smoke_matrix`, `tests.test_browser_provider_registry`, `tests.test_doctor`, `compileall`, `git diff --check` |
+| Worker B | [#22](https://github.com/Facetomyself/reverse-deepagent/pull/22) | `c1367b7c` | Merged after security review fix | `tests.test_external_delivery_provider_plugin_gitlab_release`, `tests.test_external_delivery_registry`, `tests.test_doctor`, `compileall`, `git diff --check`; main review required inline-secret `api_base_url` blocker before merge |
+
+## Scope moved to baseline
+
+- Source Map debugger / hook candidate review descriptors now include deterministic, review-only ranking metadata. Automatic debugger / hook execution remains out of scope without explicit review.
+- AntiDetect hosted CDP now has a vendor-neutral external BrowserProvider package baseline with attach-only reviewed endpoint support and provider-specific readiness rules. Vendor allocation / SDK integration remains out of scope.
+- GitLab Release now has an external delivery provider package baseline for reviewed release-record creation with dry-run no-network behavior, explicit apply approval, metadata redaction, and inline-secret API URL blocking. Binary asset upload and partial-failure recovery remain follow-ups.
+
+## Final validation status
+
+Passed on 2026-06-12 after merging PR #21, PR #23, and PR #22, then updating ROADMAP / status documentation:
+
+- `git diff --check`
+- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q src/reverse_deepagent tests packages/reverse-deepagent-browser-provider-antidetect-cdp/src packages/reverse-deepagent-external-delivery-provider-gitlab-release/src`
+- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest discover -s tests -v` (`1709` tests, `2` skipped)
