@@ -164,7 +164,7 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         antidetect_rule = next(rule for rule in rules if rule["rule_id"] == "antidetect_cdp_contract_declared")
         self.assertEqual(antidetect_rule["provider_ids"], ["antidetect-cdp"])
         self.assertEqual(antidetect_rule["transports"], ["antidetect-cdp"])
-        self.assertNotIn("supports_launch", antidetect_rule["requires_all"])
+        self.assertIn("supports_launch", antidetect_rule["requires_all"])
         self.assertIn("supports_stealth", antidetect_rule["requires_all"])
         self.assertIn("supports_humanize", antidetect_rule["requires_all"])
         self.assertEqual(antidetect_rule["metadata_equals"]["health_check_mode"], "explicit-antidetect-cdp-contract-smoke")
@@ -174,6 +174,7 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertIn("account_boundary_policy", browserless_rule["required_metadata_keys"])
         self.assertIn("allocation_lifecycle_policy", browserbase_rule["required_metadata_keys"])
         self.assertIn("profile_persistence_policy", antidetect_rule["required_metadata_keys"])
+        self.assertIn("allocator_contract", antidetect_rule["required_metadata_keys"])
 
     def test_builtin_provider_specific_readiness_rules_pass_without_runtime_side_effects(self) -> None:
         providers = [

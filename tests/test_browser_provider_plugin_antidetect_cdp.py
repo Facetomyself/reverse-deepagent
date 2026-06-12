@@ -114,7 +114,7 @@ class BrowserProviderPluginAntiDetectCDPTests(unittest.TestCase):
         self.assertEqual(module.connection_event_log(), [])
         self.assertEqual(registration.provider_id, "antidetect-cdp")
         self.assertIn("anti-detect-cdp", metadata[0]["aliases"])
-        self.assertFalse(metadata[0]["supports_launch"])
+        self.assertTrue(metadata[0]["supports_launch"])
         self.assertTrue(metadata[0]["supports_connect"])
         self.assertTrue(metadata[0]["supports_cdp"])
         self.assertTrue(metadata[0]["supports_stealth"])
@@ -152,15 +152,111 @@ class BrowserProviderPluginAntiDetectCDPTests(unittest.TestCase):
         self.assertNotIn("allocation-sensitive-1234", str(summary))
         self.assertNotIn("profile-sensitive-5678", str(summary))
 
-    def test_missing_endpoint_blocks_start_and_connect_with_guidance(self) -> None:
+    def test_metadata_and_describe_do_not_call_injected_allocator(self) -> None:
+        module = self._import_module()
+        calls: list[dict] = []
+
+        def allocator(request: dict) -> dict:
+            calls.append(request)
+            return {"browser_ws_url": "ws://operator:secret@127.0.0.1:9222/connect?token=raw-token"}
+
+        provider = module.create_antidetect_cdp_browser_provider(
+            allocation_requester=allocator,
+            allocation_request={"profile_hint": "reviewed-profile"},
+            approve_antidetect_allocation=True,
+        )
+
+        summary = provider.describe().config
+
+        self.assertEqual(calls, [])
+        self.assertTrue(summary["allocator_configured"])
+        self.assertEqual(summary["allocation_request_fields"], ["profile_hint"])
+        self.assertEqual(module.connection_event_log(), [])
+
+    def test_missing_endpoint_and_unapproved_allocator_block_start_and_connect_with_guidance(self) -> None:
         module = self._import_module()
         provider = module.create_antidetect_cdp_browser_provider()
         self.assertFalse(provider.is_available())
         with self.assertRaisesRegex(BrowserProviderUnavailableError, "requires browser_url"):
             provider.connect()
-        with self.assertRaisesRegex(BrowserProviderUnavailableError, r"start\(\) is review-gated"):
+        with self.assertRaisesRegex(BrowserProviderUnavailableError, "approve_antidetect_allocation=True"):
             provider.start()
+
+        allocator_calls: list[dict] = []
+        blocked_provider = module.create_antidetect_cdp_browser_provider(
+            allocation_requester=lambda request: allocator_calls.append(request) or {},
+            allocation_request={"profile_hint": "reviewed-profile"},
+        )
+        with self.assertRaisesRegex(BrowserProviderUnavailableError, "approve_antidetect_allocation=True"):
+            blocked_provider.start()
+        self.assertEqual(allocator_calls, [])
         self.assertEqual(module.connection_event_log(), [])
+
+    def test_start_with_mocked_allocator_connects_using_redacted_endpoint(self) -> None:
+        module = self._import_module()
+        allocator_calls: list[dict] = []
+
+        def allocator(request: dict) -> dict:
+            allocator_calls.append(dict(request))
+            return {
+                "browser_ws_url": "ws://operator:secret@127.0.0.1:9222/connect?token=raw-allocator-token",
+                "allocation_id": "allocation-sensitive-9999",
+                "profile_id": "profile-sensitive-8888",
+                "tenant_label": "reviewed-tenant",
+                "api_token": "vendor-secret-token",
+            }
+
+        with patch.object(module, "AntiDetectDirectCDPConnection", FakeAntiDetectDirectCDPConnection):
+            provider = module.create_antidetect_cdp_browser_provider(
+                allocation_requester=allocator,
+                allocation_request={"profile_hint": "reviewed-profile"},
+                approve_antidetect_allocation=True,
+                browser_navigation_wait=0,
+            )
+            session = provider.start()
+            page = session.get_active_page()
+            self.assertIsNotNone(page)
+            assert page is not None
+            page.goto("https://example.test/allocated-antidetect")
+            self.assertEqual(page.title(), "Fake AntiDetect CDP")
+
+        self.assertEqual(len(allocator_calls), 1)
+        self.assertEqual(allocator_calls[0]["provider_id"], "antidetect-cdp")
+        self.assertEqual(allocator_calls[0]["profile_hint"], "reviewed-profile")
+        events = module.connection_event_log()
+        self.assertEqual(events[0]["event"], "allocation_reviewed_endpoint_handoff")
+        self.assertEqual(events[0]["browser_ws_url"], "ws://127.0.0.1:9222/connect?query=%3Credacted%3E")
+        self.assertEqual(events[0]["allocation_id"], "alloca...9999")
+        self.assertEqual(events[0]["profile_id"], "profil...8888")
+        self.assertEqual(events[0]["reviewed_allocation_result"]["api_token"], "<redacted>")
+        self.assertEqual(events[1]["event"], "connect_browser_websocket")
+        self.assertNotIn("raw-allocator-token", str(events))
+        self.assertNotIn("vendor-secret-token", str(events))
+        self.assertNotIn("operator:secret", str(events))
+        self.assertNotIn("allocation-sensitive-9999", str(events))
+        self.assertNotIn("profile-sensitive-8888", str(events))
+
+    def test_reviewed_allocation_result_secret_redaction(self) -> None:
+        module = self._import_module()
+        with patch.object(module, "AntiDetectDirectCDPConnection", FakeAntiDetectDirectCDPConnection):
+            provider = module.create_antidetect_cdp_browser_provider(
+                reviewed_allocation_result={
+                    "browser_ws_url": "wss://operator:secret@vendor.example/connect?token=raw-reviewed-token",
+                    "allocation_id": "allocation-sensitive-2222",
+                    "profile_id": "profile-sensitive-3333",
+                    "access_key": "secret-access-key",
+                    "debug_note": "contains raw-reviewed-token",
+                },
+                approve_antidetect_allocation=True,
+                browser_navigation_wait=0,
+            )
+            provider.start()
+        events = module.connection_event_log()
+        self.assertEqual(events[0]["reviewed_allocation_result"]["access_key"], "<redacted>")
+        self.assertEqual(events[0]["reviewed_allocation_result"]["debug_note"], "<redacted>")
+        self.assertNotIn("raw-reviewed-token", str(events))
+        self.assertNotIn("secret-access-key", str(events))
+        self.assertNotIn("operator:secret", str(events))
 
     def test_reviewed_browser_websocket_endpoint_supports_minimal_page_flow(self) -> None:
         module = self._import_module()
@@ -201,6 +297,7 @@ class BrowserProviderPluginAntiDetectCDPTests(unittest.TestCase):
         profile = dict(capabilities.production_readiness)
         profile.pop("stealth_policy")
         profile.pop("profile_persistence_policy")
+        profile.pop("allocator_contract")
         capabilities.production_readiness = profile
 
         readiness = browser_provider_production_readiness(capabilities.model_dump(mode="json"))
@@ -208,6 +305,7 @@ class BrowserProviderPluginAntiDetectCDPTests(unittest.TestCase):
         self.assertEqual(readiness["status"], "metadata-incomplete")
         self.assertIn("stealth_policy", readiness["missing_metadata"])
         self.assertIn("profile_persistence_policy", readiness["missing_metadata"])
+        self.assertIn("allocator_contract", readiness["missing_metadata"])
         checks = {item["check_id"]: item for item in readiness["checks"]}
         self.assertEqual(checks["provider_specific:antidetect_cdp_contract_declared"]["status"], "missing")
 

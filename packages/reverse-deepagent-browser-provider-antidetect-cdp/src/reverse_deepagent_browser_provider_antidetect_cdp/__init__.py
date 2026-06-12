@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, replace
+from typing import Any, Callable
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from reverse_deepagent.browser.base import BrowserProviderUnavailableError, BrowserSession
@@ -23,6 +23,8 @@ ANTIDETECT_CDP_BROWSER_PROVIDER_ALIASES = (
 _FACTORY_INVOCATION_COUNT = 0
 _CONNECTION_EVENTS: list[dict[str, Any]] = []
 
+AntiDetectAllocationRequester = Callable[[dict[str, Any]], dict[str, Any]]
+
 
 @dataclass(frozen=True, slots=True)
 class AntiDetectCDPBrowserProviderConfig:
@@ -34,6 +36,10 @@ class AntiDetectCDPBrowserProviderConfig:
     allocation_id: str | None = None
     profile_id: str | None = None
     tenant_label: str | None = None
+    allocation_requester: AntiDetectAllocationRequester | None = None
+    allocation_request: dict[str, Any] | None = None
+    reviewed_allocation_result: dict[str, Any] | None = None
+    approve_antidetect_allocation: bool = False
     endpoint_configured: bool = False
     allocation_metadata_configured: bool = False
     connect_timeout: float = 5.0
@@ -55,6 +61,10 @@ class AntiDetectCDPBrowserProviderConfig:
             "allocation_id": _redact_identifier(self.allocation_id) if self.allocation_id else None,
             "profile_id": _redact_identifier(self.profile_id) if self.profile_id else None,
             "tenant_label": self.tenant_label,
+            "allocator_configured": self.allocation_requester is not None,
+            "allocation_request_fields": sorted(str(key) for key in (self.allocation_request or {}).keys()),
+            "reviewed_allocation_result_configured": self.reviewed_allocation_result is not None,
+            "approve_antidetect_allocation": self.approve_antidetect_allocation,
             "endpoint_mode": self.endpoint_mode(),
             "endpoint_configured": self.endpoint_configured,
             "allocation_metadata_configured": self.allocation_metadata_configured,
@@ -263,11 +273,26 @@ class AntiDetectCDPBrowserProvider:
         return antidetect_cdp_browser_provider_capabilities(self.config)
 
     def start(self) -> BrowserSession:
-        raise BrowserProviderUnavailableError(
-            "AntiDetect CDP start() is review-gated and intentionally unavailable in the vendor-neutral baseline. "
-            "Allocate or approve a vendor anti-detect browser session outside core, then pass its reviewed CDP endpoint "
-            "via browser_url / cdp_browser_url or browser_ws_url / cdp_browser_ws_url and call connect()."
-        )
+        if not self.config.approve_antidetect_allocation:
+            raise BrowserProviderUnavailableError(
+                "AntiDetect CDP start() is review-gated and requires approve_antidetect_allocation=True. "
+                "Without explicit approval the provider will not call an allocator, contact a vendor, or start a browser."
+            )
+        if self.config.reviewed_allocation_result is None and self.config.allocation_requester is None:
+            raise BrowserProviderUnavailableError(
+                "AntiDetect CDP start() requires an injected allocation_requester or reviewed_allocation_result. "
+                "Metadata listing and unapproved runtime paths never allocate sessions, read secrets, probe endpoints, "
+                "or start vendor browsers."
+            )
+        allocation_result = self.config.reviewed_allocation_result
+        if allocation_result is None:
+            assert self.config.allocation_requester is not None
+            request = _allocation_request_payload(self.config)
+            allocation_result = self.config.allocation_requester(request)
+        handoff_config = _config_from_allocation_result(self.config, allocation_result)
+        _record_event("allocation_reviewed_endpoint_handoff", handoff_config)
+        self.config = handoff_config
+        return self.connect()
 
     def connect(self) -> BrowserSession:
         if self.config.browser_url:
@@ -334,7 +359,7 @@ def antidetect_cdp_browser_provider_capabilities(
         engine="chromium-compatible",
         transport="antidetect-cdp",
         target_platforms=["web"],
-        supports_launch=False,
+        supports_launch=True,
         supports_connect=True,
         supports_persistent_context=True,
         supports_cdp=True,
@@ -355,9 +380,9 @@ def antidetect_cdp_browser_provider_capabilities(
         notes=[
             "vendor-neutral anti-detect hosted CDP provider package for reviewed HTTP DevTools or browser WebSocket endpoints",
             "registration and metadata matrix do not allocate sessions, read access material, probe endpoints, or call provider factories",
-            "start() is intentionally unavailable; allocate vendor sessions externally and attach with connect()",
+            "start() is review-gated; it only calls an injected allocator or consumes a reviewed allocation descriptor when approve_antidetect_allocation=True",
             "stealth, proxy, humanize, extensions, mobile emulation, account boundary, allocation, and profile persistence are declared as vendor account/session policy metadata",
-            "endpoint and allocation identifiers are redacted from config summaries and connection event logs",
+            "endpoint and allocation identifiers are redacted from config summaries, allocation handoff metadata, and connection event logs",
         ],
         config=config.summary(),
         production_readiness={
@@ -371,10 +396,11 @@ def antidetect_cdp_browser_provider_capabilities(
             "stealth_policy": "vendor-account-or-profile-fingerprint-policy-reviewed-outside-core",
             "account_boundary_policy": "vendor-tenant-or-account-controls-secrets-profiles-proxies-and-session-policy",
             "endpoint_security_policy": "caller-supplied-redacted-reviewed-cdp-endpoint; no endpoint is read from metadata listing",
-            "allocation_lifecycle_policy": "metadata-does-not-allocate; start-unavailable; connect-attaches-only; stop-closes-local-cdp-session-only",
+            "allocation_lifecycle_policy": "metadata-does-not-allocate; start-requires-explicit-approval-and-injected-allocator-or-reviewed-result; connect-attaches-only; stop-closes-local-cdp-session-only",
+            "allocator_contract": "vendor-neutral-injected-allocation-requester-or-reviewed-allocation-result; approve_antidetect_allocation-required; endpoint-and-identifiers-redacted",
             "session_recovery": "explicit-endpoint-or-profile-session-reattach",
             "intended_use": "vendor-neutral-antidetect-hosted-cdp-provider-package",
-            "side_effect_boundary": "metadata-listing-does-not-read-env-or-secrets-contact-vendor-probe-cdp-or-start-browser; connect-and-smoke-require-explicit-reviewed-endpoint",
+            "side_effect_boundary": "metadata-listing-does-not-read-env-or-secrets-contact-vendor-probe-cdp-call-allocator-or-start-browser; allocation-apply-requires-explicit-approval-and-injected-allocator; connect-and-smoke-require-explicit-reviewed-endpoint",
         },
     )
 
@@ -388,6 +414,14 @@ def create_antidetect_cdp_browser_provider(**kwargs: Any) -> AntiDetectCDPBrowse
     browser_ws_url = kwargs.get("browser_ws_url") or kwargs.get("cdp_browser_ws_url") or kwargs.get("antidetect_browser_ws_url")
     allocation_id = kwargs.get("allocation_id") or kwargs.get("antidetect_allocation_id")
     profile_id = kwargs.get("profile_id") or kwargs.get("antidetect_profile_id")
+    allocation_requester = kwargs.get("allocation_requester") or kwargs.get("antidetect_allocation_requester")
+    if allocation_requester is not None and not callable(allocation_requester):
+        raise TypeError("allocation_requester must be callable")
+    reviewed_allocation_result = (
+        kwargs.get("reviewed_allocation_result")
+        or kwargs.get("allocation_result")
+        or kwargs.get("antidetect_allocation_result")
+    )
     config = AntiDetectCDPBrowserProviderConfig(
         display_name=str(kwargs.get("display_name") or "AntiDetect Hosted CDP BrowserProvider"),
         browser_url=str(browser_url) if browser_url else None,
@@ -395,6 +429,10 @@ def create_antidetect_cdp_browser_provider(**kwargs: Any) -> AntiDetectCDPBrowse
         allocation_id=str(allocation_id) if allocation_id else None,
         profile_id=str(profile_id) if profile_id else None,
         tenant_label=kwargs.get("tenant_label"),
+        allocation_requester=allocation_requester,
+        allocation_request=dict(kwargs.get("allocation_request") or kwargs.get("antidetect_allocation_request") or {}),
+        reviewed_allocation_result=dict(reviewed_allocation_result) if isinstance(reviewed_allocation_result, dict) else None,
+        approve_antidetect_allocation=bool(kwargs.get("approve_antidetect_allocation", False)),
         endpoint_configured=bool(browser_url or browser_ws_url),
         allocation_metadata_configured=bool(allocation_id or profile_id or kwargs.get("allocation_metadata_configured", False)),
         connect_timeout=float(kwargs.get("request_timeout") or kwargs.get("browser_connect_timeout") or 5.0),
@@ -435,6 +473,89 @@ def reset_antidetect_state() -> None:
     _CONNECTION_EVENTS.clear()
 
 
+def _allocation_request_payload(config: AntiDetectCDPBrowserProviderConfig) -> dict[str, Any]:
+    request = dict(config.allocation_request or {})
+    request.setdefault("provider_id", ANTIDETECT_CDP_BROWSER_PROVIDER_ID)
+    request.setdefault("tenant_label", config.tenant_label)
+    request.setdefault("profile_id", config.profile_id)
+    request.setdefault("allocation_id", config.allocation_id)
+    request.setdefault("endpoint_mode", "allocator-reviewed-cdp-endpoint")
+    return request
+
+
+def _config_from_allocation_result(
+    config: AntiDetectCDPBrowserProviderConfig,
+    allocation_result: dict[str, Any],
+) -> AntiDetectCDPBrowserProviderConfig:
+    browser_url = (
+        allocation_result.get("browser_url")
+        or allocation_result.get("cdp_browser_url")
+        or allocation_result.get("http_devtools_url")
+    )
+    browser_ws_url = (
+        allocation_result.get("browser_ws_url")
+        or allocation_result.get("cdp_browser_ws_url")
+        or allocation_result.get("websocket_url")
+        or allocation_result.get("ws_url")
+    )
+    endpoint = allocation_result.get("endpoint") or allocation_result.get("cdp_endpoint")
+    if endpoint and not browser_url and not browser_ws_url:
+        endpoint_text = str(endpoint)
+        if endpoint_text.startswith(("ws://", "wss://")):
+            browser_ws_url = endpoint_text
+        else:
+            browser_url = endpoint_text
+    if not browser_url and not browser_ws_url:
+        raise BrowserProviderUnavailableError(
+            "AntiDetect allocation result did not include browser_url or browser_ws_url for reviewed CDP attach."
+        )
+    allocation_id = allocation_result.get("allocation_id") or allocation_result.get("session_id") or config.allocation_id
+    profile_id = allocation_result.get("profile_id") or config.profile_id
+    tenant_label = allocation_result.get("tenant_label") or config.tenant_label
+    return replace(
+        config,
+        browser_url=str(browser_url) if browser_url else None,
+        browser_ws_url=str(browser_ws_url) if browser_ws_url else None,
+        allocation_id=str(allocation_id) if allocation_id else None,
+        profile_id=str(profile_id) if profile_id else None,
+        tenant_label=str(tenant_label) if tenant_label else None,
+        endpoint_configured=True,
+        allocation_metadata_configured=True,
+        reviewed_allocation_result=_redact_allocation_result(allocation_result),
+    )
+
+
+def _redact_allocation_result(allocation_result: dict[str, Any]) -> dict[str, Any]:
+    redacted: dict[str, Any] = {}
+    for key, value in allocation_result.items():
+        key_text = str(key)
+        if value is None:
+            redacted[key_text] = None
+        elif key_text in {
+            "browser_url",
+            "cdp_browser_url",
+            "http_devtools_url",
+            "browser_ws_url",
+            "cdp_browser_ws_url",
+            "websocket_url",
+            "ws_url",
+            "endpoint",
+            "cdp_endpoint",
+        }:
+            redacted[key_text] = _redact_url(str(value))
+        elif key_text in {"allocation_id", "session_id", "profile_id"}:
+            redacted[key_text] = _redact_identifier(str(value))
+        elif any(marker in key_text.lower() for marker in ("token", "secret", "password", "key", "credential", "auth")):
+            redacted[key_text] = "<redacted>"
+        elif isinstance(value, (bool, int, float)):
+            redacted[key_text] = value
+        elif key_text in {"tenant_label", "status", "endpoint_mode"}:
+            redacted[key_text] = str(value)
+        else:
+            redacted[key_text] = "<redacted>"
+    return redacted
+
+
 def _record_event(event: str, config: AntiDetectCDPBrowserProviderConfig) -> None:
     _CONNECTION_EVENTS.append(
         {
@@ -446,6 +567,11 @@ def _record_event(event: str, config: AntiDetectCDPBrowserProviderConfig) -> Non
             "tenant_label": config.tenant_label,
             "endpoint_mode": config.endpoint_mode(),
             "allocation_metadata_configured": config.allocation_metadata_configured,
+            "allocator_configured": config.allocation_requester is not None,
+            "allocation_approved": config.approve_antidetect_allocation,
+            "reviewed_allocation_result": _redact_allocation_result(config.reviewed_allocation_result or {})
+            if config.reviewed_allocation_result
+            else None,
         }
     )
 

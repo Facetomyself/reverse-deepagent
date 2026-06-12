@@ -301,6 +301,7 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
         provider_ids=("antidetect-cdp",),
         transports=("antidetect-cdp",),
         requires_all=(
+            "supports_launch",
             "supports_connect",
             "supports_persistent_context",
             "supports_cdp",
@@ -328,12 +329,13 @@ BROWSER_PROVIDER_PRODUCTION_READINESS_RULES: tuple[BrowserProviderProductionRead
             "account_boundary_policy",
             "endpoint_security_policy",
             "allocation_lifecycle_policy",
+            "allocator_contract",
             "profile_persistence_policy",
         ),
         message=(
-            "antidetect-cdp should declare an attach-only hosted anti-detect CDP contract with reviewed "
-            "stealth/profile/account-boundary/endpoint/allocation metadata; metadata listing must not read "
-            "secrets, allocate vendor sessions, probe endpoints, or start browsers"
+            "antidetect-cdp should declare a review-gated hosted anti-detect CDP allocation / attach contract "
+            "with reviewed stealth/profile/account-boundary/endpoint/allocation metadata; metadata listing must "
+            "not read secrets, call allocators, allocate vendor sessions, probe endpoints, or start browsers"
         ),
     ),
 )
