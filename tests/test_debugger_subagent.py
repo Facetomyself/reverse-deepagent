@@ -3650,3 +3650,782 @@ class DebuggerSubagentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceMapDebuggerExecutionReviewTests(unittest.TestCase):
+    def test_review_debugger_artifacts_warns_for_source_map_debugger_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_execution_result": {
+                "schema_version": "reverse-deepagent.source-map-debugger-execution-result.v1",
+                "status": "success",
+                "selected_consumer": "debugger",
+                "selected_review_gate": "explicit_debugger_location_review",
+                "debugger_location_applied": True,
+                "breakpoint_count": 1,
+                "paused_status": "success",
+                "callframe_count": 1,
+                "debugger_action_count": 1,
+                "automatic_continuation": False,
+                "automatic_loop": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_debugger_execution_result_requires_debugger_artifact_review", result["warnings"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_execution_artifacts")
+        summary = result["summary"]["source_map_debugger_execution_result"]
+        self.assertEqual(summary["status"], "success")
+        self.assertTrue(summary["debugger_location_applied"])
+        self.assertEqual(summary["breakpoint_count"], 1)
+        self.assertFalse(summary["automatic_continuation"])
+        self.assertFalse(summary["automatic_loop"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_debugger_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_execution_result": {
+                "status": "blocked",
+                "blockers": ["source_map_debugger_action_not_approved"],
+                "automatic_continuation": False,
+                "automatic_loop": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_debugger_execution_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_execution_failure")
+
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_chain_readiness(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_chain_readiness": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-chain-readiness.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "completed_stage": "source_map_selected_executor_apply_preflight",
+                "next_stage": "selected_executor_result_review",
+                "next_action": "review_source_map_debugger_executor_application",
+                "automatic_followthrough_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_chain_readiness_requires_next_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_chain_readiness_next_action")
+        summary = result["summary"]["source_map_followthrough_chain_readiness"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertEqual(summary["next_stage"], "selected_executor_result_review")
+        self.assertFalse(summary["automatic_followthrough_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_chain_readiness(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_chain_readiness": {"status": "blocked", "blockers": ["source_map_followthrough_chain_evidence_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_chain_readiness_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_chain_readiness_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_one_step_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_one_step_plan": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-one-step-plan.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "source_chain_completed_stage": "source_map_selected_executor_apply_preflight",
+                "source_chain_next_stage": "selected_executor_result_review",
+                "source_chain_next_action": "review_source_map_debugger_executor_application",
+                "planned_step_ready_for_review": True,
+                "automatic_followthrough_supported": False,
+                "automatic_execution_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_one_step_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_one_step_plan_before_next_action")
+        summary = result["summary"]["source_map_followthrough_one_step_plan"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["source_chain_completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertEqual(summary["source_chain_next_stage"], "selected_executor_result_review")
+        self.assertTrue(summary["planned_step_ready_for_review"])
+        self.assertFalse(summary["automatic_followthrough_supported"])
+        self.assertFalse(summary["automatic_execution_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_one_step_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_one_step_plan": {"status": "blocked", "blockers": ["source_map_followthrough_chain_readiness_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_one_step_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_one_step_plan_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_preflight": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-preflight.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "planned_next_action": "review_source_map_debugger_executor_application",
+                "planned_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                "dispatch_target": {"dispatch_surface": "source-map-debugger-execution-result"},
+                "dispatcher_input_ready_for_review": True,
+                "automatic_dispatch_supported": False,
+                "automatic_followthrough_supported": False,
+                "automatic_execution_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_preflight_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_preflight_before_explicit_executor_call")
+        summary = result["summary"]["source_map_followthrough_dispatch_preflight"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["dispatcher_input_ready_for_review"])
+        self.assertFalse(summary["automatic_dispatch_supported"])
+        self.assertFalse(summary["automatic_followthrough_supported"])
+        self.assertFalse(summary["automatic_execution_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_preflight": {"status": "blocked", "blockers": ["source_map_followthrough_dispatch_target_unsupported"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_preflight_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_approval_plan": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-approval-plan.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "approval_plan_ready_for_review": True,
+                "transaction_plan_ready_for_review": True,
+                "ready_to_dispatch_now": False,
+                "approval_recorded": False,
+                "transaction_started": False,
+                "automatic_dispatch_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_approval_plan_before_recording_approval")
+        summary = result["summary"]["source_map_followthrough_dispatch_approval_plan"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["approval_plan_ready_for_review"])
+        self.assertTrue(summary["transaction_plan_ready_for_review"])
+        self.assertFalse(summary["ready_to_dispatch_now"])
+        self.assertFalse(summary["approval_recorded"])
+        self.assertFalse(summary["transaction_started"])
+        self.assertFalse(summary["automatic_dispatch_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_approval_plan": {"status": "blocked", "blockers": ["source_map_followthrough_dispatch_preflight_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_approval_plan_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_approval_record(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_approval_record": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-approval-record.v1",
+                "status": "written",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "approved_for_dispatch": True,
+                "dispatch_input_gates": {
+                    "transaction_started": False,
+                    "journal_written": False,
+                },
+                "next_action": "review_source_map_followthrough_dispatch_transaction_preflight",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_approval_record_ready_for_transaction_preflight", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_transaction_preflight")
+        summary = result["summary"]["source_map_followthrough_dispatch_approval_record"]
+        self.assertEqual(summary["status"], "written")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["approved_for_dispatch"])
+        self.assertFalse(summary["transaction_started"])
+        self.assertFalse(summary["journal_written"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_approval_record(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_approval_record": {"status": "blocked", "blockers": ["reviewer_present"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_approval_record_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_ready_source_map_followthrough_dispatch_approval_plan_descriptor")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_transaction_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_transaction_preflight": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-transaction-preflight.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "transaction_preflight_ready_for_review": True,
+                "journal_writer_gate_ready_for_review": True,
+                "next_action": "review_source_map_followthrough_dispatch_transaction_journal_writer",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_ready_for_journal_writer", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_transaction_journal_writer")
+        summary = result["summary"]["source_map_followthrough_dispatch_transaction_preflight"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["transaction_preflight_ready_for_review"])
+        self.assertTrue(summary["journal_writer_gate_ready_for_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatch_transaction_journal_writer")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_transaction_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_transaction_preflight": {"status": "blocked", "blockers": ["approval_record_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_transaction_preflight_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_transaction_journal(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_transaction_journal": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-transaction-journal.v1",
+                "status": "written",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "journal_written": True,
+                "transaction_started": True,
+                "next_action": "review_source_map_followthrough_dispatch_bounded_executor_gate",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_transaction_journal_ready_for_bounded_gate", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_bounded_executor_gate")
+        summary = result["summary"]["source_map_followthrough_dispatch_transaction_journal"]
+        self.assertEqual(summary["status"], "written")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["journal_written"])
+        self.assertTrue(summary["transaction_started"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatch_bounded_executor_gate")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_transaction_journal(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_transaction_journal": {"status": "blocked", "blockers": ["transaction_preflight_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_transaction_journal_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_transaction_journal_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_bounded_executor_gate(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_bounded_executor_gate": {
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "bounded_executor_gate_ready_for_review": True,
+                "ready_for_dispatcher_handoff_review": True,
+                "next_action": "review_source_map_followthrough_dispatcher_handoff",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_ready_for_dispatcher_handoff", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatcher_handoff")
+        summary = result["summary"]["source_map_followthrough_dispatch_bounded_executor_gate"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertTrue(summary["bounded_executor_gate_ready_for_review"])
+        self.assertTrue(summary["ready_for_dispatcher_handoff_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatcher_handoff")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_bounded_executor_gate(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_bounded_executor_gate": {"status": "blocked", "blockers": ["transaction_journal_written"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_bounded_executor_gate_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatcher_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatcher_handoff": {
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "dispatcher_handoff_ready_for_review": True,
+                "ready_for_explicit_dispatch_review": True,
+                "next_action": "review_source_map_followthrough_dispatcher_apply_preflight",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatcher_handoff_ready_for_apply_preflight_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatcher_apply_preflight")
+        summary = result["summary"]["source_map_followthrough_dispatcher_handoff"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertTrue(summary["dispatcher_handoff_ready_for_review"])
+        self.assertTrue(summary["ready_for_explicit_dispatch_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatcher_apply_preflight")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatcher_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatcher_handoff": {"status": "blocked", "blockers": ["bounded_gate_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatcher_handoff_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatcher_handoff_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatcher_apply_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatcher_apply_preflight": {
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "dispatcher_apply_preflight_ready_for_review": True,
+                "ready_for_explicit_dispatcher_mvp_review": True,
+                "next_action": "review_source_map_followthrough_dispatcher_mvp",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_ready_for_dispatcher_mvp", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatcher_mvp")
+        summary = result["summary"]["source_map_followthrough_dispatcher_apply_preflight"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertTrue(summary["dispatcher_apply_preflight_ready_for_review"])
+        self.assertTrue(summary["ready_for_explicit_dispatcher_mvp_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatcher_mvp")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatcher_apply_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatcher_apply_preflight": {"status": "blocked", "blockers": ["dispatcher_handoff_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatcher_apply_preflight_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatcher_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatcher_result": {
+                "status": "dispatched",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "dispatcher_decision_recorded": True,
+                "dispatch_target_invoked": False,
+                "selected_executor_invoked": False,
+                "selected_executor_apply_preflight_invoked": False,
+                "next_action": "review_source_map_selected_executor_apply_preflight",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatcher_result_ready_for_selected_executor_apply_preflight", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_apply_preflight")
+        summary = result["summary"]["source_map_followthrough_dispatcher_result"]
+        self.assertEqual(summary["status"], "dispatched")
+        self.assertTrue(summary["dispatcher_decision_recorded"])
+        self.assertFalse(summary["dispatch_target_invoked"])
+        self.assertFalse(summary["selected_executor_invoked"])
+        self.assertFalse(summary["selected_executor_apply_preflight_invoked"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatcher_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatcher_result": {"status": "blocked", "blockers": ["dispatcher_apply_preflight_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatcher_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatcher_result_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_selected_executor_application_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_selected_executor_application_handoff": {
+                "schema_version": "reverse-deepagent.source-map-selected-executor-application-handoff.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "application_surface": "source-map-debugger-application",
+                "application_review_action": "review_source_map_debugger_executor_application",
+                "ready_for_application_review": True,
+                "next_action": "review_source_map_debugger_executor_application",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_selected_executor_application_handoff_ready_for_application_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_application")
+        summary = result["summary"]["source_map_selected_executor_application_handoff"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["application_surface"], "source-map-debugger-application")
+        self.assertTrue(summary["ready_for_application_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_selected_executor_application_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_selected_executor_application_handoff": {"status": "blocked", "blockers": ["source_map_selected_executor_apply_preflight_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_selected_executor_application_handoff_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_selected_executor_application_handoff_failure")
+
+
+    def test_review_debugger_artifacts_warns_for_source_map_selected_executor_result_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_selected_executor_result_checkpoint": {
+                "schema_version": "reverse-deepagent.source-map-selected-executor-result-checkpoint.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "application_surface": "source-map-debugger-application",
+                "application_result_status": "success",
+                "ready_for_next_explicit_review": True,
+                "next_action": "review_source_map_selected_executor_result_checkpoint",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_selected_executor_result_checkpoint_ready_for_followthrough_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_result_checkpoint")
+        summary = result["summary"]["source_map_selected_executor_result_checkpoint"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["application_surface"], "source-map-debugger-application")
+        self.assertTrue(summary["ready_for_next_explicit_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_selected_executor_result_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_selected_executor_result_checkpoint": {"status": "blocked", "blockers": ["source_map_selected_executor_application_result_not_success"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_selected_executor_result_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_selected_executor_result_checkpoint_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_completion_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_completion_checkpoint": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-completion-checkpoint.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "completion_status": "terminal_review_candidate",
+                "terminal_review_candidate": True,
+                "followup_required": False,
+                "ready_for_completion_review": True,
+                "next_action": "inspect_source_map_debugger_execution_artifacts",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_completion_checkpoint_ready_for_completion_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_completion_checkpoint")
+        summary = result["summary"]["source_map_followthrough_completion_checkpoint"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["completion_status"], "terminal_review_candidate")
+        self.assertTrue(summary["terminal_review_candidate"])
+        self.assertTrue(summary["ready_for_completion_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_completion_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_completion_checkpoint": {"status": "blocked", "blockers": ["source_map_selected_executor_result_checkpoint_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_completion_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_completion_checkpoint_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_terminal_review_package(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_terminal_review_package": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-package.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "completion_status": "terminal_review_candidate",
+                "ready_for_terminal_review": True,
+                "next_action": "review_source_map_terminal_review_package",
+                "terminal_review_package": {"package_kind": "terminal-review-package", "recommended_review_action": "inspect_source_map_debugger_execution_artifacts"},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_terminal_review_package_ready_for_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_terminal_review_package")
+        summary = result["summary"]["source_map_terminal_review_package"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertTrue(summary["ready_for_terminal_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_terminal_review_package(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_terminal_review_package": {"status": "blocked", "blockers": ["source_map_followthrough_completion_checkpoint_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_terminal_review_package_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_terminal_review_package_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_terminal_review_closure_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_terminal_review_closure_checkpoint": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-closure-checkpoint.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "closure_status": "terminal_review_observed",
+                "ready_for_closure_audit_review": True,
+                "next_action": "review_source_map_terminal_review_closure_checkpoint",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_terminal_review_closure_checkpoint_ready_for_closure_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_terminal_review_closure_checkpoint")
+        summary = result["summary"]["source_map_terminal_review_closure_checkpoint"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertTrue(summary["ready_for_closure_audit_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_terminal_review_closure_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_terminal_review_closure_checkpoint": {"status": "blocked", "blockers": ["source_map_terminal_review_observed_result_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_terminal_review_closure_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_terminal_review_closure_checkpoint_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_terminal_review_final_audit(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_terminal_review_final_audit": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-final-audit.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "final_audit_status": "source_map_followthrough_review_closed",
+                "ready_for_final_audit_review": True,
+                "next_action": "review_source_map_terminal_review_final_audit",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_terminal_review_final_audit_ready_for_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_terminal_review_final_audit")
+        summary = result["summary"]["source_map_terminal_review_final_audit"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertTrue(summary["ready_for_final_audit_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_terminal_review_final_audit(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_terminal_review_final_audit": {"status": "blocked", "blockers": ["source_map_terminal_review_closure_checkpoint_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_terminal_review_final_audit_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_terminal_review_final_audit_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_debugger_candidates(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidates": {
+                "schema_version": "reverse-deepagent.source-map-debugger-candidates.v1",
+                "status": "ready_for_review",
+                "requested_symbol": "buildSign",
+                "bundler_kind": "webpack",
+                "candidate_count": 1,
+                "ready_for_debugger_location_review_count": 1,
+                "review_only": True,
+                "plan_only": True,
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+                "candidates": [{"candidate_id": "source-map-debugger:test"}],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_debugger_candidates_require_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_debugger_candidates_before_selected_debugger_apply")
+        summary = result["summary"]["source_map_debugger_candidates"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["candidate_count"], 1)
+        self.assertEqual(summary["ready_for_debugger_location_review_count"], 1)
+        self.assertEqual(summary["candidate_ids"], ["source-map-debugger:test"])
+        self.assertFalse(summary["debugger_execution_performed"])
+        self.assertFalse(summary["breakpoint_installed"])
+        self.assertFalse(summary["automatic_debugger_continuation"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_debugger_candidates(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidates": {
+                "status": "blocked",
+                "blockers": ["source_map_debugger_candidate_source_evidence_missing"],
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_debugger_candidates_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_candidate_review_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_debugger_candidate_selection(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidate_selection": {
+                "schema_version": "reverse-deepagent.source-map-debugger-candidate-selection.v1",
+                "status": "ready_for_review",
+                "candidate_count": 1,
+                "selected_candidate_id": "source-map-debugger:buildSign",
+                "selected_action_id": "source-map-debugger-candidate:source-map-debugger:buildSign",
+                "selected_consumer": "debugger",
+                "ready_for_selected_executor_input_review": True,
+                "review_only": True,
+                "plan_only": True,
+                "handoff_only": True,
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_debugger_candidate_selection_requires_input_review", result["warnings"])
+        self.assertEqual(result["next_action"], "run_source_map_selected_executor_input_review_for_selected_debugger_candidate")
+        summary = result["summary"]["source_map_debugger_candidate_selection"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_candidate_id"], "source-map-debugger:buildSign")
+        self.assertTrue(summary["ready_for_selected_executor_input_review"])
+        self.assertFalse(summary["debugger_execution_performed"])
+        self.assertFalse(summary["breakpoint_installed"])
+        self.assertFalse(summary["automatic_debugger_continuation"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_debugger_candidate_selection(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidate_selection": {
+                "status": "blocked",
+                "blockers": ["source_map_debugger_candidate_selection_ambiguous"],
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_debugger_candidate_selection_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_candidate_selection_failure")

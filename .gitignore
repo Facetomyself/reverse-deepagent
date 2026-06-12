@@ -29,6 +29,7 @@ artifacts-*/
 *.log
 
 # Local environment
+.serena/
 .env
 .env.*
 !.env.example

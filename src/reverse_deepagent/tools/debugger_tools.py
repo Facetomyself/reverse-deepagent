@@ -50,6 +50,243 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         mutation_audit = _records_alias(payload, "mutation_audit", "mutation-audit", "mutationAudit")
         actions = _records_alias(payload, "debugger_actions", "debugger-actions", "debuggerActions")
         timeline_entries = _records_from(timeline.get("entries") or timeline.get("events") or timeline.get("timeline"))
+        source_map_debugger_result = _object_alias(
+            payload,
+            "source_map_debugger_execution_result",
+            "source-map-debugger-execution-result",
+            "sourceMapDebuggerExecutionResult",
+            "source_map_selected_debugger_result",
+            "sourceMapSelectedDebuggerResult",
+        )
+        source_map_debugger_candidates = _object_alias(
+            payload,
+            "source_map_debugger_candidates",
+            "source-map-debugger-candidates",
+            "sourceMapDebuggerCandidates",
+            "source_map_debugger_candidate_review",
+            "source-map-debugger-candidate-review",
+            "sourceMapDebuggerCandidateReview",
+            "source_map_debugger_candidate_refinement",
+            "sourceMapDebuggerCandidateRefinement",
+        )
+        source_map_followthrough_chain_readiness = _object_alias(
+            payload,
+            "source_map_followthrough_chain_readiness",
+            "source-map-followthrough-chain-readiness",
+            "sourceMapFollowthroughChainReadiness",
+            "source_map_followthrough_chain_review",
+            "source-map-followthrough-chain-review",
+            "sourceMapFollowthroughChainReview",
+            "source_map_followthrough_status",
+            "source-map-followthrough-status",
+            "sourceMapFollowthroughStatus",
+        )
+        source_map_followthrough_one_step_plan = _object_alias(
+            payload,
+            "source_map_followthrough_one_step_plan",
+            "source-map-followthrough-one-step-plan",
+            "sourceMapFollowthroughOneStepPlan",
+            "source_map_followthrough_orchestrator_plan",
+            "source-map-followthrough-orchestrator-plan",
+            "sourceMapFollowthroughOrchestratorPlan",
+            "source_map_followthrough_next_step_plan",
+            "source-map-followthrough-next-step-plan",
+            "sourceMapFollowthroughNextStepPlan",
+        )
+        source_map_followthrough_dispatch_preflight = _object_alias(
+            payload,
+            "source_map_followthrough_dispatch_preflight",
+            "source-map-followthrough-dispatch-preflight",
+            "sourceMapFollowthroughDispatchPreflight",
+            "source_map_followthrough_dispatch_review",
+            "source-map-followthrough-dispatch-review",
+            "sourceMapFollowthroughDispatchReview",
+            "source_map_followthrough_executor_dispatch_preflight",
+            "source-map-followthrough-executor-dispatch-preflight",
+            "sourceMapFollowthroughExecutorDispatchPreflight",
+        )
+        source_map_followthrough_dispatch_approval_plan = _object_alias(
+            payload,
+            "source_map_followthrough_dispatch_approval_plan",
+            "source-map-followthrough-dispatch-approval-plan",
+            "sourceMapFollowthroughDispatchApprovalPlan",
+            "source_map_followthrough_executor_approval_plan",
+            "source-map-followthrough-executor-approval-plan",
+            "sourceMapFollowthroughExecutorApprovalPlan",
+            "source_map_followthrough_dispatch_transaction_plan",
+            "source-map-followthrough-dispatch-transaction-plan",
+            "sourceMapFollowthroughDispatchTransactionPlan",
+        )
+        source_map_followthrough_dispatch_approval_record = _object_alias(
+            payload,
+            "source_map_followthrough_dispatch_approval_record",
+            "source-map-followthrough-dispatch-approval-record",
+            "sourceMapFollowthroughDispatchApprovalRecord",
+            "source_map_followthrough_executor_approval_record",
+            "source-map-followthrough-executor-approval-record",
+            "sourceMapFollowthroughExecutorApprovalRecord",
+        )
+        source_map_followthrough_dispatch_transaction_preflight = _object_alias(
+            payload,
+            "source_map_followthrough_dispatch_transaction_preflight",
+            "source-map-followthrough-dispatch-transaction-preflight",
+            "sourceMapFollowthroughDispatchTransactionPreflight",
+            "source_map_followthrough_dispatch_journal_preflight",
+            "source-map-followthrough-dispatch-journal-preflight",
+            "sourceMapFollowthroughDispatchJournalPreflight",
+            "source_map_followthrough_dispatch_transaction_gate",
+            "source-map-followthrough-dispatch-transaction-gate",
+            "sourceMapFollowthroughDispatchTransactionGate",
+        )
+        source_map_followthrough_dispatch_transaction_journal = _object_alias(
+            payload,
+            "source_map_followthrough_dispatch_transaction_journal",
+            "source-map-followthrough-dispatch-transaction-journal",
+            "sourceMapFollowthroughDispatchTransactionJournal",
+            "source_map_followthrough_dispatch_journal",
+            "source-map-followthrough-dispatch-journal",
+            "sourceMapFollowthroughDispatchJournal",
+        )
+        source_map_followthrough_dispatch_bounded_executor_gate = _object_alias(
+            payload,
+            "source_map_followthrough_dispatch_bounded_executor_gate",
+            "source-map-followthrough-dispatch-bounded-executor-gate",
+            "sourceMapFollowthroughDispatchBoundedExecutorGate",
+            "source_map_followthrough_dispatch_bounded_gate",
+            "source-map-followthrough-dispatch-bounded-gate",
+            "sourceMapFollowthroughDispatchBoundedGate",
+            "source_map_followthrough_dispatch_executor_gate",
+            "source-map-followthrough-dispatch-executor-gate",
+            "sourceMapFollowthroughDispatchExecutorGate",
+        )
+        source_map_followthrough_dispatcher_handoff = _object_alias(
+            payload,
+            "source_map_followthrough_dispatcher_handoff",
+            "source-map-followthrough-dispatcher-handoff",
+            "sourceMapFollowthroughDispatcherHandoff",
+            "source_map_followthrough_dispatch_handoff",
+            "source-map-followthrough-dispatch-handoff",
+            "sourceMapFollowthroughDispatchHandoff",
+            "source_map_followthrough_next_action_handoff",
+            "source-map-followthrough-next-action-handoff",
+            "sourceMapFollowthroughNextActionHandoff",
+        )
+        source_map_followthrough_dispatcher_apply_preflight = _object_alias(
+            payload,
+            "source_map_followthrough_dispatcher_apply_preflight",
+            "source-map-followthrough-dispatcher-apply-preflight",
+            "sourceMapFollowthroughDispatcherApplyPreflight",
+            "source_map_followthrough_dispatch_apply_preflight",
+            "source-map-followthrough-dispatch-apply-preflight",
+            "sourceMapFollowthroughDispatchApplyPreflight",
+            "source_map_followthrough_dispatcher_preflight",
+            "source-map-followthrough-dispatcher-preflight",
+            "sourceMapFollowthroughDispatcherPreflight",
+        )
+        source_map_followthrough_dispatcher_result = _object_alias(
+            payload,
+            "source_map_followthrough_dispatcher_result",
+            "source-map-followthrough-dispatcher-result",
+            "sourceMapFollowthroughDispatcherResult",
+            "source_map_followthrough_dispatcher_mvp",
+            "source-map-followthrough-dispatcher-mvp",
+            "sourceMapFollowthroughDispatcherMvp",
+            "source_map_followthrough_dispatch_next_action",
+            "source-map-followthrough-dispatch-next-action",
+            "sourceMapFollowthroughDispatchNextAction",
+        )
+        source_map_selected_executor_application_handoff = _object_alias(
+            payload,
+            "source_map_selected_executor_application_handoff",
+            "source-map-selected-executor-application-handoff",
+            "sourceMapSelectedExecutorApplicationHandoff",
+            "source_map_selected_executor_application_review_input",
+            "source-map-selected-executor-application-review-input",
+            "sourceMapSelectedExecutorApplicationReviewInput",
+            "source_map_followthrough_application_handoff",
+            "source-map-followthrough-application-handoff",
+            "sourceMapFollowthroughApplicationHandoff",
+        )
+        source_map_selected_executor_result_checkpoint = _object_alias(
+            payload,
+            "source_map_selected_executor_result_checkpoint",
+            "source-map-selected-executor-result-checkpoint",
+            "sourceMapSelectedExecutorResultCheckpoint",
+            "source_map_selected_executor_application_result_checkpoint",
+            "source-map-selected-executor-application-result-checkpoint",
+            "sourceMapSelectedExecutorApplicationResultCheckpoint",
+            "source_map_followthrough_result_checkpoint",
+            "source-map-followthrough-result-checkpoint",
+            "sourceMapFollowthroughResultCheckpoint",
+        )
+        source_map_followthrough_completion_checkpoint = _object_alias(
+            payload,
+            "source_map_followthrough_completion_checkpoint",
+            "source-map-followthrough-completion-checkpoint",
+            "sourceMapFollowthroughCompletionCheckpoint",
+            "source_map_followthrough_completion_review",
+            "source-map-followthrough-completion-review",
+            "sourceMapFollowthroughCompletionReview",
+            "source_map_followthrough_next_action_checkpoint",
+            "source-map-followthrough-next-action-checkpoint",
+            "sourceMapFollowthroughNextActionCheckpoint",
+        )
+        source_map_terminal_review_package = _object_alias(
+            payload,
+            "source_map_terminal_review_package",
+            "source-map-terminal-review-package",
+            "sourceMapTerminalReviewPackage",
+            "source_map_followthrough_terminal_review_package",
+            "source-map-followthrough-terminal-review-package",
+            "sourceMapFollowthroughTerminalReviewPackage",
+            "source_map_terminal_review_handoff",
+            "source-map-terminal-review-handoff",
+            "sourceMapTerminalReviewHandoff",
+            "source_map_followthrough_audit_handoff",
+            "source-map-followthrough-audit-handoff",
+            "sourceMapFollowthroughAuditHandoff",
+        )
+        source_map_terminal_review_closure_checkpoint = _object_alias(
+            payload,
+            "source_map_terminal_review_closure_checkpoint",
+            "source-map-terminal-review-closure-checkpoint",
+            "sourceMapTerminalReviewClosureCheckpoint",
+            "source_map_terminal_review_observed_result_checkpoint",
+            "source-map-terminal-review-observed-result-checkpoint",
+            "sourceMapTerminalReviewObservedResultCheckpoint",
+            "source_map_followthrough_closure_audit",
+            "source-map-followthrough-closure-audit",
+            "sourceMapFollowthroughClosureAudit",
+            "source_map_terminal_review_closure_audit",
+            "source-map-terminal-review-closure-audit",
+            "sourceMapTerminalReviewClosureAudit",
+        )
+        source_map_terminal_review_final_audit = _object_alias(
+            payload,
+            "source_map_terminal_review_final_audit",
+            "source-map-terminal-review-final-audit",
+            "sourceMapTerminalReviewFinalAudit",
+            "source_map_terminal_review_final_audit_rollup",
+            "source-map-terminal-review-final-audit-rollup",
+            "sourceMapTerminalReviewFinalAuditRollup",
+            "source_map_followthrough_final_audit",
+            "source-map-followthrough-final-audit",
+            "sourceMapFollowthroughFinalAudit",
+            "source_map_terminal_review_closure_summary",
+            "source-map-terminal-review-closure-summary",
+            "sourceMapTerminalReviewClosureSummary",
+        )
+        source_map_debugger_candidate_selection = _object_alias(
+            payload,
+            "source_map_debugger_candidate_selection",
+            "source-map-debugger-candidate-selection",
+            "sourceMapDebuggerCandidateSelection",
+            "source_map_debugger_candidate_handoff",
+            "source-map-debugger-candidate-handoff",
+            "sourceMapDebuggerCandidateHandoff",
+            "source_map_debugger_candidate_executor_input",
+            "sourceMapDebuggerCandidateExecutorInput",
+        )
         live_preflight = _object_alias(
             payload,
             "paused_session_live_continuation_preflight",
@@ -452,8 +689,18 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
         execution_plan_target = execution_plan.get("target_attach_readiness_summary") if isinstance(execution_plan.get("target_attach_readiness_summary"), dict) else {}
         execution_plan_callframe = execution_plan.get("callframe_recovery_plan") if isinstance(execution_plan.get("callframe_recovery_plan"), dict) else {}
         execution_plan_gates = execution_plan.get("review_gates") if isinstance(execution_plan.get("review_gates"), dict) else {}
+        source_map_debugger_candidates_policy = (
+            source_map_debugger_candidates.get("side_effect_policy")
+            if isinstance(source_map_debugger_candidates.get("side_effect_policy"), dict)
+            else {}
+        )
+        source_map_debugger_candidate_selection_policy = (
+            source_map_debugger_candidate_selection.get("side_effect_policy")
+            if isinstance(source_map_debugger_candidate_selection.get("side_effect_policy"), dict)
+            else {}
+        )
 
-        artifact_count = sum(bool(item) for item in (session, timeline, paused, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness, automatic_loop_execution_plan, automatic_loop_executor_preflight, automatic_loop_executor_approval_plan, automatic_loop_execution_result, automatic_loop_followup_checkpoint, automatic_loop_next_iteration_plan, automatic_loop_next_iteration_execution, automatic_loop_next_iteration_followup_checkpoint, automatic_loop_following_iteration_plan, automatic_loop_multi_iteration_policy, automatic_loop_multi_iteration_executor_preflight, automatic_loop_multi_iteration_execution_plan, automatic_loop_multi_iteration_executor_approval_plan, automatic_loop_multi_iteration_execution_result, automatic_loop_multi_iteration_followup_checkpoint, automatic_loop_multi_iteration_next_step_plan, automatic_loop_multi_iteration_executor_input_preflight)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
+        artifact_count = sum(bool(item) for item in (session, timeline, paused, source_map_debugger_result, source_map_debugger_candidates, source_map_followthrough_chain_readiness, source_map_followthrough_one_step_plan, source_map_followthrough_dispatch_preflight, source_map_followthrough_dispatch_approval_plan, source_map_followthrough_dispatch_approval_record, source_map_followthrough_dispatch_transaction_preflight, source_map_followthrough_dispatch_transaction_journal, source_map_followthrough_dispatch_bounded_executor_gate, source_map_followthrough_dispatcher_handoff, source_map_followthrough_dispatcher_apply_preflight, source_map_debugger_candidate_selection, live_preflight, target_attach_readiness, cross_process_execution_plan, cross_process_session_lifecycle, cross_process_attach_probe, live_callframe_recovery, cross_process_one_action, pre_action_subscribe_and_action, next_paused_event_capture_plan, next_paused_event_capture_execution, cross_process_continuation_checkpoint, multi_step_continuation_workflow, multi_step_continuation_execution, multi_step_loop_plan, multi_step_loop_execution, automatic_loop_readiness, automatic_loop_execution_plan, automatic_loop_executor_preflight, automatic_loop_executor_approval_plan, automatic_loop_execution_result, automatic_loop_followup_checkpoint, automatic_loop_next_iteration_plan, automatic_loop_next_iteration_execution, automatic_loop_next_iteration_followup_checkpoint, automatic_loop_following_iteration_plan, automatic_loop_multi_iteration_policy, automatic_loop_multi_iteration_executor_preflight, automatic_loop_multi_iteration_execution_plan, automatic_loop_multi_iteration_executor_approval_plan, automatic_loop_multi_iteration_execution_result, automatic_loop_multi_iteration_followup_checkpoint, automatic_loop_multi_iteration_next_step_plan, automatic_loop_multi_iteration_executor_input_preflight)) + sum(bool(items) for items in (callframes, evaluations, mutation_audit, actions, timeline_entries))
         blockers: list[str] = []
         warnings: list[str] = []
         if not artifact_count:
@@ -466,6 +713,131 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             blockers.append("debugger_artifact_reports_failure")
         if paused_status in {"failed", "failure", "error", "unsupported"}:
             blockers.append("debugger_pause_reports_failure")
+        source_map_followthrough_chain_status = _string(source_map_followthrough_chain_readiness.get("status"))
+        if source_map_followthrough_chain_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_chain_readiness_blocked")
+        if source_map_followthrough_chain_status in {"ready_for_review", "ready"}:
+            warnings.append("source_map_followthrough_chain_readiness_requires_next_review")
+        source_map_followthrough_one_step_plan_status = _string(source_map_followthrough_one_step_plan.get("status"))
+        if source_map_followthrough_one_step_plan_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_one_step_plan_blocked")
+        if source_map_followthrough_one_step_plan_status in {"ready_for_review", "ready"}:
+            warnings.append("source_map_followthrough_one_step_plan_requires_review")
+        source_map_followthrough_dispatch_preflight_status = _string(source_map_followthrough_dispatch_preflight.get("status"))
+        if source_map_followthrough_dispatch_preflight_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatch_preflight_blocked")
+        if source_map_followthrough_dispatch_preflight_status in {"ready_for_review", "ready"}:
+            warnings.append("source_map_followthrough_dispatch_preflight_requires_review")
+        source_map_followthrough_dispatch_approval_plan_status = _string(source_map_followthrough_dispatch_approval_plan.get("status"))
+        if source_map_followthrough_dispatch_approval_plan_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatch_approval_plan_blocked")
+        if source_map_followthrough_dispatch_approval_plan_status in {"ready_for_review", "ready"}:
+            warnings.append("source_map_followthrough_dispatch_approval_plan_requires_review")
+        source_map_followthrough_dispatch_approval_record_status = _string(source_map_followthrough_dispatch_approval_record.get("status"))
+        if source_map_followthrough_dispatch_approval_record_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatch_approval_record_blocked")
+        if source_map_followthrough_dispatch_approval_record_status == "written" and _boolish(source_map_followthrough_dispatch_approval_record.get("approved_for_dispatch")):
+            warnings.append("source_map_followthrough_dispatch_approval_record_ready_for_transaction_preflight")
+        source_map_followthrough_dispatch_transaction_preflight_status = _string(source_map_followthrough_dispatch_transaction_preflight.get("status"))
+        if source_map_followthrough_dispatch_transaction_preflight_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatch_transaction_preflight_blocked")
+        if source_map_followthrough_dispatch_transaction_preflight_status in {"ready_for_review", "ready"}:
+            warnings.append("source_map_followthrough_dispatch_transaction_preflight_ready_for_journal_writer")
+        source_map_followthrough_dispatch_transaction_journal_status = _string(source_map_followthrough_dispatch_transaction_journal.get("status"))
+        if source_map_followthrough_dispatch_transaction_journal_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatch_transaction_journal_blocked")
+        if source_map_followthrough_dispatch_transaction_journal_status == "written" and _boolish(source_map_followthrough_dispatch_transaction_journal.get("journal_written")):
+            warnings.append("source_map_followthrough_dispatch_transaction_journal_ready_for_bounded_gate")
+        source_map_followthrough_dispatch_bounded_executor_gate_status = _string(source_map_followthrough_dispatch_bounded_executor_gate.get("status"))
+        if source_map_followthrough_dispatch_bounded_executor_gate_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatch_bounded_executor_gate_blocked")
+        if source_map_followthrough_dispatch_bounded_executor_gate_status == "ready_for_review" and _boolish(source_map_followthrough_dispatch_bounded_executor_gate.get("bounded_executor_gate_ready_for_review")):
+            warnings.append("source_map_followthrough_dispatch_bounded_executor_gate_ready_for_dispatcher_handoff")
+        source_map_followthrough_dispatcher_handoff_status = _string(source_map_followthrough_dispatcher_handoff.get("status"))
+        if source_map_followthrough_dispatcher_handoff_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatcher_handoff_blocked")
+        if source_map_followthrough_dispatcher_handoff_status == "ready_for_review" and _boolish(source_map_followthrough_dispatcher_handoff.get("dispatcher_handoff_ready_for_review")):
+            warnings.append("source_map_followthrough_dispatcher_handoff_ready_for_apply_preflight_review")
+        source_map_followthrough_dispatcher_apply_preflight_status = _string(source_map_followthrough_dispatcher_apply_preflight.get("status"))
+        if source_map_followthrough_dispatcher_apply_preflight_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatcher_apply_preflight_blocked")
+        if source_map_followthrough_dispatcher_apply_preflight_status == "ready_for_review" and _boolish(source_map_followthrough_dispatcher_apply_preflight.get("dispatcher_apply_preflight_ready_for_review")):
+            warnings.append("source_map_followthrough_dispatcher_apply_preflight_ready_for_dispatcher_mvp")
+        source_map_followthrough_dispatcher_result_status = _string(source_map_followthrough_dispatcher_result.get("status"))
+        if source_map_followthrough_dispatcher_result_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_dispatcher_result_blocked")
+        if source_map_followthrough_dispatcher_result_status == "review_required":
+            warnings.append("source_map_followthrough_dispatcher_result_requires_review_approval")
+        if source_map_followthrough_dispatcher_result_status == "dispatched" and _boolish(source_map_followthrough_dispatcher_result.get("dispatcher_decision_recorded")):
+            warnings.append("source_map_followthrough_dispatcher_result_ready_for_selected_executor_apply_preflight")
+        source_map_selected_executor_application_handoff_status = _string(source_map_selected_executor_application_handoff.get("status"))
+        if source_map_selected_executor_application_handoff_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_selected_executor_application_handoff_blocked")
+        if source_map_selected_executor_application_handoff_status == "ready_for_review" and _boolish(source_map_selected_executor_application_handoff.get("ready_for_application_review")):
+            warnings.append("source_map_selected_executor_application_handoff_ready_for_application_review")
+        source_map_selected_executor_result_checkpoint_status = _string(source_map_selected_executor_result_checkpoint.get("status"))
+        if source_map_selected_executor_result_checkpoint_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_selected_executor_result_checkpoint_blocked")
+        if source_map_selected_executor_result_checkpoint_status == "ready_for_review" and _boolish(source_map_selected_executor_result_checkpoint.get("ready_for_next_explicit_review")):
+            warnings.append("source_map_selected_executor_result_checkpoint_ready_for_followthrough_review")
+        source_map_followthrough_completion_checkpoint_status = _string(source_map_followthrough_completion_checkpoint.get("status"))
+        if source_map_followthrough_completion_checkpoint_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_followthrough_completion_checkpoint_blocked")
+        if source_map_followthrough_completion_checkpoint_status == "ready_for_review" and _boolish(source_map_followthrough_completion_checkpoint.get("ready_for_completion_review")):
+            warnings.append("source_map_followthrough_completion_checkpoint_ready_for_completion_review")
+        source_map_terminal_review_package_status = _string(source_map_terminal_review_package.get("status"))
+        if source_map_terminal_review_package_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_terminal_review_package_blocked")
+        if source_map_terminal_review_package_status == "ready_for_review" and _boolish(source_map_terminal_review_package.get("ready_for_terminal_review")):
+            warnings.append("source_map_terminal_review_package_ready_for_review")
+        source_map_terminal_review_closure_checkpoint_status = _string(source_map_terminal_review_closure_checkpoint.get("status"))
+        if source_map_terminal_review_closure_checkpoint_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_terminal_review_closure_checkpoint_blocked")
+        if source_map_terminal_review_closure_checkpoint_status == "ready_for_review" and _boolish(source_map_terminal_review_closure_checkpoint.get("ready_for_closure_audit_review")):
+            warnings.append("source_map_terminal_review_closure_checkpoint_ready_for_closure_review")
+        source_map_terminal_review_final_audit_status = _string(source_map_terminal_review_final_audit.get("status"))
+        if source_map_terminal_review_final_audit_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_terminal_review_final_audit_blocked")
+        if source_map_terminal_review_final_audit_status == "ready_for_review" and _boolish(source_map_terminal_review_final_audit.get("ready_for_final_audit_review")):
+            warnings.append("source_map_terminal_review_final_audit_ready_for_review")
+        source_map_debugger_status = _string(source_map_debugger_result.get("status"))
+        if source_map_debugger_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_debugger_execution_result_blocked")
+        if source_map_debugger_status in {"success", "partial", "executed"}:
+            warnings.append("source_map_debugger_execution_result_requires_debugger_artifact_review")
+        if _boolish(source_map_debugger_result.get("automatic_continuation")) or _boolish(source_map_debugger_result.get("automatic_loop")):
+            blockers.append("source_map_debugger_execution_result_unexpected_automation")
+        source_map_debugger_candidates_status = _string(source_map_debugger_candidates.get("status"))
+        if source_map_debugger_candidates_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_debugger_candidates_blocked")
+        if source_map_debugger_candidates_status in {"ready_for_review", "ready"}:
+            warnings.append("source_map_debugger_candidates_require_review")
+        if (
+            _boolish(source_map_debugger_candidates.get("debugger_execution_performed"))
+            or _boolish(source_map_debugger_candidates_policy.get("debugger_execution_performed"))
+            or _boolish(source_map_debugger_candidates.get("breakpoint_installed"))
+            or _boolish(source_map_debugger_candidates_policy.get("breakpoint_installed"))
+            or _boolish(source_map_debugger_candidates.get("automatic_debugger_continuation"))
+            or _boolish(source_map_debugger_candidates_policy.get("automatic_debugger_continuation"))
+            or _boolish(source_map_debugger_candidates.get("automatic_loop"))
+            or _boolish(source_map_debugger_candidates_policy.get("automatic_loop"))
+        ):
+            blockers.append("source_map_debugger_candidates_unexpected_side_effect")
+        source_map_debugger_candidate_selection_status = _string(source_map_debugger_candidate_selection.get("status"))
+        if source_map_debugger_candidate_selection_status in {"blocked", "failed", "failure", "error", "unsupported"}:
+            blockers.append("source_map_debugger_candidate_selection_blocked")
+        if source_map_debugger_candidate_selection_status in {"ready_for_review", "ready"}:
+            warnings.append("source_map_debugger_candidate_selection_requires_input_review")
+        if (
+            _boolish(source_map_debugger_candidate_selection.get("debugger_execution_performed"))
+            or _boolish(source_map_debugger_candidate_selection_policy.get("debugger_execution_performed"))
+            or _boolish(source_map_debugger_candidate_selection.get("breakpoint_installed"))
+            or _boolish(source_map_debugger_candidate_selection_policy.get("breakpoint_installed"))
+            or _boolish(source_map_debugger_candidate_selection.get("automatic_debugger_continuation"))
+            or _boolish(source_map_debugger_candidate_selection_policy.get("automatic_debugger_continuation"))
+            or _boolish(source_map_debugger_candidate_selection_policy.get("cdp_command_sent"))
+        ):
+            blockers.append("source_map_debugger_candidate_selection_unexpected_side_effect")
         if preflight_status == "inspect_only":
             warnings.append("durable_snapshot_is_inspect_only")
         if preflight_status == "unavailable":
@@ -719,6 +1091,233 @@ def make_review_debugger_artifacts_tool(default_artifact_root: str | Path | None
             "artifact_input": summarize_workspace_artifact_read(artifact_read),
             "summary": {
                 "artifact_count": artifact_count,
+                "source_map_debugger_execution_result": {
+                    "status": _string(source_map_debugger_result.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_debugger_result.get("selected_consumer")),
+                    "selected_review_gate": _string(source_map_debugger_result.get("selected_review_gate")),
+                    "debugger_location_applied": _boolish(source_map_debugger_result.get("debugger_location_applied")),
+                    "breakpoint_count": source_map_debugger_result.get("breakpoint_count", 0),
+                    "paused_status": _string(source_map_debugger_result.get("paused_status") or "unknown"),
+                    "callframe_count": source_map_debugger_result.get("callframe_count", 0),
+                    "debugger_action_count": source_map_debugger_result.get("debugger_action_count", 0),
+                    "automatic_continuation": _boolish(source_map_debugger_result.get("automatic_continuation")),
+                    "automatic_loop": _boolish(source_map_debugger_result.get("automatic_loop")),
+                    "calls_mcp": _boolish(source_map_debugger_result.get("calls_mcp")),
+                    "mobile_runtime_used": _boolish(source_map_debugger_result.get("mobile_runtime_used")),
+                    "blockers": source_map_debugger_result.get("blockers") if isinstance(source_map_debugger_result.get("blockers"), list) else [],
+                },
+                "source_map_debugger_candidates": {
+                    "status": _string(source_map_debugger_candidates.get("status") or "unknown"),
+                    "candidate_count": source_map_debugger_candidates.get("candidate_count", 0),
+                    "ready_for_debugger_location_review_count": source_map_debugger_candidates.get("ready_for_debugger_location_review_count", 0),
+                    "requested_symbol": _string(source_map_debugger_candidates.get("requested_symbol")),
+                    "bundler_kind": _string(source_map_debugger_candidates.get("bundler_kind")),
+                    "candidate_ids": [
+                        _string(item.get("candidate_id"))
+                        for item in source_map_debugger_candidates.get("candidates", [])
+                        if isinstance(item, dict) and item.get("candidate_id")
+                    ][:10]
+                    if isinstance(source_map_debugger_candidates.get("candidates"), list)
+                    else [],
+                    "review_only": _boolish(source_map_debugger_candidates.get("review_only")),
+                    "plan_only": _boolish(source_map_debugger_candidates.get("plan_only")),
+                    "debugger_execution_performed": _boolish(source_map_debugger_candidates.get("debugger_execution_performed"))
+                    or _boolish(source_map_debugger_candidates_policy.get("debugger_execution_performed")),
+                    "breakpoint_installed": _boolish(source_map_debugger_candidates.get("breakpoint_installed"))
+                    or _boolish(source_map_debugger_candidates_policy.get("breakpoint_installed")),
+                    "automatic_debugger_continuation": _boolish(source_map_debugger_candidates.get("automatic_debugger_continuation"))
+                    or _boolish(source_map_debugger_candidates_policy.get("automatic_debugger_continuation")),
+                    "calls_mcp": _boolish(source_map_debugger_candidates.get("calls_mcp")) or _boolish(source_map_debugger_candidates_policy.get("calls_mcp")),
+                    "mobile_runtime_used": _boolish(source_map_debugger_candidates.get("mobile_runtime_used"))
+                    or _boolish(source_map_debugger_candidates_policy.get("mobile_runtime_used")),
+                    "blockers": source_map_debugger_candidates.get("blockers") if isinstance(source_map_debugger_candidates.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_chain_readiness": {
+                    "status": _string(source_map_followthrough_chain_readiness.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_chain_readiness.get("selected_consumer")),
+                    "completed_stage": _string(source_map_followthrough_chain_readiness.get("completed_stage")),
+                    "next_stage": _string(source_map_followthrough_chain_readiness.get("next_stage")),
+                    "next_action": _string(source_map_followthrough_chain_readiness.get("next_action")),
+                    "automatic_followthrough_supported": _boolish(source_map_followthrough_chain_readiness.get("automatic_followthrough_supported")),
+                    "blockers": source_map_followthrough_chain_readiness.get("blockers") if isinstance(source_map_followthrough_chain_readiness.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_one_step_plan": {
+                    "status": _string(source_map_followthrough_one_step_plan.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_one_step_plan.get("selected_consumer")),
+                    "source_chain_completed_stage": _string(source_map_followthrough_one_step_plan.get("source_chain_completed_stage")),
+                    "source_chain_next_stage": _string(source_map_followthrough_one_step_plan.get("source_chain_next_stage")),
+                    "source_chain_next_action": _string(source_map_followthrough_one_step_plan.get("source_chain_next_action")),
+                    "planned_step_ready_for_review": _boolish(source_map_followthrough_one_step_plan.get("planned_step_ready_for_review")),
+                    "automatic_followthrough_supported": _boolish(source_map_followthrough_one_step_plan.get("automatic_followthrough_supported")),
+                    "automatic_execution_supported": _boolish(source_map_followthrough_one_step_plan.get("automatic_execution_supported")),
+                    "blockers": source_map_followthrough_one_step_plan.get("blockers") if isinstance(source_map_followthrough_one_step_plan.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatch_preflight": {
+                    "status": _string(source_map_followthrough_dispatch_preflight.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatch_preflight.get("selected_consumer")),
+                    "planned_next_action": _string(source_map_followthrough_dispatch_preflight.get("planned_next_action")),
+                    "planned_required_artifact": _string(source_map_followthrough_dispatch_preflight.get("planned_required_artifact")),
+                    "dispatch_surface": _string((source_map_followthrough_dispatch_preflight.get("dispatch_target") or {}).get("dispatch_surface") if isinstance(source_map_followthrough_dispatch_preflight.get("dispatch_target"), dict) else ""),
+                    "dispatcher_input_ready_for_review": _boolish(source_map_followthrough_dispatch_preflight.get("dispatcher_input_ready_for_review")),
+                    "automatic_dispatch_supported": _boolish(source_map_followthrough_dispatch_preflight.get("automatic_dispatch_supported")),
+                    "automatic_followthrough_supported": _boolish(source_map_followthrough_dispatch_preflight.get("automatic_followthrough_supported")),
+                    "automatic_execution_supported": _boolish(source_map_followthrough_dispatch_preflight.get("automatic_execution_supported")),
+                    "blockers": source_map_followthrough_dispatch_preflight.get("blockers") if isinstance(source_map_followthrough_dispatch_preflight.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatch_approval_plan": {
+                    "status": _string(source_map_followthrough_dispatch_approval_plan.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatch_approval_plan.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatch_approval_plan.get("dispatch_surface")),
+                    "approval_plan_ready_for_review": _boolish(source_map_followthrough_dispatch_approval_plan.get("approval_plan_ready_for_review")),
+                    "transaction_plan_ready_for_review": _boolish(source_map_followthrough_dispatch_approval_plan.get("transaction_plan_ready_for_review")),
+                    "ready_to_dispatch_now": _boolish(source_map_followthrough_dispatch_approval_plan.get("ready_to_dispatch_now")),
+                    "approval_recorded": _boolish(source_map_followthrough_dispatch_approval_plan.get("approval_recorded")),
+                    "transaction_started": _boolish(source_map_followthrough_dispatch_approval_plan.get("transaction_started")),
+                    "automatic_dispatch_supported": _boolish(source_map_followthrough_dispatch_approval_plan.get("automatic_dispatch_supported")),
+                    "blockers": source_map_followthrough_dispatch_approval_plan.get("blockers") if isinstance(source_map_followthrough_dispatch_approval_plan.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatch_approval_record": {
+                    "status": _string(source_map_followthrough_dispatch_approval_record.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatch_approval_record.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatch_approval_record.get("dispatch_surface")),
+                    "approved_for_dispatch": _boolish(source_map_followthrough_dispatch_approval_record.get("approved_for_dispatch")),
+                    "transaction_started": _boolish(source_map_followthrough_dispatch_approval_record.get("dispatch_input_gates", {}).get("transaction_started") if isinstance(source_map_followthrough_dispatch_approval_record.get("dispatch_input_gates"), dict) else False),
+                    "journal_written": _boolish(source_map_followthrough_dispatch_approval_record.get("dispatch_input_gates", {}).get("journal_written") if isinstance(source_map_followthrough_dispatch_approval_record.get("dispatch_input_gates"), dict) else False),
+                    "next_action": _string(source_map_followthrough_dispatch_approval_record.get("next_action")),
+                    "blockers": source_map_followthrough_dispatch_approval_record.get("blockers") if isinstance(source_map_followthrough_dispatch_approval_record.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatch_transaction_preflight": {
+                    "status": _string(source_map_followthrough_dispatch_transaction_preflight.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatch_transaction_preflight.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatch_transaction_preflight.get("dispatch_surface")),
+                    "transaction_preflight_ready_for_review": _boolish(source_map_followthrough_dispatch_transaction_preflight.get("transaction_preflight_ready_for_review")),
+                    "journal_writer_gate_ready_for_review": _boolish(source_map_followthrough_dispatch_transaction_preflight.get("journal_writer_gate_ready_for_review")),
+                    "next_action": _string(source_map_followthrough_dispatch_transaction_preflight.get("next_action")),
+                    "blockers": source_map_followthrough_dispatch_transaction_preflight.get("blockers") if isinstance(source_map_followthrough_dispatch_transaction_preflight.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatch_transaction_journal": {
+                    "status": _string(source_map_followthrough_dispatch_transaction_journal.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatch_transaction_journal.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatch_transaction_journal.get("dispatch_surface")),
+                    "journal_written": _boolish(source_map_followthrough_dispatch_transaction_journal.get("journal_written")),
+                    "transaction_started": _boolish(source_map_followthrough_dispatch_transaction_journal.get("transaction_started")),
+                    "next_action": _string(source_map_followthrough_dispatch_transaction_journal.get("next_action")),
+                    "blockers": source_map_followthrough_dispatch_transaction_journal.get("blockers") if isinstance(source_map_followthrough_dispatch_transaction_journal.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatch_bounded_executor_gate": {
+                    "status": _string(source_map_followthrough_dispatch_bounded_executor_gate.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatch_bounded_executor_gate.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatch_bounded_executor_gate.get("dispatch_surface")),
+                    "bounded_executor_gate_ready_for_review": _boolish(source_map_followthrough_dispatch_bounded_executor_gate.get("bounded_executor_gate_ready_for_review")),
+                    "ready_for_dispatcher_handoff_review": _boolish(source_map_followthrough_dispatch_bounded_executor_gate.get("ready_for_dispatcher_handoff_review")),
+                    "next_action": _string(source_map_followthrough_dispatch_bounded_executor_gate.get("next_action")),
+                    "blockers": source_map_followthrough_dispatch_bounded_executor_gate.get("blockers") if isinstance(source_map_followthrough_dispatch_bounded_executor_gate.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatcher_handoff": {
+                    "status": _string(source_map_followthrough_dispatcher_handoff.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatcher_handoff.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatcher_handoff.get("dispatch_surface")),
+                    "dispatcher_handoff_ready_for_review": _boolish(source_map_followthrough_dispatcher_handoff.get("dispatcher_handoff_ready_for_review")),
+                    "ready_for_explicit_dispatch_review": _boolish(source_map_followthrough_dispatcher_handoff.get("ready_for_explicit_dispatch_review")),
+                    "next_action": _string(source_map_followthrough_dispatcher_handoff.get("next_action")),
+                    "blockers": source_map_followthrough_dispatcher_handoff.get("blockers") if isinstance(source_map_followthrough_dispatcher_handoff.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatcher_apply_preflight": {
+                    "status": _string(source_map_followthrough_dispatcher_apply_preflight.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatcher_apply_preflight.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatcher_apply_preflight.get("dispatch_surface")),
+                    "dispatcher_apply_preflight_ready_for_review": _boolish(source_map_followthrough_dispatcher_apply_preflight.get("dispatcher_apply_preflight_ready_for_review")),
+                    "ready_for_explicit_dispatcher_mvp_review": _boolish(source_map_followthrough_dispatcher_apply_preflight.get("ready_for_explicit_dispatcher_mvp_review")),
+                    "next_action": _string(source_map_followthrough_dispatcher_apply_preflight.get("next_action")),
+                    "blockers": source_map_followthrough_dispatcher_apply_preflight.get("blockers") if isinstance(source_map_followthrough_dispatcher_apply_preflight.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_dispatcher_result": {
+                    "status": _string(source_map_followthrough_dispatcher_result.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_dispatcher_result.get("selected_consumer")),
+                    "dispatch_surface": _string(source_map_followthrough_dispatcher_result.get("dispatch_surface")),
+                    "dispatcher_decision_recorded": _boolish(source_map_followthrough_dispatcher_result.get("dispatcher_decision_recorded")),
+                    "dispatch_target_invoked": _boolish(source_map_followthrough_dispatcher_result.get("dispatch_target_invoked")),
+                    "selected_executor_invoked": _boolish(source_map_followthrough_dispatcher_result.get("selected_executor_invoked")),
+                    "selected_executor_apply_preflight_invoked": _boolish(source_map_followthrough_dispatcher_result.get("selected_executor_apply_preflight_invoked")),
+                    "next_action": _string(source_map_followthrough_dispatcher_result.get("next_action")),
+                    "blockers": source_map_followthrough_dispatcher_result.get("blockers") if isinstance(source_map_followthrough_dispatcher_result.get("blockers"), list) else [],
+                },
+                "source_map_selected_executor_application_handoff": {
+                    "status": _string(source_map_selected_executor_application_handoff.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_selected_executor_application_handoff.get("selected_consumer")),
+                    "application_surface": _string(source_map_selected_executor_application_handoff.get("application_surface")),
+                    "application_review_action": _string(source_map_selected_executor_application_handoff.get("application_review_action")),
+                    "ready_for_application_review": _boolish(source_map_selected_executor_application_handoff.get("ready_for_application_review")),
+                    "next_action": _string(source_map_selected_executor_application_handoff.get("next_action")),
+                    "blockers": source_map_selected_executor_application_handoff.get("blockers") if isinstance(source_map_selected_executor_application_handoff.get("blockers"), list) else [],
+                },
+                "source_map_selected_executor_result_checkpoint": {
+                    "status": _string(source_map_selected_executor_result_checkpoint.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_selected_executor_result_checkpoint.get("selected_consumer")),
+                    "application_surface": _string(source_map_selected_executor_result_checkpoint.get("application_surface")),
+                    "application_result_status": _string(source_map_selected_executor_result_checkpoint.get("application_result_status")),
+                    "ready_for_next_explicit_review": _boolish(source_map_selected_executor_result_checkpoint.get("ready_for_next_explicit_review")),
+                    "next_action": _string(source_map_selected_executor_result_checkpoint.get("next_action")),
+                    "blockers": source_map_selected_executor_result_checkpoint.get("blockers") if isinstance(source_map_selected_executor_result_checkpoint.get("blockers"), list) else [],
+                },
+                "source_map_followthrough_completion_checkpoint": {
+                    "status": _string(source_map_followthrough_completion_checkpoint.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_followthrough_completion_checkpoint.get("selected_consumer")),
+                    "completion_status": _string(source_map_followthrough_completion_checkpoint.get("completion_status")),
+                    "terminal_review_candidate": _boolish(source_map_followthrough_completion_checkpoint.get("terminal_review_candidate")),
+                    "followup_required": _boolish(source_map_followthrough_completion_checkpoint.get("followup_required")),
+                    "ready_for_completion_review": _boolish(source_map_followthrough_completion_checkpoint.get("ready_for_completion_review")),
+                    "next_action": _string(source_map_followthrough_completion_checkpoint.get("next_action")),
+                    "blockers": source_map_followthrough_completion_checkpoint.get("blockers") if isinstance(source_map_followthrough_completion_checkpoint.get("blockers"), list) else [],
+                },
+                "source_map_terminal_review_package": {
+                    "status": _string(source_map_terminal_review_package.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_terminal_review_package.get("selected_consumer")),
+                    "completion_status": _string(source_map_terminal_review_package.get("completion_status")),
+                    "ready_for_terminal_review": _boolish(source_map_terminal_review_package.get("ready_for_terminal_review")),
+                    "next_action": _string(source_map_terminal_review_package.get("next_action")),
+                    "blockers": source_map_terminal_review_package.get("blockers") if isinstance(source_map_terminal_review_package.get("blockers"), list) else [],
+                },
+                "source_map_terminal_review_closure_checkpoint": {
+                    "status": _string(source_map_terminal_review_closure_checkpoint.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_terminal_review_closure_checkpoint.get("selected_consumer")),
+                    "closure_status": _string(source_map_terminal_review_closure_checkpoint.get("closure_status")),
+                    "ready_for_closure_audit_review": _boolish(source_map_terminal_review_closure_checkpoint.get("ready_for_closure_audit_review")),
+                    "next_action": _string(source_map_terminal_review_closure_checkpoint.get("next_action")),
+                    "blockers": source_map_terminal_review_closure_checkpoint.get("blockers") if isinstance(source_map_terminal_review_closure_checkpoint.get("blockers"), list) else [],
+                },
+                "source_map_terminal_review_final_audit": {
+                    "status": _string(source_map_terminal_review_final_audit.get("status") or "unknown"),
+                    "selected_consumer": _string(source_map_terminal_review_final_audit.get("selected_consumer")),
+                    "final_audit_status": _string(source_map_terminal_review_final_audit.get("final_audit_status")),
+                    "ready_for_final_audit_review": _boolish(source_map_terminal_review_final_audit.get("ready_for_final_audit_review")),
+                    "next_action": _string(source_map_terminal_review_final_audit.get("next_action")),
+                    "blockers": source_map_terminal_review_final_audit.get("blockers") if isinstance(source_map_terminal_review_final_audit.get("blockers"), list) else [],
+                },
+                "source_map_debugger_candidate_selection": {
+                    "status": _string(source_map_debugger_candidate_selection.get("status") or "unknown"),
+                    "candidate_count": source_map_debugger_candidate_selection.get("candidate_count", 0),
+                    "selected_candidate_id": _string(source_map_debugger_candidate_selection.get("selected_candidate_id")),
+                    "selected_action_id": _string(source_map_debugger_candidate_selection.get("selected_action_id")),
+                    "selected_consumer": _string(source_map_debugger_candidate_selection.get("selected_consumer")),
+                    "ready_for_selected_executor_input_review": _boolish(
+                        source_map_debugger_candidate_selection.get("ready_for_selected_executor_input_review")
+                    ),
+                    "review_only": _boolish(source_map_debugger_candidate_selection.get("review_only")),
+                    "plan_only": _boolish(source_map_debugger_candidate_selection.get("plan_only")),
+                    "handoff_only": _boolish(source_map_debugger_candidate_selection.get("handoff_only")),
+                    "debugger_execution_performed": _boolish(source_map_debugger_candidate_selection.get("debugger_execution_performed"))
+                    or _boolish(source_map_debugger_candidate_selection_policy.get("debugger_execution_performed")),
+                    "breakpoint_installed": _boolish(source_map_debugger_candidate_selection.get("breakpoint_installed"))
+                    or _boolish(source_map_debugger_candidate_selection_policy.get("breakpoint_installed")),
+                    "automatic_debugger_continuation": _boolish(source_map_debugger_candidate_selection.get("automatic_debugger_continuation"))
+                    or _boolish(source_map_debugger_candidate_selection_policy.get("automatic_debugger_continuation")),
+                    "calls_mcp": _boolish(source_map_debugger_candidate_selection.get("calls_mcp"))
+                    or _boolish(source_map_debugger_candidate_selection_policy.get("calls_mcp")),
+                    "mobile_runtime_used": _boolish(source_map_debugger_candidate_selection.get("mobile_runtime_used"))
+                    or _boolish(source_map_debugger_candidate_selection_policy.get("mobile_runtime_used")),
+                    "blockers": source_map_debugger_candidate_selection.get("blockers") if isinstance(source_map_debugger_candidate_selection.get("blockers"), list) else [],
+                },
                 "session_id": _string(session.get("session_id") or session.get("pause_session_id") or payload.get("session_id")),
                 "session_status": session_status or "unknown",
                 "paused_status": paused_status or "unknown",
@@ -3831,8 +4430,90 @@ def _next_action(status: str, blockers: list[str], warnings: list[str], requeste
         return "inspect_paused_session_automatic_loop_multi_iteration_next_step_plan_blockers"
     if "paused_session_automatic_loop_multi_iteration_executor_input_preflight_blocked" in blockers:
         return "inspect_paused_session_automatic_loop_multi_iteration_executor_input_preflight_blockers"
+    if "source_map_followthrough_chain_readiness_blocked" in blockers:
+        return "inspect_source_map_followthrough_chain_readiness_failure"
+    if "source_map_followthrough_one_step_plan_blocked" in blockers:
+        return "inspect_source_map_followthrough_one_step_plan_failure"
+    if "source_map_followthrough_dispatch_preflight_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatch_preflight_failure"
+    if "source_map_followthrough_dispatch_approval_plan_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatch_approval_plan_failure"
+    if "source_map_followthrough_dispatch_approval_record_blocked" in blockers:
+        return "provide_ready_source_map_followthrough_dispatch_approval_plan_descriptor"
+    if "source_map_followthrough_dispatch_transaction_preflight_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatch_transaction_preflight_failure"
+    if "source_map_followthrough_dispatch_transaction_journal_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatch_transaction_journal_failure"
+    if "source_map_followthrough_dispatch_bounded_executor_gate_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatch_bounded_executor_gate_failure"
+    if "source_map_followthrough_dispatcher_handoff_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatcher_handoff_failure"
+    if "source_map_followthrough_dispatcher_apply_preflight_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatcher_apply_preflight_failure"
+    if "source_map_debugger_candidates_blocked" in blockers:
+        return "inspect_source_map_debugger_candidate_review_failure"
+    if "source_map_debugger_candidate_selection_blocked" in blockers:
+        return "inspect_source_map_debugger_candidate_selection_failure"
+    if "source_map_debugger_execution_result_blocked" in blockers:
+        return "inspect_source_map_debugger_execution_failure"
+    if "source_map_followthrough_dispatcher_result_blocked" in blockers:
+        return "inspect_source_map_followthrough_dispatcher_result_failure"
+    if "source_map_selected_executor_application_handoff_blocked" in blockers:
+        return "inspect_source_map_selected_executor_application_handoff_failure"
+    if "source_map_selected_executor_result_checkpoint_blocked" in blockers:
+        return "inspect_source_map_selected_executor_result_checkpoint_failure"
+    if "source_map_followthrough_completion_checkpoint_blocked" in blockers:
+        return "inspect_source_map_followthrough_completion_checkpoint_failure"
+    if "source_map_terminal_review_package_blocked" in blockers:
+        return "inspect_source_map_terminal_review_package_failure"
+    if "source_map_terminal_review_closure_checkpoint_blocked" in blockers:
+        return "inspect_source_map_terminal_review_closure_checkpoint_failure"
+    if "source_map_terminal_review_final_audit_blocked" in blockers:
+        return "inspect_source_map_terminal_review_final_audit_failure"
     if "debugger_artifact_reports_failure" in blockers or "debugger_pause_reports_failure" in blockers:
         return "inspect_debugger_failure_and_collect_fresh_pause_artifacts"
+    if "source_map_followthrough_dispatch_approval_plan_requires_review" in warnings:
+        return "review_source_map_followthrough_dispatch_approval_plan_before_recording_approval"
+    if "source_map_followthrough_dispatch_approval_record_ready_for_transaction_preflight" in warnings:
+        return "review_source_map_followthrough_dispatch_transaction_preflight"
+    if "source_map_followthrough_dispatch_transaction_preflight_ready_for_journal_writer" in warnings:
+        return "review_source_map_followthrough_dispatch_transaction_journal_writer"
+    if "source_map_followthrough_dispatch_transaction_journal_ready_for_bounded_gate" in warnings:
+        return "review_source_map_followthrough_dispatch_bounded_executor_gate"
+    if "source_map_followthrough_dispatch_bounded_executor_gate_ready_for_dispatcher_handoff" in warnings:
+        return "review_source_map_followthrough_dispatcher_handoff"
+    if "source_map_followthrough_dispatcher_handoff_ready_for_apply_preflight_review" in warnings:
+        return "review_source_map_followthrough_dispatcher_apply_preflight"
+    if "source_map_followthrough_dispatcher_apply_preflight_ready_for_dispatcher_mvp" in warnings:
+        return "review_source_map_followthrough_dispatcher_mvp"
+    if "source_map_followthrough_dispatcher_result_requires_review_approval" in warnings:
+        return "approve_source_map_followthrough_dispatcher_mvp"
+    if "source_map_followthrough_dispatcher_result_ready_for_selected_executor_apply_preflight" in warnings:
+        return "review_source_map_selected_executor_apply_preflight"
+    if "source_map_selected_executor_application_handoff_ready_for_application_review" in warnings:
+        return "review_source_map_selected_executor_application"
+    if "source_map_selected_executor_result_checkpoint_ready_for_followthrough_review" in warnings:
+        return "review_source_map_selected_executor_result_checkpoint"
+    if "source_map_followthrough_completion_checkpoint_ready_for_completion_review" in warnings:
+        return "review_source_map_followthrough_completion_checkpoint"
+    if "source_map_terminal_review_package_ready_for_review" in warnings:
+        return "review_source_map_terminal_review_package"
+    if "source_map_terminal_review_closure_checkpoint_ready_for_closure_review" in warnings:
+        return "review_source_map_terminal_review_closure_checkpoint"
+    if "source_map_terminal_review_final_audit_ready_for_review" in warnings:
+        return "review_source_map_terminal_review_final_audit"
+    if "source_map_followthrough_dispatch_preflight_requires_review" in warnings:
+        return "review_source_map_followthrough_dispatch_preflight_before_explicit_executor_call"
+    if "source_map_followthrough_one_step_plan_requires_review" in warnings:
+        return "review_source_map_followthrough_one_step_plan_before_next_action"
+    if "source_map_followthrough_chain_readiness_requires_next_review" in warnings:
+        return "review_source_map_followthrough_chain_readiness_next_action"
+    if "source_map_debugger_execution_result_requires_debugger_artifact_review" in warnings:
+        return "inspect_source_map_debugger_execution_artifacts"
+    if "source_map_debugger_candidates_require_review" in warnings:
+        return "review_source_map_debugger_candidates_before_selected_debugger_apply"
+    if "source_map_debugger_candidate_selection_requires_input_review" in warnings:
+        return "run_source_map_selected_executor_input_review_for_selected_debugger_candidate"
     if "no_debugger_artifacts_provided" in warnings:
         return "collect_debugger_pause_artifacts_before_review"
     if "target_attach_ready_but_execution_plan_not_observed" in warnings:

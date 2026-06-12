@@ -11,6 +11,11 @@ from urllib.parse import urlsplit, urlunsplit
 from reverse_deepagent.adapters.native_web import create_native_web_runtime
 from reverse_deepagent.browser import build_default_browser_provider_registry
 from reverse_deepagent.browser.smoke import browser_provider_metadata_matrix_payload, browser_provider_smoke_row
+from reverse_deepagent.browser_provider_smoke_acceptance import (
+    SUPPORTED_MINIMUM_EVIDENCE_LEVELS,
+    browser_provider_smoke_acceptance,
+    browser_provider_smoke_policy_decision,
+)
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts" / "browser-provider-smoke"
@@ -32,6 +37,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-smoke-url", default=DEFAULT_SMOKE_URL, help="URL used only when --launch-browser-smoke is set.")
     parser.add_argument("--include-availability", action="store_true", help="Call provider.is_available(); may import optional SDKs or probe endpoints.")
     parser.add_argument("--launch-browser-smoke", action="store_true", help="Actually start/connect the BrowserProvider and open --browser-smoke-url.")
+    parser.add_argument(
+        "--review-smoke-json",
+        default=None,
+        help=(
+            "Read an existing workspace/browser-provider-smoke.json and print a metadata-only acceptance "
+            "report without resolving providers, invoking factories, checking availability, launching "
+            "browsers, probing CDP endpoints, writing artifacts, or calling MCP."
+        ),
+    )
+    parser.add_argument("--expected-provider", default=None, help="Expected BrowserProvider id for --review-smoke-json provider-match checks.")
+    parser.add_argument(
+        "--minimum-evidence-level",
+        default="metadata-only",
+        choices=SUPPORTED_MINIMUM_EVIDENCE_LEVELS,
+        help="Minimum BrowserProvider smoke evidence level required by --review-smoke-json policy.",
+    )
+    parser.add_argument(
+        "--block-on-warnings",
+        action="store_true",
+        help="Make --review-smoke-json policy block when acceptance warnings are present.",
+    )
     parser.add_argument(
         "--print-launch-command",
         action="store_true",
@@ -223,6 +249,57 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _read_json_object(path: str | Path, *, label: str) -> dict[str, Any]:
+    payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must contain a JSON object")
+    return payload
+
+
+def review_browser_provider_smoke_json(
+    *,
+    smoke_json_path: str | Path,
+    expected_provider_id: str | None = None,
+    minimum_evidence_level: str = "metadata-only",
+    block_on_warnings: bool = False,
+) -> dict[str, Any]:
+    """Review an existing BrowserProvider smoke JSON without side effects."""
+
+    smoke_payload = _read_json_object(smoke_json_path, label="--review-smoke-json")
+    acceptance = browser_provider_smoke_acceptance(smoke_payload, expected_provider_id=expected_provider_id)
+    policy_decision = browser_provider_smoke_policy_decision(
+        acceptance,
+        minimum_evidence_level=minimum_evidence_level,
+        block_on_warnings=block_on_warnings,
+    )
+    return {
+        "schema_version": "reverse-deepagent.browser-provider-smoke-review.v1",
+        "mode": "review-smoke-json",
+        "ok": bool(acceptance.get("accepted")) and bool(policy_decision.get("policy_passed")),
+        "smoke_json_path": str(Path(smoke_json_path).expanduser()),
+        "expected_provider_id": expected_provider_id or None,
+        "minimum_evidence_level": minimum_evidence_level,
+        "attachment_acceptance": acceptance,
+        "acceptance_report": acceptance.get("acceptance_report"),
+        "policy_decision": policy_decision,
+        "side_effect_policy": {
+            "metadata_only": True,
+            "reads_existing_smoke_json": True,
+            "evaluates_policy": True,
+            "writes_artifact": False,
+            "provider_registry_resolved": False,
+            "provider_factories_invoked": False,
+            "availability_check_requested": False,
+            "launch_smoke_requested": False,
+            "cdp_endpoint_probed": False,
+            "starts_browser": False,
+            "calls_mcp": False,
+            "touches_mobile_full_runtime_chains": False,
+        },
+        "next_action": acceptance.get("next_action"),
+    }
+
+
 def run_browser_provider_smoke(
     *,
     browser: str = DEFAULT_BROWSER_PROVIDER,
@@ -346,6 +423,15 @@ def _next_action(row: dict[str, Any], *, include_availability: bool, launch_brow
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.review_smoke_json:
+        payload = review_browser_provider_smoke_json(
+            smoke_json_path=args.review_smoke_json,
+            expected_provider_id=args.expected_provider,
+            minimum_evidence_level=args.minimum_evidence_level,
+            block_on_warnings=args.block_on_warnings,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload["ok"] else 2
     provider_kwargs = _provider_kwargs_from_args(args)
     if args.print_launch_command:
         payload = build_launch_command_payload(

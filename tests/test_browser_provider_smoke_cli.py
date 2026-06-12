@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 
 from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
-from reverse_deepagent.browser_provider_smoke import build_launch_command_payload, run_browser_provider_smoke
+from reverse_deepagent.browser_provider_smoke import (
+    build_launch_command_payload,
+    review_browser_provider_smoke_json,
+    run_browser_provider_smoke,
+)
 
 
 class FakePage:
@@ -289,6 +293,192 @@ class BrowserProviderSmokeCliTests(unittest.TestCase):
             self.assertFalse((root / "workspace" / "browser-provider-smoke.json").exists())
             self.assertNotIn("user:pass", result.stdout)
             self.assertNotIn("/Users/example", result.stdout)
+
+    def test_review_smoke_json_reports_acceptance_without_writing_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            smoke_path = root / "workspace" / "browser-provider-smoke.json"
+            smoke_path.parent.mkdir(parents=True)
+            smoke_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.browser-provider-smoke.v1",
+                        "artifact_key": "workspace_browser_provider_smoke",
+                        "mode": "metadata-only",
+                        "ok": True,
+                        "requested_provider_id": "cloakbrowser",
+                        "resolved_provider_id": "cloakbrowser",
+                        "side_effect_policy": {
+                            "provider_factories_invoked": False,
+                            "starts_browser": False,
+                            "calls_mcp": False,
+                            "touches_mobile_full_runtime_chains": False,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = review_browser_provider_smoke_json(
+                smoke_json_path=smoke_path,
+                expected_provider_id="cloakbrowser",
+            )
+
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["schema_version"], "reverse-deepagent.browser-provider-smoke-review.v1")
+            self.assertEqual(payload["mode"], "review-smoke-json")
+            self.assertFalse(payload["attachment_acceptance"]["runtime_launch_smoke_accepted"])
+            self.assertEqual(payload["acceptance_report"]["evidence_level"], "metadata-only")
+            self.assertEqual(payload["policy_decision"]["decision"], "warn")
+            self.assertTrue(payload["policy_decision"]["policy_passed"])
+            self.assertEqual(payload["policy_decision"]["minimum_evidence_level"], "metadata-only")
+            self.assertEqual(payload["policy_decision"]["observed_evidence_level"], "metadata-only")
+            self.assertEqual(
+                payload["acceptance_report"]["required_follow_up"],
+                "run_explicit_launch_browser_smoke_before_claiming_runtime_smoke",
+            )
+            self.assertFalse(payload["side_effect_policy"]["writes_artifact"])
+            self.assertFalse(payload["side_effect_policy"]["provider_registry_resolved"])
+            self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(payload["side_effect_policy"]["touches_mobile_full_runtime_chains"])
+            self.assertFalse((root / "workspace" / "browser-provider-smoke-review.json").exists())
+
+    def test_review_smoke_json_policy_blocks_when_minimum_evidence_is_not_met(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            smoke_path = Path(tmpdir) / "browser-provider-smoke.json"
+            smoke_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.browser-provider-smoke.v1",
+                        "mode": "metadata-only",
+                        "ok": True,
+                        "requested_provider_id": "cloakbrowser",
+                        "resolved_provider_id": "cloakbrowser",
+                        "side_effect_policy": {
+                            "provider_factories_invoked": False,
+                            "starts_browser": False,
+                            "calls_mcp": False,
+                            "touches_mobile_full_runtime_chains": False,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = review_browser_provider_smoke_json(
+                smoke_json_path=smoke_path,
+                expected_provider_id="cloakbrowser",
+                minimum_evidence_level="launch-smoke",
+            )
+
+            self.assertFalse(payload["ok"])
+            self.assertTrue(payload["attachment_acceptance"]["accepted"])
+            self.assertEqual(payload["policy_decision"]["decision"], "block")
+            self.assertFalse(payload["policy_decision"]["policy_passed"])
+            self.assertEqual(payload["policy_decision"]["minimum_evidence_level"], "launch-smoke")
+            self.assertEqual(payload["policy_decision"]["observed_evidence_level"], "metadata-only")
+            self.assertIn(
+                "insufficient_browser_provider_smoke_evidence_level",
+                payload["policy_decision"]["blockers"],
+            )
+            self.assertFalse(payload["policy_decision"]["side_effect_policy"]["starts_browser"])
+
+    def test_review_smoke_json_policy_passes_matching_launch_smoke(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            smoke_path = Path(tmpdir) / "browser-provider-smoke.json"
+            smoke_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.browser-provider-smoke.v1",
+                        "mode": "launch-smoke",
+                        "ok": True,
+                        "requested_provider_id": "cloakbrowser",
+                        "resolved_provider_id": "cloakbrowser",
+                        "provider": {"smoke": {"status": "passed", "url": "about:blank"}},
+                        "side_effect_policy": {
+                            "launch_smoke_requested": True,
+                            "starts_browser": True,
+                            "calls_mcp": False,
+                            "touches_mobile_full_runtime_chains": False,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = review_browser_provider_smoke_json(
+                smoke_json_path=smoke_path,
+                expected_provider_id="cloakbrowser",
+                minimum_evidence_level="launch-smoke",
+            )
+
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["attachment_acceptance"]["runtime_launch_smoke_accepted"])
+            self.assertEqual(payload["policy_decision"]["decision"], "pass")
+            self.assertTrue(payload["policy_decision"]["policy_passed"])
+            self.assertEqual(payload["policy_decision"]["minimum_evidence_level"], "launch-smoke")
+            self.assertEqual(payload["policy_decision"]["observed_evidence_level"], "launch-smoke")
+            self.assertFalse(payload["policy_decision"]["side_effect_policy"]["starts_browser"])
+
+    def test_module_cli_review_smoke_json_blocks_provider_mismatch_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            smoke_path = root / "browser-provider-smoke.json"
+            smoke_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "reverse-deepagent.browser-provider-smoke.v1",
+                        "mode": "launch-smoke",
+                        "ok": True,
+                        "requested_provider_id": "remote-cdp",
+                        "resolved_provider_id": "remote-cdp",
+                        "provider": {"smoke": {"status": "passed"}},
+                        "side_effect_policy": {
+                            "launch_smoke_requested": True,
+                            "starts_browser": True,
+                            "calls_mcp": False,
+                            "touches_mobile_full_runtime_chains": False,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "reverse_deepagent.browser_provider_smoke",
+                    "--review-smoke-json",
+                    str(smoke_path),
+                    "--expected-provider",
+                    "cloakbrowser",
+                    "--minimum-evidence-level",
+                    "launch-smoke",
+                    "--browser-args",
+                    '"unterminated',
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            payload = json.loads(result.stdout)
+
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["mode"], "review-smoke-json")
+            self.assertIn("browser_provider_smoke_provider_mismatch", payload["attachment_acceptance"]["blockers"])
+            self.assertEqual(
+                payload["acceptance_report"]["required_follow_up"],
+                "regenerate_matching_browser_provider_smoke_json",
+            )
+            self.assertEqual(payload["policy_decision"]["decision"], "block")
+            self.assertFalse(payload["policy_decision"]["policy_passed"])
+            self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
+            self.assertFalse(payload["side_effect_policy"]["starts_browser"])
+            self.assertFalse(payload["side_effect_policy"]["calls_mcp"])
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ from reverse_deepagent.schemas import (
     TaskCard,
 )
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
+from reverse_deepagent.browser_provider_smoke_acceptance import browser_provider_smoke_acceptance
 from reverse_deepagent.workspace_contract import WorkspacePathResolver, workspace_contract_payload, workspace_manifest_alias_metadata
 
 class ReversePipelineOutput(SchemaBaseModel):
@@ -981,13 +982,37 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_source_map_consumer_materialization": "triage",
     "workspace_source_map_typed_payload_preflight": "triage",
     "workspace_source_map_followthrough_review": "triage",
+    "workspace_source_map_followthrough_chain_readiness": "triage",
+    "workspace_source_map_followthrough_one_step_plan": "triage",
+    "workspace_source_map_followthrough_dispatch_preflight": "triage",
+    "workspace_source_map_followthrough_dispatch_approval_plan": "triage",
+    "workspace_source_map_followthrough_dispatch_approval_record": "audit",
+    "workspace_source_map_followthrough_dispatch_transaction_preflight": "audit",
+    "workspace_source_map_followthrough_dispatch_transaction_journal": "audit",
+    "workspace_source_map_followthrough_dispatch_bounded_executor_gate": "audit",
+    "workspace_source_map_followthrough_dispatcher_handoff": "audit",
+    "workspace_source_map_followthrough_dispatcher_apply_preflight": "audit",
+    "workspace_source_map_followthrough_dispatcher_result": "audit",
     "workspace_source_map_followthrough_surface_selection": "triage",
     "workspace_source_map_selected_executor_input_review": "triage",
     "workspace_source_map_selected_executor_approval_plan": "triage",
     "workspace_source_map_selected_executor_approval_record": "audit",
     "workspace_source_map_selected_executor_apply_preflight": "audit",
+    "workspace_source_map_selected_executor_application_handoff": "audit",
+    "workspace_source_map_selected_executor_result_checkpoint": "audit",
+    "workspace_source_map_followthrough_completion_checkpoint": "audit",
+    "workspace_source_map_terminal_review_package": "audit",
+    "workspace_source_map_terminal_review_closure_checkpoint": "audit",
+    "workspace_source_map_terminal_review_final_audit": "audit",
     "workspace_source_map_source_logpoint_install_result": "audit",
+    "workspace_source_map_debugger_candidates": "triage",
+    "workspace_source_map_debugger_candidate_selection": "triage",
+    "workspace_source_map_debugger_execution_result": "audit",
+    "workspace_source_map_hook_candidates": "triage",
+    "workspace_source_map_hook_candidate_selection": "triage",
+    "workspace_source_map_hook_install_result": "audit",
     "workspace_source_map_rebuild_result": "audit",
+    "workspace_source_map_rebuild_generation_result": "audit",
     "workspace_bundler_symbol_scope": "triage",
     "workspace_source_logpoints": "trace",
     "workspace_source_logpoint_timeline": "trace",
@@ -995,6 +1020,34 @@ ARTIFACT_CATEGORY_BY_KEY = {
     "workspace_page_mutation_audit": "trace",
     "workspace_object_root_mutation_audit": "trace",
     "workspace_object_graph_diff": "triage",
+    "workspace_runtime_object_graph_diff": "triage",
+    "workspace_heap_snapshot_readiness": "triage",
+    "workspace_heap_snapshot_collect": "audit",
+    "workspace_heap_snapshot_diff_readiness": "triage",
+    "workspace_heap_snapshot_diff_executor_preflight": "triage",
+    "workspace_heap_snapshot_diff_executor_approval_plan": "triage",
+    "workspace_heap_snapshot_diff_executor_approval_record": "audit",
+    "workspace_heap_snapshot_diff_executor_transaction_preflight": "triage",
+    "workspace_heap_snapshot_diff_executor_transaction_journal": "audit",
+    "workspace_heap_snapshot_diff_executor_bounded_gate": "triage",
+    "workspace_heap_snapshot_diff_executor_result": "audit",
+    "workspace_heap_snapshot_diff_followup_checkpoint": "audit",
+    "workspace_heap_snapshot_diff_selected_analysis_input_preflight": "triage",
+    "workspace_heap_snapshot_constructor_growth_drilldown": "triage",
+    "workspace_heap_snapshot_constructor_growth_drilldown_analysis": "audit",
+    "workspace_heap_snapshot_automatic_followup_plan": "triage",
+    "workspace_heap_snapshot_retained_size_proof_plan": "triage",
+    "workspace_heap_snapshot_path_to_root_proof_plan": "triage",
+    "workspace_heap_snapshot_raw_heap_constructor_drilldown_proof_plan": "triage",
+    "workspace_heap_snapshot_retained_path_preflight": "triage",
+    "workspace_heap_snapshot_retained_size_input_review": "triage",
+    "workspace_heap_snapshot_retained_size_approval_plan": "triage",
+    "workspace_heap_snapshot_retained_size_approval_record": "audit",
+    "workspace_heap_snapshot_retained_size_transaction_preflight": "triage",
+    "workspace_heap_snapshot_retained_size_transaction_journal": "audit",
+    "workspace_heap_snapshot_retained_size_bounded_gate": "triage",
+    "workspace_heap_snapshot_retained_size_analysis": "audit",
+    "workspace_heap_snapshot_path_to_root_analysis": "audit",
     "workspace_mutation_observer_timeline": "trace",
     "workspace_breakpoints": "trace",
     "workspace_debugger_paused": "trace",
@@ -1117,88 +1170,11 @@ def _artifact_manifest_entry_metadata(capabilities: RuntimeBackendCapabilities, 
 
 
 def _browser_provider_smoke_acceptance(smoke_payload: dict[str, Any], capabilities: RuntimeBackendCapabilities) -> dict[str, Any]:
-    """Review existing BrowserProvider smoke JSON before attaching it to Web artifacts.
-
-    This is deliberately a metadata-only acceptance gate. It does not generate
-    smoke evidence, call provider factories, check availability, probe CDP,
-    launch browsers, call MCP, or inspect mobile runtimes.
-    """
+    """Review existing BrowserProvider smoke JSON before attaching it to Web artifacts."""
 
     provider = capabilities.config.get("provider") if isinstance(capabilities.config, dict) else None
     expected_provider_id = str(provider.get("provider_id") or "") if isinstance(provider, dict) else ""
-    resolved_provider_id = str(smoke_payload.get("resolved_provider_id") or "")
-    requested_provider_id = str(smoke_payload.get("requested_provider_id") or "")
-    mode = str(smoke_payload.get("mode") or "unknown")
-    schema_version = str(smoke_payload.get("schema_version") or "")
-    side_effect_policy = smoke_payload.get("side_effect_policy") if isinstance(smoke_payload.get("side_effect_policy"), dict) else {}
-    provider_row = smoke_payload.get("provider") if isinstance(smoke_payload.get("provider"), dict) else {}
-    provider_smoke = provider_row.get("smoke") if isinstance(provider_row.get("smoke"), dict) else {}
-
-    blockers: list[str] = []
-    warnings: list[str] = []
-    if schema_version != "reverse-deepagent.browser-provider-smoke.v1":
-        blockers.append("browser_provider_smoke_schema_mismatch")
-    if not bool(smoke_payload.get("ok")):
-        blockers.append("browser_provider_smoke_not_ok")
-    if not resolved_provider_id:
-        blockers.append("resolved_provider_id_missing")
-    if expected_provider_id and resolved_provider_id and expected_provider_id != resolved_provider_id:
-        blockers.append("browser_provider_smoke_provider_mismatch")
-    if bool(side_effect_policy.get("calls_mcp")):
-        blockers.append("browser_provider_smoke_calls_mcp")
-    if bool(side_effect_policy.get("touches_mobile_full_runtime_chains")):
-        blockers.append("browser_provider_smoke_touches_mobile_full_runtime_chain")
-    if mode == "launch-smoke":
-        if not bool(side_effect_policy.get("launch_smoke_requested")):
-            blockers.append("launch_smoke_mode_without_launch_request")
-        if provider_smoke and provider_smoke.get("status") != "passed":
-            blockers.append("launch_smoke_not_passed")
-        if not provider_smoke:
-            warnings.append("launch_smoke_result_not_embedded")
-    elif bool(side_effect_policy.get("starts_browser")):
-        blockers.append("browser_started_outside_launch_smoke_mode")
-    if mode == "metadata-only":
-        warnings.append("metadata_only_evidence_not_launch_smoke")
-    if mode == "availability-check":
-        warnings.append("availability_check_evidence_not_launch_smoke")
-    if not expected_provider_id:
-        warnings.append("runtime_provider_not_comparable")
-
-    evidence_level = mode if mode in {"metadata-only", "availability-check", "launch-smoke"} else "unknown"
-    accepted = not blockers
-    launch_smoke_accepted = accepted and evidence_level == "launch-smoke"
-    status = "accepted" if accepted else "blocked"
-    next_action = (
-        "review_browser_provider_launch_smoke_result"
-        if launch_smoke_accepted
-        else "optionally_run_explicit_launch_browser_smoke"
-        if accepted
-        else "regenerate_browser_provider_smoke_evidence"
-    )
-    return {
-        "schema_version": "reverse-deepagent.browser-provider-smoke-acceptance.v1",
-        "status": status,
-        "accepted": accepted,
-        "runtime_launch_smoke_accepted": launch_smoke_accepted,
-        "evidence_level": evidence_level,
-        "expected_provider_id": expected_provider_id or None,
-        "requested_provider_id": requested_provider_id or None,
-        "resolved_provider_id": resolved_provider_id or None,
-        "provider_match": bool(not expected_provider_id or expected_provider_id == resolved_provider_id),
-        "blockers": blockers,
-        "warnings": sorted(set(warnings)),
-        "side_effect_policy": {
-            "metadata_only": True,
-            "generates_smoke": False,
-            "provider_factory_invoked": False,
-            "availability_checked": False,
-            "cdp_endpoint_probed": False,
-            "starts_browser": False,
-            "calls_mcp": False,
-            "touches_mobile_full_runtime_chains": False,
-        },
-        "next_action": next_action,
-    }
+    return browser_provider_smoke_acceptance(smoke_payload, expected_provider_id=expected_provider_id)
 
 
 def _artifact_category_from_key(key: str) -> str:
@@ -1941,6 +1917,28 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-map-typed-payload-preflight.json"] = evidence.details
         elif evidence.source == "source_map_followthrough_review":
             payloads["source-map-followthrough-review.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_chain_readiness":
+            payloads["source-map-followthrough-chain-readiness.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_one_step_plan":
+            payloads["source-map-followthrough-one-step-plan.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_preflight":
+            payloads["source-map-followthrough-dispatch-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_approval_plan":
+            payloads["source-map-followthrough-dispatch-approval-plan.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_approval_record":
+            payloads["source-map-followthrough-dispatch-approval-record.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_transaction_preflight":
+            payloads["source-map-followthrough-dispatch-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_transaction_journal":
+            payloads["source-map-followthrough-dispatch-transaction-journal.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_bounded_executor_gate":
+            payloads["source-map-followthrough-dispatch-bounded-executor-gate.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatcher_handoff":
+            payloads["source-map-followthrough-dispatcher-handoff.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatcher_apply_preflight":
+            payloads["source-map-followthrough-dispatcher-apply-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatcher_result":
+            payloads["source-map-followthrough-dispatcher-result.json"] = evidence.details
         elif evidence.source == "source_map_followthrough_surface_selection":
             payloads["source-map-followthrough-surface-selection.json"] = evidence.details
         elif evidence.source == "source_map_selected_executor_input_review":
@@ -1951,10 +1949,36 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-map-selected-executor-approval-record.json"] = evidence.details
         elif evidence.source == "source_map_selected_executor_apply_preflight":
             payloads["source-map-selected-executor-apply-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_application_handoff":
+            payloads["source-map-selected-executor-application-handoff.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_result_checkpoint":
+            payloads["source-map-selected-executor-result-checkpoint.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_completion_checkpoint":
+            payloads["source-map-followthrough-completion-checkpoint.json"] = evidence.details
+        elif evidence.source == "source_map_terminal_review_package":
+            payloads["source-map-terminal-review-package.json"] = evidence.details
+        elif evidence.source == "source_map_terminal_review_closure_checkpoint":
+            payloads["source-map-terminal-review-closure-checkpoint.json"] = evidence.details
+        elif evidence.source == "source_map_terminal_review_final_audit":
+            payloads["source-map-terminal-review-final-audit.json"] = evidence.details
         elif evidence.source == "source_map_source_logpoint_install_result":
             payloads["source-map-source-logpoint-install-result.json"] = evidence.details
+        elif evidence.source == "source_map_debugger_candidates":
+            payloads["source-map-debugger-candidates.json"] = evidence.details
+        elif evidence.source == "source_map_debugger_candidate_selection":
+            payloads["source-map-debugger-candidate-selection.json"] = evidence.details
+        elif evidence.source == "source_map_debugger_execution_result":
+            payloads["source-map-debugger-execution-result.json"] = evidence.details
+        elif evidence.source == "source_map_hook_candidates":
+            payloads["source-map-hook-candidates.json"] = evidence.details
+        elif evidence.source == "source_map_hook_candidate_selection":
+            payloads["source-map-hook-candidate-selection.json"] = evidence.details
+        elif evidence.source == "source_map_hook_install_result":
+            payloads["source-map-hook-install-result.json"] = evidence.details
         elif evidence.source == "source_map_rebuild_result":
             payloads["source-map-rebuild-result.json"] = evidence.details
+        elif evidence.source == "source_map_rebuild_generation_result":
+            payloads["source-map-rebuild-generation-result.json"] = evidence.details
         elif evidence.source == "bundler_symbol_scope":
             payloads["bundler-symbol-scope.json"] = evidence.details
         elif evidence.source == "source_logpoints":
@@ -1965,6 +1989,62 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["object-root-mutation-audit.json"] = evidence.details
         elif evidence.source == "object_graph_diff":
             payloads["object-graph-diff.json"] = evidence.details
+        elif evidence.source == "runtime_object_graph_diff":
+            payloads["runtime-object-graph-diff.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_readiness":
+            payloads["heap-snapshot-readiness.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_collect":
+            payloads["heap-snapshot-collect.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_readiness":
+            payloads["heap-snapshot-diff-readiness.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_preflight":
+            payloads["heap-snapshot-diff-executor-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_approval_plan":
+            payloads["heap-snapshot-diff-executor-approval-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_approval_record":
+            payloads["heap-snapshot-diff-executor-approval-record.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_transaction_preflight":
+            payloads["heap-snapshot-diff-executor-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_transaction_journal":
+            payloads["heap-snapshot-diff-executor-journal.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_bounded_gate":
+            payloads["heap-snapshot-diff-executor-bounded-gate.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_result":
+            payloads["heap-snapshot-diff-executor-result.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_followup_checkpoint":
+            payloads["heap-snapshot-diff-followup-checkpoint.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_selected_analysis_input_preflight":
+            payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_constructor_growth_drilldown":
+            payloads["heap-snapshot-constructor-growth-drilldown.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_constructor_growth_drilldown_analysis":
+            payloads["heap-snapshot-constructor-growth-drilldown-analysis.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_automatic_followup_plan":
+            payloads["heap-snapshot-automatic-followup-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_proof_plan":
+            payloads["heap-snapshot-retained-size-proof-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_path_to_root_proof_plan":
+            payloads["heap-snapshot-path-to-root-proof-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_raw_heap_constructor_drilldown_proof_plan":
+            payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_path_preflight":
+            payloads["heap-snapshot-retained-path-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_input_review":
+            payloads["heap-snapshot-retained-size-input-review.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_approval_plan":
+            payloads["heap-snapshot-retained-size-approval-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_approval_record":
+            payloads["heap-snapshot-retained-size-approval-record.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_transaction_preflight":
+            payloads["heap-snapshot-retained-size-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_transaction_journal":
+            payloads["heap-snapshot-retained-size-executor-journal.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_bounded_gate":
+            payloads["heap-snapshot-retained-size-bounded-gate.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_analysis":
+            payloads["heap-snapshot-retained-size-analysis.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_path_to_root_analysis":
+            payloads["heap-snapshot-path-to-root-analysis.json"] = evidence.details
         elif evidence.source == "breakpoint_manager":
             payloads["breakpoints.json"] = evidence.details
         elif evidence.source == "debugger_paused":

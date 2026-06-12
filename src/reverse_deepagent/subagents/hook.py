@@ -3,11 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from reverse_deepagent.tools.hook_tools import make_record_source_map_selected_executor_approval_tool, make_review_hook_artifacts_tool
+from reverse_deepagent.tools.hook_tools import (
+    make_record_heap_snapshot_diff_executor_approval_tool,
+    make_record_heap_snapshot_diff_executor_transaction_journal_tool,
+    make_record_heap_snapshot_retained_size_approval_tool,
+    make_record_heap_snapshot_retained_size_transaction_journal_tool,
+    make_record_source_map_followthrough_dispatch_approval_tool,
+    make_record_source_map_followthrough_dispatch_transaction_journal_tool,
+    make_record_source_map_selected_executor_approval_tool,
+    make_review_hook_artifacts_tool,
+)
 from reverse_deepagent.tools.artifact_tools import make_read_workspace_artifact_tool
 
 HOOK_SUBAGENT_NAME = "hook"
-HOOK_SUBAGENT_DESCRIPTION = "审计 function / module hook inventory、hook timelines、source-logpoint artifacts、Source Map follow-through approval records 和 reviewed source-logpoint install results。"
+HOOK_SUBAGENT_DESCRIPTION = "审计 function / module hook inventory、hook timelines、source-logpoint artifacts、Source Map follow-through approval records / dispatch transaction journals / bounded dispatch gates / dispatcher handoff / dispatcher apply-preflight descriptors / dispatcher result artifacts、Heap snapshot diff executor approval records / transaction journals、Heap snapshot retained-size approval records / transaction journals 和 reviewed source-logpoint install results。"
 
 
 def load_hook_prompt(prompt_path: str | Path | None = None) -> str:
@@ -27,6 +36,12 @@ def build_hook_subagent(
         "tools": [
             make_read_workspace_artifact_tool(root),
             make_review_hook_artifacts_tool(root),
+            make_record_heap_snapshot_diff_executor_approval_tool(root),
+            make_record_heap_snapshot_diff_executor_transaction_journal_tool(root),
+            make_record_heap_snapshot_retained_size_approval_tool(root),
+            make_record_heap_snapshot_retained_size_transaction_journal_tool(root),
             make_record_source_map_selected_executor_approval_tool(root),
+            make_record_source_map_followthrough_dispatch_approval_tool(root),
+            make_record_source_map_followthrough_dispatch_transaction_journal_tool(root),
         ],
     }

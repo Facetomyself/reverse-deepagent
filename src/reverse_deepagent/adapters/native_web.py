@@ -540,6 +540,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         _heap_result = self._dispatch_heap(protection_name, context)
         if _heap_result is not None:
             return _heap_result
+        _timeline_result = self._dispatch_timeline(protection_name, context)
+        if _timeline_result is not None:
+            return _timeline_result
         _obj_graph_result = self._dispatch_object_graph(protection_name, context)
         if _obj_graph_result is not None:
             return _obj_graph_result
@@ -555,499 +558,6 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 artifacts=[],
                 next_action="ensure_browser_provider",
                 confidence=ConfidenceLevel.LOW,
-            )
-        if self._is_flow_timeline_request(protection_name, context):
-            spec = FlowTimelineSpec.from_context(context)
-            result = FlowTimelineManager().build(spec)
-            entry_count = len(result.entries)
-            stitch_candidate_count = len(result.stitch_candidates)
-            auto_stitch_dry_run_count = len(result.auto_stitch_dry_runs)
-            auto_stitch_conflict_resolution_count = len(result.auto_stitch_conflict_resolutions)
-            auto_stitch_policy_decision_count = len(result.auto_stitch_policy_decisions)
-            auto_stitch_materialization_plan_count = len(result.auto_stitch_materialization_plans)
-            auto_stitch_materialization_review_decision_count = len(result.auto_stitch_materialization_review_decisions)
-            auto_stitch_materialization_result_count = len(result.auto_stitch_materialization_results)
-            auto_stitch_materialization_audit_count = len(result.auto_stitch_materialization_audit_entries)
-            auto_stitch_materialization_rollback_plan_count = len(result.auto_stitch_materialization_rollback_plans)
-            auto_stitch_materialization_transaction_count = len(result.auto_stitch_materialization_transactions)
-            auto_stitch_rollback_execution_plan_count = len(result.auto_stitch_rollback_execution_plans)
-            auto_stitch_rollback_execution_review_decision_count = len(result.auto_stitch_rollback_execution_review_decisions)
-            auto_stitch_rollback_execution_result_count = len(result.auto_stitch_rollback_execution_results)
-            auto_stitch_rollback_review_gate_recomputation_count = len(result.auto_stitch_rollback_review_gate_recomputations)
-            auto_stitch_physical_rollback_dry_run_diff_count = len(result.auto_stitch_physical_rollback_dry_run_diffs)
-            auto_stitch_physical_rollback_review_decision_count = len(result.auto_stitch_physical_rollback_review_decisions)
-            auto_stitch_physical_rollback_result_count = len(result.auto_stitch_physical_rollback_results)
-            auto_stitch_post_physical_rollback_review_gate_rerun_count = len(result.auto_stitch_post_physical_rollback_review_gate_reruns)
-            auto_stitch_standard_review_gate_replacement_review_decision_count = len(result.auto_stitch_standard_review_gate_replacement_review_decisions)
-            auto_stitch_standard_review_gate_replacement_result_count = len(result.auto_stitch_standard_review_gate_replacement_results)
-            auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count = len(
-                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_reruns
-            )
-            auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count = len(
-                result.auto_stitch_post_standard_review_gate_replacement_final_delivery_packages
-            )
-            auto_stitch_transaction_commit_result_count = len(result.auto_stitch_transaction_commit_results)
-            stitch_proposal_count = len(result.stitch_proposals)
-            stitch_review_decision_count = len(result.stitch_review_decisions)
-            stitched_flow_count = len(result.stitched_flows)
-            verification = [
-                f"flow_timeline_status={result.status}",
-                f"flow_timeline_flow_id={result.flow_id}",
-                f"flow_timeline_entry_count={entry_count}",
-                f"flow_timeline_previous_entry_count={result.previous_entry_count}",
-                f"flow_timeline_new_entry_count={result.new_entry_count}",
-                f"flow_timeline_correlation_group_count={len(result.correlation_groups)}",
-                f"flow_timeline_stitch_candidate_count={stitch_candidate_count}",
-                f"flow_timeline_auto_stitch_dry_run_count={auto_stitch_dry_run_count}",
-                f"flow_timeline_auto_stitch_conflict_resolution_count={auto_stitch_conflict_resolution_count}",
-                f"flow_timeline_auto_stitch_policy_decision_count={auto_stitch_policy_decision_count}",
-                f"flow_timeline_auto_stitch_materialization_plan_count={auto_stitch_materialization_plan_count}",
-                f"flow_timeline_auto_stitch_materialization_review_decision_count={auto_stitch_materialization_review_decision_count}",
-                f"flow_timeline_auto_stitch_materialization_result_count={auto_stitch_materialization_result_count}",
-                f"flow_timeline_auto_stitch_materialization_audit_count={auto_stitch_materialization_audit_count}",
-                f"flow_timeline_auto_stitch_materialization_rollback_plan_count={auto_stitch_materialization_rollback_plan_count}",
-                f"flow_timeline_auto_stitch_materialization_transaction_count={auto_stitch_materialization_transaction_count}",
-                f"flow_timeline_auto_stitch_rollback_execution_plan_count={auto_stitch_rollback_execution_plan_count}",
-                f"flow_timeline_auto_stitch_rollback_execution_review_decision_count={auto_stitch_rollback_execution_review_decision_count}",
-                f"flow_timeline_auto_stitch_rollback_execution_result_count={auto_stitch_rollback_execution_result_count}",
-                f"flow_timeline_auto_stitch_rollback_review_gate_recomputation_count={auto_stitch_rollback_review_gate_recomputation_count}",
-                f"flow_timeline_auto_stitch_physical_rollback_dry_run_diff_count={auto_stitch_physical_rollback_dry_run_diff_count}",
-                f"flow_timeline_auto_stitch_physical_rollback_review_decision_count={auto_stitch_physical_rollback_review_decision_count}",
-                f"flow_timeline_auto_stitch_physical_rollback_result_count={auto_stitch_physical_rollback_result_count}",
-                f"flow_timeline_auto_stitch_post_physical_rollback_review_gate_rerun_count={auto_stitch_post_physical_rollback_review_gate_rerun_count}",
-                f"flow_timeline_auto_stitch_standard_review_gate_replacement_review_decision_count={auto_stitch_standard_review_gate_replacement_review_decision_count}",
-                f"flow_timeline_auto_stitch_standard_review_gate_replacement_result_count={auto_stitch_standard_review_gate_replacement_result_count}",
-                f"flow_timeline_auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count={auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count}",
-                f"flow_timeline_auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count={auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count}",
-                f"flow_timeline_auto_stitch_transaction_commit_result_count={auto_stitch_transaction_commit_result_count}",
-                f"flow_timeline_stitch_proposal_count={stitch_proposal_count}",
-                f"flow_timeline_stitch_review_decision_count={stitch_review_decision_count}",
-                f"flow_timeline_stitched_flow_count={stitched_flow_count}",
-                f"flow_timeline_automatic_stitching=False",
-                f"flow_timeline_continued_from_previous={result.continued_from_previous}",
-                f"flow_timeline_sources={sorted(result.source_counts.keys())}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"flow_timeline_reason={result.reason}")
-            if result.error:
-                verification.append(f"flow_timeline_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/flow-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web cross-request flow timeline continuation baseline.",
-                    metadata={
-                        "status": result.status,
-                        "flow_id": result.flow_id,
-                        "run_id": result.run_id,
-                        "entry_count": entry_count,
-                        "previous_entry_count": result.previous_entry_count,
-                        "new_entry_count": result.new_entry_count,
-                        "correlation_group_count": len(result.correlation_groups),
-                        "stitch_candidate_count": stitch_candidate_count,
-                        "auto_stitch_dry_run_count": auto_stitch_dry_run_count,
-                        "auto_stitch_conflict_resolution_count": auto_stitch_conflict_resolution_count,
-                        "auto_stitch_conflict_resolution_summary": dict(result.auto_stitch_conflict_resolution_summary),
-                        "auto_stitch_policy_decision_count": auto_stitch_policy_decision_count,
-                        "auto_stitch_policy_summary": dict(result.auto_stitch_policy_summary),
-                        "auto_stitch_materialization_plan_count": auto_stitch_materialization_plan_count,
-                        "auto_stitch_materialization_summary": dict(result.auto_stitch_materialization_summary),
-                        "auto_stitch_materialization_review_decision_count": auto_stitch_materialization_review_decision_count,
-                        "auto_stitch_materialization_result_count": auto_stitch_materialization_result_count,
-                        "auto_stitch_materialization_result_summary": dict(result.auto_stitch_materialization_result_summary),
-                        "auto_stitch_materialization_audit_count": auto_stitch_materialization_audit_count,
-                        "auto_stitch_materialization_audit_summary": dict(result.auto_stitch_materialization_audit_summary),
-                        "auto_stitch_materialization_rollback_plan_count": auto_stitch_materialization_rollback_plan_count,
-                        "auto_stitch_materialization_rollback_summary": dict(result.auto_stitch_materialization_rollback_summary),
-                        "auto_stitch_materialization_transaction_count": auto_stitch_materialization_transaction_count,
-                        "auto_stitch_materialization_transaction_summary": dict(result.auto_stitch_materialization_transaction_summary),
-                        "auto_stitch_rollback_execution_plan_count": auto_stitch_rollback_execution_plan_count,
-                        "auto_stitch_rollback_execution_summary": dict(result.auto_stitch_rollback_execution_summary),
-                        "auto_stitch_rollback_execution_review_decision_count": auto_stitch_rollback_execution_review_decision_count,
-                        "auto_stitch_rollback_execution_result_count": auto_stitch_rollback_execution_result_count,
-                        "auto_stitch_rollback_execution_result_summary": dict(result.auto_stitch_rollback_execution_result_summary),
-                        "auto_stitch_rollback_review_gate_recomputation_count": auto_stitch_rollback_review_gate_recomputation_count,
-                        "auto_stitch_rollback_review_gate_recomputation_summary": dict(result.auto_stitch_rollback_review_gate_recomputation_summary),
-                        "auto_stitch_physical_rollback_dry_run_diff_count": auto_stitch_physical_rollback_dry_run_diff_count,
-                        "auto_stitch_physical_rollback_dry_run_diff_summary": dict(result.auto_stitch_physical_rollback_dry_run_diff_summary),
-                        "auto_stitch_physical_rollback_review_decision_count": auto_stitch_physical_rollback_review_decision_count,
-                        "auto_stitch_physical_rollback_result_count": auto_stitch_physical_rollback_result_count,
-                        "auto_stitch_physical_rollback_result_summary": dict(result.auto_stitch_physical_rollback_result_summary),
-                        "auto_stitch_post_physical_rollback_review_gate_rerun_count": auto_stitch_post_physical_rollback_review_gate_rerun_count,
-                        "auto_stitch_post_physical_rollback_review_gate_rerun_summary": dict(result.auto_stitch_post_physical_rollback_review_gate_rerun_summary),
-                        "auto_stitch_standard_review_gate_replacement_review_decision_count": auto_stitch_standard_review_gate_replacement_review_decision_count,
-                        "auto_stitch_standard_review_gate_replacement_result_count": auto_stitch_standard_review_gate_replacement_result_count,
-                        "auto_stitch_standard_review_gate_replacement_summary": dict(result.auto_stitch_standard_review_gate_replacement_summary),
-                        "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count": (
-                            auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count
-                        ),
-                        "auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary": dict(
-                            result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary
-                        ),
-                        "auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count": (
-                            auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count
-                        ),
-                        "auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary": dict(
-                            result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary
-                        ),
-                        "auto_stitch_transaction_commit_result_count": auto_stitch_transaction_commit_result_count,
-                        "auto_stitch_transaction_commit_summary": dict(result.auto_stitch_transaction_commit_summary),
-                        "stitch_proposal_count": stitch_proposal_count,
-                        "stitch_review_decision_count": stitch_review_decision_count,
-                        "stitched_flow_count": stitched_flow_count,
-                        "automatic_stitching": False,
-                        "continued_from_previous": result.continued_from_previous,
-                        "source_counts": result.source_counts,
-                    },
-                )
-            ]
-            if auto_stitch_conflict_resolution_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/auto-stitch-conflict-resolutions.json",
-                        kind=ArtifactKind.JSON,
-                        description="Review-only Native Web auto-stitch conflict resolution baseline.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_conflict_resolution_count,
-                            "summary": dict(result.auto_stitch_conflict_resolution_summary),
-                            "automatic_stitching": False,
-                            "would_materialize": False,
-                            "source": "auto_stitch_conflict_resolution_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_materialization_result_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/auto-stitch-materialization-results.json",
-                        kind=ArtifactKind.JSON,
-                        description="Review-approved Native Web auto-stitch materialization results.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_materialization_result_count,
-                            "summary": dict(result.auto_stitch_materialization_result_summary),
-                            "automatic_stitching": False,
-                            "source": "review_approved_auto_stitch_materialization_plan",
-                        },
-                    )
-                )
-            if auto_stitch_materialization_audit_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/stitched-flow-materialization-audit.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web stitched-flow materialization audit log.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_materialization_audit_count,
-                            "summary": dict(result.auto_stitch_materialization_audit_summary),
-                            "automatic_stitching": False,
-                            "source": "review_approved_auto_stitch_materialization_plan",
-                        },
-                    )
-                )
-            if auto_stitch_materialization_rollback_plan_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/stitched-flow-rollback-plan.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web stitched-flow materialization rollback plan.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_materialization_rollback_plan_count,
-                            "summary": dict(result.auto_stitch_materialization_rollback_summary),
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "source": "review_approved_auto_stitch_materialization_plan",
-                        },
-                    )
-                )
-            if auto_stitch_materialization_transaction_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/stitched-flow-materialization-transactions.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web stitched-flow materialization transaction log.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_materialization_transaction_count,
-                            "summary": dict(result.auto_stitch_materialization_transaction_summary),
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "transaction_log_only": True,
-                            "source": "review_approved_auto_stitch_materialization_plan",
-                        },
-                    )
-                )
-            if auto_stitch_rollback_execution_plan_count or auto_stitch_rollback_execution_result_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/stitched-flow-rollback-executions.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web stitched-flow rollback execution plans and review-approved logical results.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "plan_count": auto_stitch_rollback_execution_plan_count,
-                            "result_count": auto_stitch_rollback_execution_result_count,
-                            "summary": dict(result.auto_stitch_rollback_execution_summary),
-                            "result_summary": dict(result.auto_stitch_rollback_execution_result_summary),
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "target_artifact_mutated": False,
-                            "source": "review_approved_rollback_execution_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_rollback_review_gate_recomputation_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/review-gate-after-rollback.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web post-rollback review gate recomputation baseline.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_rollback_review_gate_recomputation_count,
-                            "summary": dict(result.auto_stitch_rollback_review_gate_recomputation_summary),
-                            "does_not_replace_review_gate": True,
-                            "delivery_allowed": False,
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "target_artifact_mutated": False,
-                            "source": "post_rollback_review_gate_recompute_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_physical_rollback_dry_run_diff_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/stitched-flow-physical-rollback-diff.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web stitched-flow physical rollback dry-run diff.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_physical_rollback_dry_run_diff_count,
-                            "summary": dict(result.auto_stitch_physical_rollback_dry_run_diff_summary),
-                            "dry_run_only": True,
-                            "would_mutate_if_approved": True,
-                            "would_replace_review_gate": False,
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "target_artifact_mutated": False,
-                            "source": "physical_rollback_dry_run_diff_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_physical_rollback_result_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/stitched-flow-physical-rollback-results.json",
-                        kind=ArtifactKind.JSON,
-                        description="Review-approved Native Web stitched-flow physical rollback mutation results.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_physical_rollback_result_count,
-                            "summary": dict(result.auto_stitch_physical_rollback_result_summary),
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "target_artifact_mutated": bool(result.auto_stitch_physical_rollback_result_summary.get("target_artifact_mutated")),
-                            "would_replace_review_gate": False,
-                            "source": "review_approved_physical_rollback_mutation_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_post_physical_rollback_review_gate_rerun_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/review-gate-after-physical-rollback.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web post-physical-rollback standard review gate rerun baseline.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_post_physical_rollback_review_gate_rerun_count,
-                            "summary": dict(result.auto_stitch_post_physical_rollback_review_gate_rerun_summary),
-                            "does_not_replace_review_gate": bool(
-                                result.auto_stitch_post_physical_rollback_review_gate_rerun_summary.get("does_not_replace_review_gate")
-                            ),
-                            "delivery_allowed": False,
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "target_artifact_mutated": bool(result.auto_stitch_post_physical_rollback_review_gate_rerun_summary.get("target_artifact_mutated")),
-                            "source": "post_physical_rollback_review_gate_rerun_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_standard_review_gate_replacement_result_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/review-gate-replacement-results.json",
-                        kind=ArtifactKind.JSON,
-                        description="Review-approved Native Web standard review gate replacement results.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_standard_review_gate_replacement_result_count,
-                            "summary": dict(result.auto_stitch_standard_review_gate_replacement_summary),
-                            "standard_review_gate_replaced": bool(result.auto_stitch_standard_review_gate_replacement_summary.get("standard_review_gate_replaced")),
-                            "delivery_allowed": False,
-                            "automatic_delivery": False,
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "target_artifact_mutated": bool(result.auto_stitch_standard_review_gate_replacement_summary.get("target_artifact_mutated")),
-                            "source": "review_approved_standard_review_gate_replacement_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/delivery-guard-after-review-gate-replacement.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web post-standard-review-gate-replacement delivery guard rerun baseline.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count,
-                            "summary": dict(result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary),
-                            "delivery_guard_rerun_performed": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get(
-                                    "delivery_guard_rerun_performed"
-                                )
-                            ),
-                            "delivery_guard_passed": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get("delivery_guard_passed")
-                            ),
-                            "delivery_allowed": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get("delivery_allowed")
-                            ),
-                            "automatic_delivery": False,
-                            "manual_delivery_required": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_summary.get(
-                                    "manual_delivery_required"
-                                )
-                            ),
-                            "automatic_stitching": False,
-                            "automatic_rollback": False,
-                            "source": "post_standard_review_gate_replacement_delivery_guard_rerun_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/final-delivery-package-after-review-gate-replacement.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web final delivery package baseline after standard review gate replacement.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count,
-                            "summary": dict(result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary),
-                            "package_ready": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary.get("package_ready")
-                            ),
-                            "final_delivery_packaged": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary.get(
-                                    "final_delivery_packaged"
-                                )
-                            ),
-                            "delivery_allowed": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary.get("delivery_allowed")
-                            ),
-                            "automatic_delivery": False,
-                            "manual_delivery_required": bool(
-                                result.auto_stitch_post_standard_review_gate_replacement_final_delivery_package_summary.get(
-                                    "manual_delivery_required"
-                                )
-                            ),
-                            "cross_run_transaction_committed": False,
-                            "manifest_revision_committed": False,
-                            "external_delivery_performed": False,
-                            "source": "post_standard_review_gate_replacement_final_delivery_package_baseline",
-                        },
-                    )
-                )
-            if auto_stitch_transaction_commit_result_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/final-delivery-transaction-commit.json",
-                        kind=ArtifactKind.JSON,
-                        description="Review-approved Native Web final delivery transaction commit baseline.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": auto_stitch_transaction_commit_result_count,
-                            "summary": dict(result.auto_stitch_transaction_commit_summary),
-                            "transaction_commit_recorded": bool(result.auto_stitch_transaction_commit_summary.get("transaction_commit_recorded")),
-                            "artifact_model_transaction_commit_recorded": bool(
-                                result.auto_stitch_transaction_commit_summary.get("artifact_model_transaction_commit_recorded")
-                            ),
-                            "cross_run_transaction_committed": False,
-                            "manifest_revision_committed": False,
-                            "automatic_delivery": False,
-                            "manual_delivery_required": bool(result.auto_stitch_transaction_commit_summary.get("manual_delivery_required")),
-                            "external_delivery_performed": False,
-                            "filesystem_artifact_mutated": False,
-                            "source": "explicit_review_only_final_delivery_transaction_commit_baseline",
-                        },
-                    )
-                )
-            if stitched_flow_count:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/stitched-flow.json",
-                        kind=ArtifactKind.JSON,
-                        description="Review-approved Native Web stitched flow baseline.",
-                        metadata={
-                            "flow_id": result.flow_id,
-                            "count": stitched_flow_count,
-                            "automatic_stitching": False,
-                            "source": "review_approved_stitch_proposal",
-                        },
-                    )
-                )
-            applied_actions = ["build_flow_timeline"] if entry_count else []
-            if auto_stitch_materialization_result_count:
-                applied_actions.append("materialize_review_approved_auto_stitch_plan")
-            if auto_stitch_materialization_audit_count:
-                applied_actions.append("write_stitched_flow_materialization_audit")
-            if auto_stitch_materialization_rollback_plan_count:
-                applied_actions.append("write_stitched_flow_rollback_plan")
-            if auto_stitch_materialization_transaction_count:
-                applied_actions.append("write_stitched_flow_materialization_transaction_log")
-            if auto_stitch_rollback_execution_plan_count:
-                applied_actions.append("plan_stitched_flow_rollback_execution")
-            if auto_stitch_rollback_execution_result_count:
-                applied_actions.append("record_review_approved_rollback_execution")
-            if auto_stitch_rollback_review_gate_recomputation_count:
-                applied_actions.append("recompute_review_gate_after_rollback")
-            if auto_stitch_physical_rollback_dry_run_diff_count:
-                applied_actions.append("plan_physical_rollback_dry_run_diff")
-            if auto_stitch_physical_rollback_result_count:
-                applied_actions.append("apply_review_approved_physical_rollback")
-            if auto_stitch_post_physical_rollback_review_gate_rerun_count:
-                applied_actions.append("rerun_review_gate_after_physical_rollback")
-            if auto_stitch_standard_review_gate_replacement_result_count:
-                applied_actions.append("replace_standard_review_gate_after_physical_rollback")
-            if auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count:
-                applied_actions.append("rerun_delivery_guard_after_standard_review_gate_replacement")
-            if auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count:
-                applied_actions.append("package_final_delivery_after_standard_review_gate_replacement")
-            if auto_stitch_transaction_commit_result_count:
-                applied_actions.append("record_final_delivery_transaction_commit")
-            if stitched_flow_count:
-                applied_actions.append("materialize_review_approved_stitched_flow")
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.new_entry_count or stitched_flow_count else ExecutionStatus.PARTIAL if entry_count else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=(
-                    "inspect_stitched_flow_or_use_for_replay_planning"
-                    if stitched_flow_count
-                    else "inspect_flow_timeline_or_continue_next_request"
-                    if entry_count
-                    else "provide_timeline_inputs"
-                ),
-                confidence=ConfidenceLevel.MEDIUM if result.new_entry_count or stitched_flow_count else ConfidenceLevel.LOW,
             )
         if self._is_mutation_observer_timeline_request(protection_name, context):
             spec = MutationObserverTimelineSpec.from_context(context)
@@ -13687,6 +13197,7 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                     "status": flow_timeline.get("status", "unknown"),
                     "flow_id": flow_timeline.get("flow_id"),
                     "entry_count": flow_timeline.get("entry_count", 0),
+                    "previous_entry_count": flow_timeline.get("previous_entry_count", 0),
                     "new_entry_count": flow_timeline.get("new_entry_count", 0),
                     "correlation_group_count": flow_timeline.get("correlation_group_count", 0),
                     "stitch_candidate_count": flow_timeline.get("stitch_candidate_count", 0),
@@ -13746,6 +13257,7 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                     "stitched_flow_count": flow_timeline.get("stitched_flow_count", 0),
                     "automatic_stitching": False,
                     "continued_from_previous": bool(flow_timeline.get("continued_from_previous")),
+                    "source_counts": flow_timeline.get("source_counts", {}),
                 },
             ),
         ]
@@ -14522,6 +14034,172 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         return "enhance_native_collectors_or_adjust_keyword"
 
 
+
+    def _dispatch_timeline(self, protection_name: str, context: dict) -> "ProtectionResult | None":
+        normalized = (protection_name or "").replace("_", "-").lower()
+        explicit_timeline_request = normalized in {
+            "flow-timeline",
+            "flow-timeline-review",
+            "flow",
+            "timeline",
+            "auto-stitch",
+            "stitched-flow",
+        }
+        timeline_context_keys = {
+            "previous_flow_timeline",
+            "previousFlowTimeline",
+            "flow_timeline",
+            "flowTimeline",
+            "flow_events",
+            "flowEvents",
+            "timeline_inputs",
+            "timelineInputs",
+            "stitch_review_decisions",
+            "stitchReviewDecisions",
+            "auto_stitch_policy",
+            "autoStitchPolicy",
+            "auto_stitch_materialization_review_decisions",
+            "autoStitchMaterializationReviewDecisions",
+            "auto_stitch_rollback_execution_review_decisions",
+            "autoStitchRollbackExecutionReviewDecisions",
+            "auto_stitch_physical_rollback_review_decisions",
+            "autoStitchPhysicalRollbackReviewDecisions",
+            "auto_stitch_standard_review_gate_replacement_review_decisions",
+            "autoStitchStandardReviewGateReplacementReviewDecisions",
+            "auto_stitch_transaction_commit_review_decisions",
+            "autoStitchTransactionCommitReviewDecisions",
+        }
+        if not explicit_timeline_request and not any(key in context for key in timeline_context_keys):
+            return None
+        spec = FlowTimelineSpec.from_context(context)
+        if spec is None:
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=["flow_timeline_status=unsupported", "flow_timeline_reason=missing_flow_timeline_spec"],
+                status=ExecutionStatus.PARTIAL,
+                artifacts=[],
+                next_action="provide_flow_timeline_inputs",
+                confidence=ConfidenceLevel.LOW,
+            )
+        flow_timeline = FlowTimelineManager().build(spec).to_dict()
+        verification = [
+            f"flow_timeline_status={flow_timeline.get('status', 'unknown')}",
+            f"flow_timeline_entry_count={flow_timeline.get('entry_count', 0)}",
+            f"flow_timeline_previous_entry_count={flow_timeline.get('previous_entry_count', 0)}",
+            f"flow_timeline_new_entry_count={flow_timeline.get('new_entry_count', 0)}",
+            f"flow_timeline_correlation_group_count={flow_timeline.get('correlation_group_count', 0)}",
+            f"flow_timeline_stitch_candidate_count={flow_timeline.get('stitch_candidate_count', 0)}",
+            f"flow_timeline_auto_stitch_dry_run_count={flow_timeline.get('auto_stitch_dry_run_count', 0)}",
+            f"flow_timeline_auto_stitch_conflict_resolution_count={flow_timeline.get('auto_stitch_conflict_resolution_count', 0)}",
+            f"flow_timeline_auto_stitch_policy_decision_count={flow_timeline.get('auto_stitch_policy_decision_count', 0)}",
+            f"flow_timeline_auto_stitch_materialization_plan_count={flow_timeline.get('auto_stitch_materialization_plan_count', 0)}",
+            f"flow_timeline_auto_stitch_materialization_review_decision_count={flow_timeline.get('auto_stitch_materialization_review_decision_count', 0)}",
+            f"flow_timeline_auto_stitch_materialization_result_count={flow_timeline.get('auto_stitch_materialization_result_count', 0)}",
+            f"flow_timeline_auto_stitch_materialization_audit_count={flow_timeline.get('auto_stitch_materialization_audit_count', 0)}",
+            f"flow_timeline_auto_stitch_materialization_rollback_plan_count={flow_timeline.get('auto_stitch_materialization_rollback_plan_count', 0)}",
+            f"flow_timeline_auto_stitch_materialization_transaction_count={flow_timeline.get('auto_stitch_materialization_transaction_count', 0)}",
+            f"flow_timeline_auto_stitch_rollback_execution_plan_count={flow_timeline.get('auto_stitch_rollback_execution_plan_count', 0)}",
+            f"flow_timeline_auto_stitch_rollback_execution_review_decision_count={flow_timeline.get('auto_stitch_rollback_execution_review_decision_count', 0)}",
+            f"flow_timeline_auto_stitch_rollback_execution_result_count={flow_timeline.get('auto_stitch_rollback_execution_result_count', 0)}",
+            f"flow_timeline_auto_stitch_rollback_review_gate_recomputation_count={flow_timeline.get('auto_stitch_rollback_review_gate_recomputation_count', 0)}",
+            f"flow_timeline_auto_stitch_physical_rollback_dry_run_diff_count={flow_timeline.get('auto_stitch_physical_rollback_dry_run_diff_count', 0)}",
+            f"flow_timeline_auto_stitch_physical_rollback_review_decision_count={flow_timeline.get('auto_stitch_physical_rollback_review_decision_count', 0)}",
+            f"flow_timeline_auto_stitch_physical_rollback_result_count={flow_timeline.get('auto_stitch_physical_rollback_result_count', 0)}",
+            f"flow_timeline_auto_stitch_post_physical_rollback_review_gate_rerun_count={flow_timeline.get('auto_stitch_post_physical_rollback_review_gate_rerun_count', 0)}",
+            f"flow_timeline_auto_stitch_standard_review_gate_replacement_review_decision_count={flow_timeline.get('auto_stitch_standard_review_gate_replacement_review_decision_count', 0)}",
+            f"flow_timeline_auto_stitch_standard_review_gate_replacement_result_count={flow_timeline.get('auto_stitch_standard_review_gate_replacement_result_count', 0)}",
+            f"flow_timeline_auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count={flow_timeline.get('auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count', 0)}",
+            f"flow_timeline_auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count={flow_timeline.get('auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count', 0)}",
+            f"flow_timeline_auto_stitch_transaction_commit_review_decision_count={flow_timeline.get('auto_stitch_transaction_commit_review_decision_count', 0)}",
+            f"flow_timeline_auto_stitch_transaction_commit_result_count={flow_timeline.get('auto_stitch_transaction_commit_result_count', 0)}",
+            f"flow_timeline_stitch_proposal_count={flow_timeline.get('stitch_proposal_count', 0)}",
+            f"flow_timeline_stitch_review_decision_count={flow_timeline.get('stitch_review_decision_count', 0)}",
+            f"flow_timeline_stitched_flow_count={flow_timeline.get('stitched_flow_count', 0)}",
+            "flow_timeline_automatic_stitching=False",
+            f"flow_timeline_continued_from_previous={bool(flow_timeline.get('continued_from_previous'))}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        timeline_artifact_paths = {
+            "virtual://workspace/flow-timeline.json",
+            "virtual://workspace/auto-stitch-conflict-resolutions.json",
+            "virtual://workspace/auto-stitch-materialization-results.json",
+            "virtual://workspace/stitched-flow-materialization-audit.json",
+            "virtual://workspace/stitched-flow-rollback-plan.json",
+            "virtual://workspace/stitched-flow-materialization-transactions.json",
+            "virtual://workspace/stitched-flow-rollback-executions.json",
+            "virtual://workspace/review-gate-after-rollback.json",
+            "virtual://workspace/stitched-flow-physical-rollback-diff.json",
+            "virtual://workspace/stitched-flow-physical-rollback-results.json",
+            "virtual://workspace/review-gate-after-physical-rollback.json",
+            "virtual://workspace/review-gate-replacement-results.json",
+            "virtual://workspace/delivery-guard-after-review-gate-replacement.json",
+            "virtual://workspace/final-delivery-package-after-review-gate-replacement.json",
+            "virtual://workspace/final-delivery-transaction-commit.json",
+            "virtual://workspace/stitched-flow.json",
+        }
+        artifact_paths = [
+            artifact
+            for artifact in self._build_artifacts(
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                [],
+                [],
+                {},
+                flow_timeline,
+            )
+            if artifact.path in timeline_artifact_paths
+        ]
+        actions = ["build_flow_timeline"]
+        if flow_timeline.get("auto_stitch_materialization_result_count", 0):
+            actions.append("materialize_review_approved_auto_stitch_plan")
+        if flow_timeline.get("auto_stitch_materialization_audit_count", 0):
+            actions.append("write_stitched_flow_materialization_audit")
+        if flow_timeline.get("auto_stitch_materialization_rollback_plan_count", 0):
+            actions.append("write_stitched_flow_rollback_plan")
+        if flow_timeline.get("auto_stitch_materialization_transaction_count", 0):
+            actions.append("write_stitched_flow_materialization_transaction_log")
+        if flow_timeline.get("auto_stitch_rollback_execution_plan_count", 0):
+            actions.append("plan_stitched_flow_rollback_execution")
+        if flow_timeline.get("auto_stitch_rollback_execution_result_count", 0):
+            actions.append("record_review_approved_rollback_execution")
+        if flow_timeline.get("auto_stitch_rollback_review_gate_recomputation_count", 0):
+            actions.append("recompute_review_gate_after_rollback")
+        if flow_timeline.get("auto_stitch_physical_rollback_dry_run_diff_count", 0):
+            actions.append("plan_physical_rollback_dry_run_diff")
+        if flow_timeline.get("auto_stitch_physical_rollback_result_count", 0):
+            actions.append("apply_review_approved_physical_rollback")
+        if flow_timeline.get("auto_stitch_post_physical_rollback_review_gate_rerun_count", 0):
+            actions.append("rerun_review_gate_after_physical_rollback")
+        if flow_timeline.get("auto_stitch_standard_review_gate_replacement_result_count", 0):
+            actions.append("replace_standard_review_gate_after_physical_rollback")
+        if flow_timeline.get("auto_stitch_post_standard_review_gate_replacement_delivery_guard_rerun_count", 0):
+            actions.append("rerun_delivery_guard_after_standard_review_gate_replacement")
+        if flow_timeline.get("auto_stitch_post_standard_review_gate_replacement_final_delivery_package_count", 0):
+            actions.append("package_final_delivery_after_standard_review_gate_replacement")
+        if flow_timeline.get("auto_stitch_transaction_commit_result_count", 0):
+            actions.append("record_final_delivery_transaction_commit")
+        if flow_timeline.get("stitched_flow_count", 0):
+            actions.append("materialize_review_approved_stitched_flow")
+        next_action = (
+            "inspect_stitched_flow_or_use_for_replay_planning"
+            if flow_timeline.get("stitched_flow_count", 0)
+            else "inspect_flow_timeline_or_continue_next_request"
+        )
+        return ProtectionResult(
+            protection_name=protection_name,
+            applied_actions=list(dict.fromkeys(actions)),
+            verification=verification,
+            status=ExecutionStatus.SUCCESS if flow_timeline.get("status") == "success" else ExecutionStatus.PARTIAL,
+            artifacts=artifact_paths,
+            next_action=next_action,
+            confidence=ConfidenceLevel.MEDIUM if flow_timeline.get("status") == "success" else ConfidenceLevel.LOW,
+        )
 
     def _dispatch_closure_prefix(self, protection_name: str, context: dict) -> "ProtectionResult | None":
         if self._is_closure_wrapper_runtime_mutability_preflight_request(protection_name, context):

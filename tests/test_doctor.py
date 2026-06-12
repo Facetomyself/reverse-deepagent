@@ -100,6 +100,7 @@ class DoctorTests(unittest.TestCase):
             "browser_timezone": None,
             "launch_browser_smoke": False,
             "browser_smoke_url": "about:blank",
+            "print_browser_launch_command": False,
             "external_delivery_providers": False,
             "runtime_backends": False,
             "delivery_transaction_root": None,
@@ -286,6 +287,63 @@ class DoctorTests(unittest.TestCase):
             lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
             self.assertEqual(lifecycle["availability_checked"], "not_checked")
             self.assertEqual(lifecycle["session_start_requested"], "skipped")
+
+    def test_doctor_can_print_browser_launch_command_without_provider_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = run_doctor(
+                self.make_args(
+                    Path(tmp),
+                    browser="cloakbrowser",
+                    print_browser_launch_command=True,
+                    browser_smoke_url="https://example.test/smoke",
+                    browser_url="http://user:pass@127.0.0.1:65530",
+                    browser_proxy="http://user:pass@example.test:8080",
+                    browser_args="--proxy-server=http://user:pass@example.test:8080 --lang=zh-CN",
+                    jsreverser_mcp_command=str(Path(tmp) / "missing-mcp"),
+                )
+            )
+        command = payload["browser_provider_launch_command"]
+        self.assertTrue(payload["ok"])
+        self.assertNotIn("browser_provider", payload)
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertEqual(command["schema_version"], "reverse-deepagent.browser-provider-launch-command.v1")
+        self.assertEqual(command["requested_provider_id"], "cloakbrowser")
+        self.assertEqual(command["mode"], "print-launch-command")
+        self.assertFalse(command["side_effect_policy"]["provider_registry_resolved"])
+        self.assertFalse(command["side_effect_policy"]["provider_factories_invoked"])
+        self.assertFalse(command["side_effect_policy"]["starts_browser"])
+        self.assertFalse(command["side_effect_policy"]["writes_artifact"])
+        self.assertFalse(command["side_effect_policy"]["calls_mcp"])
+        self.assertTrue(command["side_effect_policy"]["prints_command_only"])
+        self.assertIn("--launch-browser-smoke", command["review_command_hint"]["command"])
+        self.assertIn("--browser", command["review_command_hint"]["command"])
+        self.assertIn("cloakbrowser", command["review_command_hint"]["command"])
+        encoded = json.dumps(command, ensure_ascii=False)
+        self.assertNotIn("user:pass", encoded)
+        self.assertNotIn("user:pass", json.dumps(payload, ensure_ascii=False))
+        self.assertIn("<redacted>", encoded)
+        self.assertIn("<proxy-url>", encoded)
+
+    def test_doctor_browser_launch_command_reports_malformed_args_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = run_doctor(
+                self.make_args(
+                    Path(tmp),
+                    browser="cloakbrowser",
+                    print_browser_launch_command=True,
+                    browser_args='"unterminated',
+                    jsreverser_mcp_command=str(Path(tmp) / "missing-mcp"),
+                )
+            )
+        command = payload["browser_provider_launch_command"]
+        self.assertFalse(payload["ok"])
+        self.assertFalse(command["ok"])
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertIn("No closing quotation", command["error"])
+        self.assertFalse(command["side_effect_policy"]["provider_factories_invoked"])
+        self.assertFalse(command["side_effect_policy"]["starts_browser"])
 
     def test_doctor_can_emit_side_effect_free_external_delivery_provider_matrix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -9,10 +9,16 @@
 | B1 | `8e2b8f3` | `module_hooks.py`(12449行) → `module_hooks/` 域包（base/module_io/async_chunk/federation/custom_loader + shim） | 138 符号字节级比对通过；1682 测试全绿 |
 | B2 | `c1587bc` | 160 个 `_is_*_request` staticmethod → `_NativeWebRequestMatchers` mixin；`native_web.py` 19519→14706行 | MRO 验证；1682 测试全绿 |
 | B3a | `730f884` | 3 个 page-free closure 前缀分支 → `_dispatch_closure_prefix`；`apply_minimal_protection` 首段提取 | 1682 测试全绿 |
+| B3b | `b36f168` | 22 个 heap 分支 → `_dispatch_heap`；`apply_minimal_protection` 中段提取 | 1685 测试全绿 |
+| Goal-08 | `a30ba3f` | `object_graph_diff` page-free 分支（63 行）→ `_dispatch_object_graph` | 1695 测试全绿 |
 
-### 未完成的 B3b/B3c
+### B3b / Goal-08 已完成；B3c 待处理
 
-`apply_minimal_protection` 仍有 156 个分支（12203 行）留在主方法体内：
+B3b（commit `b36f168`）：22 个 heap 分支提取到 `_dispatch_heap()`，`apply_minimal_protection` 完成中段解耦。
+
+Goal-08（commit `a30ba3f`）：`object_graph_diff` page-free 分支（63 行）提取到 `_dispatch_object_graph()`，在 try/session/page 块之前委托执行。
+
+`apply_minimal_protection` 当前仍有约 130 个分支留在主方法体内：
 - **page-free 分支**：可安全提取，但与 page-using 分支交错，需逐段处理
 - **page-using 分支**：依赖 L5984 try 块初始化的 `page`，提取时须将 `page` 作参数传入
 - **fallback 代码**：永远保留在主方法，不提取
@@ -48,12 +54,13 @@ ROADMAP 的"未完成"描述准确地指代的是**自动化/无审查执行**�
 | `test_heap_snapshot_retained_size_executor_truncates_at_max_nodes` | max_nodes 截断后 node_analysis_truncated=True，且候选来自截断后可见范围 |
 | `test_heap_snapshot_retained_size_executor_blocks_on_missing_heap_snapshot` | heap_snapshot=None 时干净阻断，无副作用 |
 
-全量测试：1685 通过 / 2 skip / 退出码 0。
+全量测试：1693 通过 / 2 skip / 退出码 0（Goal-08 后为 1695/1693）。
 
 ## 下一步建议
 
 按价值/风险比排序：
 
-1. **B3b**（机械工作）：继续抽 `apply_minimal_protection` 的 page-free 分支群，加参数传递机制处理 page-using 分支
-2. **完善 ROADMAP**：把已实现的 heap/source-logpoint executor 从 "Still not fully closed" 移到 "Done（MVP，estimate-only）"，消除文档与代码的落差
-3. **Direction A 深化**：为 heap path-to-root 和 constructor drilldown executor 补同等覆盖度的测试（目前各只有 2 个测试，新增量级与 retained-size 对齐）
+1. ~~**B3b**~~：✅ 已完成（commit `b36f168`）
+2. ~~**完善 ROADMAP**~~：✅ 已完成（commit `b36f168` / `86a11ade`）；heap/source-logpoint executor 已移入 Done 区
+3. ~~**Direction A 深化**~~：✅ 已完成（heap path-to-root +3 tests，constructor-growth +3 tests，source-logpoint names-remap +2 tests，共 commit `d4d096c` + `2a7cb8f`）
+4. **B3c**（下一步）：继续提取剩余 ~130 个 page-free 分支群；page-using 分支需将 `page` 作参数传入子方法，须在 page-free 提取全部完成后进行

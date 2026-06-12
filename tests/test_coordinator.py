@@ -800,6 +800,41 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native source map followthrough chain readiness",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_chain_readiness",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "completed_stage": "source_map_selected_executor_apply_preflight"},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map followthrough one-step plan",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_one_step_plan",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "source_chain_completed_stage": "source_map_selected_executor_apply_preflight", "planned_step_ready_for_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map followthrough dispatch preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatch_preflight",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "dispatcher_input_ready_for_review": True, "dispatch_target": {"dispatch_surface": "source-map-debugger-execution-result"}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map followthrough dispatch approval plan",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatch_approval_plan",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "dispatch_surface": "source-map-debugger-execution-result", "approval_plan_ready_for_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map followthrough dispatch approval record",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatch_approval_record",
+                    details={"status": "written", "selected_consumer": "debugger", "dispatch_surface": "source-map-debugger-execution-result", "approved_for_dispatch": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native source map followthrough surface selection",
                     kind=EvidenceKind.NOTE,
                     source="source_map_followthrough_surface_selection",
@@ -835,6 +870,48 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native source map selected executor application handoff",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_selected_executor_application_handoff",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "application_surface": "source-map-debugger-application", "ready_for_application_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map selected executor result checkpoint",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_selected_executor_result_checkpoint",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "application_surface": "source-map-debugger-application", "ready_for_next_explicit_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map followthrough completion checkpoint",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_completion_checkpoint",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "completion_status": "terminal_review_candidate", "ready_for_completion_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map terminal review package",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_terminal_review_package",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "ready_for_terminal_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map terminal review closure checkpoint",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_terminal_review_closure_checkpoint",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "closure_status": "terminal_review_observed", "ready_for_closure_audit_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native source map terminal review final audit",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_terminal_review_final_audit",
+                    details={"status": "ready_for_review", "selected_consumer": "debugger", "final_audit_status": "source_map_followthrough_review_closed", "ready_for_final_audit_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native object-root mutation audit",
                     kind=EvidenceKind.DYNAMIC,
                     source="object_root_mutation_audit",
@@ -846,6 +923,493 @@ class CoordinatorTests(unittest.TestCase):
                     kind=EvidenceKind.NOTE,
                     source="object_graph_diff",
                     details={"status": "ready_for_review", "change_count": 2, "risk_summary": {"risk": "high"}},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native runtime object graph diff",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="runtime_object_graph_diff",
+                    details={
+                        "status": "ready_for_review",
+                        "change_count": 4,
+                        "runtime_collection": {"root_path": "window.__appState"},
+                        "side_effect_policy": {"runtime_evaluated": True, "full_heap_snapshot": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot readiness",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_readiness",
+                    details={
+                        "status": "ready_for_review",
+                        "capability_evidence": {"browser_provider_id": "remote-cdp", "cdp_available": True, "heap_profiler_capability": "provided"},
+                        "side_effect_policy": {"browser_started": False, "cdp_command_sent": False, "heap_snapshot_collected": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot collect",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="heap_snapshot_collect",
+                    details={
+                        "status": "collected",
+                        "heap_snapshot_collected": True,
+                        "snapshot_metadata": {"snapshot_digest": "sha256:abc", "snapshot_byte_count": 32},
+                        "side_effect_policy": {"cdp_command_sent": True, "raw_heap_exported": False, "heap_diff_computed": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff readiness",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_readiness",
+                    details={
+                        "status": "ready_for_review",
+                        "pair_summary": {"before_digest": "sha256:abc", "after_digest": "sha256:def", "byte_delta": 16},
+                        "side_effect_policy": {"heap_diff_computed": False, "raw_heap_loaded": False, "raw_heap_exported": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff executor preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_executor_preflight",
+                    details={
+                        "status": "ready_for_review",
+                        "readiness_summary": {"before_digest": "sha256:abc", "after_digest": "sha256:def"},
+                        "side_effect_policy": {"heap_diff_computed": False, "raw_heap_loaded": False, "raw_heap_exported": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff executor approval plan",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_executor_approval_plan",
+                    details={
+                        "status": "ready_for_review",
+                        "preflight_summary": {"before_digest": "sha256:abc", "after_digest": "sha256:def"},
+                        "approval_plan": {"approval_scope": "heap-snapshot-diff-executor", "approval_recorded": False},
+                        "transaction_plan": {"transaction_id": "heap-diff-txn-1", "journal_written_now": False},
+                        "side_effect_policy": {"heap_diff_computed": False, "raw_heap_loaded": False, "approval_recorded": False, "journal_written_now": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff executor approval record",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_executor_approval_record",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-approval-record.v1",
+                        "status": "written",
+                        "approval_scope": "heap-snapshot-diff-executor",
+                        "approval_recorded": True,
+                        "approved_for_execution": True,
+                        "executor_input_gates": {"transaction_started": False, "journal_written": False, "executor_invoked": False},
+                        "side_effect_policy": {"writes_approval_record": True, "heap_diff_computed": False, "raw_heap_loaded": False, "executor_invoked": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff executor transaction preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_executor_transaction_preflight",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-transaction-preflight.v1",
+                        "status": "ready_for_review",
+                        "approval_summary": {"approval_scope": "heap-snapshot-diff-executor", "approval_recorded": True, "approved_for_execution": True},
+                        "transaction_summary": {"transaction_id": "heap-diff-txn-1", "idempotency_key": "heap-diff-idem-1", "journal_written": False},
+                        "side_effect_policy": {"transaction_started": False, "journal_written": False, "heap_diff_computed": False, "raw_heap_loaded": False, "executor_invoked": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff executor transaction journal",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_executor_transaction_journal",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-transaction-journal.v1",
+                        "status": "written",
+                        "journal_written": True,
+                        "transaction_started": True,
+                        "transaction_id": "heap-diff-txn-1",
+                        "executor_input_gates": {"bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "heap_diff_computed": False},
+                        "side_effect_policy": {"writes_transaction_journal": True, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "heap_diff_computed": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff executor bounded gate",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_executor_bounded_gate",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-bounded-gate.v1",
+                        "status": "ready_for_review",
+                        "bounded_executor_gate_ready_for_review": True,
+                        "ready_to_execute_now": False,
+                        "transaction_id": "heap-diff-txn-1",
+                        "future_executor_contract": {"implemented": False, "result_artifact": "workspace/heap-snapshot-diff-executor-result.json"},
+                        "side_effect_policy": {"bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff executor result",
+                    kind=EvidenceKind.DYNAMIC,
+                    source="heap_snapshot_diff_executor_result",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-diff-executor-result.v1",
+                        "status": "executed",
+                        "executor_mvp": True,
+                        "gate_summary": {"transaction_id": "heap-diff-txn-1"},
+                        "heap_summaries": {"before": {"node_count_total": 2}, "after": {"node_count_total": 3}},
+                        "diff": {"node_count_delta": 1, "edge_count_delta": 1, "summary_diff_only": True},
+                        "raw_heap_exported": False,
+                        "complete_heap_traversal_claimed": False,
+                        "side_effect_policy": {"executor_invoked": True, "raw_heap_loaded": True, "raw_heap_parsed": True, "raw_heap_exported": False, "heap_diff_computed": True, "complete_heap_traversal": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff follow-up checkpoint",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_followup_checkpoint",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-diff-followup-checkpoint.v1",
+                        "status": "ready_for_review",
+                        "checkpoint_only": True,
+                        "executor_result_summary": {"node_count_delta": 1, "transaction_id": "heap-diff-txn-1"},
+                        "analysis_plan": {
+                            "recommendations": [{"action": "plan_retained_size_analysis", "implemented": False}],
+                            "future_analysis_contracts": {"retained_size_analysis": {"implemented": False}, "path_to_root_analysis": {"implemented": False}},
+                        },
+                        "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "raw_heap_exported": False, "heap_diff_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot diff selected analysis input preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_diff_selected_analysis_input_preflight",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-diff-selected-analysis-input-preflight.v1",
+                        "status": "ready_for_review",
+                        "preflight_only": True,
+                        "selection_only": True,
+                        "source_checkpoint_summary": {"status": "ready_for_review", "transaction_id": "heap-diff-txn-1"},
+                        "selected_analysis_input": {"selected_action": "plan_retained_size_analysis", "candidate_count": 1, "raw_heap_required_for_future_executor": True},
+                        "future_executor_contract": {"implemented": False, "requires_raw_heap": True},
+                        "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot constructor growth drilldown",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_constructor_growth_drilldown",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-constructor-growth-drilldown.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "drilldown_only": True,
+                        "summary_only": True,
+                        "selected_action": "review_constructor_growth",
+                        "constructor_growth_summary": {"candidate_count": 1, "top_candidate": {"name": "LeakyThing", "delta": 1}},
+                        "future_analysis_contracts": {"retained_size_analysis": {"implemented": False}, "path_to_root_analysis": {"implemented": False}},
+                        "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "constructor_drilldown_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot constructor growth drilldown analysis",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_constructor_growth_drilldown_analysis",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-constructor-growth-drilldown-analysis.v1",
+                        "status": "executed",
+                        "constructor_drilldown_computed": True,
+                        "constructor_drilldown_proven": False,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                        "constructor_drilldown_rows": [{"name": "LeakyThing", "delta": 3}],
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot automatic follow-up plan",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_automatic_followup_plan",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-automatic-followup-plan.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "plan_only": True,
+                        "recommended_action_count": 2,
+                        "top_recommended_action": {"action": "review_combined_heap_candidate_evidence"},
+                        "raw_heap_loaded": False,
+                        "heap_diff_computed": False,
+                        "retained_size_proven": False,
+                        "path_to_root_proven": False,
+                        "automatic_execution_allowed": False,
+                        "next_action": "review_heap_snapshot_automatic_followup_plan_before_proof_or_second_pass",
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained-size proof plan",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_proof_plan",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-proof-plan.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "plan_only": True,
+                        "proof_plan_only": True,
+                        "candidate_count": 1,
+                        "proof_requirements": {"requires_raw_heap": True},
+                        "future_executor_contract": {"implemented": False, "ready_to_execute_now": False},
+                        "raw_heap_loaded": False,
+                        "heap_diff_computed": False,
+                        "retained_size_proven": False,
+                        "automatic_execution_allowed": False,
+                        "next_action": "review_heap_snapshot_retained_size_proof_plan_before_raw_heap_ingestion_or_executor",
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot path-to-root proof plan",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_path_to_root_proof_plan",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-path-to-root-proof-plan.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "plan_only": True,
+                        "proof_plan_only": True,
+                        "candidate_count": 1,
+                        "proof_requirements": {"requires_raw_heap": True},
+                        "future_executor_contract": {"implemented": False, "ready_to_execute_now": False},
+                        "raw_heap_loaded": False,
+                        "heap_diff_computed": False,
+                        "path_to_root_proven": False,
+                        "automatic_execution_allowed": False,
+                        "next_action": "review_heap_snapshot_path_to_root_proof_plan_before_raw_heap_ingestion_or_executor",
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot raw-heap constructor drilldown proof plan",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_raw_heap_constructor_drilldown_proof_plan",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-raw-heap-constructor-drilldown-proof-plan.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "plan_only": True,
+                        "proof_plan_only": True,
+                        "candidate_count": 1,
+                        "proof_requirements": {"requires_raw_heap": True, "requires_constructor_reachability_graph": True},
+                        "future_executor_contract": {"implemented": False, "ready_to_execute_now": False},
+                        "raw_heap_loaded": False,
+                        "heap_diff_computed": False,
+                        "constructor_drilldown_proven": False,
+                        "automatic_execution_allowed": False,
+                        "next_action": "review_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_before_raw_heap_ingestion_or_executor",
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained path preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_path_preflight",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-path-preflight.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "preflight_only": True,
+                        "handoff_only": True,
+                        "requested_analysis": "retained-size-and-path-to-root",
+                        "candidate_count": 1,
+                        "candidate_inputs": [{"name": "LeakyThing", "delta": 1}],
+                        "raw_heap_requirements": {"requires_raw_heap": True, "raw_heap_available_in_this_preflight": False},
+                        "future_executor_contracts": {
+                            "retained_size_analysis": {"implemented": False},
+                            "path_to_root_analysis": {"implemented": False},
+                        },
+                        "raw_heap_loaded": False,
+                        "raw_heap_parsed": False,
+                        "heap_diff_computed": False,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                        "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained size input review",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_input_review",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-input-review.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "input_review_only": True,
+                        "approval_gate_only": True,
+                        "candidate_count": 1,
+                        "candidate_inputs": [{"name": "LeakyThing", "delta": 1}],
+                        "raw_heap_requirements": {"requires_raw_heap": True, "raw_heap_available_in_this_review": False},
+                        "executor_input_contract": {"implemented": False, "executor_name": "execute_heap_snapshot_retained_size_analysis"},
+                        "approval_gate": {"approval_required": True, "ready_to_execute_now": False},
+                        "raw_heap_loaded": False,
+                        "raw_heap_parsed": False,
+                        "heap_diff_computed": False,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                        "side_effect_policy": {"raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained size approval plan",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_approval_plan",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-approval-plan.v1",
+                        "status": "ready_for_review",
+                        "review_only": True,
+                        "approval_plan_only": True,
+                        "transaction_plan_only": True,
+                        "candidate_count": 1,
+                        "candidate_inputs": [{"name": "LeakyThing", "delta": 1}],
+                        "executor_input_contract": {"implemented": False, "ready_to_execute_now": False},
+                        "approval_plan": {"approval_required": True, "approval_recorded": False},
+                        "transaction_plan": {"transaction_started": False, "journal_written": False},
+                        "approval_recorded": False,
+                        "transaction_started": False,
+                        "journal_written_now": False,
+                        "executor_invoked": False,
+                        "raw_heap_loaded": False,
+                        "raw_heap_parsed": False,
+                        "heap_diff_computed": False,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                        "side_effect_policy": {"approval_recorded": False, "transaction_started": False, "journal_written_now": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained size approval record",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_approval_record",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-approval-record.v1",
+                        "status": "written",
+                        "approval_recorded": True,
+                        "approved_for_execution": True,
+                        "candidate_digest": "retained-size-candidate-digest-test",
+                        "transaction_plan_id": "retained-size-approval-plan-test",
+                        "transaction_started": False,
+                        "journal_written": False,
+                        "bounded_executor_gate_written": False,
+                        "executor_invoked": False,
+                        "raw_heap_loaded": False,
+                        "raw_heap_parsed": False,
+                        "heap_diff_computed": False,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                        "side_effect_policy": {"approval_recorded": True, "transaction_started": False, "journal_written": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained size transaction preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_transaction_preflight",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-transaction-preflight.v1",
+                        "status": "ready_for_review",
+                        "read_only": True,
+                        "transaction_preflight_only": True,
+                        "retained_size_only": True,
+                        "approval_summary": {"approval_plan_id": "retained-size-approval-plan-test", "approval_recorded": True, "approved_for_execution": True},
+                        "transaction_summary": {"transaction_plan_id": "retained-size-approval-plan-test", "transaction_started": False, "journal_written": False},
+                        "candidate_summary": {"candidate_digest": "retained-size-candidate-digest-test"},
+                        "journal_writer_contract": {"ready_for_journal_review": True, "implemented": False},
+                        "transaction_started": False,
+                        "journal_written": False,
+                        "bounded_executor_gate_written": False,
+                        "executor_invoked": False,
+                        "raw_heap_loaded": False,
+                        "raw_heap_parsed": False,
+                        "heap_diff_computed": False,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                        "side_effect_policy": {"transaction_started": False, "journal_written": False, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "heap_diff_computed": False, "retained_size_proven": False, "path_to_root_computed": False, "calls_mcp": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained size transaction journal",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_transaction_journal",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-transaction-journal.v1",
+                        "status": "written",
+                        "journal_written": True,
+                        "transaction_started": True,
+                        "transaction_plan_id": "retained-size-approval-plan-test",
+                        "candidate_digest": "retained-size-candidate-digest-test",
+                        "executor_input_gates": {"bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "retained_size_proven": False, "path_to_root_computed": False},
+                        "side_effect_policy": {"writes_transaction_journal": True, "bounded_executor_gate_written": False, "executor_invoked": False, "raw_heap_loaded": False, "raw_heap_parsed": False, "retained_size_proven": False, "path_to_root_computed": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained size bounded gate",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_bounded_gate",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-bounded-gate.v1",
+                        "status": "ready_for_review",
+                        "bounded_executor_gate_ready_for_review": True,
+                        "ready_to_execute_now": False,
+                        "transaction_plan_id": "retained-size-approval-plan-test",
+                        "candidate_digest": "retained-size-candidate-digest-test",
+                        "future_executor_contract": {"implemented": False, "executor_name": "execute_heap_snapshot_retained_size_analysis"},
+                        "executor_invoked": False,
+                        "raw_heap_loaded": False,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot retained size analysis",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_retained_size_analysis",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-retained-size-analysis.v1",
+                        "status": "executed",
+                        "retained_size_estimated": True,
+                        "retained_size_proven": False,
+                        "path_to_root_computed": False,
+                        "candidate_estimates": [{"name": "LeakyThing", "retained_size_estimate": 64}],
+                        "side_effect_policy": {"executor_invoked": True, "raw_heap_loaded": True, "raw_heap_parsed": True, "raw_heap_exported": False, "retained_size_estimated": True, "retained_size_proven": False, "path_to_root_computed": False},
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native heap snapshot path-to-root analysis",
+                    kind=EvidenceKind.NOTE,
+                    source="heap_snapshot_path_to_root_analysis",
+                    details={
+                        "schema_version": "reverse-deepagent.heap-snapshot-path-to-root-analysis.v1",
+                        "status": "executed",
+                        "path_to_root_estimated": True,
+                        "path_to_root_proven": False,
+                        "retained_size_proven": False,
+                        "candidate_paths": [{"candidate_name": "LeakyThing", "path_depth": 2}],
+                    },
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
@@ -1466,6 +2030,48 @@ class CoordinatorTests(unittest.TestCase):
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
                 EvidenceItem(
+                    summary="Native Source Map debugger execution result",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_debugger_execution_result",
+                    details={"status": "success", "selected_consumer": "debugger", "debugger_location_applied": True, "breakpoint_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map debugger candidates",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_debugger_candidates",
+                    details={"status": "ready_for_review", "candidate_count": 1, "ready_for_debugger_location_review_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map debugger candidate selection",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_debugger_candidate_selection",
+                    details={"status": "ready_for_review", "selected_candidate_id": "source-map-debugger:buildSign", "ready_for_selected_executor_input_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map hook candidates",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_hook_candidates",
+                    details={"status": "ready_for_review", "candidate_count": 2, "ready_for_hook_install_review_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map hook candidate selection",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_hook_candidate_selection",
+                    details={"status": "ready_for_review", "selected_candidate_id": "source-map-hook-function:buildSign:4:0:0", "ready_for_selected_executor_input_review": True},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map hook install result",
+                    kind=EvidenceKind.HOOK,
+                    source="source_map_hook_install_result",
+                    details={"status": "success", "selected_consumer": "hook", "hook_installed": True, "hook_kind": "function", "installed_count": 1},
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
                     summary="Native Source Map rebuild metadata result",
                     kind=EvidenceKind.NOTE,
                     source="source_map_rebuild_result",
@@ -1477,6 +2083,100 @@ class CoordinatorTests(unittest.TestCase):
                         "rebuild_metadata_applied": True,
                         "rebuild_bundle_generated": False,
                         "rebuild_executed": False,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map rebuild generation result",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_rebuild_generation_result",
+                    details={
+                        "status": "success",
+                        "selected_consumer": "rebuild",
+                        "source_content_digest": "abc123",
+                        "rebuild_bundle_generated": True,
+                        "rebuild_executed": True,
+                        "generated_file_count": 5,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map followthrough dispatch transaction preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatch_transaction_preflight",
+                    details={
+                        "status": "ready_for_review",
+                        "selected_consumer": "debugger",
+                        "dispatch_surface": "source-map-debugger-execution-result",
+                        "transaction_preflight_ready_for_review": True,
+                        "journal_writer_gate_ready_for_review": True,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map followthrough dispatch transaction journal",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatch_transaction_journal",
+                    details={
+                        "status": "written",
+                        "selected_consumer": "debugger",
+                        "dispatch_surface": "source-map-debugger-execution-result",
+                        "journal_written": True,
+                        "transaction_started": True,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map followthrough dispatch bounded executor gate",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatch_bounded_executor_gate",
+                    details={
+                        "status": "ready_for_review",
+                        "selected_consumer": "debugger",
+                        "dispatch_surface": "source-map-debugger-execution-result",
+                        "bounded_executor_gate_ready_for_review": True,
+                        "ready_for_dispatcher_handoff_review": True,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map followthrough dispatcher handoff",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatcher_handoff",
+                    details={
+                        "status": "ready_for_review",
+                        "selected_consumer": "debugger",
+                        "dispatch_surface": "source-map-debugger-execution-result",
+                        "dispatcher_handoff_ready_for_review": True,
+                        "ready_for_explicit_dispatch_review": True,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map followthrough dispatcher apply preflight",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatcher_apply_preflight",
+                    details={
+                        "status": "ready_for_review",
+                        "selected_consumer": "debugger",
+                        "dispatch_surface": "source-map-debugger-execution-result",
+                        "dispatcher_apply_preflight_ready_for_review": True,
+                        "ready_for_explicit_dispatcher_mvp_review": True,
+                    },
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+                EvidenceItem(
+                    summary="Native Source Map followthrough dispatcher result",
+                    kind=EvidenceKind.NOTE,
+                    source="source_map_followthrough_dispatcher_result",
+                    details={
+                        "status": "dispatched",
+                        "selected_consumer": "debugger",
+                        "dispatch_surface": "source-map-debugger-execution-result",
+                        "dispatcher_decision_recorded": True,
+                        "dispatch_target_invoked": False,
+                        "selected_executor_invoked": False,
+                        "selected_executor_apply_preflight_invoked": False,
                     },
                     confidence=ConfidenceLevel.MEDIUM,
                 ),
@@ -1781,24 +2481,242 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payloads["source-map-consumer-materialization.json"]["materialization_count"], 2)
         self.assertEqual(payloads["source-map-typed-payload-preflight.json"]["preflight_payload_count"], 2)
         self.assertEqual(payloads["source-map-followthrough-review.json"]["followthrough_review_count"], 2)
+        self.assertEqual(payloads["source-map-followthrough-chain-readiness.json"]["completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertTrue(payloads["source-map-followthrough-one-step-plan.json"]["planned_step_ready_for_review"])
+        self.assertEqual(payloads["source-map-followthrough-one-step-plan.json"]["source_chain_completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertTrue(payloads["source-map-followthrough-dispatch-preflight.json"]["dispatcher_input_ready_for_review"])
+        self.assertEqual(payloads["source-map-followthrough-dispatch-preflight.json"]["dispatch_target"]["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(payloads["source-map-followthrough-dispatch-approval-plan.json"]["approval_plan_ready_for_review"])
+        self.assertEqual(payloads["source-map-followthrough-dispatch-approval-plan.json"]["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(payloads["source-map-followthrough-dispatch-approval-record.json"]["approved_for_dispatch"])
+        self.assertEqual(payloads["source-map-followthrough-dispatch-approval-record.json"]["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertEqual(payloads["source-map-followthrough-dispatch-transaction-preflight.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["source-map-followthrough-dispatch-transaction-preflight.json"]["journal_writer_gate_ready_for_review"])
+        self.assertEqual(payloads["source-map-followthrough-dispatch-transaction-journal.json"]["status"], "written")
+        self.assertTrue(payloads["source-map-followthrough-dispatch-transaction-journal.json"]["journal_written"])
+        self.assertEqual(payloads["source-map-followthrough-dispatch-bounded-executor-gate.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["source-map-followthrough-dispatch-bounded-executor-gate.json"]["bounded_executor_gate_ready_for_review"])
+        self.assertEqual(payloads["source-map-followthrough-dispatcher-handoff.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["source-map-followthrough-dispatcher-handoff.json"]["dispatcher_handoff_ready_for_review"])
+        self.assertEqual(payloads["source-map-followthrough-dispatcher-apply-preflight.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["source-map-followthrough-dispatcher-apply-preflight.json"]["dispatcher_apply_preflight_ready_for_review"])
+        self.assertEqual(payloads["source-map-followthrough-dispatcher-result.json"]["status"], "dispatched")
+        self.assertTrue(payloads["source-map-followthrough-dispatcher-result.json"]["dispatcher_decision_recorded"])
+        self.assertFalse(payloads["source-map-followthrough-dispatcher-result.json"]["dispatch_target_invoked"])
+        self.assertFalse(payloads["source-map-followthrough-dispatcher-result.json"]["selected_executor_invoked"])
         self.assertEqual(payloads["source-map-followthrough-surface-selection.json"]["selected_consumer"], "debugger")
         self.assertTrue(payloads["source-map-selected-executor-input-review.json"]["ready_for_executor_review"])
         self.assertTrue(payloads["source-map-selected-executor-approval-plan.json"]["approval_plan_ready"])
         self.assertTrue(payloads["source-map-selected-executor-approval-record.json"]["approved_for_apply"])
         self.assertTrue(payloads["source-map-selected-executor-apply-preflight.json"]["ready_for_selected_executor_review"])
+        self.assertEqual(payloads["source-map-selected-executor-application-handoff.json"]["application_surface"], "source-map-debugger-application")
+        self.assertTrue(payloads["source-map-selected-executor-application-handoff.json"]["ready_for_application_review"])
+        self.assertEqual(payloads["source-map-selected-executor-result-checkpoint.json"]["application_surface"], "source-map-debugger-application")
+        self.assertTrue(payloads["source-map-selected-executor-result-checkpoint.json"]["ready_for_next_explicit_review"])
+        self.assertTrue(payloads["source-map-followthrough-completion-checkpoint.json"]["ready_for_completion_review"])
+        self.assertTrue(payloads["source-map-terminal-review-package.json"]["ready_for_terminal_review"])
+        self.assertTrue(payloads["source-map-terminal-review-closure-checkpoint.json"]["ready_for_closure_audit_review"])
+        self.assertTrue(payloads["source-map-terminal-review-final-audit.json"]["ready_for_final_audit_review"])
         self.assertTrue(payloads["source-map-source-logpoint-install-result.json"]["logpoint_installed"])
+        self.assertEqual(payloads["source-map-debugger-candidates.json"]["candidate_count"], 1)
+        self.assertEqual(payloads["source-map-debugger-candidates.json"]["ready_for_debugger_location_review_count"], 1)
+        self.assertEqual(payloads["source-map-debugger-candidate-selection.json"]["selected_candidate_id"], "source-map-debugger:buildSign")
+        self.assertTrue(payloads["source-map-debugger-candidate-selection.json"]["ready_for_selected_executor_input_review"])
+        self.assertTrue(payloads["source-map-debugger-execution-result.json"]["debugger_location_applied"])
+        self.assertEqual(payloads["source-map-debugger-execution-result.json"]["breakpoint_count"], 1)
+        self.assertEqual(payloads["source-map-hook-candidates.json"]["candidate_count"], 2)
+        self.assertEqual(payloads["source-map-hook-candidates.json"]["ready_for_hook_install_review_count"], 1)
+        self.assertEqual(payloads["source-map-hook-candidate-selection.json"]["selected_candidate_id"], "source-map-hook-function:buildSign:4:0:0")
+        self.assertTrue(payloads["source-map-hook-candidate-selection.json"]["ready_for_selected_executor_input_review"])
+        self.assertTrue(payloads["source-map-hook-install-result.json"]["hook_installed"])
+        self.assertEqual(payloads["source-map-hook-install-result.json"]["hook_kind"], "function")
         self.assertTrue(payloads["source-map-rebuild-result.json"]["rebuild_metadata_applied"])
         self.assertFalse(payloads["source-map-rebuild-result.json"]["rebuild_executed"])
+        self.assertTrue(payloads["source-map-rebuild-generation-result.json"]["rebuild_bundle_generated"])
+        self.assertEqual(payloads["source-map-rebuild-generation-result.json"]["generated_file_count"], 5)
         self.assertEqual(payloads["object-root-mutation-audit.json"]["root_path"], "window.__appState")
         self.assertEqual(payloads["object-root-mutation-audit.json"]["change_count"], 4)
         self.assertEqual(payloads["object-graph-diff.json"]["change_count"], 2)
         self.assertEqual(payloads["object-graph-diff.json"]["risk_summary"]["risk"], "high")
+        self.assertEqual(payloads["runtime-object-graph-diff.json"]["runtime_collection"]["root_path"], "window.__appState")
+        self.assertEqual(payloads["runtime-object-graph-diff.json"]["change_count"], 4)
+        self.assertTrue(payloads["runtime-object-graph-diff.json"]["side_effect_policy"]["runtime_evaluated"])
+        self.assertFalse(payloads["runtime-object-graph-diff.json"]["side_effect_policy"]["full_heap_snapshot"])
+        self.assertEqual(payloads["heap-snapshot-collect.json"]["status"], "collected")
+        self.assertTrue(payloads["heap-snapshot-collect.json"]["heap_snapshot_collected"])
+        self.assertEqual(payloads["heap-snapshot-collect.json"]["snapshot_metadata"]["snapshot_digest"], "sha256:abc")
+        self.assertFalse(payloads["heap-snapshot-collect.json"]["side_effect_policy"]["raw_heap_exported"])
+        self.assertEqual(payloads["heap-snapshot-diff-readiness.json"]["status"], "ready_for_review")
+        self.assertEqual(payloads["heap-snapshot-diff-readiness.json"]["pair_summary"]["before_digest"], "sha256:abc")
+        self.assertFalse(payloads["heap-snapshot-diff-readiness.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-preflight.json"]["status"], "ready_for_review")
+        self.assertEqual(payloads["heap-snapshot-diff-executor-preflight.json"]["readiness_summary"]["before_digest"], "sha256:abc")
+        self.assertFalse(payloads["heap-snapshot-diff-executor-preflight.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-preflight.json"]["side_effect_policy"]["raw_heap_loaded"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-approval-plan.json"]["status"], "ready_for_review")
+        self.assertEqual(payloads["heap-snapshot-diff-executor-approval-plan.json"]["preflight_summary"]["before_digest"], "sha256:abc")
+        self.assertFalse(payloads["heap-snapshot-diff-executor-approval-plan.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-approval-plan.json"]["side_effect_policy"]["approval_recorded"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-approval-plan.json"]["side_effect_policy"]["journal_written_now"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-approval-record.json"]["status"], "written")
+        self.assertTrue(payloads["heap-snapshot-diff-executor-approval-record.json"]["approval_recorded"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-approval-record.json"]["executor_input_gates"]["transaction_started"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-approval-record.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-transaction-preflight.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-diff-executor-transaction-preflight.json"]["approval_summary"]["approval_recorded"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-transaction-preflight.json"]["transaction_summary"]["transaction_id"], "heap-diff-txn-1")
+        self.assertFalse(payloads["heap-snapshot-diff-executor-transaction-preflight.json"]["side_effect_policy"]["journal_written"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-transaction-preflight.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-journal.json"]["status"], "written")
+        self.assertTrue(payloads["heap-snapshot-diff-executor-journal.json"]["journal_written"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-journal.json"]["transaction_id"], "heap-diff-txn-1")
+        self.assertFalse(payloads["heap-snapshot-diff-executor-journal.json"]["executor_input_gates"]["bounded_executor_gate_written"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-journal.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-bounded-gate.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-diff-executor-bounded-gate.json"]["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-bounded-gate.json"]["ready_to_execute_now"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-bounded-gate.json"]["future_executor_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-bounded-gate.json"]["side_effect_policy"]["executor_invoked"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-bounded-gate.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-result.json"]["status"], "executed")
+        self.assertTrue(payloads["heap-snapshot-diff-executor-result.json"]["executor_mvp"])
+        self.assertEqual(payloads["heap-snapshot-diff-executor-result.json"]["diff"]["node_count_delta"], 1)
+        self.assertTrue(payloads["heap-snapshot-diff-executor-result.json"]["side_effect_policy"]["raw_heap_parsed"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-result.json"]["side_effect_policy"]["raw_heap_exported"])
+        self.assertFalse(payloads["heap-snapshot-diff-executor-result.json"]["complete_heap_traversal_claimed"])
+        self.assertEqual(payloads["heap-snapshot-diff-followup-checkpoint.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-diff-followup-checkpoint.json"]["checkpoint_only"])
+        self.assertEqual(payloads["heap-snapshot-diff-followup-checkpoint.json"]["executor_result_summary"]["node_count_delta"], 1)
+        self.assertFalse(payloads["heap-snapshot-diff-followup-checkpoint.json"]["analysis_plan"]["future_analysis_contracts"]["retained_size_analysis"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-diff-followup-checkpoint.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"]["preflight_only"])
+        self.assertTrue(payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"]["selection_only"])
+        self.assertEqual(payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"]["selected_analysis_input"]["selected_action"], "plan_retained_size_analysis")
+        self.assertFalse(payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"]["future_executor_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-constructor-growth-drilldown.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-constructor-growth-drilldown.json"]["drilldown_only"])
+        self.assertEqual(payloads["heap-snapshot-constructor-growth-drilldown.json"]["selected_action"], "review_constructor_growth")
+        self.assertEqual(payloads["heap-snapshot-constructor-growth-drilldown.json"]["constructor_growth_summary"]["candidate_count"], 1)
+        self.assertFalse(payloads["heap-snapshot-constructor-growth-drilldown.json"]["future_analysis_contracts"]["retained_size_analysis"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-constructor-growth-drilldown.json"]["side_effect_policy"]["constructor_drilldown_computed"])
+        self.assertEqual(payloads["heap-snapshot-automatic-followup-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-automatic-followup-plan.json"]["review_only"])
+        self.assertTrue(payloads["heap-snapshot-automatic-followup-plan.json"]["plan_only"])
+        self.assertEqual(payloads["heap-snapshot-automatic-followup-plan.json"]["recommended_action_count"], 2)
+        self.assertEqual(payloads["heap-snapshot-automatic-followup-plan.json"]["top_recommended_action"]["action"], "review_combined_heap_candidate_evidence")
+        self.assertFalse(payloads["heap-snapshot-automatic-followup-plan.json"]["raw_heap_loaded"])
+        self.assertFalse(payloads["heap-snapshot-automatic-followup-plan.json"]["heap_diff_computed"])
+        self.assertFalse(payloads["heap-snapshot-automatic-followup-plan.json"]["retained_size_proven"])
+        self.assertFalse(payloads["heap-snapshot-automatic-followup-plan.json"]["path_to_root_proven"])
+        self.assertFalse(payloads["heap-snapshot-automatic-followup-plan.json"]["automatic_execution_allowed"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-proof-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-retained-size-proof-plan.json"]["review_only"])
+        self.assertTrue(payloads["heap-snapshot-retained-size-proof-plan.json"]["plan_only"])
+        self.assertTrue(payloads["heap-snapshot-retained-size-proof-plan.json"]["proof_plan_only"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-proof-plan.json"]["candidate_count"], 1)
+        self.assertTrue(payloads["heap-snapshot-retained-size-proof-plan.json"]["proof_requirements"]["requires_raw_heap"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-proof-plan.json"]["future_executor_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-proof-plan.json"]["future_executor_contract"]["ready_to_execute_now"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-proof-plan.json"]["raw_heap_loaded"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-proof-plan.json"]["heap_diff_computed"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-proof-plan.json"]["retained_size_proven"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-proof-plan.json"]["automatic_execution_allowed"])
+        self.assertEqual(payloads["heap-snapshot-path-to-root-proof-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-path-to-root-proof-plan.json"]["review_only"])
+        self.assertTrue(payloads["heap-snapshot-path-to-root-proof-plan.json"]["plan_only"])
+        self.assertTrue(payloads["heap-snapshot-path-to-root-proof-plan.json"]["proof_plan_only"])
+        self.assertEqual(payloads["heap-snapshot-path-to-root-proof-plan.json"]["candidate_count"], 1)
+        self.assertTrue(payloads["heap-snapshot-path-to-root-proof-plan.json"]["proof_requirements"]["requires_raw_heap"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-proof-plan.json"]["future_executor_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-proof-plan.json"]["future_executor_contract"]["ready_to_execute_now"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-proof-plan.json"]["raw_heap_loaded"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-proof-plan.json"]["heap_diff_computed"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-proof-plan.json"]["path_to_root_proven"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-proof-plan.json"]["automatic_execution_allowed"])
+        self.assertEqual(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["review_only"])
+        self.assertTrue(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["plan_only"])
+        self.assertTrue(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["proof_plan_only"])
+        self.assertEqual(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["candidate_count"], 1)
+        self.assertTrue(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["proof_requirements"]["requires_raw_heap"])
+        self.assertTrue(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["proof_requirements"]["requires_constructor_reachability_graph"])
+        self.assertFalse(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["future_executor_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["future_executor_contract"]["ready_to_execute_now"])
+        self.assertFalse(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["raw_heap_loaded"])
+        self.assertFalse(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["heap_diff_computed"])
+        self.assertFalse(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["constructor_drilldown_proven"])
+        self.assertFalse(payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"]["automatic_execution_allowed"])
+        self.assertEqual(payloads["heap-snapshot-retained-path-preflight.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-retained-path-preflight.json"]["preflight_only"])
+        self.assertTrue(payloads["heap-snapshot-retained-path-preflight.json"]["handoff_only"])
+        self.assertEqual(payloads["heap-snapshot-retained-path-preflight.json"]["candidate_count"], 1)
+        self.assertTrue(payloads["heap-snapshot-retained-path-preflight.json"]["raw_heap_requirements"]["requires_raw_heap"])
+        self.assertFalse(payloads["heap-snapshot-retained-path-preflight.json"]["future_executor_contracts"]["retained_size_analysis"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-retained-path-preflight.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-input-review.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-retained-size-input-review.json"]["input_review_only"])
+        self.assertTrue(payloads["heap-snapshot-retained-size-input-review.json"]["approval_gate_only"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-input-review.json"]["candidate_count"], 1)
+        self.assertTrue(payloads["heap-snapshot-retained-size-input-review.json"]["raw_heap_requirements"]["requires_raw_heap"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-input-review.json"]["executor_input_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-input-review.json"]["approval_gate"]["ready_to_execute_now"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-input-review.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-approval-plan.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-retained-size-approval-plan.json"]["approval_plan_only"])
+        self.assertTrue(payloads["heap-snapshot-retained-size-approval-plan.json"]["transaction_plan_only"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-approval-plan.json"]["candidate_count"], 1)
+        self.assertFalse(payloads["heap-snapshot-retained-size-approval-plan.json"]["executor_input_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-approval-plan.json"]["approval_plan"]["approval_recorded"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-approval-plan.json"]["transaction_plan"]["transaction_started"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-approval-plan.json"]["side_effect_policy"]["heap_diff_computed"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-approval-record.json"]["status"], "written")
+        self.assertTrue(payloads["heap-snapshot-retained-size-approval-record.json"]["approval_recorded"])
+        self.assertTrue(payloads["heap-snapshot-retained-size-approval-record.json"]["approved_for_execution"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-approval-record.json"]["transaction_plan_id"], "retained-size-approval-plan-test")
+        self.assertFalse(payloads["heap-snapshot-retained-size-approval-record.json"]["side_effect_policy"]["transaction_started"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-approval-record.json"]["side_effect_policy"]["retained_size_proven"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-transaction-preflight.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-retained-size-transaction-preflight.json"]["transaction_preflight_only"])
+        self.assertTrue(payloads["heap-snapshot-retained-size-transaction-preflight.json"]["journal_writer_contract"]["ready_for_journal_review"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-transaction-preflight.json"]["journal_writer_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-transaction-preflight.json"]["side_effect_policy"]["transaction_started"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-transaction-preflight.json"]["side_effect_policy"]["retained_size_proven"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-executor-journal.json"]["status"], "written")
+        self.assertTrue(payloads["heap-snapshot-retained-size-executor-journal.json"]["journal_written"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-executor-journal.json"]["transaction_plan_id"], "retained-size-approval-plan-test")
+        self.assertFalse(payloads["heap-snapshot-retained-size-executor-journal.json"]["executor_input_gates"]["bounded_executor_gate_written"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-executor-journal.json"]["side_effect_policy"]["retained_size_proven"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-executor-journal.json"]["side_effect_policy"]["path_to_root_computed"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-bounded-gate.json"]["status"], "ready_for_review")
+        self.assertTrue(payloads["heap-snapshot-retained-size-bounded-gate.json"]["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-bounded-gate.json"]["future_executor_contract"]["implemented"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-bounded-gate.json"]["retained_size_proven"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-bounded-gate.json"]["path_to_root_computed"])
+        self.assertEqual(payloads["heap-snapshot-retained-size-analysis.json"]["status"], "executed")
+        self.assertTrue(payloads["heap-snapshot-retained-size-analysis.json"]["retained_size_estimated"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-analysis.json"]["retained_size_proven"])
+        self.assertFalse(payloads["heap-snapshot-retained-size-analysis.json"]["path_to_root_computed"])
+        self.assertEqual(payloads["heap-snapshot-path-to-root-analysis.json"]["status"], "executed")
+        self.assertTrue(payloads["heap-snapshot-path-to-root-analysis.json"]["path_to_root_estimated"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-analysis.json"]["path_to_root_proven"])
+        self.assertFalse(payloads["heap-snapshot-path-to-root-analysis.json"]["retained_size_proven"])
         self.assertEqual(payloads["source-logpoints.json"]["count"], 1)
         self.assertEqual(payloads["source-logpoint-timeline.json"]["event_count"], 1)
         self.assertEqual(payloads["stitched-flow.json"]["flows"][0]["stitched_flow_id"], "stitched-flow-1")
         self.assertEqual(_artifact_category_from_key("workspace_breakpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_function_hooks"), "hook-timeline")
         self.assertEqual(_artifact_category_from_key("workspace_function_hook_timeline"), "hook-timeline")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_path_preflight"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_input_review"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_approval_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_approval_record"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_transaction_preflight"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_transaction_journal"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_bounded_gate"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_analysis"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_path_to_root_analysis"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_graph"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_custom_loader_traversal_workflow_plan"), "triage")
@@ -1845,18 +2763,58 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(_artifact_category_from_key("workspace_source_map_consumer_materialization"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_typed_payload_preflight"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_review"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_chain_readiness"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_dispatch_approval_record"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_dispatch_transaction_preflight"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_dispatch_transaction_journal"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_dispatch_bounded_executor_gate"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_dispatcher_handoff"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_dispatcher_apply_preflight"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_dispatcher_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_surface_selection"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_input_review"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_approval_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_approval_record"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_apply_preflight"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_application_handoff"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_selected_executor_result_checkpoint"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_followthrough_completion_checkpoint"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_terminal_review_package"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_terminal_review_closure_checkpoint"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_terminal_review_final_audit"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_source_logpoint_install_result"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_debugger_candidates"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_debugger_candidate_selection"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_debugger_execution_result"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_hook_candidates"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_hook_candidate_selection"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_hook_install_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_source_map_rebuild_result"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_source_map_rebuild_generation_result"), "audit")
         self.assertEqual(_artifact_category_from_key("workspace_bundler_symbol_scope"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoints"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_source_logpoint_timeline"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_object_root_mutation_audit"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_object_graph_diff"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_runtime_object_graph_diff"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_readiness"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_collect"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_readiness"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_executor_preflight"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_executor_approval_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_executor_approval_record"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_executor_transaction_preflight"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_executor_transaction_journal"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_executor_bounded_gate"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_executor_result"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_followup_checkpoint"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_diff_selected_analysis_input_preflight"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_constructor_growth_drilldown"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_constructor_growth_drilldown_analysis"), "audit")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_automatic_followup_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_retained_size_proof_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_path_to_root_proof_plan"), "triage")
+        self.assertEqual(_artifact_category_from_key("workspace_heap_snapshot_raw_heap_constructor_drilldown_proof_plan"), "triage")
         self.assertEqual(_artifact_category_from_key("workspace_callframe_evaluations"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_actions"), "trace")
         self.assertEqual(_artifact_category_from_key("workspace_debugger_session"), "trace")
@@ -2039,6 +2997,16 @@ class CoordinatorTests(unittest.TestCase):
             self.assertEqual(acceptance["evidence_level"], "metadata-only")
             self.assertIn("metadata_only_evidence_not_launch_smoke", acceptance["warnings"])
             self.assertIn("runtime_provider_not_comparable", acceptance["warnings"])
+            report = acceptance["acceptance_report"]
+            self.assertEqual(report["schema_version"], "reverse-deepagent.browser-provider-smoke-acceptance-report.v1")
+            self.assertTrue(report["review_only"])
+            self.assertTrue(report["metadata_only_gate"])
+            self.assertEqual(report["evidence_level"], "metadata-only")
+            self.assertFalse(report["runtime_launch_smoke_accepted"])
+            self.assertEqual(report["required_follow_up"], "run_explicit_launch_browser_smoke_before_claiming_runtime_smoke")
+            self.assertFalse(report["side_effect_summary"]["acceptance_started_browser"])
+            self.assertFalse(report["side_effect_summary"]["acceptance_called_mcp"])
+            self.assertFalse(report["side_effect_summary"]["acceptance_touched_mobile_full_runtime_chains"])
 
             manifest = json.loads(Path(output.artifacts["workspace_backend_artifact_manifest"]).read_text(encoding="utf-8"))
             manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
@@ -2082,6 +3050,24 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(acceptance["runtime_launch_smoke_accepted"])
         self.assertIn("browser_provider_smoke_provider_mismatch", acceptance["blockers"])
         self.assertFalse(acceptance["provider_match"])
+        self.assertEqual(
+            acceptance["acceptance_report"]["required_follow_up"],
+            "regenerate_matching_browser_provider_smoke_json",
+        )
+        self.assertEqual(
+            acceptance["acceptance_report"]["provider_summary"]["expected_provider_id"],
+            "cloakbrowser",
+        )
+        self.assertEqual(
+            acceptance["acceptance_report"]["provider_summary"]["resolved_provider_id"],
+            "remote-cdp",
+        )
+        self.assertTrue(
+            acceptance["acceptance_report"]["side_effect_summary"]["attached_evidence_claims_browser_start"]
+        )
+        self.assertFalse(
+            acceptance["acceptance_report"]["side_effect_summary"]["acceptance_started_browser"]
+        )
         self.assertEqual(acceptance["next_action"], "regenerate_browser_provider_smoke_evidence")
 
 
