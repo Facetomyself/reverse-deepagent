@@ -4,7 +4,7 @@ Date: 2026-06-12
 
 Base branch: `refactor/consolidate-hooks-native-web`
 
-Status: planned / dispatching
+Status: completed
 
 ## Objective
 
@@ -112,3 +112,70 @@ This rollout is complete only when:
   MCP, Android, iOS, or mini-program runtime behavior are changed.
 - Worker PR is merged, final validation passes, and `ROADMAP.md` plus this status
   document reflect the final state.
+
+## Completion result
+
+Rollout 10 is complete.
+
+Merged worker PR:
+
+| Worker | PR | Branch | Merge commit | Scope |
+| --- | ---: | --- | --- | --- |
+| X | [#44](https://github.com/Facetomyself/reverse-deepagent/pull/44) | `codex/rollout10-fallback-helper` | `90ae154e09c3e556e632182f60cd6f872d133e2d` | Extracted `_dispatch_default_hook_fallback(...)` from `NativeWebRuntime.apply_minimal_protection(...)` and added focused fallback boundary tests. |
+
+Implementation summary:
+
+- `NativeWebRuntime._dispatch_default_hook_fallback(...)` now owns the terminal
+  default Native Web hook install / snapshot path.
+- `apply_minimal_protection(...)` now reaches the fallback only after
+  `_dispatch_module_tail(...)` returns `None` and then calls the helper exactly once.
+- The helper receives an already acquired `page`; session acquisition and provider
+  failure handling remain outside the fallback helper.
+- The fallback still uses `BrowserHookManager().install(page)` followed by
+  `BrowserHookManager().snapshot(page)` behavior through the same manager instance.
+- The canonical fallback artifact remains `virtual://workspace/hook-timeline.json`.
+
+Behavior locked by focused tests:
+
+- no-match fallback success keeps `next_action == "resume_recon"`, hook install /
+  snapshot verification fields, context-key reporting, and hook timeline metadata;
+- hook install failure keeps `next_action == "ensure_browser_provider_or_hook_capability"`,
+  low confidence, no applied actions, and the original install error in verification;
+- concrete hook requests do not fall through to the default fallback;
+- browser provider / session acquisition failures return `ensure_browser_provider`
+  before the fallback helper can run.
+
+Runtime / side-effect boundary:
+
+- No workspace path, artifact schema, backend manifest, dual-write, or
+  foldered-canonical behavior changed.
+- No BrowserProvider lifecycle behavior changed beyond preserving the existing page
+  acquisition boundary.
+- No CDP, MCP, Android, iOS, mini-program, navigation, retry, wait, or background
+  behavior was added.
+
+Final validation on `refactor/consolidate-hooks-native-web` after PR #44 merge:
+
+```bash
+git diff --check
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest tests.test_native_web_runtime -v
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q src/reverse_deepagent tests
+PATH="/Users/mengma/reverse/reverse_agent/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest discover -s tests -v
+```
+
+Observed result:
+
+- `tests.test_native_web_runtime`: 206 tests, OK.
+- `compileall`: OK.
+- Full `unittest discover -s tests -v`: 1758 tests, OK, 2 skipped.
+
+## Follow-up priorities after rollout 10
+
+1. **P1 `_dispatch_source(...)` staged decomposition**: start with the safest
+   route-shell / review-evidence extraction batch from
+   `docs/plans/2026-06-12-source-dispatch-decomposition-plan.md`.
+2. **P1 Chrome launcher hardening continuation**: validate numeric ports / waits,
+   resolve `CHROME_PATH` vs `CHROME_APP_NAME` authority, and add shell validation
+   tests without turning the script into a broad launcher framework.
+3. **P2 README / active-doc legacy alias cleanup**: keep deprecated `mcp` /
+   `jsreverser-mcp` examples only where explicitly testing compatibility.

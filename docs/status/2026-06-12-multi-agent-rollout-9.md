@@ -214,8 +214,9 @@ Runtime / side-effect boundary:
 
 ## Follow-up priorities after rollout 9
 
-1. **P1 fallback helper code extraction**: implement `_dispatch_default_hook_fallback(...)`
-   according to `docs/runtime/native-web-fallback-dispatch-contract.md`.
+1. **P1 fallback helper code extraction**: closed by rollout 10 with
+   `_dispatch_default_hook_fallback(...)`, preserving no-match behavior, install-failure
+   behavior, no fallthrough from concrete dispatch, and provider failure outside fallback.
 2. **P1 `_dispatch_source(...)` staged decomposition**: start with the safest route /
    descriptor extraction batch from
    `docs/plans/2026-06-12-source-dispatch-decomposition-plan.md`.
