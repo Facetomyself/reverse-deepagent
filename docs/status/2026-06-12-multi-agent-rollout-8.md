@@ -178,4 +178,45 @@ This rollout is complete only when:
 
 ## Current status
 
-Status: in progress.
+Status: completed for rollout 8.
+
+## Execution result
+
+Merged PRs:
+
+| Worker | PR | Branch | Scope | Merge commit | Notes |
+| --- | ---: | --- | --- | --- | --- |
+| R | #38 | `codex/rollout8-fallback-contract` | Added `docs/runtime/native-web-fallback-dispatch-contract.md` describing the future default fallback helper contract | `83e65698` | Docs-only; main agent verified single-file scope and whitespace before merge. |
+| S | #39 | `codex/rollout8-source-dispatch-plan` | Added `docs/plans/2026-06-12-source-dispatch-decomposition-plan.md` with staged `_dispatch_source(...)` decomposition plan | `163ad101` | Docs-only; main agent verified single-file scope and whitespace before merge. |
+| T | #40 | `codex/rollout8-audit-triage` | Added tracked audit triage and applied narrow `EXTRA_CHROME_ARGS` glob-expansion hardening in `scripts/start_chrome_debug.sh` | `dbf7b777` | Main agent verified diff scope, `git diff --check`, and `bash -n scripts/start_chrome_debug.sh` before merge. |
+
+Validation during PR review:
+
+```text
+# PR #38
+git diff --check origin/refactor/consolidate-hooks-native-web...HEAD
+
+# PR #39
+git diff --check HEAD^ HEAD
+
+# PR #40
+git diff --check HEAD^ HEAD
+bash -n scripts/start_chrome_debug.sh
+```
+
+Runtime / side-effect boundary:
+
+- No Python runtime code changed in rollout 8.
+- No artifact schema names changed.
+- No workspace path or workspace contract changed.
+- No BrowserProvider, CDP, MCP, Android, iOS, or mini-program behavior changed.
+- `scripts/start_chrome_debug.sh` keeps the existing whitespace-split `EXTRA_CHROME_ARGS` contract but avoids unquoted glob expansion.
+- `docs/status/2026-06-12-readonly-code-audit.md` remains intentionally untracked and was not staged.
+
+## Follow-up priorities after rollout 8
+
+1. **P0 native collector redaction rollout**: add central browser-evidence redaction helpers and apply them to `StorageCollector` / `NetworkCollector`, then prove raw cookie / Authorization / storage-token values do not appear in serialized snapshots or downstream artifacts.
+2. **P1 fallback helper code extraction**: implement the default fallback helper only after the new contract, preserving no-match behavior and install-failure behavior.
+3. **P1 `_dispatch_source(...)` staged decomposition**: begin with the safest plan batch and preserve review-only / explicit-review-only Source Map boundaries.
+4. **P1 Chrome launcher hardening continuation**: validate numeric ports / waits and decide whether `CHROME_PATH` or `CHROME_APP_NAME` is authoritative.
+5. **P2 README / active-doc legacy alias cleanup**: keep deprecated `mcp` / `jsreverser-mcp` examples only where explicitly testing compatibility.
