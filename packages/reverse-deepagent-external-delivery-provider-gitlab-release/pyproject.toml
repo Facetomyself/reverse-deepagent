@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reverse-deepagent-external-delivery-provider-gitlab-release"
+version = "0.1.0"
+description = "GitLab Release ExternalDeliveryProvider plugin for reverse-deepagent."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "reverse-deepagent==0.1.0",
+]
+
+[project.entry-points."reverse_deepagent.external_delivery_providers"]
+gitlab-release = "reverse_deepagent_external_delivery_provider_gitlab_release:external_delivery_provider_registration"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
