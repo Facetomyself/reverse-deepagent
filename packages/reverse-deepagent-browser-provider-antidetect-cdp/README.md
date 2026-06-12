@@ -23,7 +23,7 @@ Metadata-only discovery is safe:
 - does not probe CDP endpoints or open sockets;
 - does not start a local or hosted browser.
 
-`start()` is intentionally unavailable in this vendor-neutral baseline. Allocate or approve the vendor anti-detect browser session outside core, then attach with `connect()` using a reviewed endpoint.
+`start()` is intentionally review-gated in this vendor-neutral baseline: it only consumes an injected allocator seam or an already reviewed allocation descriptor when `approve_antidetect_allocation=True` is passed by the caller. Without that explicit approval it returns a structured unavailable error and does not call allocators, read secrets, contact vendors, or start browsers. Callers may still allocate or approve the vendor anti-detect browser session outside core, then attach with `connect()` using a reviewed endpoint.
 
 ## Runtime configuration
 
@@ -38,7 +38,14 @@ Optional non-secret allocation metadata:
 - `profile_id` / `antidetect_profile_id`
 - `tenant_label`
 
-Endpoint URLs, allocation ids, and profile ids are redacted in config summaries and event logs.
+Review-gated allocation handoff:
+
+- `allocation_requester` / `antidetect_allocation_requester`: injected callable that receives a caller-provided allocation request and returns a reviewed CDP endpoint descriptor.
+- `allocation_request` / `antidetect_allocation_request`: caller-provided request metadata passed only to the injected allocator during approved `start()`.
+- `reviewed_allocation_result` / `allocation_result` / `antidetect_allocation_result`: pre-reviewed descriptor containing `browser_url`, `browser_ws_url`, or `endpoint`.
+- `approve_antidetect_allocation=True`: mandatory approval flag for any `start()` allocation handoff.
+
+Endpoint URLs, allocation ids, profile ids, endpoint query/userinfo, tokens, API keys, passwords, credentials, and opaque string payloads from allocation results are redacted in config summaries and event logs.
 
 ## Production-readiness metadata
 
@@ -48,8 +55,9 @@ The provider declares review-required production metadata covering:
 - account and tenant boundary;
 - endpoint security;
 - allocation lifecycle;
+- allocator contract and explicit approval requirements;
 - profile persistence;
 - proxy, extension, mobile emulation, and humanize ownership;
 - attach-only lifecycle and local stop semantics.
 
-This lets `reverse-agent-doctor --browser-provider-matrix` and BrowserProvider smoke acceptance review anti-detect provider readiness without contacting vendors.
+This lets `reverse-agent-doctor --browser-provider-matrix` and BrowserProvider smoke acceptance review anti-detect provider readiness without contacting vendors, invoking allocators, or reading environment secrets.
