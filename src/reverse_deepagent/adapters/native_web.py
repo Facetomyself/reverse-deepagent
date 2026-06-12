@@ -916,6 +916,516 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         result = self._dispatch_custom_loader(protection_name, context, page)
         if result is not None:
             return result
+        result = self._dispatch_async_chunk(protection_name, context, page)
+        if result is not None:
+            return result
+        if self._is_custom_loader_module_hook_request(protection_name, context):
+            spec = CustomLoaderModuleHookSpec.from_context(context)
+            result = CustomLoaderModuleHookManager().install(page, spec)
+            module_result = result.module_hook_result
+            installed_count = len(module_result.installed) if module_result else 0
+            missing_count = len(module_result.missing) if module_result else 0
+            event_count = len(module_result.events) if module_result else 0
+            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
+            verification = [
+                f"custom_loader_module_hook_status={result.status}",
+                f"custom_loader_module_hook_reason={result.reason or ''}",
+                f"custom_loader_module_hook_review_approved={result.side_effect_policy.get('review_approved', False)}",
+                f"custom_loader_module_hook_installed_count={installed_count}",
+                f"custom_loader_module_hook_missing_count={missing_count}",
+                f"custom_loader_module_hook_event_count={event_count}",
+                f"custom_loader_module_hook_candidate_source={candidate.get('source', '')}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if module_result and module_result.trigger:
+                verification.append(f"trigger_attempted={module_result.trigger.get('attempted', False)}")
+                if module_result.trigger.get("error"):
+                    verification.append(f"trigger_error={module_result.trigger['error']}")
+            if module_result and module_result.error:
+                verification.append(f"module_hook_error={module_result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-hooks.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed custom-loader module export hook install result.",
+                    metadata={
+                        "status": result.status,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "module_id": candidate.get("module_id") or candidate.get("moduleId") or "<missing>",
+                        "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                        "require_path": candidate.get("runtime_path") or candidate.get("runtimePath") or "<missing>",
+                        "hook_path": candidate.get("hook_path") or candidate.get("hookPath") or "<missing>",
+                        "source": "custom_loader_module_diff",
+                        "review_approved": result.side_effect_policy.get("review_approved", False),
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/module-hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed custom-loader module export hook timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "module_id": candidate.get("module_id") or candidate.get("moduleId") or "<missing>",
+                        "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
+                        "hook_path": candidate.get("hook_path") or candidate.get("hookPath") or "<missing>",
+                        "source": "custom_loader_module_diff",
+                    },
+                ),
+            ]
+            if result.status == "success":
+                status = ExecutionStatus.SUCCESS
+                next_action = "inspect_custom_loader_module_hook_events" if event_count else "invoke_hooked_custom_loader_module_export_or_wait_for_events"
+            elif result.status == "partial":
+                status = ExecutionStatus.PARTIAL
+                next_action = "adjust_custom_loader_module_hook_target"
+            elif result.reason == "review_approval_required":
+                status = ExecutionStatus.PARTIAL
+                next_action = "approve_custom_loader_module_hook_candidate"
+            elif result.reason == "review_custom_loader_module_diff_hook_candidates":
+                status = ExecutionStatus.PARTIAL
+                next_action = "review_custom_loader_module_diff_hook_candidates"
+            else:
+                status = ExecutionStatus.FAILED if result.status in {"failed", "unsupported"} else ExecutionStatus.PARTIAL
+                next_action = "inspect_custom_loader_module_hook_failure"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"hook_custom_loader_module_export:{candidate.get('module_id') or candidate.get('moduleId')}:{candidate.get('export_name') or candidate.get('exportName')}"]
+                    if installed_count
+                    else []
+                ),
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
+        if self._is_async_chunk_module_diff_request(protection_name, context):
+            spec = AsyncChunkModuleDiffSpec.from_context(context)
+            result = AsyncChunkModuleDiffManager().plan(spec)
+            diff = result.diff if isinstance(result.diff, dict) else {}
+            verification = [
+                f"async_chunk_module_diff_status={result.status}",
+                f"async_chunk_module_diff_added_registry_key_count={len(diff.get('added_registry_keys') or [])}",
+                f"async_chunk_module_diff_matched_module_count={diff.get('matched_module_count', 0)}",
+                f"async_chunk_module_diff_hook_candidate_count={diff.get('candidate_count', 0)}",
+                f"async_chunk_module_diff_automatic_hook_installation={diff.get('automatic_hook_installation', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"async_chunk_module_diff_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/async-chunk-module-diff.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only async chunk module diff and hook candidate refresh.",
+                    metadata={
+                        "status": result.status,
+                        "chunk_id": diff.get("chunk_id"),
+                        "added_registry_key_count": len(diff.get("added_registry_keys") or []),
+                        "matched_module_count": diff.get("matched_module_count", 0),
+                        "candidate_count": diff.get("candidate_count", 0),
+                        "review_required": diff.get("review_required", True),
+                        "automatic_hook_installation": diff.get("automatic_hook_installation", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["plan_async_chunk_module_diff"] if result.status == "planned" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=diff.get("next_action", "rerun_module_discovery_after_chunk_load"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
+        if self._is_custom_loader_module_diff_request(protection_name, context):
+            spec = CustomLoaderModuleDiffSpec.from_context(context)
+            result = CustomLoaderModuleDiffManager().plan(spec)
+            diff = result.diff if isinstance(result.diff, dict) else {}
+            verification = [
+                f"custom_loader_module_diff_status={result.status}",
+                f"custom_loader_module_diff_added_registry_key_count={len(diff.get('added_registry_keys') or [])}",
+                f"custom_loader_module_diff_matched_module_count={diff.get('matched_module_count', 0)}",
+                f"custom_loader_module_diff_hook_candidate_count={diff.get('candidate_count', 0)}",
+                f"custom_loader_module_diff_automatic_hook_installation={diff.get('automatic_hook_installation', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"custom_loader_module_diff_reason={result.reason}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/custom-loader-module-diff.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-only custom loader module diff and hook candidate refresh.",
+                    metadata={
+                        "status": result.status,
+                        "loader_path": diff.get("loader_path"),
+                        "added_registry_key_count": len(diff.get("added_registry_keys") or []),
+                        "matched_module_count": diff.get("matched_module_count", 0),
+                        "candidate_count": diff.get("candidate_count", 0),
+                        "review_required": diff.get("review_required", True),
+                        "automatic_hook_installation": diff.get("automatic_hook_installation", False),
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["plan_custom_loader_module_diff"] if result.status == "planned" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=diff.get("next_action", "rerun_module_discovery_after_custom_loader_execution"),
+                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
+            )
+        if self._is_module_discovery_request(protection_name, context):
+            discovery_context = {**context, "discover_modules": True}
+            spec = ModuleDiscoverySpec.from_context(discovery_context)
+            result = ModuleDiscoveryManager().discover(page, spec)
+            module_count = len(result.modules)
+            candidate_count = len(result.candidates)
+            script_count = len(result.scripts)
+            chunk_graph = result.chunk_graph if isinstance(result.chunk_graph, dict) else {}
+            chunk_graph_status = str(chunk_graph.get("status") or "not_attempted")
+            chunk_graph_candidate_count = int(chunk_graph.get("candidate_count") or 0)
+            chunk_graph_script_edge_count = int(chunk_graph.get("script_edge_count") or 0)
+            chunk_graph_runtime_loader_count = int(chunk_graph.get("runtime_loader_count") or 0)
+            runtime_status = result.runtime.get("status") if result.runtime else "not_attempted"
+            runtime_module_count = int(result.runtime.get("module_count") or 0) if result.runtime else 0
+            runtime_kinds = result.runtime.get("runtime_kinds") if isinstance(result.runtime.get("runtime_kinds"), list) else []
+            runtime_paths = result.runtime.get("runtime_paths") if isinstance(result.runtime.get("runtime_paths"), list) else []
+            custom_key_count = int(result.runtime.get("custom_key_count") or 0) if result.runtime else 0
+            federation_key_count = int(result.runtime.get("federation_key_count") or 0) if result.runtime else 0
+            verification = [
+                f"module_discovery_status={result.status}",
+                f"module_discovery_script_count={script_count}",
+                f"module_discovery_module_count={module_count}",
+                f"module_discovery_candidate_count={candidate_count}",
+                f"module_discovery_chunk_graph_status={chunk_graph_status}",
+                f"module_discovery_chunk_graph_candidate_count={chunk_graph_candidate_count}",
+                f"module_discovery_chunk_graph_script_edge_count={chunk_graph_script_edge_count}",
+                f"module_discovery_chunk_graph_runtime_loader_count={chunk_graph_runtime_loader_count}",
+                f"module_discovery_runtime_status={runtime_status}",
+                f"module_discovery_runtime_module_count={runtime_module_count}",
+                f"module_discovery_runtime_kinds={runtime_kinds}",
+                f"module_discovery_custom_key_count={custom_key_count}",
+                f"module_discovery_federation_key_count={federation_key_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"module_discovery_reason={result.reason}")
+            if result.error:
+                verification.append(f"module_discovery_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-registry.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module registry discovery.",
+                    metadata={
+                        "status": result.status,
+                        "script_count": script_count,
+                        "module_count": module_count,
+                        "chunk_graph_status": chunk_graph_status,
+                        "chunk_graph_candidate_count": chunk_graph_candidate_count,
+                        "chunk_graph_script_edge_count": chunk_graph_script_edge_count,
+                        "chunk_graph_runtime_loader_count": chunk_graph_runtime_loader_count,
+                        "runtime_status": runtime_status,
+                        "runtime_module_count": runtime_module_count,
+                        "runtime_kinds": runtime_kinds,
+                        "runtime_paths": runtime_paths,
+                        "custom_key_count": custom_key_count,
+                        "federation_key_count": federation_key_count,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/module-candidates.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module export hook candidates.",
+                    metadata={
+                        "status": result.status,
+                        "candidate_count": candidate_count,
+                    },
+                ),
+            ]
+            next_action = (
+                "install_module_hook_from_candidate"
+                if candidate_count
+                else "review_async_chunk_graph_before_loading"
+                if chunk_graph_candidate_count
+                else "provide_module_id_or_expand_source_context"
+            )
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["discover_module_exports"] if module_count or candidate_count else ["discover_async_chunk_graph"] if chunk_graph_candidate_count else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if candidate_count or chunk_graph_candidate_count else ExecutionStatus.PARTIAL if script_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if candidate_count or chunk_graph_candidate_count else ConfidenceLevel.LOW,
+            )
+        if self._is_module_hook_request(protection_name, context):
+            spec = ModuleHookSpec.from_context(context)
+            result = ModuleHookManager().install(page, spec)
+            installed_count = len(result.installed)
+            missing_count = len(result.missing)
+            event_count = len(result.events)
+            verification = [
+                f"module_hook_status={result.status}",
+                f"module_hook_installed_count={installed_count}",
+                f"module_hook_missing_count={missing_count}",
+                f"module_hook_event_count={event_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.error:
+                verification.append(f"module_hook_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/module-hooks.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module export hook install result.",
+                    metadata={
+                        "status": result.status,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "module_id": spec.module_id if spec else "<missing>",
+                        "export_name": spec.export_name if spec else "<missing>",
+                        "require_path": spec.require_path if spec else "<missing>",
+                        "hook_path": spec.hook_path() if spec else "<missing>",
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/module-hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime webpack-like module export hook timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "module_id": spec.module_id if spec else "<missing>",
+                        "export_name": spec.export_name if spec else "<missing>",
+                        "hook_path": spec.hook_path() if spec else "<missing>",
+                    },
+                ),
+            ]
+            next_action = "inspect_module_hook_events" if event_count else "invoke_module_export_or_adjust_hook"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"install_module_hook:{spec.module_id}:{spec.export_name}"] if spec and result.installed else []
+                ),
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if installed_count else ExecutionStatus.PARTIAL if missing_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
+            )
+        if self._is_breakpoint_request(protection_name, context):
+            spec = BreakpointSpec.from_context(context)
+            result = BreakpointManager().set_breakpoint(page, spec)
+            status = ExecutionStatus.SUCCESS
+            if result.status == "partial":
+                status = ExecutionStatus.PARTIAL
+            elif result.status in {"failed", "unsupported"}:
+                status = ExecutionStatus.FAILED
+            pattern = spec.url_pattern if spec else "<missing>"
+            paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
+            debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
+            callframe_count = len(result.callframes)
+            callframe_evaluation_count = len(result.callframe_evaluations)
+            callframe_evaluation_policy = spec.callframe_evaluation_policy if spec else "unknown"
+            mutation_audit_count = len(result.mutation_audit)
+            debugger_action_count = len(result.debugger_actions)
+            debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
+            debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
+            verification = [
+                f"breakpoint_status={result.status}",
+                f"breakpoint_supported={result.supported}",
+                f"paused_status={paused_status or 'unknown'}",
+                f"debugger_lifecycle={debugger_lifecycle or 'unknown'}",
+                f"callframe_count={callframe_count}",
+                f"callframe_evaluation_count={callframe_evaluation_count}",
+                f"callframe_evaluation_policy={callframe_evaluation_policy}",
+                f"mutation_audit_count={mutation_audit_count}",
+                f"debugger_action_count={debugger_action_count}",
+                f"debugger_session_count={debugger_session_count}",
+                f"debugger_timeline_count={debugger_timeline_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"breakpoint_reason={result.reason}")
+            if result.error:
+                verification.append(f"breakpoint_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/breakpoints.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime breakpoint manager result.",
+                    metadata={
+                        "status": result.status,
+                        "supported": result.supported,
+                        "count": len(result.breakpoints),
+                        "protection_name": protection_name,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/debugger-paused.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime paused debugger snapshot.",
+                    metadata={
+                        "status": paused_status or "unknown",
+                        "count": result.paused.get("count", 0) if isinstance(result.paused, dict) else 0,
+                        "callframe_count": callframe_count,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/callframes.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime debugger callframe snapshot.",
+                    metadata={
+                        "count": callframe_count,
+                        "paused_status": paused_status or "unknown",
+                    },
+                ),
+            ]
+            if (spec and spec.callframe_evaluations) or result.callframe_evaluations:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/callframe-evaluations.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger callframe evaluation snapshot.",
+                        metadata={
+                            "count": callframe_evaluation_count,
+                            "paused_status": paused_status or "unknown",
+                            "policy": callframe_evaluation_policy,
+                        },
+                    )
+                )
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger mutation audit.",
+                        metadata={
+                            "count": mutation_audit_count,
+                            "paused_status": paused_status or "unknown",
+                            "policy": callframe_evaluation_policy,
+                        },
+                    )
+                )
+            if (spec and spec.debugger_actions) or result.debugger_actions:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-actions.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger control action snapshot.",
+                        metadata={
+                            "count": debugger_action_count,
+                            "paused_status": paused_status or "unknown",
+                        },
+                    )
+                )
+            if result.debugger_session:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-session.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger paused-session snapshot.",
+                        metadata={
+                            "status": result.debugger_session.get("status", "unknown"),
+                            "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
+                            "paused_event_count": result.debugger_session.get("paused_event_count", 0),
+                        },
+                    )
+                )
+            if result.debugger_timeline:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime debugger event timeline.",
+                        metadata={
+                            "status": result.debugger_timeline.get("status", "unknown"),
+                            "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
+                            "entry_count": result.debugger_timeline.get("entry_count", 0),
+                            "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
+                        },
+                    )
+                )
+            if paused_status == "success":
+                if debugger_action_count:
+                    next_action = "inspect_debugger_action_result"
+                elif result.debugger_session.get("lifecycle") == "retained_paused":
+                    next_action = "inspect_debugger_session_or_resume"
+                else:
+                    next_action = "inspect_callframes_or_resume"
+            elif result.status in {"success", "partial"}:
+                next_action = "wait_for_breakpoint"
+            else:
+                next_action = "ensure_cdp_breakpoint_capability"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"set_breakpoint_by_url:{pattern}"] + (["capture_debugger_paused"] if paused_status == "success" else [])
+                )
+                if result.supported
+                else [],
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"success", "partial"} else ConfidenceLevel.LOW,
+            )
+        hooks = BrowserHookManager()
+        install = hooks.install(page)
+        snapshot = hooks.snapshot(page)
+        applied_actions = [f"install_hook:{name}" for name, enabled in install.installed.items() if enabled]
+        if not applied_actions and install.ok:
+            applied_actions = ["install_hook:runtime_baseline"]
+        verification = [
+            f"hook_install_ok={install.ok}",
+            f"hook_event_count={snapshot.event_count}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if install.error:
+            verification.append(f"hook_install_error={install.error}")
+        status = ExecutionStatus.SUCCESS if install.ok else ExecutionStatus.FAILED
+        return ProtectionResult(
+            protection_name=protection_name,
+            applied_actions=applied_actions,
+            verification=verification,
+            status=status,
+            artifacts=[
+                ArtifactRef(
+                    path="virtual://workspace/hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime hook install and event timeline.",
+                    metadata={"event_count": snapshot.event_count, "installed": install.installed, "protection_name": protection_name},
+                )
+            ],
+            next_action="resume_recon" if install.ok else "ensure_browser_provider_or_hook_capability",
+            confidence=ConfidenceLevel.MEDIUM if install.ok else ConfidenceLevel.LOW,
+        )
+
+    def _dispatch_async_chunk(
+        self,
+        protection_name: str,
+        context: dict,
+        page: Any,
+    ) -> ProtectionResult | None:
         if self._is_async_chunk_recursive_traversal_plan_request(protection_name, context):
             spec = AsyncChunkRecursiveTraversalPlanSpec.from_context(context)
             result = AsyncChunkRecursiveTraversalPlanManager().plan(spec)
@@ -1583,506 +2093,7 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
-        if self._is_custom_loader_module_hook_request(protection_name, context):
-            spec = CustomLoaderModuleHookSpec.from_context(context)
-            result = CustomLoaderModuleHookManager().install(page, spec)
-            module_result = result.module_hook_result
-            installed_count = len(module_result.installed) if module_result else 0
-            missing_count = len(module_result.missing) if module_result else 0
-            event_count = len(module_result.events) if module_result else 0
-            candidate = result.selected_candidate if isinstance(result.selected_candidate, dict) else {}
-            verification = [
-                f"custom_loader_module_hook_status={result.status}",
-                f"custom_loader_module_hook_reason={result.reason or ''}",
-                f"custom_loader_module_hook_review_approved={result.side_effect_policy.get('review_approved', False)}",
-                f"custom_loader_module_hook_installed_count={installed_count}",
-                f"custom_loader_module_hook_missing_count={missing_count}",
-                f"custom_loader_module_hook_event_count={event_count}",
-                f"custom_loader_module_hook_candidate_source={candidate.get('source', '')}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if module_result and module_result.trigger:
-                verification.append(f"trigger_attempted={module_result.trigger.get('attempted', False)}")
-                if module_result.trigger.get("error"):
-                    verification.append(f"trigger_error={module_result.trigger['error']}")
-            if module_result and module_result.error:
-                verification.append(f"module_hook_error={module_result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-hooks.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime reviewed custom-loader module export hook install result.",
-                    metadata={
-                        "status": result.status,
-                        "installed_count": installed_count,
-                        "missing_count": missing_count,
-                        "module_id": candidate.get("module_id") or candidate.get("moduleId") or "<missing>",
-                        "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
-                        "require_path": candidate.get("runtime_path") or candidate.get("runtimePath") or "<missing>",
-                        "hook_path": candidate.get("hook_path") or candidate.get("hookPath") or "<missing>",
-                        "source": "custom_loader_module_diff",
-                        "review_approved": result.side_effect_policy.get("review_approved", False),
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/module-hook-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime reviewed custom-loader module export hook timeline.",
-                    metadata={
-                        "status": "success" if event_count else "not_observed",
-                        "event_count": event_count,
-                        "module_id": candidate.get("module_id") or candidate.get("moduleId") or "<missing>",
-                        "export_name": candidate.get("export_name") or candidate.get("exportName") or "<missing>",
-                        "hook_path": candidate.get("hook_path") or candidate.get("hookPath") or "<missing>",
-                        "source": "custom_loader_module_diff",
-                    },
-                ),
-            ]
-            if result.status == "success":
-                status = ExecutionStatus.SUCCESS
-                next_action = "inspect_custom_loader_module_hook_events" if event_count else "invoke_hooked_custom_loader_module_export_or_wait_for_events"
-            elif result.status == "partial":
-                status = ExecutionStatus.PARTIAL
-                next_action = "adjust_custom_loader_module_hook_target"
-            elif result.reason == "review_approval_required":
-                status = ExecutionStatus.PARTIAL
-                next_action = "approve_custom_loader_module_hook_candidate"
-            elif result.reason == "review_custom_loader_module_diff_hook_candidates":
-                status = ExecutionStatus.PARTIAL
-                next_action = "review_custom_loader_module_diff_hook_candidates"
-            else:
-                status = ExecutionStatus.FAILED if result.status in {"failed", "unsupported"} else ExecutionStatus.PARTIAL
-                next_action = "inspect_custom_loader_module_hook_failure"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=(
-                    [f"hook_custom_loader_module_export:{candidate.get('module_id') or candidate.get('moduleId')}:{candidate.get('export_name') or candidate.get('exportName')}"]
-                    if installed_count
-                    else []
-                ),
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
-            )
-        if self._is_async_chunk_module_diff_request(protection_name, context):
-            spec = AsyncChunkModuleDiffSpec.from_context(context)
-            result = AsyncChunkModuleDiffManager().plan(spec)
-            diff = result.diff if isinstance(result.diff, dict) else {}
-            verification = [
-                f"async_chunk_module_diff_status={result.status}",
-                f"async_chunk_module_diff_added_registry_key_count={len(diff.get('added_registry_keys') or [])}",
-                f"async_chunk_module_diff_matched_module_count={diff.get('matched_module_count', 0)}",
-                f"async_chunk_module_diff_hook_candidate_count={diff.get('candidate_count', 0)}",
-                f"async_chunk_module_diff_automatic_hook_installation={diff.get('automatic_hook_installation', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"async_chunk_module_diff_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/async-chunk-module-diff.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only async chunk module diff and hook candidate refresh.",
-                    metadata={
-                        "status": result.status,
-                        "chunk_id": diff.get("chunk_id"),
-                        "added_registry_key_count": len(diff.get("added_registry_keys") or []),
-                        "matched_module_count": diff.get("matched_module_count", 0),
-                        "candidate_count": diff.get("candidate_count", 0),
-                        "review_required": diff.get("review_required", True),
-                        "automatic_hook_installation": diff.get("automatic_hook_installation", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["plan_async_chunk_module_diff"] if result.status == "planned" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=diff.get("next_action", "rerun_module_discovery_after_chunk_load"),
-                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
-            )
-        if self._is_custom_loader_module_diff_request(protection_name, context):
-            spec = CustomLoaderModuleDiffSpec.from_context(context)
-            result = CustomLoaderModuleDiffManager().plan(spec)
-            diff = result.diff if isinstance(result.diff, dict) else {}
-            verification = [
-                f"custom_loader_module_diff_status={result.status}",
-                f"custom_loader_module_diff_added_registry_key_count={len(diff.get('added_registry_keys') or [])}",
-                f"custom_loader_module_diff_matched_module_count={diff.get('matched_module_count', 0)}",
-                f"custom_loader_module_diff_hook_candidate_count={diff.get('candidate_count', 0)}",
-                f"custom_loader_module_diff_automatic_hook_installation={diff.get('automatic_hook_installation', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"custom_loader_module_diff_reason={result.reason}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/custom-loader-module-diff.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-only custom loader module diff and hook candidate refresh.",
-                    metadata={
-                        "status": result.status,
-                        "loader_path": diff.get("loader_path"),
-                        "added_registry_key_count": len(diff.get("added_registry_keys") or []),
-                        "matched_module_count": diff.get("matched_module_count", 0),
-                        "candidate_count": diff.get("candidate_count", 0),
-                        "review_required": diff.get("review_required", True),
-                        "automatic_hook_installation": diff.get("automatic_hook_installation", False),
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["plan_custom_loader_module_diff"] if result.status == "planned" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "planned" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=diff.get("next_action", "rerun_module_discovery_after_custom_loader_execution"),
-                confidence=ConfidenceLevel.MEDIUM if result.status == "planned" else ConfidenceLevel.LOW,
-            )
-        if self._is_module_discovery_request(protection_name, context):
-            discovery_context = {**context, "discover_modules": True}
-            spec = ModuleDiscoverySpec.from_context(discovery_context)
-            result = ModuleDiscoveryManager().discover(page, spec)
-            module_count = len(result.modules)
-            candidate_count = len(result.candidates)
-            script_count = len(result.scripts)
-            chunk_graph = result.chunk_graph if isinstance(result.chunk_graph, dict) else {}
-            chunk_graph_status = str(chunk_graph.get("status") or "not_attempted")
-            chunk_graph_candidate_count = int(chunk_graph.get("candidate_count") or 0)
-            chunk_graph_script_edge_count = int(chunk_graph.get("script_edge_count") or 0)
-            chunk_graph_runtime_loader_count = int(chunk_graph.get("runtime_loader_count") or 0)
-            runtime_status = result.runtime.get("status") if result.runtime else "not_attempted"
-            runtime_module_count = int(result.runtime.get("module_count") or 0) if result.runtime else 0
-            runtime_kinds = result.runtime.get("runtime_kinds") if isinstance(result.runtime.get("runtime_kinds"), list) else []
-            runtime_paths = result.runtime.get("runtime_paths") if isinstance(result.runtime.get("runtime_paths"), list) else []
-            custom_key_count = int(result.runtime.get("custom_key_count") or 0) if result.runtime else 0
-            federation_key_count = int(result.runtime.get("federation_key_count") or 0) if result.runtime else 0
-            verification = [
-                f"module_discovery_status={result.status}",
-                f"module_discovery_script_count={script_count}",
-                f"module_discovery_module_count={module_count}",
-                f"module_discovery_candidate_count={candidate_count}",
-                f"module_discovery_chunk_graph_status={chunk_graph_status}",
-                f"module_discovery_chunk_graph_candidate_count={chunk_graph_candidate_count}",
-                f"module_discovery_chunk_graph_script_edge_count={chunk_graph_script_edge_count}",
-                f"module_discovery_chunk_graph_runtime_loader_count={chunk_graph_runtime_loader_count}",
-                f"module_discovery_runtime_status={runtime_status}",
-                f"module_discovery_runtime_module_count={runtime_module_count}",
-                f"module_discovery_runtime_kinds={runtime_kinds}",
-                f"module_discovery_custom_key_count={custom_key_count}",
-                f"module_discovery_federation_key_count={federation_key_count}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.reason:
-                verification.append(f"module_discovery_reason={result.reason}")
-            if result.error:
-                verification.append(f"module_discovery_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-registry.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime webpack-like module registry discovery.",
-                    metadata={
-                        "status": result.status,
-                        "script_count": script_count,
-                        "module_count": module_count,
-                        "chunk_graph_status": chunk_graph_status,
-                        "chunk_graph_candidate_count": chunk_graph_candidate_count,
-                        "chunk_graph_script_edge_count": chunk_graph_script_edge_count,
-                        "chunk_graph_runtime_loader_count": chunk_graph_runtime_loader_count,
-                        "runtime_status": runtime_status,
-                        "runtime_module_count": runtime_module_count,
-                        "runtime_kinds": runtime_kinds,
-                        "runtime_paths": runtime_paths,
-                        "custom_key_count": custom_key_count,
-                        "federation_key_count": federation_key_count,
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/module-candidates.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime webpack-like module export hook candidates.",
-                    metadata={
-                        "status": result.status,
-                        "candidate_count": candidate_count,
-                    },
-                ),
-            ]
-            next_action = (
-                "install_module_hook_from_candidate"
-                if candidate_count
-                else "review_async_chunk_graph_before_loading"
-                if chunk_graph_candidate_count
-                else "provide_module_id_or_expand_source_context"
-            )
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["discover_module_exports"] if module_count or candidate_count else ["discover_async_chunk_graph"] if chunk_graph_candidate_count else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if candidate_count or chunk_graph_candidate_count else ExecutionStatus.PARTIAL if script_count else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if candidate_count or chunk_graph_candidate_count else ConfidenceLevel.LOW,
-            )
-        if self._is_module_hook_request(protection_name, context):
-            spec = ModuleHookSpec.from_context(context)
-            result = ModuleHookManager().install(page, spec)
-            installed_count = len(result.installed)
-            missing_count = len(result.missing)
-            event_count = len(result.events)
-            verification = [
-                f"module_hook_status={result.status}",
-                f"module_hook_installed_count={installed_count}",
-                f"module_hook_missing_count={missing_count}",
-                f"module_hook_event_count={event_count}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.error:
-                verification.append(f"module_hook_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/module-hooks.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime webpack-like module export hook install result.",
-                    metadata={
-                        "status": result.status,
-                        "installed_count": installed_count,
-                        "missing_count": missing_count,
-                        "module_id": spec.module_id if spec else "<missing>",
-                        "export_name": spec.export_name if spec else "<missing>",
-                        "require_path": spec.require_path if spec else "<missing>",
-                        "hook_path": spec.hook_path() if spec else "<missing>",
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/module-hook-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime webpack-like module export hook timeline.",
-                    metadata={
-                        "status": "success" if event_count else "not_observed",
-                        "event_count": event_count,
-                        "module_id": spec.module_id if spec else "<missing>",
-                        "export_name": spec.export_name if spec else "<missing>",
-                        "hook_path": spec.hook_path() if spec else "<missing>",
-                    },
-                ),
-            ]
-            next_action = "inspect_module_hook_events" if event_count else "invoke_module_export_or_adjust_hook"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=(
-                    [f"install_module_hook:{spec.module_id}:{spec.export_name}"] if spec and result.installed else []
-                ),
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if installed_count else ExecutionStatus.PARTIAL if missing_count else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
-            )
-        if self._is_breakpoint_request(protection_name, context):
-            spec = BreakpointSpec.from_context(context)
-            result = BreakpointManager().set_breakpoint(page, spec)
-            status = ExecutionStatus.SUCCESS
-            if result.status == "partial":
-                status = ExecutionStatus.PARTIAL
-            elif result.status in {"failed", "unsupported"}:
-                status = ExecutionStatus.FAILED
-            pattern = spec.url_pattern if spec else "<missing>"
-            paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
-            debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
-            callframe_count = len(result.callframes)
-            callframe_evaluation_count = len(result.callframe_evaluations)
-            callframe_evaluation_policy = spec.callframe_evaluation_policy if spec else "unknown"
-            mutation_audit_count = len(result.mutation_audit)
-            debugger_action_count = len(result.debugger_actions)
-            debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
-            debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
-            verification = [
-                f"breakpoint_status={result.status}",
-                f"breakpoint_supported={result.supported}",
-                f"paused_status={paused_status or 'unknown'}",
-                f"debugger_lifecycle={debugger_lifecycle or 'unknown'}",
-                f"callframe_count={callframe_count}",
-                f"callframe_evaluation_count={callframe_evaluation_count}",
-                f"callframe_evaluation_policy={callframe_evaluation_policy}",
-                f"mutation_audit_count={mutation_audit_count}",
-                f"debugger_action_count={debugger_action_count}",
-                f"debugger_session_count={debugger_session_count}",
-                f"debugger_timeline_count={debugger_timeline_count}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.reason:
-                verification.append(f"breakpoint_reason={result.reason}")
-            if result.error:
-                verification.append(f"breakpoint_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/breakpoints.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime breakpoint manager result.",
-                    metadata={
-                        "status": result.status,
-                        "supported": result.supported,
-                        "count": len(result.breakpoints),
-                        "protection_name": protection_name,
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/debugger-paused.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime paused debugger snapshot.",
-                    metadata={
-                        "status": paused_status or "unknown",
-                        "count": result.paused.get("count", 0) if isinstance(result.paused, dict) else 0,
-                        "callframe_count": callframe_count,
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/callframes.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime debugger callframe snapshot.",
-                    metadata={
-                        "count": callframe_count,
-                        "paused_status": paused_status or "unknown",
-                    },
-                ),
-            ]
-            if (spec and spec.callframe_evaluations) or result.callframe_evaluations:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/callframe-evaluations.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime debugger callframe evaluation snapshot.",
-                        metadata={
-                            "count": callframe_evaluation_count,
-                            "paused_status": paused_status or "unknown",
-                            "policy": callframe_evaluation_policy,
-                        },
-                    )
-                )
-            if result.mutation_audit:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/mutation-audit.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime debugger mutation audit.",
-                        metadata={
-                            "count": mutation_audit_count,
-                            "paused_status": paused_status or "unknown",
-                            "policy": callframe_evaluation_policy,
-                        },
-                    )
-                )
-            if (spec and spec.debugger_actions) or result.debugger_actions:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/debugger-actions.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime debugger control action snapshot.",
-                        metadata={
-                            "count": debugger_action_count,
-                            "paused_status": paused_status or "unknown",
-                        },
-                    )
-                )
-            if result.debugger_session:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/debugger-session.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime debugger paused-session snapshot.",
-                        metadata={
-                            "status": result.debugger_session.get("status", "unknown"),
-                            "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
-                            "paused_event_count": result.debugger_session.get("paused_event_count", 0),
-                        },
-                    )
-                )
-            if result.debugger_timeline:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/debugger-timeline.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime debugger event timeline.",
-                        metadata={
-                            "status": result.debugger_timeline.get("status", "unknown"),
-                            "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
-                            "entry_count": result.debugger_timeline.get("entry_count", 0),
-                            "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
-                        },
-                    )
-                )
-            if paused_status == "success":
-                if debugger_action_count:
-                    next_action = "inspect_debugger_action_result"
-                elif result.debugger_session.get("lifecycle") == "retained_paused":
-                    next_action = "inspect_debugger_session_or_resume"
-                else:
-                    next_action = "inspect_callframes_or_resume"
-            elif result.status in {"success", "partial"}:
-                next_action = "wait_for_breakpoint"
-            else:
-                next_action = "ensure_cdp_breakpoint_capability"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=(
-                    [f"set_breakpoint_by_url:{pattern}"] + (["capture_debugger_paused"] if paused_status == "success" else [])
-                )
-                if result.supported
-                else [],
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"success", "partial"} else ConfidenceLevel.LOW,
-            )
-        hooks = BrowserHookManager()
-        install = hooks.install(page)
-        snapshot = hooks.snapshot(page)
-        applied_actions = [f"install_hook:{name}" for name, enabled in install.installed.items() if enabled]
-        if not applied_actions and install.ok:
-            applied_actions = ["install_hook:runtime_baseline"]
-        verification = [
-            f"hook_install_ok={install.ok}",
-            f"hook_event_count={snapshot.event_count}",
-            f"context_keys={sorted(context.keys())}",
-        ]
-        if install.error:
-            verification.append(f"hook_install_error={install.error}")
-        status = ExecutionStatus.SUCCESS if install.ok else ExecutionStatus.FAILED
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=applied_actions,
-            verification=verification,
-            status=status,
-            artifacts=[
-                ArtifactRef(
-                    path="virtual://workspace/hook-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime hook install and event timeline.",
-                    metadata={"event_count": snapshot.event_count, "installed": install.installed, "protection_name": protection_name},
-                )
-            ],
-            next_action="resume_recon" if install.ok else "ensure_browser_provider_or_hook_capability",
-            confidence=ConfidenceLevel.MEDIUM if install.ok else ConfidenceLevel.LOW,
-        )
+        return None
 
     def _dispatch_module_federation(
         self,
