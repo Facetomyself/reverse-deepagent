@@ -14,10 +14,10 @@ from reverse_deepagent.coordinator import (
     list_runtime_backends,
     run_reverse_pipeline,
 )
-from reverse_deepagent.runtime import ReverseRuntime, RuntimeExportBundle
+from reverse_deepagent.runtime import BrowserSessionInfo, ReverseRuntime, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime
 from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError
 from reverse_deepagent.runtime import registry as runtime_registry
-from reverse_deepagent.runtime.registry import RuntimeBackendCapabilities, RuntimeBackendRegistration
+from reverse_deepagent.runtime.registry import RuntimeBackendRegistration
 from reverse_deepagent.schemas import (
     ConfidenceLevel,
     EvidenceItem,
@@ -26,6 +26,7 @@ from reverse_deepagent.schemas import (
     FinalResult,
     KeyFindings,
     ProtectionResult,
+    ReconResult,
     ReverseMode,
     ReverseStage,
     TaskCard,
@@ -38,6 +39,134 @@ class NonWebRuntime(ReverseRuntime):
 
     def export_reverse_artifacts(self, final_result=None) -> RuntimeExportBundle:
         return RuntimeExportBundle(final_result=final_result)
+
+
+RAW_REDACTION_FIXTURE_VALUES = (
+    "Bearer super-secret-token",
+    "sid=raw-session; csrf=raw-csrf",
+    "auth_token=raw-token",
+    "csrf_token=raw-csrf",
+    "raw-token",
+    "raw-session",
+    "raw-csrf",
+)
+
+
+class RedactedCollectorRuntime(WebReverseRuntime):
+    """Side-effect-free Web runtime that mimics already-redacted collector output."""
+
+    def __init__(self) -> None:
+        self.raw_headers = {
+            "Authorization": "Bearer super-secret-token",
+            "Cookie": "sid=raw-session; csrf=raw-csrf",
+        }
+        self.raw_storage = {
+            "localStorage": {"auth_token": "raw-token"},
+            "sessionStorage": {"csrf_token": "raw-csrf"},
+            "cookie": "sid=raw-session; csrf=raw-csrf",
+        }
+
+    def describe_capabilities(self) -> RuntimeBackendCapabilities:
+        return RuntimeBackendCapabilities(
+            backend_id="redacted-collector-fixture",
+            display_name="Redacted Collector Fixture",
+            transport="in-process",
+            target_platforms=["web"],
+            supports_browser_session=False,
+            supports_web_recon=True,
+            supports_artifact_export=True,
+            supports_runtime_context=True,
+            evidence_kinds=["network", "storage"],
+        )
+
+    def ensure_browser_session(self) -> BrowserSessionInfo:
+        return BrowserSessionInfo(healthy=True, details={"side_effect_free": True})
+
+    def run_web_recon(self, task_card: TaskCard, route_result) -> ReconResult:
+        return ReconResult(
+            status=ExecutionStatus.SUCCESS,
+            stage=ReverseStage.RECON,
+            key_findings=KeyFindings(
+                facts=["Collector snapshots were redacted before coordinator serialization."],
+                inferences=["Downstream artifacts should not contain raw auth, cookie, CSRF, or session values."],
+            ),
+            evidence=[
+                EvidenceItem(
+                    summary="Redacted network collector snapshot",
+                    kind=EvidenceKind.REQUEST,
+                    source="network_request",
+                    details={
+                        "requests": [
+                            {
+                                "id": 1,
+                                "url": "https://example.test/api/search",
+                                "method": "POST",
+                                "headers": {
+                                    "Authorization": "Bearer <redacted>",
+                                    "Cookie": "sid=<redacted>; csrf=<redacted>",
+                                    "X-Trace": "safe-trace-id",
+                                },
+                                "redacted": True,
+                                "redacted_fields": ["headers.Authorization", "headers.Cookie"],
+                                "raw_value_available": False,
+                            }
+                        ]
+                    },
+                    confidence=ConfidenceLevel.HIGH,
+                ),
+                EvidenceItem(
+                    summary="Redacted runtime context collector snapshot",
+                    kind=EvidenceKind.STORAGE,
+                    source="runtime_context",
+                    details={
+                        "localStorage": {"auth_token": "<redacted>"},
+                        "sessionStorage": {"csrf_token": "<redacted>"},
+                        "cookie": "sid=<redacted>; csrf=<redacted>",
+                        "redacted": True,
+                        "redacted_fields": ["localStorage.auth_token", "sessionStorage.csrf_token", "cookie"],
+                        "raw_value_available": False,
+                    },
+                    confidence=ConfidenceLevel.HIGH,
+                ),
+            ],
+            next_action="review_redacted_artifacts",
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+    def apply_minimal_protection(self, protection_name: str, context: dict | None = None) -> ProtectionResult:
+        raise NotImplementedError
+
+    def export_reverse_artifacts(self, final_result=None) -> RuntimeExportBundle:
+        return RuntimeExportBundle(
+            final_result=final_result,
+            exports=[
+                {
+                    "tool": "collector_redaction_fixture",
+                    "payload": {
+                        "network_headers": {"Authorization": "Bearer <redacted>", "Cookie": "sid=<redacted>; csrf=<redacted>"},
+                        "storage": {
+                            "localStorage": {"auth_token": "<redacted>"},
+                            "sessionStorage": {"csrf_token": "<redacted>"},
+                        },
+                        "raw_value_available": False,
+                    },
+                }
+            ],
+            artifacts=[
+                {
+                    "path": "virtual://workspace/runtime-context.json",
+                    "kind": "json",
+                    "category": "runtime-context",
+                    "metadata": {"artifact_key": "runtime_redacted_context_export"},
+                }
+            ],
+        )
+
+
+def _assert_raw_redaction_fixtures_absent(testcase: unittest.TestCase, payload: object) -> None:
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    for raw_value in RAW_REDACTION_FIXTURE_VALUES:
+        testcase.assertNotIn(raw_value, serialized)
 
 
 class FakeEntryPoint:
@@ -2960,6 +3089,37 @@ class CoordinatorTests(unittest.TestCase):
             self.assertEqual(manifest_by_key["rebuild_scrapy_project"]["category"], "rebuild")
             self.assertIsNone(output.chrome_launch)
             self.assertIsNone(output.chrome_stop)
+
+    def test_pipeline_serialization_keeps_collector_redacted_values(self) -> None:
+        runtime = RedactedCollectorRuntime()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = run_reverse_pipeline(
+                task_text="https://example.test/search 找 sign 入口，并给出下一步建议",
+                artifact_root=Path(tmpdir) / "artifacts",
+                runtime_kind="mock",
+                runtime=runtime,
+            )
+
+            result_payload = output.model_dump(mode="json", exclude_none=True)
+            _assert_raw_redaction_fixtures_absent(self, result_payload)
+            _assert_raw_redaction_fixtures_absent(self, str(output.final_result))
+
+            network_path = Path(output.artifacts["workspace_network_requests"])
+            runtime_context_path = Path(output.artifacts["workspace_runtime_context"])
+            final_path = Path(output.artifacts["workspace_final"])
+            recon_path = Path(output.artifacts["workspace_recon"])
+            index_path = Path(output.artifacts["index"])
+            manifest_path = Path(output.artifacts["workspace_backend_artifact_manifest"])
+
+            self.assertEqual(json.loads(network_path.read_text(encoding="utf-8"))["requests"][0]["headers"]["Authorization"], "Bearer <redacted>")
+            self.assertEqual(json.loads(runtime_context_path.read_text(encoding="utf-8"))["localStorage"]["auth_token"], "<redacted>")
+            for artifact_path in (network_path, runtime_context_path, final_path, recon_path, index_path, manifest_path):
+                _assert_raw_redaction_fixtures_absent(self, json.loads(artifact_path.read_text(encoding="utf-8")))
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_by_key = {item["artifact_key"]: item for item in manifest["entries"]}
+            self.assertEqual(manifest_by_key["workspace_network_requests"]["category"], "network")
+            self.assertEqual(manifest_by_key["workspace_runtime_context"]["category"], "runtime-context")
 
     def test_web_pipeline_can_attach_browser_provider_smoke_evidence(self) -> None:
         smoke_payload = {
