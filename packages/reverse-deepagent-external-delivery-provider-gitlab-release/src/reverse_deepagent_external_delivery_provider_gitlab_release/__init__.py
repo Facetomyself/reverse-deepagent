@@ -135,7 +135,7 @@ class GitLabReleaseExternalDeliveryProvider:
             (not asset_plan.requested)
             or dry_run
             or self.upload_asset_bytes is not None
-            or (self.upload_asset_path is not None and Path(str(self.upload_asset_path)).expanduser().exists())
+            or _asset_path_is_executable_file(self.upload_asset_path)
         )
         checks = [
             {
@@ -310,7 +310,7 @@ class GitLabReleaseExternalDeliveryProvider:
                     if asset_uploaded:
                         uploaded_relative_url = _extract_upload_response_url(upload_response.body)
                         upload_response_body_parsed = uploaded_relative_url is not None
-                        asset_uploaded = uploaded_relative_url is not None and not _url_has_query(uploaded_relative_url) and not _url_has_credentials(uploaded_relative_url)
+                        asset_uploaded = uploaded_relative_url is not None and _upload_response_url_is_safe_relative(uploaded_relative_url)
                         if not asset_uploaded and upload_error is None:
                             upload_error = "UnsafeOrMissingUploadUrl"
                 else:
@@ -771,6 +771,15 @@ def _multipart_quote(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace('"', "\\\"").replace("\r", "").replace("\n", "")
 
 
+def _asset_path_is_executable_file(value: str | None) -> bool:
+    if value is None or not str(value).strip():
+        return False
+    try:
+        return Path(str(value)).expanduser().is_file()
+    except OSError:
+        return False
+
+
 def _extract_upload_response_url(body: bytes) -> str | None:
     try:
         payload = json.loads(body.decode("utf-8"))
@@ -785,6 +794,11 @@ def _extract_upload_response_url(body: bytes) -> str | None:
     if not cleaned:
         return None
     return cleaned
+
+
+def _upload_response_url_is_safe_relative(value: str) -> bool:
+    parts = urllib.parse.urlsplit(value)
+    return not (parts.scheme or parts.netloc or parts.query or parts.username or parts.password)
 
 
 def _absolute_gitlab_project_asset_url(api_base_url: str, project_path: str, upload_response_url: str) -> str:

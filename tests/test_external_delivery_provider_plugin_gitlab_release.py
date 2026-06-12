@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -250,6 +251,40 @@ class GitLabReleaseExternalDeliveryProviderPluginTests(unittest.TestCase):
         self.assertNotIn("glpat-dry-run-asset-secret", serialized)
         self.assertNotIn("PRIVATE-TOKEN", serialized)
 
+    def test_asset_upload_path_must_be_file_before_release_create(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fail_if_called(url: str, body: bytes, headers: dict[str, str], method: str, timeout_seconds: float):
+            calls.append({"url": url, "body": body, "headers": headers, "method": method, "timeout_seconds": timeout_seconds})
+            raise AssertionError("directory asset path must be blocked before creating a release")
+
+        with tempfile.TemporaryDirectory() as directory, _import_plugin_module() as module:
+            provider = module.create_gitlab_release_external_delivery_provider(
+                project_path="group/project",
+                tag_name="v1.0.0",
+                access_token="glpat-directory-secret",
+                approve_gitlab_release_delivery=True,
+                approve_gitlab_release_asset_upload=True,
+                upload_asset_path=directory,
+                upload_asset_name="agent.bin",
+                http_requester=fail_if_called,
+            )
+            result = provider.deliver(
+                _package(mode="apply"),
+                dry_run=False,
+                result_path="/tmp/external-delivery-result.json",
+                created_at="2026-06-01T00:00:06.5+00:00",
+            )
+
+        self.assertEqual(calls, [])
+        self.assertEqual(result.status, "blocked")
+        self.assertFalse(result.external_delivery_performed)
+        self.assertFalse(result.metadata["network_attempted"])
+        self.assertFalse(result.metadata["release_record_created"])
+        self.assertIn("gitlab_release_asset_upload_executable_source_available", result.blocking_reasons)
+        serialized = json.dumps(result.to_dict(), ensure_ascii=False)
+        self.assertNotIn("glpat-directory-secret", serialized)
+
     def test_asset_upload_apply_blocks_without_asset_upload_approval(self) -> None:
         calls: list[dict[str, object]] = []
 
@@ -338,6 +373,49 @@ class GitLabReleaseExternalDeliveryProviderPluginTests(unittest.TestCase):
         self.assertNotIn("group/private-project", serialized)
         self.assertNotIn("group%2Fprivate-project", serialized)
         self.assertNotIn("not-recorded", serialized)
+        self.assertNotIn("/uploads/hash/agent.bin", serialized)
+
+    def test_asset_upload_response_absolute_url_is_blocked_and_redacted(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        with _import_plugin_module() as module:
+            def fake_requester(url: str, body: bytes, headers: dict[str, str], method: str, timeout_seconds: float):
+                calls.append({"url": url, "body": body, "headers": headers, "method": method, "timeout_seconds": timeout_seconds})
+                if url.endswith("/uploads"):
+                    return module.GitLabReleaseHttpResponse(status_code=201, error=None, body=b'{"url":"https://evil.example/uploads/hash/agent.bin"}')
+                return module.GitLabReleaseHttpResponse(status_code=201, error=None, body=b"{}")
+
+            provider = module.create_gitlab_release_external_delivery_provider(
+                project_path="secret-group/secret-project",
+                tag_name="v1.0.0",
+                access_token="glpat-absolute-upload-secret",
+                api_base_url="https://gitlab.example.test/api/v4",
+                approve_gitlab_release_delivery=True,
+                approve_gitlab_release_asset_upload=True,
+                upload_asset_bytes=b"binary payload",
+                upload_asset_name="agent.bin",
+                http_requester=fake_requester,
+            )
+            result = provider.deliver(
+                _package(mode="apply"),
+                dry_run=False,
+                result_path="/tmp/external-delivery-result.json",
+                created_at="2026-06-01T00:00:08.5+00:00",
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result.status, "blocked")
+        self.assertFalse(result.external_delivery_performed)
+        self.assertTrue(result.metadata["release_record_created"])
+        self.assertTrue(result.metadata["upload_response_body_parsed"])
+        self.assertFalse(result.metadata["upload_response_url_recorded"])
+        self.assertFalse(result.metadata["asset_link_request_attempted"])
+        self.assertEqual(result.metadata["asset_upload_error"], "UnsafeOrMissingUploadUrl")
+        self.assertIn("gitlab_project_upload_successful", result.blocking_reasons)
+        serialized = json.dumps(result.to_dict(), ensure_ascii=False)
+        self.assertNotIn("glpat-absolute-upload-secret", serialized)
+        self.assertNotIn("evil.example", serialized)
+        self.assertNotIn("secret-group/secret-project", serialized)
         self.assertNotIn("/uploads/hash/agent.bin", serialized)
 
     def test_asset_upload_response_url_with_query_is_blocked_and_redacted(self) -> None:
