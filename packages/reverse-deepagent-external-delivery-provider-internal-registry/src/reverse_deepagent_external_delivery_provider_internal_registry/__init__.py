@@ -89,7 +89,7 @@ class InternalRegistryExternalDeliveryProvider:
             {
                 "name": "local_delivery_package_has_no_errors",
                 "passed": local_ready,
-                "details": {"local_errors": package.local_errors},
+                "details": {"local_error_count": len(package.local_errors), "local_errors_recorded": False},
             },
             {
                 "name": "internal_registry_endpoint_configured",
@@ -157,7 +157,7 @@ class InternalRegistryExternalDeliveryProvider:
             request_attempted = True
             response = self._publish(endpoint, request_body, method)
             response_status_code = response.status_code
-            request_error = response.error
+            request_error = _redact_request_error_for_metadata(response.error)
             delivered = bool(response_status_code is not None and 200 <= response_status_code < 300)
             checks.append(
                 {
@@ -195,8 +195,9 @@ class InternalRegistryExternalDeliveryProvider:
             ),
             created_at=created_at,
             metadata={
-                **package.metadata,
                 "scope": "internal-registry-external-delivery-provider-baseline",
+                "package_metadata_recorded": False,
+                "package_metadata_key_count": len(package.metadata),
                 "automatic_delivery": False,
                 "publishes_externally": delivered,
                 "dry_run_side_effect_free": True,
@@ -364,6 +365,18 @@ def _optional_digest(value: str | None) -> str | None:
     if not text:
         return None
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _redact_request_error_for_metadata(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    http_match = re.fullmatch(r"http_error:(\d{3})", text)
+    if http_match:
+        return f"http_error:{http_match.group(1)}"
+    if text == "timeout":
+        return "timeout"
+    return "redacted_request_error"
 
 
 def _http_scheme_supported(url: str) -> bool:

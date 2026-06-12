@@ -87,6 +87,7 @@ class InternalRegistryExternalDeliveryProviderPluginTests(unittest.TestCase):
         self.assertEqual(result.status, "planned")
         self.assertFalse(result.external_delivery_performed)
         self.assertFalse(result.metadata["network_attempted"])
+        self.assertFalse(result.metadata["package_metadata_recorded"])
         self.assertEqual(result.recommended_actions, ["approve_internal_registry_delivery_before_apply"])
         self.assertEqual(result.metadata["registry_endpoint_url"], "https://registry.example.test/<redacted-registry-endpoint>")
         self.assertFalse(result.metadata["namespace_recorded"])
@@ -259,10 +260,54 @@ class InternalRegistryExternalDeliveryProviderPluginTests(unittest.TestCase):
         self.assertTrue(result.metadata["network_attempted"])
         self.assertEqual(result.metadata["request_status_code"], 503)
         self.assertIn("internal_registry_publication_successful", result.blocking_reasons)
+        self.assertEqual(result.metadata["request_error"], "http_error:503")
         serialized = json.dumps(result.to_dict(), ensure_ascii=False)
         self.assertNotIn("not-recorded", serialized)
         self.assertNotIn("private/team", serialized)
         self.assertNotIn("reviewed-deliveries", serialized)
+
+    def test_request_error_and_package_metadata_are_redacted_from_result(self) -> None:
+        with _import_plugin_module() as module:
+
+            def secret_error_requester(url: str, body: bytes, headers: dict[str, str], method: str, timeout_seconds: float):
+                return module.InternalRegistryHttpResponse(
+                    status_code=None,
+                    error="url_error:https://registry.example.test/path?token=request-error-secret",
+                    body=b"",
+                )
+
+            provider = module.create_internal_registry_external_delivery_provider(
+                registry_endpoint_url="https://registry.example.test/api/artifacts",
+                approve_internal_registry_delivery=True,
+                http_requester=secret_error_requester,
+            )
+            package = _package(mode="apply")
+            package.metadata["api_key"] = "package-metadata-secret"
+            result = provider.deliver(
+                package,
+                dry_run=False,
+                result_path="/tmp/external-delivery-result.json",
+                created_at="2026-06-01T00:00:06+00:00",
+            )
+
+            local_error_package = _package(mode="apply")
+            local_error_package.local_errors.append("local-error-secret-token")
+            local_error_result = provider.deliver(
+                local_error_package,
+                dry_run=False,
+                result_path="/tmp/external-delivery-result.json",
+                created_at="2026-06-01T00:00:07+00:00",
+            )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.metadata["request_error"], "redacted_request_error")
+        self.assertFalse(result.metadata["package_metadata_recorded"])
+        self.assertFalse(local_error_result.metadata["network_attempted"])
+        serialized = json.dumps({"request_error_result": result.to_dict(), "local_error_result": local_error_result.to_dict()}, ensure_ascii=False)
+        self.assertNotIn("request-error-secret", serialized)
+        self.assertNotIn("package-metadata-secret", serialized)
+        self.assertNotIn("local-error-secret-token", serialized)
+        self.assertNotIn("api_key", serialized)
 
 
 def _package(*, mode: str = "apply") -> ExternalDeliveryPackage:
