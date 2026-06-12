@@ -625,6 +625,8 @@ This checkpoint does not execute the recommended review action, invoke selected 
 
 This rollup does not execute the recommended review action, invoke selected executor application routes, continue debugger execution, install hooks or source-logpoints, generate rebuild bundles, run delivery, fetch Source Maps, export raw source or previews, start browsers, evaluate JavaScript, send CDP, call MCP, or touch Android / iOS / mini-program full runtime chains. Automatic Source Map follow-through remains unsupported; any next action remains a separate explicit reviewed action.
 
+`source-map-terminal-review-action-decision` / `record-source-map-terminal-review-action` is the minimal explicit-review-only decision/result recorder for that separate terminal review action. It consumes a ready terminal review package, closure checkpoint, or final audit descriptor and records reviewer, reason, selected action (`defer` / `approve_followup` / `reject` / `request_manual_execution` / `mark_complete`), source descriptor digest, deterministic decision id, idempotency key, and decision digest. Its side-effect policy explicitly keeps `executes_recommended_action=false`, `installs_hook=false`, `installs_logpoint=false`, `continues_debugger=false`, `generates_rebuild=false`, `fetches_source_map=false`, and `exports_raw_source=false`; it does not install hooks or logpoints, continue debugger execution, generate rebuild bundles, fetch Source Maps, export raw source, start browsers, send CDP, call MCP, or touch mobile runtimes.
+
 
 Active remaining Web-first gaps:
 
