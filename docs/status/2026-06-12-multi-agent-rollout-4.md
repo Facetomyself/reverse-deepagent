@@ -67,8 +67,33 @@ This rollout is complete only when:
 
 ## Execution result
 
-Pending worker PRs.
+| Worker | PR | Result | Merge commit | Main-agent review notes |
+| --- | ---: | --- | --- | --- |
+| Worker J | [#31](https://github.com/Facetomyself/reverse-deepagent/pull/31) | Merged | `6a569671` | Extracted page-required paused-session execution / probe / action branches into `_dispatch_paused_session(...)`. Main agent re-ran `tests.test_breakpoint_manager` before merge. |
+| Worker K | [#30](https://github.com/Facetomyself/reverse-deepagent/pull/30) | Merged | `ff055a0b` | Extracted closure-wrapper / source-logpoint / function-hook branches into `_dispatch_closure_runtime(...)`. After Worker J landed, main agent rebased / replayed the extraction on the new base, resolved the native_web.py conflict, reran focused native-web / closure / hook tests, force-with-lease updated the PR branch, and merged it. |
+
+B3c progress after this rollout:
+
+- `apply_minimal_protection` now delegates page-required paused-session branches to `_dispatch_paused_session(...)`.
+- `apply_minimal_protection` now delegates closure-wrapper / source-logpoint / function-hook branches to `_dispatch_closure_runtime(...)`.
+- The method now spans `3296` lines, down from the previous `4777` line count recorded before this rollout.
+- Remaining `protection_name` branch count inside the method is now `47`, down from `70` before this rollout.
+
+Still separate B3c follow-ups after this rollout:
+
+- Module federation branch extraction.
+- Custom-loader branch extraction.
+- Async chunk branch extraction.
+- Module discovery / module hook / breakpoint tail extraction, while preserving fallback hook behavior.
 
 ## Final validation status
 
-Pending worker PR review, merge, and full validation.
+Final validation after Worker J / Worker K PRs were merged and ROADMAP / status docs were updated:
+
+```bash
+git diff --check
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q src/reverse_deepagent tests
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest discover -s tests -v
+```
+
+Result: `1747` tests passed, `2` skipped.

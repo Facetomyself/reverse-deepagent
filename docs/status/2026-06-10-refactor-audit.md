@@ -14,6 +14,8 @@
 
 ### B3b / Goal-08 已完成；B3c 待处理
 
+> 2026-06-12 rollout4 update: B3c 已继续推进，`apply_minimal_protection` 又抽出了 `_dispatch_paused_session(...)` 与 `_dispatch_closure_runtime(...)` 两个 page-using 分支组。主方法从约 4777 行降到 3296 行，剩余 `protection_name` 分支从 70 个降到 47 个；module federation、custom-loader、async chunk、module hook / breakpoint 等分支组仍待后续批次继续拆。
+
 B3b（commit `b36f168`）：22 个 heap 分支提取到 `_dispatch_heap()`，`apply_minimal_protection` 完成中段解耦。
 
 Goal-08（commit `a30ba3f`）：`object_graph_diff` page-free 分支（63 行）提取到 `_dispatch_object_graph()`，在 try/session/page 块之前委托执行。
