@@ -837,699 +837,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 next_action="inspect_page_mutation_audit" if change_count else "provide_trigger_or_expand_snapshot_scope",
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
             )
-        if self._is_paused_session_automatic_loop_multi_iteration_execution_request(protection_name, context):
-            spec = PausedSessionAutomaticLoopMultiIterationExecutionSpec.from_context(context)
-            result = PausedSessionAutomaticLoopMultiIterationExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"paused_session_automatic_loop_multi_iteration_execution_status={result.status}",
-                f"paused_session_automatic_loop_multi_iteration_execution_reason={result.reason or ''}",
-                f"paused_session_automatic_loop_multi_iteration_execution_transaction_id={execution.get('transaction_id')}",
-                f"paused_session_automatic_loop_multi_iteration_execution_journal_id={execution.get('journal_id')}",
-                f"paused_session_automatic_loop_multi_iteration_execution_requested_budget={execution.get('requested_iteration_budget', 0)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"paused_session_automatic_loop_multi_iteration_execution_execute_requested={execution.get('execute_multi_iteration_requested', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_review_approved={execution.get('review_approved', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_executed_iterations={execution.get('executed_iteration_count', 0)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_checkpoint_required={execution.get('checkpoint_required', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_mvp={execution.get('automatic_multi_iteration_execution_mvp', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_executor_implemented={execution.get('automatic_multi_iteration_executor_implemented', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_bounded_one_iteration_only={policy.get('bounded_one_iteration_only', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_automatic_multi_iteration_loop={policy.get('automatic_multi_iteration_loop', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_loop_advanced={policy.get('loop_advanced', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_queue_advanced={policy.get('queue_advanced', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_automatic_loop_multi_iteration_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime explicit-review-only paused-session automatic-loop bounded multi-iteration execution result MVP.",
-                    metadata={
-                        "status": result.status,
-                        "transaction_id": execution.get("transaction_id"),
-                        "journal_id": execution.get("journal_id"),
-                        "requested_iteration_budget": execution.get("requested_iteration_budget", 0),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "execute_requested": execution.get("execute_multi_iteration_requested", False),
-                        "review_approved": execution.get("review_approved", False),
-                        "executed_iteration_count": execution.get("executed_iteration_count", 0),
-                        "checkpoint_required": execution.get("checkpoint_required", False),
-                        "automatic_multi_iteration_execution_mvp": execution.get("automatic_multi_iteration_execution_mvp", False),
-                        "automatic_multi_iteration_executor_implemented": execution.get("automatic_multi_iteration_executor_implemented", False),
-                        "automatic_multi_iteration_loop": execution.get("automatic_multi_iteration_loop", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_paused_session_automatic_loop_multi_iteration"] if result.status in {"partial", "completed"} else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status in {"partial", "completed", "not_run"} else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_paused_session_automatic_loop_multi_iteration_execution",
-                confidence=ConfidenceLevel.MEDIUM if result.status in {"partial", "completed"} else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):
-            spec = PausedSessionAutomaticLoopNextIterationExecutionSpec.from_context(context)
-            result = PausedSessionAutomaticLoopNextIterationExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"paused_session_automatic_loop_next_iteration_execution_status={result.status}",
-                f"paused_session_automatic_loop_next_iteration_execution_reason={result.reason or ''}",
-                f"paused_session_automatic_loop_next_iteration_execution_transaction_id={execution.get('transaction_id')}",
-                f"paused_session_automatic_loop_next_iteration_execution_journal_id={execution.get('journal_id')}",
-                f"paused_session_automatic_loop_next_iteration_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"paused_session_automatic_loop_next_iteration_execution_execute_requested={execution.get('execute_next_iteration_requested', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_review_approved={execution.get('review_approved', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_executed_iterations={execution.get('executed_iteration_count', 0)}",
-                f"paused_session_automatic_loop_next_iteration_execution_checkpoint_required={execution.get('checkpoint_required', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_bounded_one_iteration_only={policy.get('bounded_one_iteration_only', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_loop_advanced={policy.get('loop_advanced', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_queue_advanced={policy.get('queue_advanced', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_automatic_loop_next_iteration_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-automatic-loop-next-iteration-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime explicit-review-only paused-session automatic-loop next-iteration execution result.",
-                    metadata={
-                        "status": result.status,
-                        "transaction_id": execution.get("transaction_id"),
-                        "journal_id": execution.get("journal_id"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "execute_requested": execution.get("execute_next_iteration_requested", False),
-                        "review_approved": execution.get("review_approved", False),
-                        "executed_iteration_count": execution.get("executed_iteration_count", 0),
-                        "checkpoint_required": execution.get("checkpoint_required", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_paused_session_automatic_loop_next_iteration"] if result.status == "executed" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status in {"executed", "ready_for_review"} else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_paused_session_automatic_loop_next_iteration_execution",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_automatic_loop_execution_request(protection_name, context):
-            spec = PausedSessionAutomaticLoopExecutionSpec.from_context(context)
-            result = PausedSessionAutomaticLoopExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"paused_session_automatic_loop_execution_status={result.status}",
-                f"paused_session_automatic_loop_execution_reason={result.reason or ''}",
-                f"paused_session_automatic_loop_execution_transaction_id={execution.get('transaction_id')}",
-                f"paused_session_automatic_loop_execution_journal_id={execution.get('journal_id')}",
-                f"paused_session_automatic_loop_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"paused_session_automatic_loop_execution_execute_requested={execution.get('execute_automatic_loop_requested', False)}",
-                f"paused_session_automatic_loop_execution_review_approved={execution.get('review_approved', False)}",
-                f"paused_session_automatic_loop_execution_executed_iterations={execution.get('executed_iteration_count', 0)}",
-                f"paused_session_automatic_loop_execution_checkpoint_required={execution.get('checkpoint_required', False)}",
-                f"paused_session_automatic_loop_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_automatic_loop_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"paused_session_automatic_loop_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"paused_session_automatic_loop_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"paused_session_automatic_loop_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
-                f"paused_session_automatic_loop_execution_bounded_one_iteration_only={policy.get('bounded_one_iteration_only', False)}",
-                f"paused_session_automatic_loop_execution_loop_advanced={policy.get('loop_advanced', False)}",
-                f"paused_session_automatic_loop_execution_queue_advanced={policy.get('queue_advanced', False)}",
-                f"paused_session_automatic_loop_execution_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
-                f"paused_session_automatic_loop_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_automatic_loop_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_automatic_loop_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-automatic-loop-execution-result.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime explicit-review-only bounded paused-session automatic-loop execution result.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "transaction_id": execution.get("transaction_id"),
-                        "journal_id": execution.get("journal_id"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "executed_iteration_count": execution.get("executed_iteration_count", 0),
-                        "checkpoint_required": execution.get("checkpoint_required", False),
-                        "delegated_executor_artifact": execution.get("delegated_executor_artifact"),
-                        "loop_advanced": execution.get("loop_advanced", False),
-                        "queue_advanced": execution.get("queue_advanced", False),
-                        "long_lived_session_managed": execution.get("long_lived_session_managed", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["paused_session_automatic_loop_one_iteration"] if execution.get("automatic_loop_executed") else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_paused_session_automatic_loop_execution_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_multi_step_loop_execution_request(protection_name, context):
-            spec = PausedSessionMultiStepLoopExecutionSpec.from_context(context)
-            result = PausedSessionMultiStepLoopExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"paused_session_multi_step_loop_execution_status={result.status}",
-                f"paused_session_multi_step_loop_execution_reason={result.reason or ''}",
-                f"paused_session_multi_step_loop_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"paused_session_multi_step_loop_execution_selected_method={execution.get('selected_method')}",
-                f"paused_session_multi_step_loop_execution_execute_requested={execution.get('execute_loop_iteration_requested', False)}",
-                f"paused_session_multi_step_loop_execution_review_approved={execution.get('review_approved', False)}",
-                f"paused_session_multi_step_loop_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_multi_step_loop_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"paused_session_multi_step_loop_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"paused_session_multi_step_loop_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"paused_session_multi_step_loop_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
-                f"paused_session_multi_step_loop_execution_loop_iteration_executed={policy.get('multi_step_loop_iteration_executed', False)}",
-                f"paused_session_multi_step_loop_execution_loop_advanced={policy.get('loop_advanced', False)}",
-                f"paused_session_multi_step_loop_execution_queue_advanced={policy.get('queue_advanced', False)}",
-                f"paused_session_multi_step_loop_execution_automatic_loop={policy.get('automatic_multi_step_loop', False)}",
-                f"paused_session_multi_step_loop_execution_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
-                f"paused_session_multi_step_loop_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_multi_step_loop_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_multi_step_loop_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-multi-step-loop-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated one-iteration paused-session loop execution.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "loop_id": execution.get("loop_id"),
-                        "workflow_id": execution.get("workflow_id"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_method": execution.get("selected_method"),
-                        "executor_artifact": execution.get("executor_artifact"),
-                        "paused_event_captured": execution.get("paused_event_captured", False),
-                        "manual_checkpoint_required_after_iteration": execution.get("manual_checkpoint_required_after_iteration", False),
-                        "loop_advanced": execution.get("loop_advanced", False),
-                        "queue_advanced": execution.get("queue_advanced", False),
-                        "automatic_multi_step_loop": execution.get("automatic_multi_step_loop", False),
-                        "automatic_wrapper_continuation": execution.get("automatic_wrapper_continuation", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["paused_session_loop_iteration"] if execution.get("multi_step_loop_iteration_executed") else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_paused_session_loop_execution_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_multi_step_continuation_execution_request(protection_name, context):
-            spec = PausedSessionMultiStepContinuationExecutionSpec.from_context(context)
-            result = PausedSessionMultiStepContinuationExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"paused_session_multi_step_continuation_execution_status={result.status}",
-                f"paused_session_multi_step_continuation_execution_reason={result.reason or ''}",
-                f"paused_session_multi_step_continuation_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"paused_session_multi_step_continuation_execution_selected_method={execution.get('selected_method')}",
-                f"paused_session_multi_step_continuation_execution_execute_requested={execution.get('execute_iteration_requested', False)}",
-                f"paused_session_multi_step_continuation_execution_review_approved={execution.get('review_approved', False)}",
-                f"paused_session_multi_step_continuation_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_multi_step_continuation_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"paused_session_multi_step_continuation_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"paused_session_multi_step_continuation_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"paused_session_multi_step_continuation_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
-                f"paused_session_multi_step_continuation_execution_automatic_loop={policy.get('automatic_loop', False)}",
-                f"paused_session_multi_step_continuation_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_multi_step_continuation_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_multi_step_continuation_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-multi-step-continuation-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated one-iteration multi-step paused-session continuation execution.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "workflow_id": execution.get("workflow_id"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_method": execution.get("selected_method"),
-                        "executor_artifact": execution.get("executor_artifact"),
-                        "paused_event_captured": execution.get("paused_event_captured", False),
-                        "manual_checkpoint_required_after_step": execution.get("manual_checkpoint_required_after_step", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["multi_step_continuation_iteration"] if execution.get("multi_step_iteration_executed") else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_multi_step_continuation_execution_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_pre_action_subscribe_and_action_request(protection_name, context):
-            spec = PausedSessionPreActionSubscribeAndActionSpec.from_context(context)
-            result = PausedSessionPreActionSubscribeAndActionManager().execute(page, spec)
-            orchestration = result.orchestration if isinstance(result.orchestration, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = orchestration.get("blockers") if isinstance(orchestration.get("blockers"), list) else []
-            verification = [
-                f"paused_session_pre_action_subscribe_and_action_status={result.status}",
-                f"paused_session_pre_action_subscribe_and_action_reason={result.reason or ''}",
-                f"paused_session_pre_action_subscribe_and_action_requested_action={orchestration.get('requested_action')}",
-                f"paused_session_pre_action_subscribe_and_action_method={orchestration.get('method')}",
-                f"paused_session_pre_action_subscribe_and_action_execute_requested={orchestration.get('execute_orchestration_requested', False)}",
-                f"paused_session_pre_action_subscribe_and_action_review_approved={orchestration.get('review_approved', False)}",
-                f"paused_session_pre_action_subscribe_and_action_pre_subscribed={orchestration.get('pre_action_event_subscribed', False)}",
-                f"paused_session_pre_action_subscribe_and_action_action_after_subscription={orchestration.get('action_sent_after_subscription', False)}",
-                f"paused_session_pre_action_subscribe_and_action_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"paused_session_pre_action_subscribe_and_action_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"paused_session_pre_action_subscribe_and_action_callframe_count={orchestration.get('callframe_count', 0)}",
-                f"paused_session_pre_action_subscribe_and_action_live_callframe_recovery_ready={orchestration.get('live_callframe_recovery_ready', False)}",
-                f"paused_session_pre_action_subscribe_and_action_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_pre_action_subscribe_and_action_browser_resumed={policy.get('browser_resumed', False)}",
-                f"paused_session_pre_action_subscribe_and_action_debugger_stepped={policy.get('debugger_stepped', False)}",
-                f"paused_session_pre_action_subscribe_and_action_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"paused_session_pre_action_subscribe_and_action_multi_step_continuation={policy.get('multi_step_continuation', False)}",
-                f"paused_session_pre_action_subscribe_and_action_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_pre_action_subscribe_and_action_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_pre_action_subscribe_and_action_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"paused_session_pre_action_subscribe_and_action_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-pre-action-subscribe-and-action.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated pre-action Debugger.paused subscription plus one cross-process action orchestration.",
-                    metadata={
-                        "status": result.status,
-                        "orchestration_status": orchestration.get("status"),
-                        "pause_session_id": orchestration.get("pause_session_id"),
-                        "target_id": orchestration.get("target_id"),
-                        "requested_action": orchestration.get("requested_action"),
-                        "method": orchestration.get("method"),
-                        "pre_action_event_subscribed": orchestration.get("pre_action_event_subscribed", False),
-                        "action_sent_after_subscription": orchestration.get("action_sent_after_subscription", False),
-                        "paused_event_captured": orchestration.get("paused_event_captured", False),
-                        "callframe_count": orchestration.get("callframe_count", 0),
-                        "live_callframe_recovery_ready": orchestration.get("live_callframe_recovery_ready", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["pre_action_subscribe_and_action"] if orchestration.get("pre_action_event_subscribed") or orchestration.get("live_action_executed") else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "captured" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=orchestration.get("next_action") or "inspect_pre_action_subscribe_and_action_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "captured" else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
-            spec = PausedSessionNextPausedEventCaptureExecutionSpec.from_context(context)
-            result = PausedSessionNextPausedEventCaptureExecutionManager().capture(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"paused_session_next_paused_event_capture_execution_status={result.status}",
-                f"paused_session_next_paused_event_capture_execution_reason={result.reason or ''}",
-                f"paused_session_next_paused_event_capture_execution_method={execution.get('method')}",
-                f"paused_session_next_paused_event_capture_execution_execute_requested={execution.get('execute_capture_requested', False)}",
-                f"paused_session_next_paused_event_capture_execution_review_approved={execution.get('review_approved', False)}",
-                f"paused_session_next_paused_event_capture_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"paused_session_next_paused_event_capture_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"paused_session_next_paused_event_capture_execution_callframe_count={execution.get('callframe_count', 0)}",
-                f"paused_session_next_paused_event_capture_execution_live_callframe_recovery_ready={execution.get('live_callframe_recovery_ready', False)}",
-                f"paused_session_next_paused_event_capture_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_next_paused_event_capture_execution_browser_resumed={policy.get('browser_resumed', False)}",
-                f"paused_session_next_paused_event_capture_execution_debugger_stepped={policy.get('debugger_stepped', False)}",
-                f"paused_session_next_paused_event_capture_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"paused_session_next_paused_event_capture_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_next_paused_event_capture_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_next_paused_event_capture_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-next-paused-event-capture-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated one-shot Debugger.paused event capture after one-action execution.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "pause_session_id": execution.get("pause_session_id"),
-                        "method": execution.get("method"),
-                        "paused_event_captured": execution.get("paused_event_captured", False),
-                        "callframe_count": execution.get("callframe_count", 0),
-                        "live_callframe_recovery_ready": execution.get("live_callframe_recovery_ready", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["capture_next_paused_event"] if result.status == "captured" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "captured" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_next_paused_event_capture_execution",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "captured" else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_cross_process_one_action_request(protection_name, context):
-            spec = PausedSessionCrossProcessOneActionSpec.from_context(context)
-            result = PausedSessionCrossProcessOneActionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"paused_session_cross_process_one_action_status={result.status}",
-                f"paused_session_cross_process_one_action_reason={result.reason or ''}",
-                f"paused_session_cross_process_one_action_requested_action={execution.get('requested_action')}",
-                f"paused_session_cross_process_one_action_method={execution.get('method')}",
-                f"paused_session_cross_process_one_action_target_id={execution.get('target_id')}",
-                f"paused_session_cross_process_one_action_attached_session_id_present={bool(execution.get('attached_session_id'))}",
-                f"paused_session_cross_process_one_action_live_callframe_id_present={bool(execution.get('live_callframe_id'))}",
-                f"paused_session_cross_process_one_action_recovery_status={execution.get('live_callframe_recovery_status')}",
-                f"paused_session_cross_process_one_action_live_callframe_recovered={execution.get('live_callframe_recovered', False)}",
-                f"paused_session_cross_process_one_action_execute_requested={execution.get('execute_action_requested', False)}",
-                f"paused_session_cross_process_one_action_review_approved={execution.get('review_approved', False)}",
-                f"paused_session_cross_process_one_action_live_action_executed={execution.get('live_action_executed', False)}",
-                f"paused_session_cross_process_one_action_browser_resumed={execution.get('browser_resumed', False)}",
-                f"paused_session_cross_process_one_action_debugger_stepped={execution.get('debugger_stepped', False)}",
-                f"paused_session_cross_process_one_action_callframe_evaluated={execution.get('callframe_evaluated', False)}",
-                f"paused_session_cross_process_one_action_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_cross_process_one_action_debugger_domain_enabled={execution.get('debugger_domain_enabled', False)}",
-                f"paused_session_cross_process_one_action_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_cross_process_one_action_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_cross_process_one_action_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"paused_session_cross_process_one_action_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-cross-process-one-action-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime review-gated one-action execution after live callFrame recovery.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "pause_session_id": execution.get("pause_session_id"),
-                        "requested_action": execution.get("requested_action"),
-                        "method": execution.get("method"),
-                        "target_id": execution.get("target_id"),
-                        "attached_session_id_present": bool(execution.get("attached_session_id")),
-                        "live_callframe_id_present": bool(execution.get("live_callframe_id")),
-                        "live_action_executed": execution.get("live_action_executed", False),
-                        "browser_resumed": execution.get("browser_resumed", False),
-                        "debugger_stepped": execution.get("debugger_stepped", False),
-                        "callframe_evaluated": execution.get("callframe_evaluated", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_cross_process_one_action"] if result.status == "executed" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_cross_process_one_action_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_paused_session_cross_process_attach_probe_request(protection_name, context):
-            spec = PausedSessionCrossProcessAttachProbeSpec.from_context(context)
-            result = PausedSessionCrossProcessAttachProbeManager().probe(page, spec)
-            probe = result.probe if isinstance(result.probe, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = probe.get("blockers") if isinstance(probe.get("blockers"), list) else []
-            verification = [
-                f"paused_session_cross_process_attach_probe_status={result.status}",
-                f"paused_session_cross_process_attach_probe_reason={result.reason or ''}",
-                f"paused_session_cross_process_attach_probe_target_id={probe.get('target_id')}",
-                f"paused_session_cross_process_attach_probe_requested_action={probe.get('requested_action')}",
-                f"paused_session_cross_process_attach_probe_execute_requested={probe.get('execute_probe_requested', False)}",
-                f"paused_session_cross_process_attach_probe_review_approved={probe.get('review_approved', False)}",
-                f"paused_session_cross_process_attach_probe_attach_attempted={probe.get('attach_attempted', False)}",
-                f"paused_session_cross_process_attach_probe_target_attached={probe.get('target_attached', False)}",
-                f"paused_session_cross_process_attach_probe_target_detached={probe.get('target_detached', False)}",
-                f"paused_session_cross_process_attach_probe_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"paused_session_cross_process_attach_probe_debugger_domain_enabled={probe.get('debugger_domain_enabled', False)}",
-                f"paused_session_cross_process_attach_probe_live_callframe_recovered={probe.get('live_callframe_recovered', False)}",
-                f"paused_session_cross_process_attach_probe_live_action_executed={probe.get('live_action_executed', False)}",
-                f"paused_session_cross_process_attach_probe_browser_resumed={probe.get('browser_resumed', False)}",
-                f"paused_session_cross_process_attach_probe_debugger_stepped={probe.get('debugger_stepped', False)}",
-                f"paused_session_cross_process_attach_probe_callframe_evaluated={probe.get('callframe_evaluated', False)}",
-                f"paused_session_cross_process_attach_probe_calls_mcp={policy.get('calls_mcp', False)}",
-                f"paused_session_cross_process_attach_probe_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"paused_session_cross_process_attach_probe_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"paused_session_cross_process_attach_probe_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/paused-session-cross-process-attach-probe.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime reviewed cross-process paused-session Target.attachToTarget probe.",
-                    metadata={
-                        "status": result.status,
-                        "probe_status": probe.get("status"),
-                        "pause_session_id": probe.get("pause_session_id"),
-                        "requested_action": probe.get("requested_action"),
-                        "target_id": probe.get("target_id"),
-                        "execute_probe_requested": probe.get("execute_probe_requested", False),
-                        "review_approved": probe.get("review_approved", False),
-                        "attach_attempted": probe.get("attach_attempted", False),
-                        "target_attached": probe.get("target_attached", False),
-                        "target_detached": probe.get("target_detached", False),
-                        "debugger_domain_enabled": probe.get("debugger_domain_enabled", False),
-                        "live_callframe_recovered": probe.get("live_callframe_recovered", False),
-                        "live_action_executed": probe.get("live_action_executed", False),
-                        "browser_resumed": probe.get("browser_resumed", False),
-                        "debugger_stepped": probe.get("debugger_stepped", False),
-                        "callframe_evaluated": probe.get("callframe_evaluated", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            if result.status == "attached":
-                status = ExecutionStatus.SUCCESS
-                next_action = probe.get("next_action") or "review_attach_probe_result_before_live_callframe_recovery"
-                applied_actions = ["probe_paused_session_cross_process_attach"]
-                confidence = ConfidenceLevel.MEDIUM
-            elif result.status in {"ready_for_review", "review_required", "blocked"}:
-                status = ExecutionStatus.PARTIAL
-                next_action = probe.get("next_action") or "approve_cross_process_attach_probe"
-                applied_actions = []
-                confidence = ConfidenceLevel.LOW
-            else:
-                status = ExecutionStatus.FAILED
-                next_action = probe.get("next_action") or "inspect_cross_process_attach_probe_error"
-                applied_actions = ["probe_paused_session_cross_process_attach"] if probe.get("attach_attempted") else []
-                confidence = ConfidenceLevel.LOW
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=applied_actions,
-                verification=verification,
-                status=status,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=confidence,
-            )
-        if self._is_paused_session_request(protection_name, context):
-            spec = PausedSessionActionSpec.from_context(context)
-            result = BreakpointManager().run_paused_session_action(page, spec)
-            pause_session_id = spec.pause_session_id if spec else "<missing>"
-            paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
-            debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
-            callframe_count = len(result.callframes)
-            callframe_evaluation_count = len(result.callframe_evaluations)
-            mutation_audit_count = len(result.mutation_audit)
-            debugger_action_count = len(result.debugger_actions)
-            debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
-            debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
-            continued_from_store = bool(result.debugger_session.get("continued_from_store")) if isinstance(result.debugger_session, dict) else False
-            continued_from_registry = bool(result.debugger_session.get("continued_from_registry")) if isinstance(result.debugger_session, dict) else False
-            live_continuation_available = bool(
-                result.debugger_session.get(
-                    "live_continuation_available",
-                    continued_from_registry and debugger_lifecycle != "resumed",
-                )
-            ) if isinstance(result.debugger_session, dict) else False
-            preflight = result.continuation_preflight if isinstance(result.continuation_preflight, dict) else {}
-            preflight_status = str(preflight.get("status") or "unknown")
-            preflight_source = str(preflight.get("source") or "unknown")
-            preflight_live_available = bool(preflight.get("live_continuation_available", live_continuation_available))
-            preflight_reason = preflight.get("blocked_reason") or preflight.get("reason")
-            paused_session_metadata = {
-                "continued_from_store": continued_from_store,
-                "continued_from_registry": continued_from_registry,
-                "live_continuation_available": live_continuation_available,
-                "preflight_status": preflight_status,
-                "preflight_source": preflight_source,
-                "preflight_live_continuation_available": preflight_live_available,
-            }
-            if preflight_reason:
-                paused_session_metadata["preflight_reason"] = preflight_reason
-            verification = [
-                f"paused_session_status={result.status}",
-                f"paused_session_paused_status={paused_status or 'unknown'}",
-                f"paused_session_lifecycle={debugger_lifecycle or 'unknown'}",
-                f"paused_session_callframe_count={callframe_count}",
-                f"paused_session_callframe_evaluation_count={callframe_evaluation_count}",
-                f"paused_session_mutation_audit_count={mutation_audit_count}",
-                f"paused_session_debugger_action_count={debugger_action_count}",
-                f"paused_session_debugger_session_count={debugger_session_count}",
-                f"paused_session_debugger_timeline_count={debugger_timeline_count}",
-                f"paused_session_continued_from_store={continued_from_store}",
-                f"paused_session_continued_from_registry={continued_from_registry}",
-                f"paused_session_live_continuation_available={live_continuation_available}",
-                f"paused_session_preflight_status={preflight_status}",
-                f"paused_session_preflight_source={preflight_source}",
-                f"paused_session_preflight_live_continuation_available={preflight_live_available}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if preflight_reason:
-                verification.append(f"paused_session_preflight_reason={preflight_reason}")
-            if preflight.get("requested_action"):
-                verification.append(f"paused_session_preflight_requested_action={preflight['requested_action']}")
-            if result.error:
-                verification.append(f"paused_session_error={result.error}")
-            if result.reason:
-                verification.append(f"paused_session_reason={result.reason}")
-            artifact_paths = []
-            if result.debugger_session:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/debugger-session.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime retained paused-session snapshot.",
-                        metadata={
-                            "status": result.debugger_session.get("status", "unknown"),
-                            "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
-                            "paused_event_count": result.debugger_session.get("paused_event_count", 0),
-                            **paused_session_metadata,
-                        },
-                    )
-                )
-            if result.debugger_timeline:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/debugger-timeline.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime retained paused-session timeline.",
-                        metadata={
-                            "status": result.debugger_timeline.get("status", "unknown"),
-                            "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
-                            "entry_count": result.debugger_timeline.get("entry_count", 0),
-                            "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
-                            **paused_session_metadata,
-                        },
-                    )
-                )
-            if result.callframes:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/callframes.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime retained paused-session callframes.",
-                        metadata={"count": callframe_count, **paused_session_metadata},
-                    )
-                )
-            if result.callframe_evaluations:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/callframe-evaluations.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime retained paused-session callframe evaluations.",
-                        metadata={"count": callframe_evaluation_count, **paused_session_metadata},
-                    )
-                )
-            if result.mutation_audit:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/mutation-audit.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime retained paused-session mutation audit.",
-                        metadata={"count": mutation_audit_count, **paused_session_metadata},
-                    )
-                )
-            if result.debugger_actions:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/debugger-actions.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime retained paused-session debugger actions.",
-                        metadata={"count": debugger_action_count, **paused_session_metadata},
-                    )
-            )
-            next_action = "inspect_debugger_session" if debugger_lifecycle != "resumed" else "continue_recon"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[f"run_paused_session_action:{pause_session_id}"] if result.status == "success" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
-            )
+        _paused_result = self._dispatch_paused_session(protection_name, context, page)
+        if _paused_result is not None:
+            return _paused_result
         if self._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
             spec = ClosureWrapperContinuationNextIterationExecutionSpec.from_context(context)
             result = ClosureWrapperContinuationNextIterationExecutionManager().execute(page, spec)
@@ -10635,6 +9945,701 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
             )
         return None
 
+    def _dispatch_paused_session(self, protection_name: str, context: dict, page: Any) -> ProtectionResult | None:
+        if self._is_paused_session_automatic_loop_multi_iteration_execution_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopMultiIterationExecutionSpec.from_context(context)
+            result = PausedSessionAutomaticLoopMultiIterationExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_automatic_loop_multi_iteration_execution_status={result.status}",
+                f"paused_session_automatic_loop_multi_iteration_execution_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_multi_iteration_execution_transaction_id={execution.get('transaction_id')}",
+                f"paused_session_automatic_loop_multi_iteration_execution_journal_id={execution.get('journal_id')}",
+                f"paused_session_automatic_loop_multi_iteration_execution_requested_budget={execution.get('requested_iteration_budget', 0)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"paused_session_automatic_loop_multi_iteration_execution_execute_requested={execution.get('execute_multi_iteration_requested', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_executed_iterations={execution.get('executed_iteration_count', 0)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_checkpoint_required={execution.get('checkpoint_required', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_mvp={execution.get('automatic_multi_iteration_execution_mvp', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_executor_implemented={execution.get('automatic_multi_iteration_executor_implemented', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_bounded_one_iteration_only={policy.get('bounded_one_iteration_only', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_automatic_multi_iteration_loop={policy.get('automatic_multi_iteration_loop', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_multi_iteration_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit-review-only paused-session automatic-loop bounded multi-iteration execution result MVP.",
+                    metadata={
+                        "status": result.status,
+                        "transaction_id": execution.get("transaction_id"),
+                        "journal_id": execution.get("journal_id"),
+                        "requested_iteration_budget": execution.get("requested_iteration_budget", 0),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "execute_requested": execution.get("execute_multi_iteration_requested", False),
+                        "review_approved": execution.get("review_approved", False),
+                        "executed_iteration_count": execution.get("executed_iteration_count", 0),
+                        "checkpoint_required": execution.get("checkpoint_required", False),
+                        "automatic_multi_iteration_execution_mvp": execution.get("automatic_multi_iteration_execution_mvp", False),
+                        "automatic_multi_iteration_executor_implemented": execution.get("automatic_multi_iteration_executor_implemented", False),
+                        "automatic_multi_iteration_loop": execution.get("automatic_multi_iteration_loop", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_paused_session_automatic_loop_multi_iteration"] if result.status in {"partial", "completed"} else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status in {"partial", "completed", "not_run"} else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_paused_session_automatic_loop_multi_iteration_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status in {"partial", "completed"} else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_next_iteration_execution_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopNextIterationExecutionSpec.from_context(context)
+            result = PausedSessionAutomaticLoopNextIterationExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_automatic_loop_next_iteration_execution_status={result.status}",
+                f"paused_session_automatic_loop_next_iteration_execution_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_next_iteration_execution_transaction_id={execution.get('transaction_id')}",
+                f"paused_session_automatic_loop_next_iteration_execution_journal_id={execution.get('journal_id')}",
+                f"paused_session_automatic_loop_next_iteration_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"paused_session_automatic_loop_next_iteration_execution_execute_requested={execution.get('execute_next_iteration_requested', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_executed_iterations={execution.get('executed_iteration_count', 0)}",
+                f"paused_session_automatic_loop_next_iteration_execution_checkpoint_required={execution.get('checkpoint_required', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_bounded_one_iteration_only={policy.get('bounded_one_iteration_only', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_next_iteration_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-next-iteration-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit-review-only paused-session automatic-loop next-iteration execution result.",
+                    metadata={
+                        "status": result.status,
+                        "transaction_id": execution.get("transaction_id"),
+                        "journal_id": execution.get("journal_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "execute_requested": execution.get("execute_next_iteration_requested", False),
+                        "review_approved": execution.get("review_approved", False),
+                        "executed_iteration_count": execution.get("executed_iteration_count", 0),
+                        "checkpoint_required": execution.get("checkpoint_required", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_paused_session_automatic_loop_next_iteration"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status in {"executed", "ready_for_review"} else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_paused_session_automatic_loop_next_iteration_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_automatic_loop_execution_request(protection_name, context):
+            spec = PausedSessionAutomaticLoopExecutionSpec.from_context(context)
+            result = PausedSessionAutomaticLoopExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_automatic_loop_execution_status={result.status}",
+                f"paused_session_automatic_loop_execution_reason={result.reason or ''}",
+                f"paused_session_automatic_loop_execution_transaction_id={execution.get('transaction_id')}",
+                f"paused_session_automatic_loop_execution_journal_id={execution.get('journal_id')}",
+                f"paused_session_automatic_loop_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"paused_session_automatic_loop_execution_execute_requested={execution.get('execute_automatic_loop_requested', False)}",
+                f"paused_session_automatic_loop_execution_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_automatic_loop_execution_executed_iterations={execution.get('executed_iteration_count', 0)}",
+                f"paused_session_automatic_loop_execution_checkpoint_required={execution.get('checkpoint_required', False)}",
+                f"paused_session_automatic_loop_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_automatic_loop_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_automatic_loop_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_automatic_loop_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_automatic_loop_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_automatic_loop_execution_bounded_one_iteration_only={policy.get('bounded_one_iteration_only', False)}",
+                f"paused_session_automatic_loop_execution_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_automatic_loop_execution_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_automatic_loop_execution_long_lived_session={policy.get('long_lived_cross_process_session_managed', False)}",
+                f"paused_session_automatic_loop_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_automatic_loop_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_automatic_loop_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-automatic-loop-execution-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime explicit-review-only bounded paused-session automatic-loop execution result.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "transaction_id": execution.get("transaction_id"),
+                        "journal_id": execution.get("journal_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "executed_iteration_count": execution.get("executed_iteration_count", 0),
+                        "checkpoint_required": execution.get("checkpoint_required", False),
+                        "delegated_executor_artifact": execution.get("delegated_executor_artifact"),
+                        "loop_advanced": execution.get("loop_advanced", False),
+                        "queue_advanced": execution.get("queue_advanced", False),
+                        "long_lived_session_managed": execution.get("long_lived_session_managed", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["paused_session_automatic_loop_one_iteration"] if execution.get("automatic_loop_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_paused_session_automatic_loop_execution_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_multi_step_loop_execution_request(protection_name, context):
+            spec = PausedSessionMultiStepLoopExecutionSpec.from_context(context)
+            result = PausedSessionMultiStepLoopExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_multi_step_loop_execution_status={result.status}",
+                f"paused_session_multi_step_loop_execution_reason={result.reason or ''}",
+                f"paused_session_multi_step_loop_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"paused_session_multi_step_loop_execution_selected_method={execution.get('selected_method')}",
+                f"paused_session_multi_step_loop_execution_execute_requested={execution.get('execute_loop_iteration_requested', False)}",
+                f"paused_session_multi_step_loop_execution_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_multi_step_loop_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_multi_step_loop_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_multi_step_loop_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_multi_step_loop_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_multi_step_loop_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_multi_step_loop_execution_loop_iteration_executed={policy.get('multi_step_loop_iteration_executed', False)}",
+                f"paused_session_multi_step_loop_execution_loop_advanced={policy.get('loop_advanced', False)}",
+                f"paused_session_multi_step_loop_execution_queue_advanced={policy.get('queue_advanced', False)}",
+                f"paused_session_multi_step_loop_execution_automatic_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"paused_session_multi_step_loop_execution_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
+                f"paused_session_multi_step_loop_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_multi_step_loop_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_multi_step_loop_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-multi-step-loop-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated one-iteration paused-session loop execution.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "loop_id": execution.get("loop_id"),
+                        "workflow_id": execution.get("workflow_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_method": execution.get("selected_method"),
+                        "executor_artifact": execution.get("executor_artifact"),
+                        "paused_event_captured": execution.get("paused_event_captured", False),
+                        "manual_checkpoint_required_after_iteration": execution.get("manual_checkpoint_required_after_iteration", False),
+                        "loop_advanced": execution.get("loop_advanced", False),
+                        "queue_advanced": execution.get("queue_advanced", False),
+                        "automatic_multi_step_loop": execution.get("automatic_multi_step_loop", False),
+                        "automatic_wrapper_continuation": execution.get("automatic_wrapper_continuation", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["paused_session_loop_iteration"] if execution.get("multi_step_loop_iteration_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_paused_session_loop_execution_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_multi_step_continuation_execution_request(protection_name, context):
+            spec = PausedSessionMultiStepContinuationExecutionSpec.from_context(context)
+            result = PausedSessionMultiStepContinuationExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_multi_step_continuation_execution_status={result.status}",
+                f"paused_session_multi_step_continuation_execution_reason={result.reason or ''}",
+                f"paused_session_multi_step_continuation_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"paused_session_multi_step_continuation_execution_selected_method={execution.get('selected_method')}",
+                f"paused_session_multi_step_continuation_execution_execute_requested={execution.get('execute_iteration_requested', False)}",
+                f"paused_session_multi_step_continuation_execution_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_multi_step_continuation_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_multi_step_continuation_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_multi_step_continuation_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_multi_step_continuation_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_multi_step_continuation_execution_multi_step_executed={policy.get('multi_step_continuation_executed', False)}",
+                f"paused_session_multi_step_continuation_execution_automatic_loop={policy.get('automatic_loop', False)}",
+                f"paused_session_multi_step_continuation_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_multi_step_continuation_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_multi_step_continuation_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-multi-step-continuation-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated one-iteration multi-step paused-session continuation execution.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "workflow_id": execution.get("workflow_id"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_method": execution.get("selected_method"),
+                        "executor_artifact": execution.get("executor_artifact"),
+                        "paused_event_captured": execution.get("paused_event_captured", False),
+                        "manual_checkpoint_required_after_step": execution.get("manual_checkpoint_required_after_step", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["multi_step_continuation_iteration"] if execution.get("multi_step_iteration_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_multi_step_continuation_execution_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_pre_action_subscribe_and_action_request(protection_name, context):
+            spec = PausedSessionPreActionSubscribeAndActionSpec.from_context(context)
+            result = PausedSessionPreActionSubscribeAndActionManager().execute(page, spec)
+            orchestration = result.orchestration if isinstance(result.orchestration, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = orchestration.get("blockers") if isinstance(orchestration.get("blockers"), list) else []
+            verification = [
+                f"paused_session_pre_action_subscribe_and_action_status={result.status}",
+                f"paused_session_pre_action_subscribe_and_action_reason={result.reason or ''}",
+                f"paused_session_pre_action_subscribe_and_action_requested_action={orchestration.get('requested_action')}",
+                f"paused_session_pre_action_subscribe_and_action_method={orchestration.get('method')}",
+                f"paused_session_pre_action_subscribe_and_action_execute_requested={orchestration.get('execute_orchestration_requested', False)}",
+                f"paused_session_pre_action_subscribe_and_action_review_approved={orchestration.get('review_approved', False)}",
+                f"paused_session_pre_action_subscribe_and_action_pre_subscribed={orchestration.get('pre_action_event_subscribed', False)}",
+                f"paused_session_pre_action_subscribe_and_action_action_after_subscription={orchestration.get('action_sent_after_subscription', False)}",
+                f"paused_session_pre_action_subscribe_and_action_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_pre_action_subscribe_and_action_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_pre_action_subscribe_and_action_callframe_count={orchestration.get('callframe_count', 0)}",
+                f"paused_session_pre_action_subscribe_and_action_live_callframe_recovery_ready={orchestration.get('live_callframe_recovery_ready', False)}",
+                f"paused_session_pre_action_subscribe_and_action_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_pre_action_subscribe_and_action_browser_resumed={policy.get('browser_resumed', False)}",
+                f"paused_session_pre_action_subscribe_and_action_debugger_stepped={policy.get('debugger_stepped', False)}",
+                f"paused_session_pre_action_subscribe_and_action_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_pre_action_subscribe_and_action_multi_step_continuation={policy.get('multi_step_continuation', False)}",
+                f"paused_session_pre_action_subscribe_and_action_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_pre_action_subscribe_and_action_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_pre_action_subscribe_and_action_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"paused_session_pre_action_subscribe_and_action_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-pre-action-subscribe-and-action.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated pre-action Debugger.paused subscription plus one cross-process action orchestration.",
+                    metadata={
+                        "status": result.status,
+                        "orchestration_status": orchestration.get("status"),
+                        "pause_session_id": orchestration.get("pause_session_id"),
+                        "target_id": orchestration.get("target_id"),
+                        "requested_action": orchestration.get("requested_action"),
+                        "method": orchestration.get("method"),
+                        "pre_action_event_subscribed": orchestration.get("pre_action_event_subscribed", False),
+                        "action_sent_after_subscription": orchestration.get("action_sent_after_subscription", False),
+                        "paused_event_captured": orchestration.get("paused_event_captured", False),
+                        "callframe_count": orchestration.get("callframe_count", 0),
+                        "live_callframe_recovery_ready": orchestration.get("live_callframe_recovery_ready", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["pre_action_subscribe_and_action"] if orchestration.get("pre_action_event_subscribed") or orchestration.get("live_action_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "captured" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=orchestration.get("next_action") or "inspect_pre_action_subscribe_and_action_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "captured" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_next_paused_event_capture_execution_request(protection_name, context):
+            spec = PausedSessionNextPausedEventCaptureExecutionSpec.from_context(context)
+            result = PausedSessionNextPausedEventCaptureExecutionManager().capture(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_next_paused_event_capture_execution_status={result.status}",
+                f"paused_session_next_paused_event_capture_execution_reason={result.reason or ''}",
+                f"paused_session_next_paused_event_capture_execution_method={execution.get('method')}",
+                f"paused_session_next_paused_event_capture_execution_execute_requested={execution.get('execute_capture_requested', False)}",
+                f"paused_session_next_paused_event_capture_execution_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_next_paused_event_capture_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"paused_session_next_paused_event_capture_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"paused_session_next_paused_event_capture_execution_callframe_count={execution.get('callframe_count', 0)}",
+                f"paused_session_next_paused_event_capture_execution_live_callframe_recovery_ready={execution.get('live_callframe_recovery_ready', False)}",
+                f"paused_session_next_paused_event_capture_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_next_paused_event_capture_execution_browser_resumed={policy.get('browser_resumed', False)}",
+                f"paused_session_next_paused_event_capture_execution_debugger_stepped={policy.get('debugger_stepped', False)}",
+                f"paused_session_next_paused_event_capture_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"paused_session_next_paused_event_capture_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_next_paused_event_capture_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_next_paused_event_capture_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-next-paused-event-capture-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated one-shot Debugger.paused event capture after one-action execution.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "pause_session_id": execution.get("pause_session_id"),
+                        "method": execution.get("method"),
+                        "paused_event_captured": execution.get("paused_event_captured", False),
+                        "callframe_count": execution.get("callframe_count", 0),
+                        "live_callframe_recovery_ready": execution.get("live_callframe_recovery_ready", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["capture_next_paused_event"] if result.status == "captured" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "captured" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_next_paused_event_capture_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "captured" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_cross_process_one_action_request(protection_name, context):
+            spec = PausedSessionCrossProcessOneActionSpec.from_context(context)
+            result = PausedSessionCrossProcessOneActionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"paused_session_cross_process_one_action_status={result.status}",
+                f"paused_session_cross_process_one_action_reason={result.reason or ''}",
+                f"paused_session_cross_process_one_action_requested_action={execution.get('requested_action')}",
+                f"paused_session_cross_process_one_action_method={execution.get('method')}",
+                f"paused_session_cross_process_one_action_target_id={execution.get('target_id')}",
+                f"paused_session_cross_process_one_action_attached_session_id_present={bool(execution.get('attached_session_id'))}",
+                f"paused_session_cross_process_one_action_live_callframe_id_present={bool(execution.get('live_callframe_id'))}",
+                f"paused_session_cross_process_one_action_recovery_status={execution.get('live_callframe_recovery_status')}",
+                f"paused_session_cross_process_one_action_live_callframe_recovered={execution.get('live_callframe_recovered', False)}",
+                f"paused_session_cross_process_one_action_execute_requested={execution.get('execute_action_requested', False)}",
+                f"paused_session_cross_process_one_action_review_approved={execution.get('review_approved', False)}",
+                f"paused_session_cross_process_one_action_live_action_executed={execution.get('live_action_executed', False)}",
+                f"paused_session_cross_process_one_action_browser_resumed={execution.get('browser_resumed', False)}",
+                f"paused_session_cross_process_one_action_debugger_stepped={execution.get('debugger_stepped', False)}",
+                f"paused_session_cross_process_one_action_callframe_evaluated={execution.get('callframe_evaluated', False)}",
+                f"paused_session_cross_process_one_action_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_cross_process_one_action_debugger_domain_enabled={execution.get('debugger_domain_enabled', False)}",
+                f"paused_session_cross_process_one_action_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_cross_process_one_action_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_cross_process_one_action_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"paused_session_cross_process_one_action_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-cross-process-one-action-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime review-gated one-action execution after live callFrame recovery.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "pause_session_id": execution.get("pause_session_id"),
+                        "requested_action": execution.get("requested_action"),
+                        "method": execution.get("method"),
+                        "target_id": execution.get("target_id"),
+                        "attached_session_id_present": bool(execution.get("attached_session_id")),
+                        "live_callframe_id_present": bool(execution.get("live_callframe_id")),
+                        "live_action_executed": execution.get("live_action_executed", False),
+                        "browser_resumed": execution.get("browser_resumed", False),
+                        "debugger_stepped": execution.get("debugger_stepped", False),
+                        "callframe_evaluated": execution.get("callframe_evaluated", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_cross_process_one_action"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_cross_process_one_action_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_paused_session_cross_process_attach_probe_request(protection_name, context):
+            spec = PausedSessionCrossProcessAttachProbeSpec.from_context(context)
+            result = PausedSessionCrossProcessAttachProbeManager().probe(page, spec)
+            probe = result.probe if isinstance(result.probe, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = probe.get("blockers") if isinstance(probe.get("blockers"), list) else []
+            verification = [
+                f"paused_session_cross_process_attach_probe_status={result.status}",
+                f"paused_session_cross_process_attach_probe_reason={result.reason or ''}",
+                f"paused_session_cross_process_attach_probe_target_id={probe.get('target_id')}",
+                f"paused_session_cross_process_attach_probe_requested_action={probe.get('requested_action')}",
+                f"paused_session_cross_process_attach_probe_execute_requested={probe.get('execute_probe_requested', False)}",
+                f"paused_session_cross_process_attach_probe_review_approved={probe.get('review_approved', False)}",
+                f"paused_session_cross_process_attach_probe_attach_attempted={probe.get('attach_attempted', False)}",
+                f"paused_session_cross_process_attach_probe_target_attached={probe.get('target_attached', False)}",
+                f"paused_session_cross_process_attach_probe_target_detached={probe.get('target_detached', False)}",
+                f"paused_session_cross_process_attach_probe_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"paused_session_cross_process_attach_probe_debugger_domain_enabled={probe.get('debugger_domain_enabled', False)}",
+                f"paused_session_cross_process_attach_probe_live_callframe_recovered={probe.get('live_callframe_recovered', False)}",
+                f"paused_session_cross_process_attach_probe_live_action_executed={probe.get('live_action_executed', False)}",
+                f"paused_session_cross_process_attach_probe_browser_resumed={probe.get('browser_resumed', False)}",
+                f"paused_session_cross_process_attach_probe_debugger_stepped={probe.get('debugger_stepped', False)}",
+                f"paused_session_cross_process_attach_probe_callframe_evaluated={probe.get('callframe_evaluated', False)}",
+                f"paused_session_cross_process_attach_probe_calls_mcp={policy.get('calls_mcp', False)}",
+                f"paused_session_cross_process_attach_probe_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"paused_session_cross_process_attach_probe_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"paused_session_cross_process_attach_probe_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/paused-session-cross-process-attach-probe.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime reviewed cross-process paused-session Target.attachToTarget probe.",
+                    metadata={
+                        "status": result.status,
+                        "probe_status": probe.get("status"),
+                        "pause_session_id": probe.get("pause_session_id"),
+                        "requested_action": probe.get("requested_action"),
+                        "target_id": probe.get("target_id"),
+                        "execute_probe_requested": probe.get("execute_probe_requested", False),
+                        "review_approved": probe.get("review_approved", False),
+                        "attach_attempted": probe.get("attach_attempted", False),
+                        "target_attached": probe.get("target_attached", False),
+                        "target_detached": probe.get("target_detached", False),
+                        "debugger_domain_enabled": probe.get("debugger_domain_enabled", False),
+                        "live_callframe_recovered": probe.get("live_callframe_recovered", False),
+                        "live_action_executed": probe.get("live_action_executed", False),
+                        "browser_resumed": probe.get("browser_resumed", False),
+                        "debugger_stepped": probe.get("debugger_stepped", False),
+                        "callframe_evaluated": probe.get("callframe_evaluated", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            if result.status == "attached":
+                status = ExecutionStatus.SUCCESS
+                next_action = probe.get("next_action") or "review_attach_probe_result_before_live_callframe_recovery"
+                applied_actions = ["probe_paused_session_cross_process_attach"]
+                confidence = ConfidenceLevel.MEDIUM
+            elif result.status in {"ready_for_review", "review_required", "blocked"}:
+                status = ExecutionStatus.PARTIAL
+                next_action = probe.get("next_action") or "approve_cross_process_attach_probe"
+                applied_actions = []
+                confidence = ConfidenceLevel.LOW
+            else:
+                status = ExecutionStatus.FAILED
+                next_action = probe.get("next_action") or "inspect_cross_process_attach_probe_error"
+                applied_actions = ["probe_paused_session_cross_process_attach"] if probe.get("attach_attempted") else []
+                confidence = ConfidenceLevel.LOW
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=applied_actions,
+                verification=verification,
+                status=status,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=confidence,
+            )
+        if self._is_paused_session_request(protection_name, context):
+            spec = PausedSessionActionSpec.from_context(context)
+            result = BreakpointManager().run_paused_session_action(page, spec)
+            pause_session_id = spec.pause_session_id if spec else "<missing>"
+            paused_status = result.paused.get("status") if isinstance(result.paused, dict) else None
+            debugger_lifecycle = result.debugger_session.get("lifecycle") if isinstance(result.debugger_session, dict) else None
+            callframe_count = len(result.callframes)
+            callframe_evaluation_count = len(result.callframe_evaluations)
+            mutation_audit_count = len(result.mutation_audit)
+            debugger_action_count = len(result.debugger_actions)
+            debugger_session_count = result.debugger_session.get("paused_event_count", 0) if isinstance(result.debugger_session, dict) else 0
+            debugger_timeline_count = result.debugger_timeline.get("entry_count", 0) if isinstance(result.debugger_timeline, dict) else 0
+            continued_from_store = bool(result.debugger_session.get("continued_from_store")) if isinstance(result.debugger_session, dict) else False
+            continued_from_registry = bool(result.debugger_session.get("continued_from_registry")) if isinstance(result.debugger_session, dict) else False
+            live_continuation_available = bool(
+                result.debugger_session.get(
+                    "live_continuation_available",
+                    continued_from_registry and debugger_lifecycle != "resumed",
+                )
+            ) if isinstance(result.debugger_session, dict) else False
+            preflight = result.continuation_preflight if isinstance(result.continuation_preflight, dict) else {}
+            preflight_status = str(preflight.get("status") or "unknown")
+            preflight_source = str(preflight.get("source") or "unknown")
+            preflight_live_available = bool(preflight.get("live_continuation_available", live_continuation_available))
+            preflight_reason = preflight.get("blocked_reason") or preflight.get("reason")
+            paused_session_metadata = {
+                "continued_from_store": continued_from_store,
+                "continued_from_registry": continued_from_registry,
+                "live_continuation_available": live_continuation_available,
+                "preflight_status": preflight_status,
+                "preflight_source": preflight_source,
+                "preflight_live_continuation_available": preflight_live_available,
+            }
+            if preflight_reason:
+                paused_session_metadata["preflight_reason"] = preflight_reason
+            verification = [
+                f"paused_session_status={result.status}",
+                f"paused_session_paused_status={paused_status or 'unknown'}",
+                f"paused_session_lifecycle={debugger_lifecycle or 'unknown'}",
+                f"paused_session_callframe_count={callframe_count}",
+                f"paused_session_callframe_evaluation_count={callframe_evaluation_count}",
+                f"paused_session_mutation_audit_count={mutation_audit_count}",
+                f"paused_session_debugger_action_count={debugger_action_count}",
+                f"paused_session_debugger_session_count={debugger_session_count}",
+                f"paused_session_debugger_timeline_count={debugger_timeline_count}",
+                f"paused_session_continued_from_store={continued_from_store}",
+                f"paused_session_continued_from_registry={continued_from_registry}",
+                f"paused_session_live_continuation_available={live_continuation_available}",
+                f"paused_session_preflight_status={preflight_status}",
+                f"paused_session_preflight_source={preflight_source}",
+                f"paused_session_preflight_live_continuation_available={preflight_live_available}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if preflight_reason:
+                verification.append(f"paused_session_preflight_reason={preflight_reason}")
+            if preflight.get("requested_action"):
+                verification.append(f"paused_session_preflight_requested_action={preflight['requested_action']}")
+            if result.error:
+                verification.append(f"paused_session_error={result.error}")
+            if result.reason:
+                verification.append(f"paused_session_reason={result.reason}")
+            artifact_paths = []
+            if result.debugger_session:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-session.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session snapshot.",
+                        metadata={
+                            "status": result.debugger_session.get("status", "unknown"),
+                            "lifecycle": result.debugger_session.get("lifecycle", "unknown"),
+                            "paused_event_count": result.debugger_session.get("paused_event_count", 0),
+                            **paused_session_metadata,
+                        },
+                    )
+                )
+            if result.debugger_timeline:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-timeline.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session timeline.",
+                        metadata={
+                            "status": result.debugger_timeline.get("status", "unknown"),
+                            "lifecycle": result.debugger_timeline.get("lifecycle", "unknown"),
+                            "entry_count": result.debugger_timeline.get("entry_count", 0),
+                            "paused_event_count": result.debugger_timeline.get("paused_event_count", 0),
+                            **paused_session_metadata,
+                        },
+                    )
+                )
+            if result.callframes:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/callframes.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session callframes.",
+                        metadata={"count": callframe_count, **paused_session_metadata},
+                    )
+                )
+            if result.callframe_evaluations:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/callframe-evaluations.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session callframe evaluations.",
+                        metadata={"count": callframe_evaluation_count, **paused_session_metadata},
+                    )
+                )
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session mutation audit.",
+                        metadata={"count": mutation_audit_count, **paused_session_metadata},
+                    )
+                )
+            if result.debugger_actions:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/debugger-actions.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime retained paused-session debugger actions.",
+                        metadata={"count": debugger_action_count, **paused_session_metadata},
+                    )
+            )
+            next_action = "inspect_debugger_session" if debugger_lifecycle != "resumed" else "continue_recon"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[f"run_paused_session_action:{pause_session_id}"] if result.status == "success" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        return None
 
     def _dispatch_heap(self, protection_name: str, context: dict) -> "ProtectionResult | None":
         if self._is_heap_snapshot_path_to_root_executor_request(protection_name, context):
