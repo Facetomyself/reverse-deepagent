@@ -3752,6 +3752,8 @@ class SourceMapHookCandidateRefinementSpec:
     bundler_symbol_scope: dict[str, Any] = field(default_factory=dict)
     source_map_consumer_materialization: dict[str, Any] = field(default_factory=dict)
     source_map_typed_payload_preflight: dict[str, Any] = field(default_factory=dict)
+    source_map_lookup: dict[str, Any] = field(default_factory=dict)
+    source_map_source_content: dict[str, Any] = field(default_factory=dict)
     module_discovery: dict[str, Any] = field(default_factory=dict)
     module_candidates: list[dict[str, Any]] = field(default_factory=list)
     function_paths: tuple[str, ...] = ()
@@ -3795,16 +3797,34 @@ class SourceMapHookCandidateRefinementSpec:
             "source_map_consumer_typed_payload_preflight",
             "sourceMapConsumerTypedPayloadPreflight",
         )
+        lookup = cls._object_alias(
+            context,
+            "source_map_lookup",
+            "source-map-lookup",
+            "sourceMapLookup",
+            "source_map_lookup_descriptor",
+            "sourceMapLookupDescriptor",
+        )
+        source_content = cls._object_alias(
+            context,
+            "source_map_source_content",
+            "source-map-source-content",
+            "sourceMapSourceContent",
+            "source_map_sources_content",
+            "sourceMapSourcesContent",
+        )
         module_discovery = cls._object_alias(context, "module_discovery", "module-discovery", "moduleDiscovery")
         module_candidates = cls._dict_list_alias(context, "module_candidates", "moduleCandidates", "modules")
         if not module_candidates and isinstance(module_discovery.get("modules"), list):
             module_candidates = [item for item in module_discovery["modules"] if isinstance(item, dict)]
-        if not requested and not any((symbol_scope, materialization, preflight, module_candidates)):
+        if not requested and not any((symbol_scope, materialization, preflight, lookup, source_content, module_candidates)):
             return None
         return cls(
             bundler_symbol_scope=symbol_scope,
             source_map_consumer_materialization=materialization,
             source_map_typed_payload_preflight=preflight,
+            source_map_lookup=lookup,
+            source_map_source_content=source_content,
             module_discovery=module_discovery,
             module_candidates=module_candidates,
             function_paths=cls._string_tuple_alias(context.get("function_paths", context.get("functionPaths", context.get("runtime_function_paths", context.get("runtimeFunctionPaths"))))),
@@ -3899,6 +3919,7 @@ class SourceMapHookCandidateRefinementManager:
         source_status = self._source_status(spec)
         blockers = self._input_blockers(spec, source_status)
         candidates = [] if blockers else self._candidates(spec, source_status)
+        candidates = self._rank_candidates(candidates, source_status)
         if not candidates and not blockers:
             blockers.append("source_map_hook_candidate_refinement_no_candidates")
         warnings = self._warnings(spec, candidates)
@@ -3917,6 +3938,7 @@ class SourceMapHookCandidateRefinementManager:
             "function_path_count": len(spec.function_paths),
             "candidate_count": len(candidates),
             "ready_for_hook_install_review_count": sum(1 for item in candidates if item.get("ready_for_hook_install_review")),
+            "candidate_ranking": self._ranking_summary(candidates, status=status),
             "candidates": candidates,
             "blockers": list(dict.fromkeys(blockers)),
             "warnings": list(dict.fromkeys(warnings)),
@@ -3940,6 +3962,7 @@ class SourceMapHookCandidateRefinementManager:
             "function_path_count": 0,
             "candidate_count": 0,
             "ready_for_hook_install_review_count": 0,
+            "candidate_ranking": self._ranking_summary([], status=status),
             "candidates": [],
             "blockers": [reason],
             "warnings": [],
@@ -3955,13 +3978,25 @@ class SourceMapHookCandidateRefinementManager:
         hook_readiness = symbol_scope.get("hook_readiness") if isinstance(symbol_scope.get("hook_readiness"), dict) else {}
         scope_candidates = symbol_scope.get("scope_candidates") if isinstance(symbol_scope.get("scope_candidates"), list) else []
         typed_hook_payload_ready = cls._typed_hook_payload_ready(spec)
+        source_content = spec.source_map_source_content
+        content_summary = source_content.get("content_summary") if isinstance(source_content.get("content_summary"), dict) else {}
         return {
             "bundler_symbol_scope_present": bool(symbol_scope),
             "bundler_symbol_scope_status": cls._status(symbol_scope),
+            "source_map_lookup_present": bool(spec.source_map_lookup),
+            "source_map_lookup_status": cls._status(spec.source_map_lookup),
             "symbol_name": spec.requested_symbol or str(request.get("symbol_name") or ""),
             "original_source": str(request.get("original_source") or ""),
             "bundler_kind": classification.get("bundler_kind") or "unknown",
             "scope_candidate_count": len([item for item in scope_candidates if isinstance(item, dict)]),
+            "lookup_mapping_found": bool(spec.source_map_lookup.get("mapping_found")),
+            "source_content_present": bool(source_content),
+            "source_content_status": cls._status(source_content),
+            "source_content_available": bool(source_content.get("source_content_available") or content_summary.get("available")),
+            "source_content_digest_present": bool(content_summary.get("sha256") or source_content.get("sha256")),
+            "source_content_line_count_present": bool(content_summary.get("line_count")),
+            "raw_source_content_exported": bool(source_content.get("raw_content_exported") or content_summary.get("raw_content_exported")),
+            "source_content_preview_exported": bool(source_content.get("preview_exported") or content_summary.get("preview_exported")),
             "source_logpoint_reviewable": bool(hook_readiness.get("source_logpoint_reviewable")),
             "function_hook_requires_runtime_candidate": bool(hook_readiness.get("function_hook_requires_runtime_candidate", True)),
             "module_hook_requires_module_candidate": bool(hook_readiness.get("module_hook_requires_module_candidate", True)),
@@ -3993,8 +4028,14 @@ class SourceMapHookCandidateRefinementManager:
             blockers.append("bundler_symbol_scope_not_ready")
         if source_status["scope_candidate_count"] <= 0:
             blockers.append("bundler_symbol_scope_has_no_scope_candidates")
+        if source_status.get("raw_source_content_exported"):
+            blockers.append("source_map_source_content_raw_export_detected")
+        if source_status.get("source_content_preview_exported"):
+            blockers.append("source_map_source_content_preview_export_detected")
         for label, payload in (
             ("bundler_symbol_scope", spec.bundler_symbol_scope),
+            ("source_map_lookup", spec.source_map_lookup),
+            ("source_map_source_content", spec.source_map_source_content),
             ("source_map_consumer_materialization", spec.source_map_consumer_materialization),
             ("source_map_typed_payload_preflight", spec.source_map_typed_payload_preflight),
         ):
@@ -4101,6 +4142,138 @@ class SourceMapHookCandidateRefinementManager:
                 }
             )
         return candidates
+
+    @classmethod
+    def _rank_candidates(cls, candidates: list[dict[str, Any]], source_status: dict[str, Any]) -> list[dict[str, Any]]:
+        ranked: list[dict[str, Any]] = []
+        for original_index, candidate in enumerate(candidates):
+            item = dict(candidate)
+            item["ranking"] = cls._candidate_ranking(item, source_status, original_index=original_index)
+            ranked.append(item)
+        ranked.sort(key=lambda item: (-int(item["ranking"]["score"]), str(item["ranking"]["stable_sort_key"])))
+        for rank, item in enumerate(ranked, start=1):
+            item["ranking"] = dict(item["ranking"], rank=rank)
+        return ranked
+
+    @classmethod
+    def _candidate_ranking(cls, candidate: dict[str, Any], source_status: dict[str, Any], *, original_index: int) -> dict[str, Any]:
+        reasons: list[str] = []
+        score = 10
+        hook_kind = str(candidate.get("hook_kind") or "")
+        symbol = str(candidate.get("symbol_name") or source_status.get("symbol_name") or "").strip()
+        generated_location = candidate.get("generated_location") if isinstance(candidate.get("generated_location"), dict) else {}
+        quality = cls._generated_location_quality(generated_location)
+
+        if candidate.get("ready_for_hook_install_review"):
+            score += 25
+            reasons.append("review_input_ready")
+        else:
+            reasons.append("review_input_missing")
+        if hook_kind == "function" and isinstance(candidate.get("source_scope_candidate"), dict):
+            score += 20
+            reasons.append("symbol_scope_function_candidate")
+        if hook_kind == "module":
+            score += 18
+            reasons.append("module_candidate_available")
+        if symbol:
+            score += 10
+            reasons.append("symbol_name_present")
+        else:
+            reasons.append("symbol_name_missing")
+        score += quality["score_delta"]
+        reasons.extend(quality["reasons"])
+        if source_status.get("source_content_available"):
+            score += 8
+            reasons.append("sources_content_metadata_available")
+        else:
+            reasons.append("sources_content_metadata_missing")
+        if source_status.get("source_content_digest_present"):
+            score += 4
+            reasons.append("sources_content_digest_available")
+        if source_status.get("lookup_mapping_found"):
+            score += 6
+            reasons.append("source_map_lookup_mapping_found")
+        if source_status.get("typed_hook_payload_ready"):
+            score += 5
+            reasons.append("typed_hook_payload_ready")
+        if hook_kind == "module" and candidate.get("export_name") == symbol and symbol:
+            score += 6
+            reasons.append("module_export_matches_symbol")
+
+        score = max(0, min(100, score))
+        stable_sort_key = cls._ranking_sort_key(candidate, original_index)
+        return {
+            "schema_version": "reverse-deepagent.source-map-candidate-ranking.v1",
+            "rank": None,
+            "score": score,
+            "score_normalized": round(score / 100, 2),
+            "label": "high" if score >= 80 else "medium" if score >= 55 else "low",
+            "reasons": list(dict.fromkeys(reasons)),
+            "stable_sort_key": stable_sort_key,
+            "deterministic": True,
+            "review_only": True,
+            "applied": False,
+            "installs_hook": False,
+            "uses_raw_source": False,
+            "signals": {
+                "lookup_mapping_found": bool(source_status.get("lookup_mapping_found")),
+                "symbol_scope_present": bool(source_status.get("bundler_symbol_scope_present")),
+                "sources_content_metadata_available": bool(source_status.get("source_content_available")),
+                "sources_content_digest_available": bool(source_status.get("source_content_digest_present")),
+                "generated_location_quality": quality["quality"],
+                "ready_for_review": bool(candidate.get("ready_for_hook_install_review")),
+            },
+        }
+
+    @staticmethod
+    def _generated_location_quality(location: dict[str, Any]) -> dict[str, Any]:
+        strategy = str(location.get("strategy") or "")
+        line_number = location.get("line_number")
+        column_number = location.get("column_number")
+        has_line = isinstance(line_number, int)
+        has_column = isinstance(column_number, int)
+        if strategy in {"source_map_generated_exact", "source_map_exact", "exact", "generated_exact"}:
+            return {"quality": "exact", "score_delta": 20, "reasons": ["generated_location_exact"]}
+        if strategy in {"source_map_name"}:
+            return {"quality": "named", "score_delta": 16, "reasons": ["generated_location_from_name_mapping"]}
+        if "bias" in strategy or "glb" in strategy:
+            return {"quality": "biased", "score_delta": 11, "reasons": ["generated_location_bias_fallback"]}
+        if has_line and has_column:
+            return {"quality": "line_column", "score_delta": 8, "reasons": ["generated_line_column_available"]}
+        if has_line:
+            return {"quality": "line_only", "score_delta": 4, "reasons": ["generated_line_available", "generated_column_missing"]}
+        return {"quality": "missing", "score_delta": 0, "reasons": ["generated_location_missing"]}
+
+    @staticmethod
+    def _ranking_sort_key(candidate: dict[str, Any], original_index: int) -> str:
+        seed = "|".join(
+            [
+                str(candidate.get("candidate_id") or ""),
+                str(candidate.get("candidate_kind") or ""),
+                str(candidate.get("hook_kind") or ""),
+                str(candidate.get("symbol_name") or ""),
+                str(candidate.get("module_id") or ""),
+                str(candidate.get("export_name") or ""),
+                str(original_index),
+            ]
+        )
+        return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _ranking_summary(candidates: list[dict[str, Any]], *, status: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-candidate-ranking-summary.v1",
+            "status": status,
+            "review_only": True,
+            "ranked_candidate_count": len(candidates),
+            "deterministic": True,
+            "candidate_order": [item.get("candidate_id") for item in candidates],
+            "top_candidate_id": candidates[0].get("candidate_id") if candidates else "",
+            "top_score": candidates[0].get("ranking", {}).get("score") if candidates else 0,
+            "raw_source_exported": False,
+            "applies_debugger_or_hook": False,
+            "next_action": "review_ranked_source_map_hook_candidates" if candidates else "provide_rankable_source_map_hook_candidate_signals",
+        }
 
     @staticmethod
     def _candidate_id(kind: str, symbol: str, scope_candidate: dict[str, Any], index: int) -> str:
@@ -4599,6 +4772,7 @@ class SourceMapDebuggerCandidateReviewSpec:
     source_map_lookup: dict[str, Any] = field(default_factory=dict)
     source_map_consumer_materialization: dict[str, Any] = field(default_factory=dict)
     source_map_typed_payload_preflight: dict[str, Any] = field(default_factory=dict)
+    source_map_source_content: dict[str, Any] = field(default_factory=dict)
     debugger_location_candidates: list[dict[str, Any]] = field(default_factory=list)
     requested_symbol: str = ""
     script_url: str = ""
@@ -4649,6 +4823,14 @@ class SourceMapDebuggerCandidateReviewSpec:
             "source_map_consumer_typed_payload_preflight",
             "sourceMapConsumerTypedPayloadPreflight",
         )
+        source_content = cls._object_alias(
+            context,
+            "source_map_source_content",
+            "source-map-source-content",
+            "sourceMapSourceContent",
+            "source_map_sources_content",
+            "sourceMapSourcesContent",
+        )
         debugger_locations = cls._dict_list_alias(
             context,
             "debugger_location_candidates",
@@ -4658,13 +4840,14 @@ class SourceMapDebuggerCandidateReviewSpec:
             "debugger_locations",
             "debuggerLocations",
         )
-        if not requested and not any((symbol_scope, lookup, materialization, preflight, debugger_locations)):
+        if not requested and not any((symbol_scope, lookup, materialization, preflight, source_content, debugger_locations)):
             return None
         return cls(
             bundler_symbol_scope=symbol_scope,
             source_map_lookup=lookup,
             source_map_consumer_materialization=materialization,
             source_map_typed_payload_preflight=preflight,
+            source_map_source_content=source_content,
             debugger_location_candidates=debugger_locations,
             requested_symbol=str(context.get("symbol_name", context.get("symbolName", context.get("function_name", context.get("functionName", "")))) or ""),
             script_url=str(
@@ -4728,6 +4911,7 @@ class SourceMapDebuggerCandidateReviewManager:
         source_status = self._source_status(spec)
         blockers = self._input_blockers(spec, source_status)
         candidates = [] if blockers else self._candidates(spec, source_status)
+        candidates = self._rank_candidates(candidates, source_status)
         if not candidates and not blockers:
             blockers.append("source_map_debugger_candidate_review_no_candidates")
         warnings = self._warnings(candidates)
@@ -4746,6 +4930,7 @@ class SourceMapDebuggerCandidateReviewManager:
             "explicit_debugger_location_candidate_count": len(spec.debugger_location_candidates),
             "candidate_count": len(candidates),
             "ready_for_debugger_location_review_count": sum(1 for item in candidates if item.get("ready_for_debugger_location_review")),
+            "candidate_ranking": self._ranking_summary(candidates, status=status),
             "candidates": candidates,
             "blockers": list(dict.fromkeys(blockers)),
             "warnings": list(dict.fromkeys(warnings)),
@@ -4769,6 +4954,7 @@ class SourceMapDebuggerCandidateReviewManager:
             "explicit_debugger_location_candidate_count": 0,
             "candidate_count": 0,
             "ready_for_debugger_location_review_count": 0,
+            "candidate_ranking": self._ranking_summary([], status=status),
             "candidates": [],
             "blockers": [reason],
             "warnings": [],
@@ -4782,6 +4968,8 @@ class SourceMapDebuggerCandidateReviewManager:
         request = symbol_scope.get("symbol_request") if isinstance(symbol_scope.get("symbol_request"), dict) else {}
         classification = symbol_scope.get("bundler_classification") if isinstance(symbol_scope.get("bundler_classification"), dict) else {}
         scope_candidates = symbol_scope.get("scope_candidates") if isinstance(symbol_scope.get("scope_candidates"), list) else []
+        source_content = spec.source_map_source_content
+        content_summary = source_content.get("content_summary") if isinstance(source_content.get("content_summary"), dict) else {}
         return {
             "bundler_symbol_scope_present": bool(symbol_scope),
             "bundler_symbol_scope_status": cls._status(symbol_scope),
@@ -4793,6 +4981,14 @@ class SourceMapDebuggerCandidateReviewManager:
             "bundler_kind": classification.get("bundler_kind") or "unknown",
             "scope_candidate_count": len([item for item in scope_candidates if isinstance(item, dict)]),
             "lookup_candidate_count": len(cls._lookup_locations(spec.source_map_lookup)),
+            "lookup_mapping_found": bool(spec.source_map_lookup.get("mapping_found")) or bool(cls._lookup_locations(spec.source_map_lookup)),
+            "source_content_present": bool(source_content),
+            "source_content_status": cls._status(source_content),
+            "source_content_available": bool(source_content.get("source_content_available") or content_summary.get("available")),
+            "source_content_digest_present": bool(content_summary.get("sha256") or source_content.get("sha256")),
+            "source_content_line_count_present": bool(content_summary.get("line_count")),
+            "raw_source_content_exported": bool(source_content.get("raw_content_exported") or content_summary.get("raw_content_exported")),
+            "source_content_preview_exported": bool(source_content.get("preview_exported") or content_summary.get("preview_exported")),
             "typed_debugger_payload_ready": cls._typed_debugger_payload_ready(spec),
             "materialization_status": cls._status(spec.source_map_consumer_materialization),
             "typed_payload_preflight_status": cls._status(spec.source_map_typed_payload_preflight),
@@ -4830,9 +5026,14 @@ class SourceMapDebuggerCandidateReviewManager:
             source_ready = True
         if not source_ready:
             blockers.append("source_map_debugger_candidate_source_evidence_missing")
+        if source_status.get("raw_source_content_exported"):
+            blockers.append("source_map_source_content_raw_export_detected")
+        if source_status.get("source_content_preview_exported"):
+            blockers.append("source_map_source_content_preview_export_detected")
         for label, payload in (
             ("bundler_symbol_scope", spec.bundler_symbol_scope),
             ("source_map_lookup", spec.source_map_lookup),
+            ("source_map_source_content", spec.source_map_source_content),
             ("source_map_consumer_materialization", spec.source_map_consumer_materialization),
             ("source_map_typed_payload_preflight", spec.source_map_typed_payload_preflight),
         ):
@@ -4956,6 +5157,141 @@ class SourceMapDebuggerCandidateReviewManager:
             if isinstance(value, list):
                 candidates.extend(item for item in value if isinstance(item, dict))
         return candidates
+
+    @classmethod
+    def _rank_candidates(cls, candidates: list[dict[str, Any]], source_status: dict[str, Any]) -> list[dict[str, Any]]:
+        ranked: list[dict[str, Any]] = []
+        for original_index, candidate in enumerate(candidates):
+            item = dict(candidate)
+            item["ranking"] = cls._candidate_ranking(item, source_status, original_index=original_index)
+            ranked.append(item)
+        ranked.sort(key=lambda item: (-int(item["ranking"]["score"]), str(item["ranking"]["stable_sort_key"])))
+        for rank, item in enumerate(ranked, start=1):
+            item["ranking"] = dict(item["ranking"], rank=rank)
+        return ranked
+
+    @classmethod
+    def _candidate_ranking(cls, candidate: dict[str, Any], source_status: dict[str, Any], *, original_index: int) -> dict[str, Any]:
+        reasons: list[str] = []
+        score = 10
+        kind = str(candidate.get("candidate_kind") or "")
+        symbol = str(candidate.get("symbol_name") or source_status.get("symbol_name") or "").strip()
+        generated_location = candidate.get("generated_location") if isinstance(candidate.get("generated_location"), dict) else {}
+        quality = cls._generated_location_quality(generated_location)
+
+        if candidate.get("ready_for_debugger_location_review"):
+            score += 25
+            reasons.append("debugger_location_review_input_ready")
+        else:
+            reasons.append("debugger_location_review_input_missing")
+        if kind == "source-map-lookup-location":
+            score += 22
+            reasons.append("source_map_lookup_candidate")
+        elif kind == "source-map-symbol-generated-location":
+            score += 18
+            reasons.append("symbol_scope_generated_location_candidate")
+        elif kind == "reviewed-debugger-location":
+            score += 12
+            reasons.append("reviewer_provided_location_candidate")
+        if symbol:
+            score += 8
+            reasons.append("symbol_name_present")
+        else:
+            reasons.append("symbol_name_missing")
+        score += quality["score_delta"]
+        reasons.extend(quality["reasons"])
+        if source_status.get("source_content_available"):
+            score += 8
+            reasons.append("sources_content_metadata_available")
+        else:
+            reasons.append("sources_content_metadata_missing")
+        if source_status.get("source_content_digest_present"):
+            score += 4
+            reasons.append("sources_content_digest_available")
+        if source_status.get("lookup_mapping_found"):
+            score += 6
+            reasons.append("source_map_lookup_mapping_found")
+        else:
+            reasons.append("source_map_lookup_mapping_missing")
+        if source_status.get("typed_debugger_payload_ready"):
+            score += 5
+            reasons.append("typed_debugger_payload_ready")
+
+        score = max(0, min(100, score))
+        stable_sort_key = cls._ranking_sort_key(candidate, original_index)
+        return {
+            "schema_version": "reverse-deepagent.source-map-candidate-ranking.v1",
+            "rank": None,
+            "score": score,
+            "score_normalized": round(score / 100, 2),
+            "label": "high" if score >= 80 else "medium" if score >= 55 else "low",
+            "reasons": list(dict.fromkeys(reasons)),
+            "stable_sort_key": stable_sort_key,
+            "deterministic": True,
+            "review_only": True,
+            "applied": False,
+            "installs_debugger": False,
+            "uses_raw_source": False,
+            "signals": {
+                "lookup_mapping_found": bool(source_status.get("lookup_mapping_found")),
+                "symbol_scope_present": bool(source_status.get("bundler_symbol_scope_present")),
+                "sources_content_metadata_available": bool(source_status.get("source_content_available")),
+                "sources_content_digest_available": bool(source_status.get("source_content_digest_present")),
+                "generated_location_quality": quality["quality"],
+                "ready_for_review": bool(candidate.get("ready_for_debugger_location_review")),
+            },
+        }
+
+    @staticmethod
+    def _generated_location_quality(location: dict[str, Any]) -> dict[str, Any]:
+        strategy = str(location.get("strategy") or "")
+        line_number = location.get("line_number")
+        column_number = location.get("column_number")
+        has_line = isinstance(line_number, int)
+        has_column = isinstance(column_number, int)
+        if strategy in {"source_map_generated_exact", "source_map_exact", "source_map_generated_indexed_exact", "exact", "generated_exact"}:
+            return {"quality": "exact", "score_delta": 20, "reasons": ["generated_location_exact"]}
+        if strategy in {"source_map_name"}:
+            return {"quality": "named", "score_delta": 16, "reasons": ["generated_location_from_name_mapping"]}
+        if "bias" in strategy or "glb" in strategy:
+            return {"quality": "biased", "score_delta": 11, "reasons": ["generated_location_bias_fallback"]}
+        if has_line and has_column:
+            return {"quality": "line_column", "score_delta": 8, "reasons": ["generated_line_column_available"]}
+        if has_line:
+            return {"quality": "line_only", "score_delta": 4, "reasons": ["generated_line_available", "generated_column_missing"]}
+        return {"quality": "missing", "score_delta": 0, "reasons": ["generated_location_missing"]}
+
+    @staticmethod
+    def _ranking_sort_key(candidate: dict[str, Any], original_index: int) -> str:
+        generated_location = candidate.get("generated_location") if isinstance(candidate.get("generated_location"), dict) else {}
+        seed = "|".join(
+            [
+                str(candidate.get("candidate_id") or ""),
+                str(candidate.get("candidate_kind") or ""),
+                str(candidate.get("symbol_name") or ""),
+                str(generated_location.get("url_pattern") or ""),
+                str(generated_location.get("line_number") or ""),
+                str(generated_location.get("column_number") or ""),
+                str(original_index),
+            ]
+        )
+        return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _ranking_summary(candidates: list[dict[str, Any]], *, status: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-candidate-ranking-summary.v1",
+            "status": status,
+            "review_only": True,
+            "ranked_candidate_count": len(candidates),
+            "deterministic": True,
+            "candidate_order": [item.get("candidate_id") for item in candidates],
+            "top_candidate_id": candidates[0].get("candidate_id") if candidates else "",
+            "top_score": candidates[0].get("ranking", {}).get("score") if candidates else 0,
+            "raw_source_exported": False,
+            "applies_debugger_or_hook": False,
+            "next_action": "review_ranked_source_map_debugger_candidates" if candidates else "provide_rankable_source_map_debugger_candidate_signals",
+        }
 
     @staticmethod
     def _candidate_id(kind: str, symbol: str, url_pattern: str, line_number: int, column_number: int | None, index: int) -> str:
