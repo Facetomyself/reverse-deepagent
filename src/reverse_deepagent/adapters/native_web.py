@@ -840,800 +840,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         _paused_result = self._dispatch_paused_session(protection_name, context, page)
         if _paused_result is not None:
             return _paused_result
-        if self._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
-            spec = ClosureWrapperContinuationNextIterationExecutionSpec.from_context(context)
-            result = ClosureWrapperContinuationNextIterationExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"closure_wrapper_continuation_next_iteration_execution_status={result.status}",
-                f"closure_wrapper_continuation_next_iteration_execution_reason={result.reason or ''}",
-                f"closure_wrapper_continuation_next_iteration_execution_wrapper_strategy={execution.get('wrapper_strategy') or 'unknown'}",
-                f"closure_wrapper_continuation_next_iteration_execution_function_name={execution.get('function_name') or 'unknown'}",
-                f"closure_wrapper_continuation_next_iteration_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"closure_wrapper_continuation_next_iteration_execution_selected_method={execution.get('selected_method')}",
-                f"closure_wrapper_continuation_next_iteration_execution_execute_requested={execution.get('execute_iteration_requested', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_review_approved={execution.get('review_approved', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_live_callframe_recovered={policy.get('live_callframe_recovered', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_next_iteration_executed={policy.get('wrapper_next_iteration_executed', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_queue_advanced={policy.get('queue_advanced', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_loop_advanced={policy.get('loop_advanced', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"closure_wrapper_continuation_next_iteration_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-continuation-next-iteration-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Review-gated Native Web closure wrapper continuation next-iteration execution result.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "next_iteration_plan_id": execution.get("next_iteration_plan_id"),
-                        "source_execution_plan_id": execution.get("source_execution_plan_id"),
-                        "workflow_id": execution.get("workflow_id"),
-                        "wrapper_strategy": execution.get("wrapper_strategy"),
-                        "function_name": execution.get("function_name"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_method": execution.get("selected_method"),
-                        "execute_iteration_requested": execution.get("execute_iteration_requested", False),
-                        "review_approved": execution.get("review_approved", False),
-                        "wrapper_next_iteration_executed": execution.get("wrapper_next_iteration_executed", False),
-                        "paused_event_captured": execution.get("paused_event_captured", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_closure_wrapper_next_iteration"] if result.status == "executed" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"blocked", "ready_for_review", "review_required"} else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_closure_wrapper_continuation_next_iteration_execution",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
-            spec = ClosureWrapperContinuationNextIterationPlanSpec.from_context(context)
-            result = ClosureWrapperContinuationNextIterationPlanManager().plan(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
-            verification = [
-                f"closure_wrapper_continuation_next_iteration_plan_status={result.status}",
-                f"closure_wrapper_continuation_next_iteration_plan_reason={result.reason or ''}",
-                f"closure_wrapper_continuation_next_iteration_plan_ready_for_review={plan.get('ready_for_review', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_wrapper_strategy={plan.get('wrapper_strategy') or 'unknown'}",
-                f"closure_wrapper_continuation_next_iteration_plan_function_name={plan.get('function_name') or 'unknown'}",
-                f"closure_wrapper_continuation_next_iteration_plan_step_index={plan.get('next_iteration_step_index')}",
-                f"closure_wrapper_continuation_next_iteration_plan_method={plan.get('next_iteration_method')}",
-                f"closure_wrapper_continuation_next_iteration_plan_fresh_live_callframe_required={plan.get('fresh_live_callframe_required_before_execution', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_wrapper_installed={policy.get('wrapper_installed', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_wrapper_restored={policy.get('wrapper_restored', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_live_callframe_recovered={policy.get('live_callframe_recovered', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_queue_advanced={policy.get('queue_advanced', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"closure_wrapper_continuation_next_iteration_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-continuation-next-iteration-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Review-only Native Web closure wrapper continuation next-iteration plan descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "plan_status": plan.get("status"),
-                        "ready_for_review": plan.get("ready_for_review", False),
-                        "plan_id": plan.get("plan_id"),
-                        "source_execution_plan_id": plan.get("source_execution_plan_id"),
-                        "source_workflow_id": plan.get("source_workflow_id"),
-                        "wrapper_strategy": plan.get("wrapper_strategy"),
-                        "function_name": plan.get("function_name"),
-                        "next_iteration_step_index": plan.get("next_iteration_step_index"),
-                        "next_iteration_method": plan.get("next_iteration_method"),
-                        "fresh_live_callframe_required_before_execution": plan.get("fresh_live_callframe_required_before_execution", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "inspect_closure_wrapper_continuation_next_iteration_plan",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
-            spec = ClosureWrapperContinuationCheckpointSpec.from_context(context)
-            result = ClosureWrapperContinuationCheckpointManager().checkpoint(spec)
-            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else []
-            verification = [
-                f"closure_wrapper_continuation_checkpoint_status={result.status}",
-                f"closure_wrapper_continuation_checkpoint_reason={result.reason or ''}",
-                f"closure_wrapper_continuation_checkpoint_ready_for_review={checkpoint.get('ready_for_review', False)}",
-                f"closure_wrapper_continuation_checkpoint_wrapper_strategy={checkpoint.get('wrapper_strategy') or 'unknown'}",
-                f"closure_wrapper_continuation_checkpoint_function_name={checkpoint.get('function_name') or 'unknown'}",
-                f"closure_wrapper_continuation_checkpoint_event_count={checkpoint.get('post_execution_event_count', 0)}",
-                f"closure_wrapper_continuation_checkpoint_paused_session_checkpoint_status={checkpoint.get('paused_session_checkpoint_status')}",
-                f"closure_wrapper_continuation_checkpoint_paused_session_checkpoint_ready={checkpoint.get('paused_session_checkpoint_ready', False)}",
-                f"closure_wrapper_continuation_checkpoint_next_iteration_available={checkpoint.get('next_iteration_available', False)}",
-                f"closure_wrapper_continuation_checkpoint_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_continuation_checkpoint_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"closure_wrapper_continuation_checkpoint_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"closure_wrapper_continuation_checkpoint_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_continuation_checkpoint_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_continuation_checkpoint_wrapper_installed={policy.get('wrapper_installed', False)}",
-                f"closure_wrapper_continuation_checkpoint_wrapper_restored={policy.get('wrapper_restored', False)}",
-                f"closure_wrapper_continuation_checkpoint_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
-                f"closure_wrapper_continuation_checkpoint_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
-                f"closure_wrapper_continuation_checkpoint_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
-                f"closure_wrapper_continuation_checkpoint_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
-                f"closure_wrapper_continuation_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
-                f"closure_wrapper_continuation_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"closure_wrapper_continuation_checkpoint_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-continuation-checkpoint.json",
-                    kind=ArtifactKind.JSON,
-                    description="Read-only Native Web closure wrapper continuation follow-up checkpoint descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "checkpoint_status": checkpoint.get("status"),
-                        "ready_for_review": checkpoint.get("ready_for_review", False),
-                        "plan_id": checkpoint.get("plan_id"),
-                        "workflow_id": checkpoint.get("workflow_id"),
-                        "wrapper_strategy": checkpoint.get("wrapper_strategy"),
-                        "function_name": checkpoint.get("function_name"),
-                        "post_execution_event_count": checkpoint.get("post_execution_event_count", 0),
-                        "paused_session_checkpoint_status": checkpoint.get("paused_session_checkpoint_status"),
-                        "paused_session_checkpoint_ready": checkpoint.get("paused_session_checkpoint_ready", False),
-                        "next_iteration_available": checkpoint.get("next_iteration_available", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=checkpoint.get("next_action") or "inspect_closure_wrapper_continuation_checkpoint",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_continuation_execution_request(protection_name, context):
-            spec = ClosureWrapperContinuationExecutionSpec.from_context(context)
-            result = ClosureWrapperContinuationExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
-            verification = [
-                f"closure_wrapper_continuation_execution_status={result.status}",
-                f"closure_wrapper_continuation_execution_reason={result.reason or ''}",
-                f"closure_wrapper_continuation_execution_wrapper_strategy={execution.get('wrapper_strategy') or 'unknown'}",
-                f"closure_wrapper_continuation_execution_function_name={execution.get('function_name') or 'unknown'}",
-                f"closure_wrapper_continuation_execution_selected_step_index={execution.get('selected_step_index')}",
-                f"closure_wrapper_continuation_execution_selected_method={execution.get('selected_method')}",
-                f"closure_wrapper_continuation_execution_execute_requested={execution.get('execute_iteration_requested', False)}",
-                f"closure_wrapper_continuation_execution_review_approved={execution.get('review_approved', False)}",
-                f"closure_wrapper_continuation_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_continuation_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"closure_wrapper_continuation_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"closure_wrapper_continuation_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_continuation_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_continuation_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
-                f"closure_wrapper_continuation_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
-                f"closure_wrapper_continuation_execution_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
-                f"closure_wrapper_continuation_execution_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
-                f"closure_wrapper_continuation_execution_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
-                f"closure_wrapper_continuation_execution_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
-                f"closure_wrapper_continuation_execution_calls_mcp={policy.get('calls_mcp', False)}",
-                f"closure_wrapper_continuation_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"closure_wrapper_continuation_execution_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-continuation-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Review-gated Native Web closure wrapper continuation one-iteration execution result.",
-                    metadata={
-                        "status": result.status,
-                        "execution_status": execution.get("status"),
-                        "plan_id": execution.get("plan_id"),
-                        "workflow_id": execution.get("workflow_id"),
-                        "wrapper_strategy": execution.get("wrapper_strategy"),
-                        "function_name": execution.get("function_name"),
-                        "selected_step_index": execution.get("selected_step_index"),
-                        "selected_method": execution.get("selected_method"),
-                        "executor_artifact": execution.get("executor_artifact"),
-                        "paused_event_captured": execution.get("paused_event_captured", False),
-                        "manual_checkpoint_required_after_step": execution.get("manual_checkpoint_required_after_step", False),
-                        "post_execution_event_harvest_required": execution.get("post_execution_event_harvest_required", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_reviewed_closure_wrapper_continuation_iteration"] if execution.get("wrapper_continuation_iteration_executed") else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out", "blocked"} else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "inspect_closure_wrapper_continuation_execution",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
-            spec = ClosureWrapperContinuationExecutionPlanSpec.from_context(context)
-            result = ClosureWrapperContinuationExecutionPlanManager().plan(spec)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
-            strategy = plan.get("execution_strategy") if isinstance(plan.get("execution_strategy"), dict) else {}
-            gates = plan.get("review_gates") if isinstance(plan.get("review_gates"), dict) else {}
-            verification = [
-                f"closure_wrapper_continuation_execution_plan_status={result.status}",
-                f"closure_wrapper_continuation_execution_plan_reason={result.reason or ''}",
-                f"closure_wrapper_continuation_execution_plan_ready_for_review={plan.get('ready_for_review', False)}",
-                f"closure_wrapper_continuation_execution_plan_wrapper_installed={plan.get('same_process_wrapper_installed', False)}",
-                f"closure_wrapper_continuation_execution_plan_restore_plan_available={plan.get('restore_plan_available', False)}",
-                f"closure_wrapper_continuation_execution_plan_cross_process_wrapper_execution_supported={strategy.get('cross_process_wrapper_execution_supported', False)}",
-                f"closure_wrapper_continuation_execution_plan_automatic_wrapper_continuation={strategy.get('automatic_wrapper_continuation_supported', False)}",
-                f"closure_wrapper_continuation_execution_plan_automatic_multi_step_loop={strategy.get('automatic_multi_step_loop_supported', False)}",
-                f"closure_wrapper_continuation_execution_plan_requires_execution_approval={gates.get('requires_explicit_execution_approval', False)}",
-                f"closure_wrapper_continuation_execution_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_continuation_execution_plan_debugger_event_subscribed={policy.get('debugger_event_subscribed', False)}",
-                f"closure_wrapper_continuation_execution_plan_paused_event_captured={policy.get('paused_event_captured', False)}",
-                f"closure_wrapper_continuation_execution_plan_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_continuation_execution_plan_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_continuation_execution_plan_wrapper_installed_by_manager={policy.get('wrapper_installed', False)}",
-                f"closure_wrapper_continuation_execution_plan_wrapper_restored={policy.get('wrapper_restored', False)}",
-                f"closure_wrapper_continuation_execution_plan_calls_mcp={policy.get('calls_mcp', False)}",
-                f"closure_wrapper_continuation_execution_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"closure_wrapper_continuation_execution_plan_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-continuation-execution-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Read-only Native Web closure wrapper continuation execution plan descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "ready_for_review": plan.get("ready_for_review", False),
-                        "plan_id": plan.get("plan_id"),
-                        "wrapper_strategy": plan.get("wrapper_strategy"),
-                        "same_process_wrapper_installed": plan.get("same_process_wrapper_installed", False),
-                        "restore_plan_available": plan.get("restore_plan_available", False),
-                        "cross_process_wrapper_execution_supported": strategy.get("cross_process_wrapper_execution_supported", False),
-                        "automatic_wrapper_continuation": strategy.get("automatic_wrapper_continuation_supported", False),
-                        "automatic_multi_step_loop": strategy.get("automatic_multi_step_loop_supported", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=[],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=plan.get("next_action") or "inspect_closure_wrapper_continuation_execution_plan",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_continuation_readiness_request(protection_name, context):
-            spec = ClosureWrapperContinuationReadinessSpec.from_context(context)
-            result = ClosureWrapperContinuationReadinessManager().review(spec)
-            readiness = result.readiness if isinstance(result.readiness, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
-            verification = [
-                f"closure_wrapper_continuation_readiness_status={result.status}",
-                f"closure_wrapper_continuation_readiness_reason={result.reason or ''}",
-                f"closure_wrapper_continuation_readiness_ready_for_review={readiness.get('ready_for_review', False)}",
-                f"closure_wrapper_continuation_readiness_wrapper_installed={readiness.get('same_process_wrapper_installed', False)}",
-                f"closure_wrapper_continuation_readiness_continuation_ready={readiness.get('continuation_ready', False)}",
-                f"closure_wrapper_continuation_readiness_event_count={readiness.get('wrapper_event_count', 0)}",
-                f"closure_wrapper_continuation_readiness_cross_process_wrapper_execution_supported={readiness.get('cross_process_wrapper_execution_supported', False)}",
-                f"closure_wrapper_continuation_readiness_automatic_wrapper_continuation={readiness.get('automatic_wrapper_continuation', False)}",
-                f"closure_wrapper_continuation_readiness_automatic_multi_step_loop={readiness.get('automatic_multi_step_loop', False)}",
-                f"closure_wrapper_continuation_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_continuation_readiness_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_continuation_readiness_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_continuation_readiness_calls_mcp={policy.get('calls_mcp', False)}",
-                f"closure_wrapper_continuation_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
-                f"closure_wrapper_continuation_readiness_blockers={','.join(str(item) for item in blockers)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-continuation-readiness.json",
-                    kind=ArtifactKind.JSON,
-                    description="Read-only Native Web closure wrapper continuation readiness descriptor.",
-                    metadata={
-                        "status": result.status,
-                        "ready_for_review": readiness.get("ready_for_review", False),
-                        "same_process_wrapper_installed": readiness.get("same_process_wrapper_installed", False),
-                        "continuation_ready": readiness.get("continuation_ready", False),
-                        "wrapper_event_count": readiness.get("wrapper_event_count", 0),
-                        "cross_process_wrapper_execution_supported": readiness.get("cross_process_wrapper_execution_supported", False),
-                        "automatic_wrapper_continuation": readiness.get("automatic_wrapper_continuation", False),
-                        "automatic_multi_step_loop": readiness.get("automatic_multi_step_loop", False),
-                        "blockers": blockers,
-                        "side_effect_policy": policy,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["review_closure_wrapper_continuation_readiness"] if result.status == "ready_for_review" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=readiness.get("next_action") or "resolve_closure_wrapper_continuation_readiness_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
-            spec = ClosureWrapperRuntimeMutabilityResultSpec.from_context(context)
-            result = ClosureWrapperRuntimeMutabilityResultManager().execute(page, spec)
-            payload = result.result if isinstance(result.result, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            strategy = payload.get("wrapper_strategy_descriptor") if isinstance(payload.get("wrapper_strategy_descriptor"), dict) else {}
-            verification = [
-                f"closure_wrapper_runtime_mutability_result_status={result.status}",
-                f"closure_wrapper_runtime_mutability_result_reason={result.reason or ''}",
-                f"closure_wrapper_runtime_mutability_result_strategy={strategy.get('strategy', payload.get('wrapper_strategy', 'unknown'))}",
-                f"closure_wrapper_runtime_mutability_result_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
-                f"closure_wrapper_runtime_mutability_result_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
-                f"closure_wrapper_runtime_mutability_review_approved={policy.get('review_approved', False)}",
-                f"closure_wrapper_runtime_mutability_execute_requested={policy.get('execute_requested', False)}",
-                f"closure_wrapper_runtime_mutability_proven={payload.get('runtime_mutability_proven', False)}",
-                f"closure_wrapper_runtime_mutability_probe_executed={payload.get('runtime_mutability_probe_executed', False)}",
-                f"closure_wrapper_runtime_mutability_temporary_assignment_attempted={policy.get('temporary_assignment_attempted', False)}",
-                f"closure_wrapper_runtime_mutability_original_restored={policy.get('original_restored', False)}",
-                f"closure_wrapper_runtime_mutability_wrapper_installed={policy.get('wrapper_installed', False)}",
-                f"closure_wrapper_runtime_mutability_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_runtime_mutability_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_runtime_mutability_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_runtime_mutability_observed_callframe_id={payload.get('observed_callframe_id') or 'unknown'}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"closure_wrapper_runtime_mutability_result_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-runtime-mutability-result.json",
-                    kind=ArtifactKind.JSON,
-                    description="Review-approved Native Web closure wrapper runtime mutability probe result.",
-                    metadata={
-                        "status": result.status,
-                        "reason": result.reason,
-                        "runtime_mutability_proven": payload.get("runtime_mutability_proven", False),
-                        "runtime_mutability_probe_executed": payload.get("runtime_mutability_probe_executed", False),
-                        "wrapper_strategy": strategy.get("strategy", payload.get("wrapper_strategy")),
-                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
-                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
-                        "temporary_assignment_attempted": policy.get("temporary_assignment_attempted", False),
-                        "original_restored": policy.get("original_restored", False),
-                        "wrapper_installed": policy.get("wrapper_installed", False),
-                        "runtime_mutated": policy.get("runtime_mutated", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "callframe_evaluated": policy.get("callframe_evaluated", False),
-                        "review_approved": policy.get("review_approved", False),
-                        "execute_requested": policy.get("execute_requested", False),
-                        "function_name": payload.get("function_name"),
-                    },
-                )
-            ]
-            if result.mutation_audit:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/mutation-audit.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime closure wrapper mutability probe mutation audit.",
-                        metadata={"count": len(result.mutation_audit), "source": "closure_wrapper_runtime_mutability_result"},
-                    )
-                )
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_reviewed_closure_wrapper_runtime_mutability_probe"] if result.status == "proven" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "proven" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=payload.get("next_action") or "resolve_closure_wrapper_runtime_mutability_result_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "proven" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_replacement_execution_request(protection_name, context):
-            spec = ClosureWrapperReplacementExecutionSpec.from_context(context)
-            result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            strategy = execution.get("wrapper_strategy_descriptor") if isinstance(execution.get("wrapper_strategy_descriptor"), dict) else {}
-            verification = [
-                f"closure_wrapper_replacement_execution_status={result.status}",
-                f"closure_wrapper_replacement_execution_reason={result.reason or ''}",
-                f"closure_wrapper_replacement_execution_strategy={strategy.get('strategy', execution.get('wrapper_strategy', 'unknown'))}",
-                f"closure_wrapper_replacement_execution_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
-                f"closure_wrapper_replacement_execution_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
-                f"closure_wrapper_replacement_execution_assignment_safety_proven={bool((spec.assignment_safety_proof if spec else {}).get('assignment_safety_proven'))}",
-                f"closure_wrapper_replacement_execution_require_runtime_mutability_result={policy.get('require_runtime_mutability_result', False)}",
-                f"closure_wrapper_replacement_execution_runtime_mutability_result_proven={policy.get('runtime_mutability_result_proven', False)}",
-                f"closure_wrapper_replacement_execution_review_approved={policy.get('review_approved', False)}",
-                f"closure_wrapper_replacement_execution_execute_requested={policy.get('execute_requested', False)}",
-                f"closure_wrapper_replacement_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
-                f"closure_wrapper_replacement_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_replacement_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_replacement_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_replacement_execution_observed_callframe_id={execution.get('observed_callframe_id') or 'unknown'}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"closure_wrapper_replacement_execution_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-replacement-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Review-approved Native Web closure wrapper replacement execution result.",
-                    metadata={
-                        "status": result.status,
-                        "reason": result.reason,
-                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
-                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
-                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
-                        "wrapper_installed": policy.get("wrapper_installed", False),
-                        "runtime_mutated": policy.get("runtime_mutated", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "callframe_evaluated": policy.get("callframe_evaluated", False),
-                        "require_runtime_mutability_result": policy.get("require_runtime_mutability_result", False),
-                        "runtime_mutability_result_proven": policy.get("runtime_mutability_result_proven", False),
-                        "review_approved": policy.get("review_approved", False),
-                        "execute_requested": policy.get("execute_requested", False),
-                        "function_name": execution.get("function_name"),
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-restore-plan.json",
-                    kind=ArtifactKind.JSON,
-                    description="Review-required restore plan for a closure wrapper replacement.",
-                    metadata={
-                        "status": "ready_for_review" if result.status == "applied" else "not_available",
-                        "available": bool((execution.get("restore_plan") or {}).get("available")) if isinstance(execution.get("restore_plan"), dict) else False,
-                        "requires_review": True,
-                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
-                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
-                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
-                        "function_name": execution.get("function_name"),
-                    },
-                ),
-            ]
-            if result.mutation_audit:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/mutation-audit.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime closure wrapper replacement mutation audit.",
-                        metadata={"count": len(result.mutation_audit), "source": "closure_wrapper_replacement_execution"},
-                    )
-                )
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_reviewed_closure_wrapper_replacement"] if result.status == "applied" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "applied" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "resolve_closure_wrapper_replacement_execution_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "applied" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_restore_execution_request(protection_name, context):
-            spec = ClosureWrapperRestoreExecutionSpec.from_context(context)
-            result = ClosureWrapperRestoreExecutionManager().execute(page, spec)
-            execution = result.execution if isinstance(result.execution, dict) else {}
-            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
-            strategy = execution.get("wrapper_strategy_descriptor") if isinstance(execution.get("wrapper_strategy_descriptor"), dict) else {}
-            verification = [
-                f"closure_wrapper_restore_execution_status={result.status}",
-                f"closure_wrapper_restore_execution_reason={result.reason or ''}",
-                f"closure_wrapper_restore_execution_strategy={strategy.get('strategy', execution.get('wrapper_strategy', 'unknown'))}",
-                f"closure_wrapper_restore_execution_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
-                f"closure_wrapper_restore_execution_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
-                f"closure_wrapper_restore_execution_review_approved={policy.get('review_approved', False)}",
-                f"closure_wrapper_restore_execution_execute_requested={policy.get('execute_requested', False)}",
-                f"closure_wrapper_restore_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
-                f"closure_wrapper_restore_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_restore_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
-                f"closure_wrapper_restore_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
-                f"closure_wrapper_restore_execution_observed_callframe_id={execution.get('observed_callframe_id') or 'unknown'}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.error:
-                verification.append(f"closure_wrapper_restore_execution_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-restore-execution.json",
-                    kind=ArtifactKind.JSON,
-                    description="Review-approved Native Web closure wrapper restore execution result.",
-                    metadata={
-                        "status": result.status,
-                        "reason": result.reason,
-                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
-                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
-                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
-                        "wrapper_restored": policy.get("wrapper_restored", False),
-                        "runtime_mutated": policy.get("runtime_mutated", False),
-                        "cdp_command_sent": policy.get("cdp_command_sent", False),
-                        "callframe_evaluated": policy.get("callframe_evaluated", False),
-                        "review_approved": policy.get("review_approved", False),
-                        "execute_requested": policy.get("execute_requested", False),
-                        "function_name": execution.get("function_name"),
-                    },
-                )
-            ]
-            if result.mutation_audit:
-                artifact_paths.append(
-                    ArtifactRef(
-                        path="virtual://workspace/mutation-audit.json",
-                        kind=ArtifactKind.JSON,
-                        description="Native Web runtime closure wrapper restore mutation audit.",
-                        metadata={"count": len(result.mutation_audit), "source": "closure_wrapper_restore_execution"},
-                    )
-                )
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["execute_reviewed_closure_wrapper_restore"] if result.status == "restored" else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "restored" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=execution.get("next_action") or "resolve_closure_wrapper_restore_execution_blockers",
-                confidence=ConfidenceLevel.MEDIUM if result.status == "restored" else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_wrapper_event_harvest_request(protection_name, context):
-            spec = ClosureWrapperEventHarvestSpec.from_context(context)
-            result = ClosureWrapperEventHarvestManager().harvest(page, spec)
-            strategy_counts = result.snapshot.get("strategyCounts") if isinstance(result.snapshot.get("strategyCounts"), dict) else {}
-            verification = [
-                f"closure_wrapper_events_status={result.status}",
-                f"closure_wrapper_events_count={result.event_count}",
-                f"closure_wrapper_events_strategy_count={len(strategy_counts)}",
-                f"closure_wrapper_events_runtime_mutated={result.side_effect_policy.get('runtime_mutated', False)}",
-                f"closure_wrapper_events_cdp_command_sent={result.side_effect_policy.get('cdp_command_sent', False)}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.reason:
-                verification.append(f"closure_wrapper_events_reason={result.reason}")
-            if result.error:
-                verification.append(f"closure_wrapper_events_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-wrapper-events.json",
-                    kind=ArtifactKind.JSON,
-                    description="Read-only Native Web closure wrapper event snapshot.",
-                    metadata={
-                        "status": result.status,
-                        "event_count": result.event_count,
-                        "strategy_counts": strategy_counts,
-                        "runtime_mutated": False,
-                        "calls_mcp": False,
-                        "mobile_runtime_used": False,
-                    },
-                )
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["harvest_closure_wrapper_events"],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL,
-                artifacts=artifact_paths,
-                next_action="inspect_closure_wrapper_events" if result.event_count else "invoke_target_flow_then_harvest_closure_wrapper_events",
-                confidence=ConfidenceLevel.MEDIUM if result.event_count else ConfidenceLevel.LOW,
-            )
-        if self._is_closure_scope_discovery_request(protection_name, context):
-            spec = ClosureScopeDiscoverySpec.from_context(context)
-            result = ClosureScopeDiscoveryManager().discover(page, spec)
-            function_count = len(result.functions)
-            candidate_count = len(result.candidates)
-            callframe_count = int(result.scope_summary.get("callframe_count") or 0)
-            selected_callframe_id = result.scope_summary.get("selected_callframe_id")
-            verification = [
-                f"closure_scope_discovery_status={result.status}",
-                f"closure_scope_function_count={function_count}",
-                f"closure_scope_candidate_count={candidate_count}",
-                f"closure_scope_callframe_count={callframe_count}",
-                f"closure_scope_selected_callframe_id={selected_callframe_id or 'unknown'}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.reason:
-                verification.append(f"closure_scope_reason={result.reason}")
-            if result.error:
-                verification.append(f"closure_scope_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/closure-functions.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime closure-scope function discovery evidence.",
-                    metadata={
-                        "status": result.status,
-                        "function_count": function_count,
-                        "callframe_count": callframe_count,
-                        "selected_callframe_id": selected_callframe_id,
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/closure-function-candidates.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime closure-scope function candidates.",
-                    metadata={
-                        "status": result.status,
-                        "candidate_count": candidate_count,
-                        "hook_supported": False,
-                    },
-                ),
-            ]
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=["discover_closure_scope_functions"] if result.supported else [],
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if candidate_count else ExecutionStatus.PARTIAL if result.supported else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action="inspect_closure_function_candidates" if candidate_count else "provide_candidate_names_or_adjust_breakpoint",
-                confidence=ConfidenceLevel.MEDIUM if candidate_count else ConfidenceLevel.LOW,
-            )
-        if self._is_source_logpoint_request(protection_name, context):
-            spec = SourceLogpointSpec.from_context(context)
-            result = SourceLogpointManager().install(page, spec)
-            breakpoint_count = len(result.breakpoints)
-            event_count = len(result.events)
-            verification = [
-                f"source_logpoint_status={result.status}",
-                f"source_logpoint_breakpoint_count={breakpoint_count}",
-                f"source_logpoint_event_count={event_count}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if spec and spec.remap:
-                verification.append(f"source_logpoint_remap_status={spec.remap.get('status')}")
-                if spec.remap.get("strategy"):
-                    verification.append(f"source_logpoint_remap_strategy={spec.remap['strategy']}")
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.reason:
-                verification.append(f"source_logpoint_reason={result.reason}")
-            if result.error:
-                verification.append(f"source_logpoint_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/source-logpoints.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime source logpoint install result.",
-                    metadata={
-                        "status": result.status,
-                        "breakpoint_count": breakpoint_count,
-                        "url_pattern": spec.url_pattern if spec else "<missing>",
-                        "line_number": spec.line_number if spec else 0,
-                        "column_number": spec.column_number if spec else None,
-                        "remap": spec.remap if spec else {},
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/source-logpoint-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime source logpoint timeline.",
-                    metadata={
-                        "status": "success" if event_count else "not_observed",
-                        "event_count": event_count,
-                        "url_pattern": spec.url_pattern if spec else "<missing>",
-                        "line_number": spec.line_number if spec else 0,
-                        "column_number": spec.column_number if spec else None,
-                        "remap": spec.remap if spec else {},
-                    },
-                ),
-            ]
-            next_action = "inspect_source_logpoint_events" if event_count else "trigger_code_path_or_adjust_logpoint"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=(
-                    [f"set_source_logpoint:{spec.url_pattern}:{spec.line_number}"] if spec and breakpoint_count else []
-                ),
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if breakpoint_count else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if breakpoint_count else ConfidenceLevel.LOW,
-            )
-        if self._is_function_hook_request(protection_name, context):
-            spec = FunctionHookSpec.from_context(context)
-            result = FunctionHookManager().install(page, spec)
-            installed_count = len(result.installed)
-            missing_count = len(result.missing)
-            event_count = len(result.events)
-            verification = [
-                f"function_hook_status={result.status}",
-                f"function_hook_installed_count={installed_count}",
-                f"function_hook_missing_count={missing_count}",
-                f"function_hook_event_count={event_count}",
-                f"context_keys={sorted(context.keys())}",
-            ]
-            if result.trigger:
-                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
-                if result.trigger.get("error"):
-                    verification.append(f"trigger_error={result.trigger['error']}")
-            if result.error:
-                verification.append(f"function_hook_error={result.error}")
-            artifact_paths = [
-                ArtifactRef(
-                    path="virtual://workspace/function-hooks.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime target function hook install result.",
-                    metadata={
-                        "status": result.status,
-                        "installed_count": installed_count,
-                        "missing_count": missing_count,
-                        "function_name": spec.function_name if spec else "<missing>",
-                    },
-                ),
-                ArtifactRef(
-                    path="virtual://workspace/function-hook-timeline.json",
-                    kind=ArtifactKind.JSON,
-                    description="Native Web runtime target function hook timeline.",
-                    metadata={
-                        "status": "success" if event_count else "not_observed",
-                        "event_count": event_count,
-                        "function_name": spec.function_name if spec else "<missing>",
-                    },
-                ),
-            ]
-            next_action = "inspect_function_hook_events" if event_count else "invoke_target_function_or_adjust_hook_path"
-            return ProtectionResult(
-                protection_name=protection_name,
-                applied_actions=(
-                    [f"install_function_hook:{spec.function_name}"] if spec and result.installed else []
-                ),
-                verification=verification,
-                status=ExecutionStatus.SUCCESS if installed_count else ExecutionStatus.PARTIAL if missing_count else ExecutionStatus.FAILED,
-                artifacts=artifact_paths,
-                next_action=next_action,
-                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
-            )
+        _closure_runtime_result = self._dispatch_closure_runtime(protection_name, context, page)
+        if _closure_runtime_result is not None:
+            return _closure_runtime_result
         if self._is_recursive_continuation_readiness_request(protection_name, context):
             spec = RecursiveContinuationReadinessSpec.from_context(context)
             result = RecursiveContinuationReadinessManager().assess(spec)
@@ -10638,6 +9847,803 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 artifacts=artifact_paths,
                 next_action=next_action,
                 confidence=ConfidenceLevel.MEDIUM if result.status == "success" else ConfidenceLevel.LOW,
+            )
+        return None
+
+    def _dispatch_closure_runtime(self, protection_name: str, context: dict, page: Any) -> ProtectionResult | None:
+        if self._is_closure_wrapper_continuation_next_iteration_execution_request(protection_name, context):
+            spec = ClosureWrapperContinuationNextIterationExecutionSpec.from_context(context)
+            result = ClosureWrapperContinuationNextIterationExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"closure_wrapper_continuation_next_iteration_execution_status={result.status}",
+                f"closure_wrapper_continuation_next_iteration_execution_reason={result.reason or ''}",
+                f"closure_wrapper_continuation_next_iteration_execution_wrapper_strategy={execution.get('wrapper_strategy') or 'unknown'}",
+                f"closure_wrapper_continuation_next_iteration_execution_function_name={execution.get('function_name') or 'unknown'}",
+                f"closure_wrapper_continuation_next_iteration_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"closure_wrapper_continuation_next_iteration_execution_selected_method={execution.get('selected_method')}",
+                f"closure_wrapper_continuation_next_iteration_execution_execute_requested={execution.get('execute_iteration_requested', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_review_approved={execution.get('review_approved', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_live_callframe_recovered={policy.get('live_callframe_recovered', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_next_iteration_executed={policy.get('wrapper_next_iteration_executed', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_queue_advanced={policy.get('queue_advanced', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_loop_advanced={policy.get('loop_advanced', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"closure_wrapper_continuation_next_iteration_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-continuation-next-iteration-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-gated Native Web closure wrapper continuation next-iteration execution result.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "next_iteration_plan_id": execution.get("next_iteration_plan_id"),
+                        "source_execution_plan_id": execution.get("source_execution_plan_id"),
+                        "workflow_id": execution.get("workflow_id"),
+                        "wrapper_strategy": execution.get("wrapper_strategy"),
+                        "function_name": execution.get("function_name"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_method": execution.get("selected_method"),
+                        "execute_iteration_requested": execution.get("execute_iteration_requested", False),
+                        "review_approved": execution.get("review_approved", False),
+                        "wrapper_next_iteration_executed": execution.get("wrapper_next_iteration_executed", False),
+                        "paused_event_captured": execution.get("paused_event_captured", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_closure_wrapper_next_iteration"] if result.status == "executed" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"blocked", "ready_for_review", "review_required"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_closure_wrapper_continuation_next_iteration_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_continuation_next_iteration_plan_request(protection_name, context):
+            spec = ClosureWrapperContinuationNextIterationPlanSpec.from_context(context)
+            result = ClosureWrapperContinuationNextIterationPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            verification = [
+                f"closure_wrapper_continuation_next_iteration_plan_status={result.status}",
+                f"closure_wrapper_continuation_next_iteration_plan_reason={result.reason or ''}",
+                f"closure_wrapper_continuation_next_iteration_plan_ready_for_review={plan.get('ready_for_review', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_wrapper_strategy={plan.get('wrapper_strategy') or 'unknown'}",
+                f"closure_wrapper_continuation_next_iteration_plan_function_name={plan.get('function_name') or 'unknown'}",
+                f"closure_wrapper_continuation_next_iteration_plan_step_index={plan.get('next_iteration_step_index')}",
+                f"closure_wrapper_continuation_next_iteration_plan_method={plan.get('next_iteration_method')}",
+                f"closure_wrapper_continuation_next_iteration_plan_fresh_live_callframe_required={plan.get('fresh_live_callframe_required_before_execution', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_wrapper_restored={policy.get('wrapper_restored', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_live_callframe_recovered={policy.get('live_callframe_recovered', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_queue_advanced={policy.get('queue_advanced', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"closure_wrapper_continuation_next_iteration_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-continuation-next-iteration-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-only Native Web closure wrapper continuation next-iteration plan descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "plan_status": plan.get("status"),
+                        "ready_for_review": plan.get("ready_for_review", False),
+                        "plan_id": plan.get("plan_id"),
+                        "source_execution_plan_id": plan.get("source_execution_plan_id"),
+                        "source_workflow_id": plan.get("source_workflow_id"),
+                        "wrapper_strategy": plan.get("wrapper_strategy"),
+                        "function_name": plan.get("function_name"),
+                        "next_iteration_step_index": plan.get("next_iteration_step_index"),
+                        "next_iteration_method": plan.get("next_iteration_method"),
+                        "fresh_live_callframe_required_before_execution": plan.get("fresh_live_callframe_required_before_execution", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "inspect_closure_wrapper_continuation_next_iteration_plan",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_continuation_checkpoint_request(protection_name, context):
+            spec = ClosureWrapperContinuationCheckpointSpec.from_context(context)
+            result = ClosureWrapperContinuationCheckpointManager().checkpoint(spec)
+            checkpoint = result.checkpoint if isinstance(result.checkpoint, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = checkpoint.get("blockers") if isinstance(checkpoint.get("blockers"), list) else []
+            verification = [
+                f"closure_wrapper_continuation_checkpoint_status={result.status}",
+                f"closure_wrapper_continuation_checkpoint_reason={result.reason or ''}",
+                f"closure_wrapper_continuation_checkpoint_ready_for_review={checkpoint.get('ready_for_review', False)}",
+                f"closure_wrapper_continuation_checkpoint_wrapper_strategy={checkpoint.get('wrapper_strategy') or 'unknown'}",
+                f"closure_wrapper_continuation_checkpoint_function_name={checkpoint.get('function_name') or 'unknown'}",
+                f"closure_wrapper_continuation_checkpoint_event_count={checkpoint.get('post_execution_event_count', 0)}",
+                f"closure_wrapper_continuation_checkpoint_paused_session_checkpoint_status={checkpoint.get('paused_session_checkpoint_status')}",
+                f"closure_wrapper_continuation_checkpoint_paused_session_checkpoint_ready={checkpoint.get('paused_session_checkpoint_ready', False)}",
+                f"closure_wrapper_continuation_checkpoint_next_iteration_available={checkpoint.get('next_iteration_available', False)}",
+                f"closure_wrapper_continuation_checkpoint_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_continuation_checkpoint_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"closure_wrapper_continuation_checkpoint_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"closure_wrapper_continuation_checkpoint_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_continuation_checkpoint_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_continuation_checkpoint_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_continuation_checkpoint_wrapper_restored={policy.get('wrapper_restored', False)}",
+                f"closure_wrapper_continuation_checkpoint_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
+                f"closure_wrapper_continuation_checkpoint_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
+                f"closure_wrapper_continuation_checkpoint_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
+                f"closure_wrapper_continuation_checkpoint_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"closure_wrapper_continuation_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+                f"closure_wrapper_continuation_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"closure_wrapper_continuation_checkpoint_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-continuation-checkpoint.json",
+                    kind=ArtifactKind.JSON,
+                    description="Read-only Native Web closure wrapper continuation follow-up checkpoint descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "checkpoint_status": checkpoint.get("status"),
+                        "ready_for_review": checkpoint.get("ready_for_review", False),
+                        "plan_id": checkpoint.get("plan_id"),
+                        "workflow_id": checkpoint.get("workflow_id"),
+                        "wrapper_strategy": checkpoint.get("wrapper_strategy"),
+                        "function_name": checkpoint.get("function_name"),
+                        "post_execution_event_count": checkpoint.get("post_execution_event_count", 0),
+                        "paused_session_checkpoint_status": checkpoint.get("paused_session_checkpoint_status"),
+                        "paused_session_checkpoint_ready": checkpoint.get("paused_session_checkpoint_ready", False),
+                        "next_iteration_available": checkpoint.get("next_iteration_available", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=checkpoint.get("next_action") or "inspect_closure_wrapper_continuation_checkpoint",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_continuation_execution_request(protection_name, context):
+            spec = ClosureWrapperContinuationExecutionSpec.from_context(context)
+            result = ClosureWrapperContinuationExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = execution.get("blockers") if isinstance(execution.get("blockers"), list) else []
+            verification = [
+                f"closure_wrapper_continuation_execution_status={result.status}",
+                f"closure_wrapper_continuation_execution_reason={result.reason or ''}",
+                f"closure_wrapper_continuation_execution_wrapper_strategy={execution.get('wrapper_strategy') or 'unknown'}",
+                f"closure_wrapper_continuation_execution_function_name={execution.get('function_name') or 'unknown'}",
+                f"closure_wrapper_continuation_execution_selected_step_index={execution.get('selected_step_index')}",
+                f"closure_wrapper_continuation_execution_selected_method={execution.get('selected_method')}",
+                f"closure_wrapper_continuation_execution_execute_requested={execution.get('execute_iteration_requested', False)}",
+                f"closure_wrapper_continuation_execution_review_approved={execution.get('review_approved', False)}",
+                f"closure_wrapper_continuation_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_continuation_execution_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"closure_wrapper_continuation_execution_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"closure_wrapper_continuation_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_continuation_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_continuation_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_continuation_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
+                f"closure_wrapper_continuation_execution_wrapper_events_harvested={policy.get('wrapper_events_harvested', False)}",
+                f"closure_wrapper_continuation_execution_iteration_executed={policy.get('wrapper_continuation_iteration_executed', False)}",
+                f"closure_wrapper_continuation_execution_automatic_wrapper_continuation={policy.get('automatic_wrapper_continuation', False)}",
+                f"closure_wrapper_continuation_execution_automatic_multi_step_loop={policy.get('automatic_multi_step_loop', False)}",
+                f"closure_wrapper_continuation_execution_calls_mcp={policy.get('calls_mcp', False)}",
+                f"closure_wrapper_continuation_execution_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"closure_wrapper_continuation_execution_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-continuation-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-gated Native Web closure wrapper continuation one-iteration execution result.",
+                    metadata={
+                        "status": result.status,
+                        "execution_status": execution.get("status"),
+                        "plan_id": execution.get("plan_id"),
+                        "workflow_id": execution.get("workflow_id"),
+                        "wrapper_strategy": execution.get("wrapper_strategy"),
+                        "function_name": execution.get("function_name"),
+                        "selected_step_index": execution.get("selected_step_index"),
+                        "selected_method": execution.get("selected_method"),
+                        "executor_artifact": execution.get("executor_artifact"),
+                        "paused_event_captured": execution.get("paused_event_captured", False),
+                        "manual_checkpoint_required_after_step": execution.get("manual_checkpoint_required_after_step", False),
+                        "post_execution_event_harvest_required": execution.get("post_execution_event_harvest_required", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_reviewed_closure_wrapper_continuation_iteration"] if execution.get("wrapper_continuation_iteration_executed") else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "executed" else ExecutionStatus.PARTIAL if result.status in {"ready_for_review", "review_required", "timed_out", "blocked"} else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "inspect_closure_wrapper_continuation_execution",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "executed" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_continuation_execution_plan_request(protection_name, context):
+            spec = ClosureWrapperContinuationExecutionPlanSpec.from_context(context)
+            result = ClosureWrapperContinuationExecutionPlanManager().plan(spec)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+            strategy = plan.get("execution_strategy") if isinstance(plan.get("execution_strategy"), dict) else {}
+            gates = plan.get("review_gates") if isinstance(plan.get("review_gates"), dict) else {}
+            verification = [
+                f"closure_wrapper_continuation_execution_plan_status={result.status}",
+                f"closure_wrapper_continuation_execution_plan_reason={result.reason or ''}",
+                f"closure_wrapper_continuation_execution_plan_ready_for_review={plan.get('ready_for_review', False)}",
+                f"closure_wrapper_continuation_execution_plan_wrapper_installed={plan.get('same_process_wrapper_installed', False)}",
+                f"closure_wrapper_continuation_execution_plan_restore_plan_available={plan.get('restore_plan_available', False)}",
+                f"closure_wrapper_continuation_execution_plan_cross_process_wrapper_execution_supported={strategy.get('cross_process_wrapper_execution_supported', False)}",
+                f"closure_wrapper_continuation_execution_plan_automatic_wrapper_continuation={strategy.get('automatic_wrapper_continuation_supported', False)}",
+                f"closure_wrapper_continuation_execution_plan_automatic_multi_step_loop={strategy.get('automatic_multi_step_loop_supported', False)}",
+                f"closure_wrapper_continuation_execution_plan_requires_execution_approval={gates.get('requires_explicit_execution_approval', False)}",
+                f"closure_wrapper_continuation_execution_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_continuation_execution_plan_debugger_event_subscribed={policy.get('debugger_event_subscribed', False)}",
+                f"closure_wrapper_continuation_execution_plan_paused_event_captured={policy.get('paused_event_captured', False)}",
+                f"closure_wrapper_continuation_execution_plan_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_continuation_execution_plan_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_continuation_execution_plan_wrapper_installed_by_manager={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_continuation_execution_plan_wrapper_restored={policy.get('wrapper_restored', False)}",
+                f"closure_wrapper_continuation_execution_plan_calls_mcp={policy.get('calls_mcp', False)}",
+                f"closure_wrapper_continuation_execution_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"closure_wrapper_continuation_execution_plan_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-continuation-execution-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Read-only Native Web closure wrapper continuation execution plan descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": plan.get("ready_for_review", False),
+                        "plan_id": plan.get("plan_id"),
+                        "wrapper_strategy": plan.get("wrapper_strategy"),
+                        "same_process_wrapper_installed": plan.get("same_process_wrapper_installed", False),
+                        "restore_plan_available": plan.get("restore_plan_available", False),
+                        "cross_process_wrapper_execution_supported": strategy.get("cross_process_wrapper_execution_supported", False),
+                        "automatic_wrapper_continuation": strategy.get("automatic_wrapper_continuation_supported", False),
+                        "automatic_multi_step_loop": strategy.get("automatic_multi_step_loop_supported", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=[],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=plan.get("next_action") or "inspect_closure_wrapper_continuation_execution_plan",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_continuation_readiness_request(protection_name, context):
+            spec = ClosureWrapperContinuationReadinessSpec.from_context(context)
+            result = ClosureWrapperContinuationReadinessManager().review(spec)
+            readiness = result.readiness if isinstance(result.readiness, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
+            verification = [
+                f"closure_wrapper_continuation_readiness_status={result.status}",
+                f"closure_wrapper_continuation_readiness_reason={result.reason or ''}",
+                f"closure_wrapper_continuation_readiness_ready_for_review={readiness.get('ready_for_review', False)}",
+                f"closure_wrapper_continuation_readiness_wrapper_installed={readiness.get('same_process_wrapper_installed', False)}",
+                f"closure_wrapper_continuation_readiness_continuation_ready={readiness.get('continuation_ready', False)}",
+                f"closure_wrapper_continuation_readiness_event_count={readiness.get('wrapper_event_count', 0)}",
+                f"closure_wrapper_continuation_readiness_cross_process_wrapper_execution_supported={readiness.get('cross_process_wrapper_execution_supported', False)}",
+                f"closure_wrapper_continuation_readiness_automatic_wrapper_continuation={readiness.get('automatic_wrapper_continuation', False)}",
+                f"closure_wrapper_continuation_readiness_automatic_multi_step_loop={readiness.get('automatic_multi_step_loop', False)}",
+                f"closure_wrapper_continuation_readiness_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_continuation_readiness_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_continuation_readiness_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_continuation_readiness_calls_mcp={policy.get('calls_mcp', False)}",
+                f"closure_wrapper_continuation_readiness_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+                f"closure_wrapper_continuation_readiness_blockers={','.join(str(item) for item in blockers)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-continuation-readiness.json",
+                    kind=ArtifactKind.JSON,
+                    description="Read-only Native Web closure wrapper continuation readiness descriptor.",
+                    metadata={
+                        "status": result.status,
+                        "ready_for_review": readiness.get("ready_for_review", False),
+                        "same_process_wrapper_installed": readiness.get("same_process_wrapper_installed", False),
+                        "continuation_ready": readiness.get("continuation_ready", False),
+                        "wrapper_event_count": readiness.get("wrapper_event_count", 0),
+                        "cross_process_wrapper_execution_supported": readiness.get("cross_process_wrapper_execution_supported", False),
+                        "automatic_wrapper_continuation": readiness.get("automatic_wrapper_continuation", False),
+                        "automatic_multi_step_loop": readiness.get("automatic_multi_step_loop", False),
+                        "blockers": blockers,
+                        "side_effect_policy": policy,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["review_closure_wrapper_continuation_readiness"] if result.status == "ready_for_review" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "ready_for_review" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=readiness.get("next_action") or "resolve_closure_wrapper_continuation_readiness_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_runtime_mutability_result_request(protection_name, context):
+            spec = ClosureWrapperRuntimeMutabilityResultSpec.from_context(context)
+            result = ClosureWrapperRuntimeMutabilityResultManager().execute(page, spec)
+            payload = result.result if isinstance(result.result, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = payload.get("wrapper_strategy_descriptor") if isinstance(payload.get("wrapper_strategy_descriptor"), dict) else {}
+            verification = [
+                f"closure_wrapper_runtime_mutability_result_status={result.status}",
+                f"closure_wrapper_runtime_mutability_result_reason={result.reason or ''}",
+                f"closure_wrapper_runtime_mutability_result_strategy={strategy.get('strategy', payload.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_runtime_mutability_result_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_runtime_mutability_result_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
+                f"closure_wrapper_runtime_mutability_review_approved={policy.get('review_approved', False)}",
+                f"closure_wrapper_runtime_mutability_execute_requested={policy.get('execute_requested', False)}",
+                f"closure_wrapper_runtime_mutability_proven={payload.get('runtime_mutability_proven', False)}",
+                f"closure_wrapper_runtime_mutability_probe_executed={payload.get('runtime_mutability_probe_executed', False)}",
+                f"closure_wrapper_runtime_mutability_temporary_assignment_attempted={policy.get('temporary_assignment_attempted', False)}",
+                f"closure_wrapper_runtime_mutability_original_restored={policy.get('original_restored', False)}",
+                f"closure_wrapper_runtime_mutability_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_runtime_mutability_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_runtime_mutability_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_runtime_mutability_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_runtime_mutability_observed_callframe_id={payload.get('observed_callframe_id') or 'unknown'}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"closure_wrapper_runtime_mutability_result_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-runtime-mutability-result.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-approved Native Web closure wrapper runtime mutability probe result.",
+                    metadata={
+                        "status": result.status,
+                        "reason": result.reason,
+                        "runtime_mutability_proven": payload.get("runtime_mutability_proven", False),
+                        "runtime_mutability_probe_executed": payload.get("runtime_mutability_probe_executed", False),
+                        "wrapper_strategy": strategy.get("strategy", payload.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
+                        "temporary_assignment_attempted": policy.get("temporary_assignment_attempted", False),
+                        "original_restored": policy.get("original_restored", False),
+                        "wrapper_installed": policy.get("wrapper_installed", False),
+                        "runtime_mutated": policy.get("runtime_mutated", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "callframe_evaluated": policy.get("callframe_evaluated", False),
+                        "review_approved": policy.get("review_approved", False),
+                        "execute_requested": policy.get("execute_requested", False),
+                        "function_name": payload.get("function_name"),
+                    },
+                )
+            ]
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime closure wrapper mutability probe mutation audit.",
+                        metadata={"count": len(result.mutation_audit), "source": "closure_wrapper_runtime_mutability_result"},
+                    )
+                )
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_reviewed_closure_wrapper_runtime_mutability_probe"] if result.status == "proven" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "proven" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=payload.get("next_action") or "resolve_closure_wrapper_runtime_mutability_result_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "proven" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_replacement_execution_request(protection_name, context):
+            spec = ClosureWrapperReplacementExecutionSpec.from_context(context)
+            result = ClosureWrapperReplacementExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = execution.get("wrapper_strategy_descriptor") if isinstance(execution.get("wrapper_strategy_descriptor"), dict) else {}
+            verification = [
+                f"closure_wrapper_replacement_execution_status={result.status}",
+                f"closure_wrapper_replacement_execution_reason={result.reason or ''}",
+                f"closure_wrapper_replacement_execution_strategy={strategy.get('strategy', execution.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_replacement_execution_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_replacement_execution_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
+                f"closure_wrapper_replacement_execution_assignment_safety_proven={bool((spec.assignment_safety_proof if spec else {}).get('assignment_safety_proven'))}",
+                f"closure_wrapper_replacement_execution_require_runtime_mutability_result={policy.get('require_runtime_mutability_result', False)}",
+                f"closure_wrapper_replacement_execution_runtime_mutability_result_proven={policy.get('runtime_mutability_result_proven', False)}",
+                f"closure_wrapper_replacement_execution_review_approved={policy.get('review_approved', False)}",
+                f"closure_wrapper_replacement_execution_execute_requested={policy.get('execute_requested', False)}",
+                f"closure_wrapper_replacement_execution_wrapper_installed={policy.get('wrapper_installed', False)}",
+                f"closure_wrapper_replacement_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_replacement_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_replacement_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_replacement_execution_observed_callframe_id={execution.get('observed_callframe_id') or 'unknown'}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"closure_wrapper_replacement_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-replacement-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-approved Native Web closure wrapper replacement execution result.",
+                    metadata={
+                        "status": result.status,
+                        "reason": result.reason,
+                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
+                        "wrapper_installed": policy.get("wrapper_installed", False),
+                        "runtime_mutated": policy.get("runtime_mutated", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "callframe_evaluated": policy.get("callframe_evaluated", False),
+                        "require_runtime_mutability_result": policy.get("require_runtime_mutability_result", False),
+                        "runtime_mutability_result_proven": policy.get("runtime_mutability_result_proven", False),
+                        "review_approved": policy.get("review_approved", False),
+                        "execute_requested": policy.get("execute_requested", False),
+                        "function_name": execution.get("function_name"),
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-restore-plan.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-required restore plan for a closure wrapper replacement.",
+                    metadata={
+                        "status": "ready_for_review" if result.status == "applied" else "not_available",
+                        "available": bool((execution.get("restore_plan") or {}).get("available")) if isinstance(execution.get("restore_plan"), dict) else False,
+                        "requires_review": True,
+                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
+                        "function_name": execution.get("function_name"),
+                    },
+                ),
+            ]
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime closure wrapper replacement mutation audit.",
+                        metadata={"count": len(result.mutation_audit), "source": "closure_wrapper_replacement_execution"},
+                    )
+                )
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_reviewed_closure_wrapper_replacement"] if result.status == "applied" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "applied" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "resolve_closure_wrapper_replacement_execution_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "applied" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_restore_execution_request(protection_name, context):
+            spec = ClosureWrapperRestoreExecutionSpec.from_context(context)
+            result = ClosureWrapperRestoreExecutionManager().execute(page, spec)
+            execution = result.execution if isinstance(result.execution, dict) else {}
+            policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else {}
+            strategy = execution.get("wrapper_strategy_descriptor") if isinstance(execution.get("wrapper_strategy_descriptor"), dict) else {}
+            verification = [
+                f"closure_wrapper_restore_execution_status={result.status}",
+                f"closure_wrapper_restore_execution_reason={result.reason or ''}",
+                f"closure_wrapper_restore_execution_strategy={strategy.get('strategy', execution.get('wrapper_strategy', 'unknown'))}",
+                f"closure_wrapper_restore_execution_strategy_supported_for_install={strategy.get('supported_for_install', False)}",
+                f"closure_wrapper_restore_execution_strategy_plan_only={strategy.get('strategy_plan_only', False)}",
+                f"closure_wrapper_restore_execution_review_approved={policy.get('review_approved', False)}",
+                f"closure_wrapper_restore_execution_execute_requested={policy.get('execute_requested', False)}",
+                f"closure_wrapper_restore_execution_wrapper_restored={policy.get('wrapper_restored', False)}",
+                f"closure_wrapper_restore_execution_runtime_mutated={policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_restore_execution_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+                f"closure_wrapper_restore_execution_callframe_evaluated={policy.get('callframe_evaluated', False)}",
+                f"closure_wrapper_restore_execution_observed_callframe_id={execution.get('observed_callframe_id') or 'unknown'}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.error:
+                verification.append(f"closure_wrapper_restore_execution_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-restore-execution.json",
+                    kind=ArtifactKind.JSON,
+                    description="Review-approved Native Web closure wrapper restore execution result.",
+                    metadata={
+                        "status": result.status,
+                        "reason": result.reason,
+                        "wrapper_strategy": strategy.get("strategy", execution.get("wrapper_strategy")),
+                        "wrapper_strategy_supported_for_install": strategy.get("supported_for_install", False),
+                        "wrapper_strategy_plan_only": strategy.get("strategy_plan_only", False),
+                        "wrapper_restored": policy.get("wrapper_restored", False),
+                        "runtime_mutated": policy.get("runtime_mutated", False),
+                        "cdp_command_sent": policy.get("cdp_command_sent", False),
+                        "callframe_evaluated": policy.get("callframe_evaluated", False),
+                        "review_approved": policy.get("review_approved", False),
+                        "execute_requested": policy.get("execute_requested", False),
+                        "function_name": execution.get("function_name"),
+                    },
+                )
+            ]
+            if result.mutation_audit:
+                artifact_paths.append(
+                    ArtifactRef(
+                        path="virtual://workspace/mutation-audit.json",
+                        kind=ArtifactKind.JSON,
+                        description="Native Web runtime closure wrapper restore mutation audit.",
+                        metadata={"count": len(result.mutation_audit), "source": "closure_wrapper_restore_execution"},
+                    )
+                )
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["execute_reviewed_closure_wrapper_restore"] if result.status == "restored" else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "restored" else ExecutionStatus.PARTIAL if result.status == "blocked" else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=execution.get("next_action") or "resolve_closure_wrapper_restore_execution_blockers",
+                confidence=ConfidenceLevel.MEDIUM if result.status == "restored" else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_wrapper_event_harvest_request(protection_name, context):
+            spec = ClosureWrapperEventHarvestSpec.from_context(context)
+            result = ClosureWrapperEventHarvestManager().harvest(page, spec)
+            strategy_counts = result.snapshot.get("strategyCounts") if isinstance(result.snapshot.get("strategyCounts"), dict) else {}
+            verification = [
+                f"closure_wrapper_events_status={result.status}",
+                f"closure_wrapper_events_count={result.event_count}",
+                f"closure_wrapper_events_strategy_count={len(strategy_counts)}",
+                f"closure_wrapper_events_runtime_mutated={result.side_effect_policy.get('runtime_mutated', False)}",
+                f"closure_wrapper_events_cdp_command_sent={result.side_effect_policy.get('cdp_command_sent', False)}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.reason:
+                verification.append(f"closure_wrapper_events_reason={result.reason}")
+            if result.error:
+                verification.append(f"closure_wrapper_events_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-wrapper-events.json",
+                    kind=ArtifactKind.JSON,
+                    description="Read-only Native Web closure wrapper event snapshot.",
+                    metadata={
+                        "status": result.status,
+                        "event_count": result.event_count,
+                        "strategy_counts": strategy_counts,
+                        "runtime_mutated": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                )
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["harvest_closure_wrapper_events"],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if result.status == "success" else ExecutionStatus.PARTIAL,
+                artifacts=artifact_paths,
+                next_action="inspect_closure_wrapper_events" if result.event_count else "invoke_target_flow_then_harvest_closure_wrapper_events",
+                confidence=ConfidenceLevel.MEDIUM if result.event_count else ConfidenceLevel.LOW,
+            )
+        if self._is_closure_scope_discovery_request(protection_name, context):
+            spec = ClosureScopeDiscoverySpec.from_context(context)
+            result = ClosureScopeDiscoveryManager().discover(page, spec)
+            function_count = len(result.functions)
+            candidate_count = len(result.candidates)
+            callframe_count = int(result.scope_summary.get("callframe_count") or 0)
+            selected_callframe_id = result.scope_summary.get("selected_callframe_id")
+            verification = [
+                f"closure_scope_discovery_status={result.status}",
+                f"closure_scope_function_count={function_count}",
+                f"closure_scope_candidate_count={candidate_count}",
+                f"closure_scope_callframe_count={callframe_count}",
+                f"closure_scope_selected_callframe_id={selected_callframe_id or 'unknown'}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"closure_scope_reason={result.reason}")
+            if result.error:
+                verification.append(f"closure_scope_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/closure-functions.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime closure-scope function discovery evidence.",
+                    metadata={
+                        "status": result.status,
+                        "function_count": function_count,
+                        "callframe_count": callframe_count,
+                        "selected_callframe_id": selected_callframe_id,
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/closure-function-candidates.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime closure-scope function candidates.",
+                    metadata={
+                        "status": result.status,
+                        "candidate_count": candidate_count,
+                        "hook_supported": False,
+                    },
+                ),
+            ]
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=["discover_closure_scope_functions"] if result.supported else [],
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if candidate_count else ExecutionStatus.PARTIAL if result.supported else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action="inspect_closure_function_candidates" if candidate_count else "provide_candidate_names_or_adjust_breakpoint",
+                confidence=ConfidenceLevel.MEDIUM if candidate_count else ConfidenceLevel.LOW,
+            )
+        if self._is_source_logpoint_request(protection_name, context):
+            spec = SourceLogpointSpec.from_context(context)
+            result = SourceLogpointManager().install(page, spec)
+            breakpoint_count = len(result.breakpoints)
+            event_count = len(result.events)
+            verification = [
+                f"source_logpoint_status={result.status}",
+                f"source_logpoint_breakpoint_count={breakpoint_count}",
+                f"source_logpoint_event_count={event_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if spec and spec.remap:
+                verification.append(f"source_logpoint_remap_status={spec.remap.get('status')}")
+                if spec.remap.get("strategy"):
+                    verification.append(f"source_logpoint_remap_strategy={spec.remap['strategy']}")
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.reason:
+                verification.append(f"source_logpoint_reason={result.reason}")
+            if result.error:
+                verification.append(f"source_logpoint_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/source-logpoints.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime source logpoint install result.",
+                    metadata={
+                        "status": result.status,
+                        "breakpoint_count": breakpoint_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "remap": spec.remap if spec else {},
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/source-logpoint-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime source logpoint timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "url_pattern": spec.url_pattern if spec else "<missing>",
+                        "line_number": spec.line_number if spec else 0,
+                        "column_number": spec.column_number if spec else None,
+                        "remap": spec.remap if spec else {},
+                    },
+                ),
+            ]
+            next_action = "inspect_source_logpoint_events" if event_count else "trigger_code_path_or_adjust_logpoint"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"set_source_logpoint:{spec.url_pattern}:{spec.line_number}"] if spec and breakpoint_count else []
+                ),
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if breakpoint_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if breakpoint_count else ConfidenceLevel.LOW,
+            )
+        if self._is_function_hook_request(protection_name, context):
+            spec = FunctionHookSpec.from_context(context)
+            result = FunctionHookManager().install(page, spec)
+            installed_count = len(result.installed)
+            missing_count = len(result.missing)
+            event_count = len(result.events)
+            verification = [
+                f"function_hook_status={result.status}",
+                f"function_hook_installed_count={installed_count}",
+                f"function_hook_missing_count={missing_count}",
+                f"function_hook_event_count={event_count}",
+                f"context_keys={sorted(context.keys())}",
+            ]
+            if result.trigger:
+                verification.append(f"trigger_attempted={result.trigger.get('attempted', False)}")
+                if result.trigger.get("error"):
+                    verification.append(f"trigger_error={result.trigger['error']}")
+            if result.error:
+                verification.append(f"function_hook_error={result.error}")
+            artifact_paths = [
+                ArtifactRef(
+                    path="virtual://workspace/function-hooks.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime target function hook install result.",
+                    metadata={
+                        "status": result.status,
+                        "installed_count": installed_count,
+                        "missing_count": missing_count,
+                        "function_name": spec.function_name if spec else "<missing>",
+                    },
+                ),
+                ArtifactRef(
+                    path="virtual://workspace/function-hook-timeline.json",
+                    kind=ArtifactKind.JSON,
+                    description="Native Web runtime target function hook timeline.",
+                    metadata={
+                        "status": "success" if event_count else "not_observed",
+                        "event_count": event_count,
+                        "function_name": spec.function_name if spec else "<missing>",
+                    },
+                ),
+            ]
+            next_action = "inspect_function_hook_events" if event_count else "invoke_target_function_or_adjust_hook_path"
+            return ProtectionResult(
+                protection_name=protection_name,
+                applied_actions=(
+                    [f"install_function_hook:{spec.function_name}"] if spec and result.installed else []
+                ),
+                verification=verification,
+                status=ExecutionStatus.SUCCESS if installed_count else ExecutionStatus.PARTIAL if missing_count else ExecutionStatus.FAILED,
+                artifacts=artifact_paths,
+                next_action=next_action,
+                confidence=ConfidenceLevel.MEDIUM if installed_count else ConfidenceLevel.LOW,
             )
         return None
 
