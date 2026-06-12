@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reverse-deepagent-external-delivery-provider-internal-registry"
+version = "0.1.0"
+description = "Internal artifact registry ExternalDeliveryProvider plugin package for reverse-deepagent."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "reverse-deepagent==0.1.0",
+]
+
+[project.entry-points."reverse_deepagent.external_delivery_providers"]
+internal-registry = "reverse_deepagent_external_delivery_provider_internal_registry:external_delivery_provider_registration"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
