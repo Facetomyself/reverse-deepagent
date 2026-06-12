@@ -163,4 +163,81 @@ This rollout is complete only when:
 
 ## Current status
 
-Status: in progress.
+Status: completed for rollout 7.
+
+## Execution result
+
+Merged PRs:
+
+| Worker | PR | Branch | Scope | Merge commit | Notes |
+| --- | ---: | --- | --- | --- | --- |
+| P | #37 | `codex/b3c-observation-review-dispatch` | Extracted MutationObserver timeline, object-root mutation audit, heap snapshot collect, runtime object graph diff, and page mutation audit into `_dispatch_observation_review(...)` | `7dfd17e2` | Main agent reviewed the PR, reran focused validation, merged first, and verified the final fallback hook remained in `apply_minimal_protection(...)`. |
+| Q | #36 | `codex/b3c-recursive-readiness-dispatch` | Extracted recursive continuation readiness into `_dispatch_recursive_continuation_readiness(...)` | `4dfebcd2` | Worker used GitHub Git Data API for the remote PR commit after Git HTTPS flaked; main agent merged after #37, reran focused validation, and verified dispatch order. |
+
+Focused validation after each merge:
+
+```text
+git diff --check
+compileall src/reverse_deepagent/adapters/native_web.py
+python -m unittest tests.test_native_web_runtime -v
+Ran 204 tests
+OK
+```
+
+Final rollout 7 dispatch stats:
+
+```text
+apply_minimal_protection lines 531-615 count 85
+_dispatch_observation_review lines 8930-9209 count 280
+_dispatch_recursive_continuation_readiness lines 1770-1842 count 73
+_dispatch_module_tail lines 617-1093 count 477
+_dispatch_async_chunk lines 1095-1768 count 674
+_dispatch_module_federation lines 1844-2738 count 895
+_dispatch_custom_loader lines 8069-8928 count 860
+_dispatch_paused_session lines 9211-9905 count 695
+_dispatch_closure_runtime lines 9907-10702 count 796
+_dispatch_heap lines 10704-12285 count 1582
+_dispatch_source lines 2740-6591 count 3852
+apply_minimal_protection request branch predicates: 0
+fallback hook remains in apply_minimal_protection: true
+```
+
+Final full validation:
+
+```text
+git diff --check
+compileall src/reverse_deepagent tests
+python -m unittest discover -s tests -v
+Ran 1747 tests in 71.585s
+OK (skipped=2)
+```
+
+Progress compared with rollout 7 baseline:
+
+- `apply_minimal_protection`: 424 lines -> 85 lines.
+- Request branch predicates in `apply_minimal_protection`: 6 -> 0.
+- New helpers added:
+  - `_dispatch_observation_review(...)`
+  - `_dispatch_recursive_continuation_readiness(...)`
+
+Side-effect boundary remained unchanged:
+
+- No public artifact schema names changed.
+- No side-effect policy semantics changed.
+- No browser / CDP / MCP action was added as part of the refactor.
+- Android / iOS / mini-program runtime chains were not touched.
+- Workspace canonical paths were not moved.
+- Final fallback hook behavior remains in `apply_minimal_protection(...)`.
+
+## Remaining follow-up after rollout 7
+
+B3c branch extraction is complete for `apply_minimal_protection(...)`: the method no
+longer owns direct request branch predicates. Remaining refactor follow-ups are now
+separate items:
+
+1. Review a dedicated final fallback hook dispatch contract before moving the
+   fallback install / snapshot block out of the main method.
+2. Plan the next large dispatch decomposition around `_dispatch_source(...)`,
+   which remains the largest helper.
+3. Triage the untracked readonly audit report separately; it was not staged or
+   committed as part of this rollout.

@@ -15,15 +15,17 @@
 ### B3b / Goal-08 已完成；B3c 待处理
 
 > 2026-06-12 rollout4 update: B3c 已继续推进，`apply_minimal_protection` 又抽出了 `_dispatch_paused_session(...)` 与 `_dispatch_closure_runtime(...)` 两个 page-using 分支组。主方法从约 4777 行降到 3296 行，剩余 `protection_name` 分支从 70 个降到 47 个；module federation、custom-loader、async chunk、module hook / breakpoint 等分支组仍待后续批次继续拆。
+>
+> 2026-06-12 rollout7 update: B3c branch extraction 已收口，后续 rollout 又抽出了 `_dispatch_module_federation(...)`、`_dispatch_custom_loader(...)`、`_dispatch_async_chunk(...)`、`_dispatch_module_tail(...)`、`_dispatch_observation_review(...)` 与 `_dispatch_recursive_continuation_readiness(...)`。`apply_minimal_protection` 当前降到 85 行 / 0 个直接 request branch predicate；final fallback hook install / snapshot 仍有意保留在主方法，等待独立 fallback dispatch contract 评审。
 
 B3b（commit `b36f168`）：22 个 heap 分支提取到 `_dispatch_heap()`，`apply_minimal_protection` 完成中段解耦。
 
 Goal-08（commit `a30ba3f`）：`object_graph_diff` page-free 分支（63 行）提取到 `_dispatch_object_graph()`，在 try/session/page 块之前委托执行。
 
-`apply_minimal_protection` 当前仍有约 130 个分支留在主方法体内：
-- **page-free 分支**：可安全提取，但与 page-using 分支交错，需逐段处理
-- **page-using 分支**：依赖 L5984 try 块初始化的 `page`，提取时须将 `page` 作参数传入
-- **fallback 代码**：永远保留在主方法，不提取
+`apply_minimal_protection` 的 direct request branch extraction 当前已完成。后续剩余 refactor 已从 B3c 分支搬移转为两个独立方向：
+- **fallback contract**：final fallback hook install / snapshot 仍保留在主方法，移动前必须先评审独立 contract。
+- **source dispatch decomposition**：`_dispatch_source(...)` 仍是最大 helper，应单独规划拆分。
+- **审计项 triage**：`docs/status/2026-06-12-readonly-code-audit.md` 是后续安全/质量修复输入，不属于 B3c 行为改动。
 
 ## Direction A：已实现能力的实际完成度核实
 
@@ -65,4 +67,4 @@ ROADMAP 的"未完成"描述准确地指代的是**自动化/无审查执行**�
 1. ~~**B3b**~~：✅ 已完成（commit `b36f168`）
 2. ~~**完善 ROADMAP**~~：✅ 已完成（commit `b36f168` / `86a11ade`）；heap/source-logpoint executor 已移入 Done 区
 3. ~~**Direction A 深化**~~：✅ 已完成（heap path-to-root +3 tests，constructor-growth +3 tests，source-logpoint names-remap +2 tests，共 commit `d4d096c` + `2a7cb8f`）
-4. **B3c**（下一步）：继续提取剩余 ~130 个 page-free 分支群；page-using 分支需将 `page` 作参数传入子方法，须在 page-free 提取全部完成后进行
+4. ~~**B3c**~~：✅ 已完成至 `apply_minimal_protection` direct request branch predicate 清零；后续改为独立 fallback dispatch contract 评审与 `_dispatch_source(...)` 拆分规划。
