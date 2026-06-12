@@ -4,7 +4,7 @@ Date: 2026-06-12
 
 Base branch: `refactor/consolidate-hooks-native-web`
 
-Status: planned / dispatching
+Status: completed
 
 ## Objective
 
@@ -163,3 +163,63 @@ This rollout is complete only when:
   MCP, Android, iOS, or mini-program runtime behavior are changed.
 - Worker PRs are merged, final validation passes, and `ROADMAP.md` plus this status
   document reflect the final state.
+
+
+## Execution result
+
+Merged PRs:
+
+| Worker | PR | Branch | Scope | Merge commit | Notes |
+| --- | ---: | --- | --- | --- | --- |
+| U | #41 | `codex/rollout9-redaction-core` | Added `reverse_deepagent.browser.redaction` helpers and unit tests | `a8b067de` | Main agent reviewed two-file scope and reran focused redaction validation before merge. |
+| V | #42 | `codex/rollout9-collector-redaction` | Applied redaction helpers to `StorageCollector` / `NetworkCollector` and collector tests | `3f89e92c` | Branch was rebased / validated against Worker U locally, then merged after GitHub reported a clean PR. |
+| W | #43 | `codex/rollout9-redaction-pipeline-guard` | Added coordinator and fixture CLI serialization guards | `d460db78` | Git HTTPS push was flaky, so the main agent created the test-only remote branch via GitHub Git Data API using the current remote base as parent. |
+
+Implementation summary:
+
+- Added `src/reverse_deepagent/browser/redaction.py` with `is_sensitive_key`,
+  `redact_header_value`, `redact_cookie_header`, and `redact_mapping`.
+- Updated `StorageCollector` to redact `document.cookie`, sensitive
+  `localStorage` values, and sensitive `sessionStorage` values while preserving
+  existing output fields.
+- Updated `NetworkCollector` to redact request `headers` and response
+  `response_headers` while preserving URL, method, status, resource type,
+  request id, and header names.
+- Added collector and downstream serialization tests proving raw fixture secrets do
+  not appear in collector snapshots, `run_reverse_pipeline(...)` output,
+  workspace JSON, artifact index JSON, backend artifact manifest JSON, fixture CLI
+  stdout payloads, or fixture-emitted artifact JSON.
+
+Validation run on merged base:
+
+```text
+git diff --check
+PATH=/Users/mengma/reverse/reverse_agent/.venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest tests.test_browser_redaction tests.test_browser_collectors tests.test_coordinator tests.test_fixture_cli -v
+# Ran 29 tests in 9.224s - OK
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q src/reverse_deepagent tests
+PATH=/Users/mengma/reverse/reverse_agent/.venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest discover -s tests -v
+# Ran 1756 tests in 70.738s - OK (skipped=2)
+```
+
+Runtime / side-effect boundary:
+
+- No workspace paths or artifact schema names changed.
+- No BrowserProvider lifecycle behavior changed.
+- No browser was launched by the new tests beyond existing side-effect-free / mocked
+  fixture coverage.
+- No CDP, MCP, Android, iOS, or mini-program runtime behavior was added.
+- Existing collector output shape remains compatible: `cookie`, `localStorage`,
+  `sessionStorage`, `headers`, and `response_headers` fields remain present, with
+  sensitive values redacted.
+
+## Follow-up priorities after rollout 9
+
+1. **P1 fallback helper code extraction**: implement `_dispatch_default_hook_fallback(...)`
+   according to `docs/runtime/native-web-fallback-dispatch-contract.md`.
+2. **P1 `_dispatch_source(...)` staged decomposition**: start with the safest route /
+   descriptor extraction batch from
+   `docs/plans/2026-06-12-source-dispatch-decomposition-plan.md`.
+3. **P1 Chrome launcher hardening continuation**: validate numeric ports / waits and
+   settle `CHROME_PATH` vs `CHROME_APP_NAME` authority.
+4. **P2 README / active-doc legacy alias cleanup**: keep deprecated `mcp` /
+   `jsreverser-mcp` examples only where they intentionally test compatibility.
