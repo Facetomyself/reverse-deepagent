@@ -138,3 +138,80 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.ve
 - Updated line / branch count for `apply_minimal_protection(...)` after merges.
 - Final test result summary.
 - ROADMAP update noting B3c progress and remaining branch families.
+
+## Execution result
+
+Status: completed for rollout 6.
+
+Merged PRs:
+
+| Worker | PR | Branch | Scope | Merge commit | Notes |
+|---|---:|---|---|---|---|
+| N | #34 | `codex/b3c-async-chunk-dispatch` | Extracted async chunk traversal / load / module-hook branch family into `_dispatch_async_chunk(...)` | `a45760d1b4e676c8443d3121da38e6d621452dc0` | Worker used GitHub API for the remote commit after Git HTTPS flaked; main agent verified remote tree, reran focused tests, then merged. |
+| O | #35 | `codex/b3c-module-tail-dispatch` | Extracted custom-loader module-hook, async/custom module-diff, module discovery, generic module hook, and breakpoint tail into `_dispatch_module_tail(...)` | `7a6c55d20e883582dd5aae1185d632f85253dddd` | Worker replayed on top of PR #34; main agent verified fallback hook remained in `apply_minimal_protection(...)`, reran focused tests, then merged. |
+
+Validation performed by the main agent:
+
+```bash
+git diff --check
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q src/reverse_deepagent/adapters/native_web.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest tests.test_native_web_runtime -v
+```
+
+Focused validation result after each merge:
+
+```text
+Ran 204 tests
+OK
+```
+
+Final rollout 6 dispatch stats:
+
+```text
+apply_minimal_protection lines 531-954 count 424
+_dispatch_module_tail lines 956-1432 count 477
+_dispatch_async_chunk lines 1434-2107 count 674
+_dispatch_module_federation lines 2109-3003 count 895
+_dispatch_custom_loader lines 8334-9193 count 860
+_dispatch_paused_session lines 9195-9889 count 695
+_dispatch_closure_runtime lines 9891-10686 count 796
+_dispatch_heap lines 10688-12269 count 1582
+_dispatch_closure_prefix lines 14253-14406 count 154
+_dispatch_object_graph lines 14408-14472 count 65
+apply_minimal_protection branch predicates: 6
+```
+
+Progress compared with rollout 6 baseline:
+
+- `apply_minimal_protection`: 1555 lines -> 424 lines.
+- Branch predicates in `apply_minimal_protection`: 22 -> 6.
+- New helpers added:
+  - `_dispatch_async_chunk(...)`
+  - `_dispatch_module_tail(...)`
+
+Side-effect boundary remained unchanged:
+
+- No public artifact schema names changed.
+- No side-effect policy semantics changed.
+- No browser / CDP / MCP action was added as part of the refactor.
+- Android / iOS / mini-program runtime chains were not touched.
+- Workspace canonical paths were not moved.
+- Final fallback hook behavior remains in `apply_minimal_protection(...)`.
+
+## Remaining B3c follow-up
+
+After rollout 6, `apply_minimal_protection(...)` still owns the first six branch
+families plus the final fallback hook:
+
+1. MutationObserver timeline.
+2. Object-root mutation audit.
+3. Heap snapshot collect.
+4. Runtime object graph diff.
+5. Page mutation audit.
+6. Recursive continuation readiness.
+7. Final fallback hook install / snapshot.
+
+The next safe extraction pass should consider a small front-of-function helper for
+timeline / mutation / graph review-only branches, while keeping the final fallback
+hook behavior in the main function until a dedicated fallback dispatch contract is
+reviewed.
