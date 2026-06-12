@@ -5,9 +5,10 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+import reverse_deepagent.adapters.native_web as native_web_adapter
 from reverse_deepagent.adapters.native_web import NativeWebRuntime
 from reverse_deepagent.browser import BrowserPageRef, BrowserProviderCapabilities, PlaywrightBrowserPageAdapter
-from reverse_deepagent.browser.hooks import BreakpointManager, ClosureWrapperReplacementExecutionManager
+from reverse_deepagent.browser.hooks import BreakpointManager, ClosureWrapperReplacementExecutionManager, HookInstallResult, HookSnapshot
 from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughDispatchApprovalPlanManager,
     SourceMapFollowthroughDispatchApprovalPlanSpec,
@@ -948,12 +949,57 @@ class NativeWebRuntimeTests(unittest.TestCase):
         result = runtime.apply_minimal_protection("console.clear", {"reason": "unit-test"})
         self.assertEqual(result.status.value, "success")
         self.assertIn("install_hook:fetch_xhr", result.applied_actions)
+        self.assertIn("hook_install_ok=True", result.verification)
+        self.assertIn("hook_event_count=1", result.verification)
+        self.assertIn("context_keys=['reason']", result.verification)
         self.assertEqual(result.next_action, "resume_recon")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/hook-timeline.json")
+        self.assertEqual(result.artifacts[0].metadata["event_count"], 1)
+        self.assertEqual(
+            result.artifacts[0].metadata["installed"],
+            {"fetch_xhr": True, "cookie": True, "anti_debug": True},
+        )
+        self.assertEqual(result.artifacts[0].metadata["protection_name"], "console.clear")
+        self.assertEqual(result.confidence.value, "medium")
+
+    def test_native_web_runtime_default_hook_fallback_install_failure_remains_equivalent(self) -> None:
+        class FailingHookManager:
+            def install(self, page):
+                return HookInstallResult(ok=False, installed={"fetch_xhr": False}, error="install_failed")
+
+            def snapshot(self, page):
+                return HookSnapshot(ok=False, installed={"fetch_xhr": False}, events=[], event_count=0, reason="not_installed")
+
+        original_manager = native_web_adapter.BrowserHookManager
+        native_web_adapter.BrowserHookManager = FailingHookManager
+        try:
+            provider = FakeProvider()
+            runtime = NativeWebRuntime(browser_provider=provider)
+            result = runtime.apply_minimal_protection("console.clear", {"reason": "unit-test"})
+        finally:
+            native_web_adapter.BrowserHookManager = original_manager
+
+        self.assertEqual(result.status.value, "failed")
+        self.assertEqual(result.applied_actions, [])
+        self.assertIn("hook_install_ok=False", result.verification)
+        self.assertIn("hook_event_count=0", result.verification)
+        self.assertIn("context_keys=['reason']", result.verification)
+        self.assertIn("hook_install_error=install_failed", result.verification)
+        self.assertEqual(result.next_action, "ensure_browser_provider_or_hook_capability")
+        self.assertEqual(result.confidence.value, "low")
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/hook-timeline.json")
+        self.assertEqual(result.artifacts[0].metadata["event_count"], 0)
+        self.assertEqual(result.artifacts[0].metadata["installed"], {"fetch_xhr": False})
+        self.assertEqual(result.artifacts[0].metadata["protection_name"], "console.clear")
 
     def test_native_web_runtime_apply_minimal_protection_installs_function_hook(self) -> None:
         provider = FakeProvider()
         runtime = NativeWebRuntime(browser_provider=provider)
+
+        def fail_if_fallback_called(protection_name, context, page):
+            raise AssertionError("default hook fallback must not run for hook-function")
+
+        runtime._dispatch_default_hook_fallback = fail_if_fallback_called
         result = runtime.apply_minimal_protection(
             "hook-function",
             {
@@ -970,9 +1016,32 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertIn("function_hook_event_count=2", result.verification)
         self.assertEqual(result.next_action, "inspect_function_hook_events")
         self.assertEqual(result.artifacts[0].path, "virtual://workspace/function-hooks.json")
+        self.assertNotEqual(result.artifacts[0].path, "virtual://workspace/hook-timeline.json")
         self.assertEqual(result.artifacts[0].metadata["function_name"], "buildSign")
         self.assertEqual(result.artifacts[1].path, "virtual://workspace/function-hook-timeline.json")
         self.assertEqual(result.artifacts[1].metadata["event_count"], 2)
+
+    def test_native_web_runtime_default_hook_fallback_not_called_when_provider_unavailable(self) -> None:
+        from reverse_deepagent.browser import BrowserProviderUnavailableError
+
+        class UnavailableProvider(FakeProvider):
+            def start(self):
+                raise BrowserProviderUnavailableError("test_unavailable")
+
+        runtime = NativeWebRuntime(browser_provider=UnavailableProvider())
+
+        def fail_if_fallback_called(protection_name, context, page):
+            raise AssertionError("default hook fallback must not run before page acquisition")
+
+        runtime._dispatch_default_hook_fallback = fail_if_fallback_called
+        result = runtime.apply_minimal_protection("console.clear", {"reason": "unit-test"})
+
+        self.assertEqual(result.status.value, "failed")
+        self.assertEqual(result.applied_actions, [])
+        self.assertEqual(result.next_action, "ensure_browser_provider")
+        self.assertIn("Native Web browser provider unavailable: test_unavailable", result.verification)
+        self.assertIn("context_keys=['reason']", result.verification)
+        self.assertEqual(result.artifacts, [])
 
     def test_native_web_runtime_assesses_recursive_continuation_readiness_without_execution(self) -> None:
         provider = FakeProvider()
