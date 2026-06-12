@@ -58,8 +58,35 @@ This rollout is complete only when:
 
 ## Execution result
 
-Pending worker PRs.
+| Worker | PR | Result | Merge commit | Main-agent review notes |
+| --- | ---: | --- | --- | --- |
+| Worker H | [#29](https://github.com/Facetomyself/reverse-deepagent/pull/29) | Merged | `ed80423e` | Main agent took over the uncommitted worktree, removed raw source snippet export from marker findings, added redacted match-span / pattern-digest metadata, ran strategy detector tests, created the PR, and merged it first. |
+| Worker G | [#27](https://github.com/Facetomyself/reverse-deepagent/pull/27) | Merged | `60a11486` | Main agent hardened result metadata redaction before merge: package metadata and local error text are not copied into result metadata, requester errors are redacted, and internal registry tests were expanded. |
+| Worker I | [#28](https://github.com/Facetomyself/reverse-deepagent/pull/28) | Merged | `471f7100` | Main agent hardened the terminal action recorder so source descriptors with raw source material / `sourcesContent` are blocked rather than accepted, then merged it last. |
+
+Moved into baseline:
+
+- Reference StrategyDetector provider package baseline through `reverse_deepagent.strategy_detectors`.
+- Internal artifact registry `ExternalDeliveryProvider` package baseline.
+- Source Map terminal review action decision / result recorder baseline.
+
+Still separate follow-ups after this rollout:
+
+- Real site-specific / private StrategyDetector provider packages beyond the reference provider.
+- Provider-specific package registries and richer external delivery integrations beyond the internal registry baseline.
+- Executing recommended Source Map terminal actions; this rollout records reviewer decisions only and does not continue debugger, install hooks / logpoints, fetch Source Maps, export raw source, or generate rebuilds.
 
 ## Final validation status
 
-Pending worker PR review, merge, and full validation.
+Final validation after all three PRs were merged and ROADMAP / status docs were updated:
+
+```bash
+git diff --check
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q \
+  src/reverse_deepagent tests \
+  packages/reverse-deepagent-external-delivery-provider-internal-registry/src \
+  packages/reverse-deepagent-strategy-detector-reference/src
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest discover -s tests -v
+```
+
+Result: `1747` tests passed, `2` skipped.
