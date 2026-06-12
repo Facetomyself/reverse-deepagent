@@ -583,6 +583,15 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
         result = self._dispatch_module_tail(protection_name, context, page)
         if result is not None:
             return result
+        return self._dispatch_default_hook_fallback(protection_name, context, page)
+
+    def _dispatch_default_hook_fallback(
+        self,
+        protection_name: str,
+        context: dict[str, Any],
+        page: Any,
+    ) -> ProtectionResult:
+        """Install baseline Native Web hooks after every concrete dispatcher declined."""
         hooks = BrowserHookManager()
         install = hooks.install(page)
         snapshot = hooks.snapshot(page)
