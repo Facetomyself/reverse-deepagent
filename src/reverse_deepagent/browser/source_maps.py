@@ -9562,6 +9562,513 @@ class SourceMapTerminalReviewFinalAuditManager:
 
 
 @dataclass(slots=True)
+class SourceMapTerminalReviewActionDecisionSpec:
+    """Explicit-review-only terminal review action decision / result recorder.
+
+    This descriptor records a reviewer decision about the recommended terminal
+    review action.  It never executes that recommendation and never invokes
+    debugger, hook, logpoint, rebuild, source-map fetch, browser, CDP, MCP, or
+    raw-source export behavior.
+    """
+
+    source_map_terminal_review_package: dict[str, Any] = field(default_factory=dict)
+    source_map_terminal_review_closure_checkpoint: dict[str, Any] = field(default_factory=dict)
+    source_map_terminal_review_final_audit: dict[str, Any] = field(default_factory=dict)
+    selected_action: str = ""
+    reviewer: str = ""
+    reason: str = ""
+    expected_source_descriptor_digest_sha256: str = ""
+    expected_consumer: str = ""
+    expected_action_id: str = ""
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None = None) -> "SourceMapTerminalReviewActionDecisionSpec | None":
+        context = context or {}
+        requested = any(
+            bool(context.get(key))
+            for key in (
+                "source_map_terminal_review_action_decision",
+                "sourceMapTerminalReviewActionDecision",
+                "source_map_terminal_review_action_result",
+                "sourceMapTerminalReviewActionResult",
+                "record_source_map_terminal_review_action",
+                "recordSourceMapTerminalReviewAction",
+            )
+        )
+        package = cls._object_alias(
+            context,
+            "source_map_terminal_review_package",
+            "source-map-terminal-review-package",
+            "sourceMapTerminalReviewPackage",
+            "source_map_followthrough_terminal_review_package",
+            "source-map-followthrough-terminal-review-package",
+            "sourceMapFollowthroughTerminalReviewPackage",
+            "source_map_terminal_review_handoff",
+            "source-map-terminal-review-handoff",
+            "sourceMapTerminalReviewHandoff",
+        )
+        closure = cls._object_alias(
+            context,
+            "source_map_terminal_review_closure_checkpoint",
+            "source-map-terminal-review-closure-checkpoint",
+            "sourceMapTerminalReviewClosureCheckpoint",
+            "source_map_terminal_review_observed_result_checkpoint",
+            "source-map-terminal-review-observed-result-checkpoint",
+            "sourceMapTerminalReviewObservedResultCheckpoint",
+            "source_map_terminal_review_closure_audit",
+            "source-map-terminal-review-closure-audit",
+            "sourceMapTerminalReviewClosureAudit",
+        )
+        final_audit = cls._object_alias(
+            context,
+            "source_map_terminal_review_final_audit",
+            "source-map-terminal-review-final-audit",
+            "sourceMapTerminalReviewFinalAudit",
+            "source_map_terminal_review_final_audit_rollup",
+            "source-map-terminal-review-final-audit-rollup",
+            "sourceMapTerminalReviewFinalAuditRollup",
+            "source_map_followthrough_final_audit",
+            "source-map-followthrough-final-audit",
+            "sourceMapFollowthroughFinalAudit",
+        )
+        if not requested and not any((package, closure, final_audit)):
+            return None
+        return cls(
+            source_map_terminal_review_package=package,
+            source_map_terminal_review_closure_checkpoint=closure,
+            source_map_terminal_review_final_audit=final_audit,
+            selected_action=str(context.get("selected_action", context.get("selectedAction", context.get("terminal_review_action", context.get("terminalReviewAction", "")))) or ""),
+            reviewer=str(context.get("reviewer", context.get("reviewer_id", context.get("reviewerId", ""))) or ""),
+            reason=str(context.get("reason", context.get("review_reason", context.get("reviewReason", context.get("decision_reason", context.get("decisionReason", ""))))) or ""),
+            expected_source_descriptor_digest_sha256=str(context.get("expected_source_descriptor_digest_sha256", context.get("expectedSourceDescriptorDigestSha256", "")) or ""),
+            expected_consumer=str(context.get("expected_consumer", context.get("expectedConsumer", context.get("source_map_selected_consumer", context.get("sourceMapSelectedConsumer", "")))) or ""),
+            expected_action_id=str(context.get("expected_action_id", context.get("expectedActionId", context.get("source_map_selected_action_id", context.get("sourceMapSelectedActionId", "")))) or ""),
+        )
+
+    _object_alias = staticmethod(SourceMapTypedPayloadPreflightSpec._object_alias)
+
+
+@dataclass(slots=True)
+class SourceMapTerminalReviewActionDecisionResult:
+    status: str
+    descriptor: dict[str, Any] = field(default_factory=dict)
+    side_effect_policy: dict[str, Any] = field(default_factory=dict)
+    reason: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "descriptor": self.descriptor,
+            "side_effect_policy": self.side_effect_policy,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+class SourceMapTerminalReviewActionDecisionManager:
+    """Record a reviewer terminal-review action decision without executing the action."""
+
+    _ALLOWED_ACTIONS = frozenset({"defer", "approve_followup", "reject", "request_manual_execution", "mark_complete"})
+
+    def record(self, spec: SourceMapTerminalReviewActionDecisionSpec | None) -> SourceMapTerminalReviewActionDecisionResult:
+        policy = self._side_effect_policy()
+        if spec is None:
+            return SourceMapTerminalReviewActionDecisionResult(status="unsupported", reason="missing_source_map_terminal_review_action_decision_request", side_effect_policy=policy)
+        try:
+            descriptor = self._descriptor(spec)
+            return SourceMapTerminalReviewActionDecisionResult(status=str(descriptor["status"]), descriptor=descriptor, side_effect_policy=descriptor.get("side_effect_policy", policy))
+        except Exception as exc:
+            descriptor = self._base_descriptor(status="failed", reason="source_map_terminal_review_action_decision_failed")
+            descriptor["error"] = str(exc)
+            return SourceMapTerminalReviewActionDecisionResult(
+                status="failed",
+                descriptor=descriptor,
+                side_effect_policy=descriptor.get("side_effect_policy", policy),
+                reason="source_map_terminal_review_action_decision_failed",
+                error=str(exc),
+            )
+
+    def _descriptor(self, spec: SourceMapTerminalReviewActionDecisionSpec) -> dict[str, Any]:
+        source_kind, source = self._select_source(spec)
+        source_digest = self._stable_json_digest(source) if source else ""
+        source_summary = self._source_summary(source_kind, source)
+        selected_action = self._normalize_action(spec.selected_action)
+        blockers = self._blockers(spec, source_kind, source, source_digest, selected_action)
+        status = "blocked" if blockers else "recorded"
+        decision_id = self._decision_id(source_kind, source_digest, selected_action)
+        decision_record = self._decision_record(
+            decision_id=decision_id,
+            source_kind=source_kind,
+            source_digest=source_digest,
+            source_summary=source_summary,
+            selected_action=selected_action,
+            reviewer=spec.reviewer,
+            reason=spec.reason,
+            recorded=not blockers,
+        )
+        return {
+            "schema_version": "reverse-deepagent.source-map-terminal-review-action-decision.v1",
+            "status": status,
+            "explicit_review_only": True,
+            "decision_record_only": True,
+            "result_recorder_only": True,
+            "terminal_review_action_decision_only": True,
+            "review_only": True,
+            "audit_only": True,
+            "decision_id": decision_id,
+            "idempotency_key": self._idempotency_key(decision_record),
+            "decision_digest_sha256": self._stable_json_digest(decision_record),
+            "selected_action": selected_action,
+            "allowed_actions": sorted(self._ALLOWED_ACTIONS),
+            "reviewer": spec.reviewer,
+            "reason": spec.reason,
+            "source_descriptor_kind": source_kind,
+            "source_descriptor_schema_version": str(source.get("schema_version") or "") if source else "",
+            "source_descriptor_status": self._status(source),
+            "source_descriptor_digest_sha256": source_digest,
+            "expected_source_descriptor_digest_sha256": spec.expected_source_descriptor_digest_sha256,
+            "source_descriptor_summary": source_summary,
+            "selected_consumer": source_summary.get("selected_consumer", ""),
+            "selected_action_id": source_summary.get("selected_action_id", ""),
+            "recommended_review_action": source_summary.get("recommended_review_action", ""),
+            "expected_consumer": spec.expected_consumer,
+            "expected_action_id": spec.expected_action_id,
+            "terminal_review_action_recorded": not blockers,
+            "recommended_action_approved_for_separate_followup": selected_action in {"approve_followup", "request_manual_execution"} and not blockers,
+            "terminal_review_marked_complete": selected_action == "mark_complete" and not blockers,
+            "terminal_review_rejected": selected_action == "reject" and not blockers,
+            "terminal_review_deferred": selected_action == "defer" and not blockers,
+            "ready_to_execute_now": False,
+            "execute_next_automatically": False,
+            "automatic_followthrough_supported": False,
+            "executes_recommended_action": False,
+            "installs_hook": False,
+            "installs_logpoint": False,
+            "continues_debugger": False,
+            "generates_rebuild": False,
+            "fetches_source_map": False,
+            "exports_raw_source": False,
+            "recommended_action_executed": False,
+            "debugger_continuation_invoked": False,
+            "hook_install_invoked": False,
+            "source_logpoint_install_invoked": False,
+            "rebuild_invoked": False,
+            "source_map_fetch_invoked": False,
+            "raw_source_exported": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "runtime_evaluated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+            "decision_record": decision_record,
+            "blockers": list(dict.fromkeys(blockers)),
+            "warnings": self._warnings(selected_action, bool(blockers)),
+            "next_action": self._next_action(blockers, selected_action),
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    def _base_descriptor(self, *, status: str, reason: str) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-terminal-review-action-decision.v1",
+            "status": status,
+            "explicit_review_only": True,
+            "decision_record_only": True,
+            "result_recorder_only": True,
+            "terminal_review_action_decision_only": True,
+            "review_only": True,
+            "audit_only": True,
+            "reason": reason,
+            "decision_id": "",
+            "idempotency_key": "",
+            "decision_digest_sha256": "",
+            "selected_action": "",
+            "reviewer": "",
+            "source_descriptor_kind": "",
+            "source_descriptor_digest_sha256": "",
+            "terminal_review_action_recorded": False,
+            "ready_to_execute_now": False,
+            "execute_next_automatically": False,
+            "executes_recommended_action": False,
+            "installs_hook": False,
+            "installs_logpoint": False,
+            "continues_debugger": False,
+            "generates_rebuild": False,
+            "fetches_source_map": False,
+            "exports_raw_source": False,
+            "decision_record": {},
+            "blockers": [reason],
+            "warnings": [],
+            "next_action": "provide_ready_source_map_terminal_review_artifact",
+            "side_effect_policy": self._side_effect_policy(),
+        }
+
+    @classmethod
+    def _select_source(cls, spec: SourceMapTerminalReviewActionDecisionSpec) -> tuple[str, dict[str, Any]]:
+        if spec.source_map_terminal_review_final_audit:
+            return "source-map-terminal-review-final-audit", spec.source_map_terminal_review_final_audit
+        if spec.source_map_terminal_review_closure_checkpoint:
+            return "source-map-terminal-review-closure-checkpoint", spec.source_map_terminal_review_closure_checkpoint
+        if spec.source_map_terminal_review_package:
+            return "source-map-terminal-review-package", spec.source_map_terminal_review_package
+        return "", {}
+
+    @classmethod
+    def _blockers(
+        cls,
+        spec: SourceMapTerminalReviewActionDecisionSpec,
+        source_kind: str,
+        source: dict[str, Any],
+        source_digest: str,
+        selected_action: str,
+    ) -> list[str]:
+        blockers: list[str] = []
+        if not source:
+            return ["source_map_terminal_review_ready_source_missing"]
+        expected_schema = {
+            "source-map-terminal-review-package": "reverse-deepagent.source-map-terminal-review-package.v1",
+            "source-map-terminal-review-closure-checkpoint": "reverse-deepagent.source-map-terminal-review-closure-checkpoint.v1",
+            "source-map-terminal-review-final-audit": "reverse-deepagent.source-map-terminal-review-final-audit.v1",
+        }.get(source_kind, "")
+        ready_flag = {
+            "source-map-terminal-review-package": "ready_for_terminal_review",
+            "source-map-terminal-review-closure-checkpoint": "ready_for_closure_audit_review",
+            "source-map-terminal-review-final-audit": "ready_for_final_audit_review",
+        }.get(source_kind, "")
+        if source.get("schema_version") != expected_schema:
+            blockers.append("source_map_terminal_review_source_schema_mismatch")
+        if cls._status(source) not in {"ready_for_review", "ready"}:
+            blockers.append("source_map_terminal_review_source_not_ready")
+        if ready_flag and source.get(ready_flag) is not True:
+            blockers.append("source_map_terminal_review_source_ready_flag_missing")
+        if selected_action not in cls._ALLOWED_ACTIONS:
+            blockers.append("source_map_terminal_review_action_invalid")
+        if not spec.reviewer.strip():
+            blockers.append("source_map_terminal_review_action_reviewer_missing")
+        if not spec.reason.strip():
+            blockers.append("source_map_terminal_review_action_reason_missing")
+        if spec.expected_source_descriptor_digest_sha256 and spec.expected_source_descriptor_digest_sha256 != source_digest:
+            blockers.append("source_map_terminal_review_source_digest_mismatch")
+        consumer = cls._normalize_consumer(str(source.get("selected_consumer") or ""))
+        if spec.expected_consumer and consumer and consumer != cls._normalize_consumer(spec.expected_consumer):
+            blockers.append("selected_consumer_mismatch")
+        action_id = str(source.get("selected_action_id") or "")
+        if spec.expected_action_id and action_id and spec.expected_action_id != action_id:
+            blockers.append("selected_action_id_mismatch")
+        for key in (
+            "calls_mcp",
+            "mobile_runtime_used",
+            "execute_next_automatically",
+            "ready_to_execute_now",
+            "recommended_action_executed",
+            "recommended_action_executed_by_checkpoint",
+            "recommended_action_executed_by_rollup",
+            "debugger_continuation_invoked",
+            "hook_install_invoked",
+            "hook_install_invoked_by_package",
+            "hook_install_invoked_by_checkpoint",
+            "hook_install_invoked_by_rollup",
+            "source_logpoint_install_invoked",
+            "source_logpoint_install_invoked_by_package",
+            "source_logpoint_install_invoked_by_checkpoint",
+            "source_logpoint_install_invoked_by_rollup",
+            "rebuild_invoked",
+            "rebuild_invoked_by_package",
+            "rebuild_invoked_by_checkpoint",
+            "rebuild_invoked_by_rollup",
+            "browser_started",
+            "browser_started_by_package",
+            "browser_started_by_checkpoint",
+            "browser_started_by_rollup",
+            "cdp_command_sent",
+            "cdp_command_sent_by_package",
+            "cdp_command_sent_by_checkpoint",
+            "cdp_command_sent_by_rollup",
+            "runtime_evaluated",
+            "runtime_evaluated_by_package",
+            "runtime_evaluated_by_checkpoint",
+            "runtime_evaluated_by_rollup",
+        ):
+            if source.get(key) is True:
+                blockers.append(f"source_map_terminal_review_source_{key}_forbidden")
+        for key in (
+            "raw_source_exported",
+            "exports_raw_source",
+            "raw_source_content_exported",
+            "raw_source_content_included",
+            "preview_exported",
+        ):
+            if source.get(key) is True:
+                blockers.append("source_map_terminal_review_source_raw_source_material_forbidden")
+        for key in ("raw_source", "raw_source_content", "sourcesContent"):
+            if source.get(key):
+                blockers.append("source_map_terminal_review_source_raw_source_material_forbidden")
+        policy = source.get("side_effect_policy") if isinstance(source.get("side_effect_policy"), dict) else {}
+        for key in ("calls_mcp", "mobile_runtime_used", "browser_started", "cdp_command_sent", "runtime_evaluated"):
+            if policy.get(key) is True:
+                blockers.append(f"source_map_terminal_review_source_policy_{key}_forbidden")
+        for key in ("exports_raw_source", "raw_source_exported", "raw_source_content_exported", "preview_exported"):
+            if policy.get(key) is True:
+                blockers.append("source_map_terminal_review_source_raw_source_material_forbidden")
+        return blockers
+
+    @classmethod
+    def _source_summary(cls, source_kind: str, source: dict[str, Any]) -> dict[str, Any]:
+        if not source:
+            return {}
+        nested = {}
+        if source_kind == "source-map-terminal-review-package" and isinstance(source.get("terminal_review_package"), dict):
+            nested = source.get("terminal_review_package") or {}
+        elif source_kind == "source-map-terminal-review-closure-checkpoint" and isinstance(source.get("closure_audit"), dict):
+            nested = source.get("closure_audit") or {}
+        elif source_kind == "source-map-terminal-review-final-audit" and isinstance(source.get("final_audit_rollup"), dict):
+            nested = source.get("final_audit_rollup") or {}
+        required = source.get("required_artifacts") if isinstance(source.get("required_artifacts"), list) else nested.get("required_artifacts", [])
+        return {
+            "source_descriptor_kind": source_kind,
+            "schema_version": str(source.get("schema_version") or ""),
+            "status": cls._status(source),
+            "selected_consumer": cls._normalize_consumer(str(source.get("selected_consumer") or nested.get("selected_consumer") or "")),
+            "selected_action_id": str(source.get("selected_action_id") or nested.get("selected_action_id") or ""),
+            "application_surface": str(source.get("application_surface") or nested.get("application_surface") or ""),
+            "completion_status": str(source.get("completion_status") or ""),
+            "closure_status": str(source.get("closure_status") or nested.get("closure_status") or ""),
+            "final_audit_status": str(source.get("final_audit_status") or nested.get("final_audit_status") or ""),
+            "recommended_review_action": str(source.get("recommended_review_action") or nested.get("recommended_review_action") or ""),
+            "observed_review_action": str(source.get("observed_review_action") or nested.get("observed_review_action") or ""),
+            "terminal_review_candidate": bool(source.get("terminal_review_candidate") or nested.get("terminal_review_candidate")),
+            "followup_required": bool(source.get("followup_required") or nested.get("followup_required")),
+            "required_artifacts": [str(item) for item in required] if isinstance(required, list) else [],
+        }
+
+    @classmethod
+    def _decision_record(
+        cls,
+        *,
+        decision_id: str,
+        source_kind: str,
+        source_digest: str,
+        source_summary: dict[str, Any],
+        selected_action: str,
+        reviewer: str,
+        reason: str,
+        recorded: bool,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "reverse-deepagent.source-map-terminal-review-action-result.v1",
+            "decision_id": decision_id,
+            "recorded": recorded,
+            "selected_action": selected_action,
+            "reviewer": reviewer,
+            "reason": reason,
+            "source_descriptor_kind": source_kind,
+            "source_descriptor_digest_sha256": source_digest,
+            "selected_consumer": source_summary.get("selected_consumer", ""),
+            "selected_action_id": source_summary.get("selected_action_id", ""),
+            "recommended_review_action": source_summary.get("recommended_review_action", ""),
+            "executes_recommended_action": False,
+            "installs_hook": False,
+            "installs_logpoint": False,
+            "continues_debugger": False,
+            "generates_rebuild": False,
+            "fetches_source_map": False,
+            "exports_raw_source": False,
+        }
+
+    @classmethod
+    def _decision_id(cls, source_kind: str, source_digest: str, selected_action: str) -> str:
+        if not source_digest or not selected_action:
+            return ""
+        return f"source-map-terminal-review-action-decision:{source_kind}:{selected_action}:{source_digest[:16]}"
+
+    @classmethod
+    def _idempotency_key(cls, decision_record: dict[str, Any]) -> str:
+        if not decision_record.get("decision_id"):
+            return ""
+        return cls._stable_json_digest(
+            {
+                "decision_id": decision_record.get("decision_id", ""),
+                "selected_action": decision_record.get("selected_action", ""),
+                "reviewer": decision_record.get("reviewer", ""),
+                "reason": decision_record.get("reason", ""),
+                "source_descriptor_digest_sha256": decision_record.get("source_descriptor_digest_sha256", ""),
+            }
+        )
+
+    @classmethod
+    def _warnings(cls, selected_action: str, blocked: bool) -> list[str]:
+        warnings = ["source_map_terminal_review_action_decision_does_not_execute_recommended_action"]
+        if blocked:
+            warnings.append("source_map_terminal_review_action_decision_blocked")
+        elif selected_action in {"approve_followup", "request_manual_execution"}:
+            warnings.append("source_map_terminal_review_action_requires_separate_manual_followup")
+        return warnings
+
+    @staticmethod
+    def _next_action(blockers: list[str], selected_action: str) -> str:
+        if any(item == "source_map_terminal_review_ready_source_missing" for item in blockers):
+            return "provide_ready_source_map_terminal_review_artifact"
+        if any(item == "source_map_terminal_review_action_invalid" for item in blockers):
+            return "choose_valid_source_map_terminal_review_action"
+        if any(item.endswith("mismatch") for item in blockers):
+            return "refresh_matching_source_map_terminal_review_action_decision_inputs"
+        if blockers:
+            return "inspect_source_map_terminal_review_action_decision_failure"
+        if selected_action in {"approve_followup", "request_manual_execution"}:
+            return "perform_separate_explicit_manual_followup_if_approved"
+        return "review_source_map_terminal_review_action_decision"
+
+    @staticmethod
+    def _normalize_action(value: str) -> str:
+        return str(value or "").strip().lower().replace("-", "_")
+
+    @staticmethod
+    def _normalize_consumer(value: str) -> str:
+        return SourceMapFollowthroughCompletionCheckpointManager._normalize_consumer(value)
+
+    @staticmethod
+    def _stable_json_digest(payload: dict[str, Any]) -> str:
+        return SourceMapSelectedExecutorApplyPreflightManager._stable_json_digest(payload)
+
+    _status = staticmethod(SourceMapSelectedExecutorApplyPreflightManager._status)
+
+    @staticmethod
+    def _side_effect_policy() -> dict[str, Any]:
+        return {
+            "read_only": True,
+            "review_only": True,
+            "explicit_review_only": True,
+            "decision_record_only": True,
+            "result_recorder_only": True,
+            "terminal_review_action_decision_only": True,
+            "files_mutated": False,
+            "artifacts_written_by_manager": False,
+            "approval_recorded": False,
+            "selected_executor_application_invoked": False,
+            "executes_recommended_action": False,
+            "installs_hook": False,
+            "installs_logpoint": False,
+            "continues_debugger": False,
+            "generates_rebuild": False,
+            "fetches_source_map": False,
+            "exports_raw_source": False,
+            "recommended_action_executed": False,
+            "debugger_continuation_invoked": False,
+            "hook_install_invoked": False,
+            "source_logpoint_install_invoked": False,
+            "rebuild_invoked": False,
+            "source_map_fetch_invoked": False,
+            "raw_source_exported": False,
+            "delivery_invoked": False,
+            "browser_started": False,
+            "cdp_command_sent": False,
+            "runtime_evaluated": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        }
+
+
+@dataclass(slots=True)
 class SourceMapFollowthroughChainReadinessSpec:
     """Read-only Source Map follow-through chain readiness descriptor.
 

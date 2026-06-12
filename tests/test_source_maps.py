@@ -55,6 +55,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapTerminalReviewClosureCheckpointSpec,
     SourceMapTerminalReviewFinalAuditManager,
     SourceMapTerminalReviewFinalAuditSpec,
+    SourceMapTerminalReviewActionDecisionManager,
+    SourceMapTerminalReviewActionDecisionSpec,
     SourceMapSelectedExecutorApplyPreflightManager,
     SourceMapSelectedExecutorApplyPreflightSpec,
     SourceMapSelectedExecutorApprovalPlanManager,
@@ -2732,6 +2734,182 @@ class SourceMapTerminalReviewFinalAuditManagerTests(unittest.TestCase):
         self.assertIn("source_map_terminal_review_closure_checkpoint_not_ready", result.descriptor["blockers"])
         self.assertIn("source_map_terminal_review_closure_checkpoint_ready_to_execute_now_forbidden", result.descriptor["blockers"])
         self.assertEqual(result.descriptor["next_action"], "inspect_source_map_terminal_review_final_audit_failure")
+
+
+class SourceMapTerminalReviewActionDecisionManagerTests(unittest.TestCase):
+    @staticmethod
+    def _ready_terminal_review_package(consumer: str = "debugger") -> dict:
+        return SourceMapTerminalReviewClosureCheckpointManagerTests._ready_terminal_review_package(consumer)
+
+    @staticmethod
+    def _ready_closure_checkpoint(consumer: str = "debugger") -> dict:
+        return SourceMapTerminalReviewFinalAuditManagerTests._ready_closure_checkpoint(consumer)
+
+    @staticmethod
+    def _ready_final_audit(consumer: str = "debugger") -> dict:
+        closure = SourceMapTerminalReviewActionDecisionManagerTests._ready_closure_checkpoint(consumer)
+        return SourceMapTerminalReviewFinalAuditManager().review(
+            SourceMapTerminalReviewFinalAuditSpec.from_context(
+                {
+                    "source_map_terminal_review_final_audit": True,
+                    "source_map_terminal_review_closure_checkpoint": closure,
+                    "expected_consumer": consumer,
+                    "reviewer": "analyst",
+                }
+            )
+        ).descriptor
+
+    def test_source_map_terminal_review_action_decision_records_ready_package_without_execution(self) -> None:
+        package = self._ready_terminal_review_package("debugger")
+        digest = hashlib.sha256(json.dumps(package, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+        spec = SourceMapTerminalReviewActionDecisionSpec.from_context(
+            {
+                "record_source_map_terminal_review_action": True,
+                "source_map_terminal_review_package": package,
+                "selected_action": "request_manual_execution",
+                "reviewer": "analyst",
+                "reason": "reviewed debugger artifacts; execute manually in a separate step",
+                "expected_source_descriptor_digest_sha256": digest,
+                "expected_consumer": "debugger",
+            }
+        )
+
+        result = SourceMapTerminalReviewActionDecisionManager().record(spec)
+
+        self.assertEqual(result.status, "recorded")
+        descriptor = result.descriptor
+        self.assertEqual(descriptor["schema_version"], "reverse-deepagent.source-map-terminal-review-action-decision.v1")
+        self.assertTrue(descriptor["explicit_review_only"])
+        self.assertTrue(descriptor["decision_record_only"])
+        self.assertEqual(descriptor["source_descriptor_kind"], "source-map-terminal-review-package")
+        self.assertEqual(descriptor["source_descriptor_digest_sha256"], digest)
+        self.assertEqual(descriptor["selected_action"], "request_manual_execution")
+        self.assertEqual(descriptor["selected_consumer"], "debugger")
+        self.assertEqual(descriptor["recommended_review_action"], "inspect_source_map_debugger_execution_artifacts")
+        self.assertTrue(descriptor["terminal_review_action_recorded"])
+        self.assertTrue(descriptor["recommended_action_approved_for_separate_followup"])
+        self.assertFalse(descriptor["ready_to_execute_now"])
+        self.assertFalse(descriptor["execute_next_automatically"])
+        self.assertFalse(descriptor["executes_recommended_action"])
+        self.assertFalse(descriptor["installs_hook"])
+        self.assertFalse(descriptor["installs_logpoint"])
+        self.assertFalse(descriptor["continues_debugger"])
+        self.assertFalse(descriptor["generates_rebuild"])
+        self.assertFalse(descriptor["fetches_source_map"])
+        self.assertFalse(descriptor["exports_raw_source"])
+        self.assertFalse(result.side_effect_policy["executes_recommended_action"])
+        self.assertFalse(result.side_effect_policy["installs_hook"])
+        self.assertFalse(result.side_effect_policy["installs_logpoint"])
+        self.assertFalse(result.side_effect_policy["continues_debugger"])
+        self.assertFalse(result.side_effect_policy["generates_rebuild"])
+        self.assertFalse(result.side_effect_policy["fetches_source_map"])
+        self.assertFalse(result.side_effect_policy["exports_raw_source"])
+        self.assertEqual(descriptor["decision_record"]["schema_version"], "reverse-deepagent.source-map-terminal-review-action-result.v1")
+        self.assertEqual(descriptor["next_action"], "perform_separate_explicit_manual_followup_if_approved")
+
+    def test_source_map_terminal_review_action_decision_consumes_final_audit(self) -> None:
+        final_audit = self._ready_final_audit("debugger")
+        spec = SourceMapTerminalReviewActionDecisionSpec.from_context(
+            {
+                "source_map_terminal_review_action_decision": True,
+                "source_map_terminal_review_final_audit": final_audit,
+                "selected_action": "mark_complete",
+                "reviewer": "analyst",
+                "reason": "final audit reviewed and no follow-up remains",
+            }
+        )
+
+        result = SourceMapTerminalReviewActionDecisionManager().record(spec)
+
+        self.assertEqual(result.status, "recorded")
+        self.assertEqual(result.descriptor["source_descriptor_kind"], "source-map-terminal-review-final-audit")
+        self.assertTrue(result.descriptor["terminal_review_marked_complete"])
+        self.assertFalse(result.descriptor["executes_recommended_action"])
+        self.assertFalse(result.descriptor["continues_debugger"])
+
+    def test_source_map_terminal_review_action_decision_blocks_without_ready_terminal_source(self) -> None:
+        spec = SourceMapTerminalReviewActionDecisionSpec.from_context(
+            {
+                "source_map_terminal_review_action_decision": True,
+                "selected_action": "defer",
+                "reviewer": "analyst",
+                "reason": "waiting for package",
+            }
+        )
+
+        result = SourceMapTerminalReviewActionDecisionManager().record(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertFalse(result.descriptor["terminal_review_action_recorded"])
+        self.assertIn("source_map_terminal_review_ready_source_missing", result.descriptor["blockers"])
+        self.assertEqual(result.descriptor["next_action"], "provide_ready_source_map_terminal_review_artifact")
+
+    def test_source_map_terminal_review_action_decision_blocks_invalid_action(self) -> None:
+        package = self._ready_terminal_review_package("debugger")
+        spec = SourceMapTerminalReviewActionDecisionSpec.from_context(
+            {
+                "source_map_terminal_review_action_decision": True,
+                "source_map_terminal_review_package": package,
+                "selected_action": "execute_debugger_now",
+                "reviewer": "analyst",
+                "reason": "bad action should be blocked",
+            }
+        )
+
+        result = SourceMapTerminalReviewActionDecisionManager().record(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_terminal_review_action_invalid", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["terminal_review_action_recorded"])
+        self.assertFalse(result.descriptor["executes_recommended_action"])
+        self.assertEqual(result.descriptor["next_action"], "choose_valid_source_map_terminal_review_action")
+
+    def test_source_map_terminal_review_action_decision_excludes_raw_source(self) -> None:
+        package = self._ready_terminal_review_package("debugger")
+        package["raw_source"] = "function secret() { return 1 }"
+        package["sourcesContent"] = ["const token = 'secret';"]
+        spec = SourceMapTerminalReviewActionDecisionSpec.from_context(
+            {
+                "source_map_terminal_review_action_result": True,
+                "source_map_terminal_review_package": package,
+                "selected_action": "defer",
+                "reviewer": "analyst",
+                "reason": "defer pending manual review",
+            }
+        )
+
+        result = SourceMapTerminalReviewActionDecisionManager().record(spec)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("source_map_terminal_review_source_raw_source_material_forbidden", result.descriptor["blockers"])
+        self.assertFalse(result.descriptor["terminal_review_action_recorded"])
+        rendered = json.dumps(result.descriptor, sort_keys=True, ensure_ascii=False)
+        self.assertNotIn("function secret", rendered)
+        self.assertNotIn("sourcesContent", rendered)
+        self.assertNotIn("const token", rendered)
+        self.assertFalse(result.descriptor["exports_raw_source"])
+        self.assertFalse(result.side_effect_policy["exports_raw_source"])
+
+    def test_source_map_terminal_review_action_decision_digest_and_idempotency_are_deterministic(self) -> None:
+        closure = self._ready_closure_checkpoint("debugger")
+        context = {
+            "record_source_map_terminal_review_action": True,
+            "source_map_terminal_review_closure_checkpoint": closure,
+            "selected_action": "approve-followup",
+            "reviewer": "analyst",
+            "reason": "same reviewed decision",
+        }
+
+        first = SourceMapTerminalReviewActionDecisionManager().record(SourceMapTerminalReviewActionDecisionSpec.from_context(dict(context))).descriptor
+        second = SourceMapTerminalReviewActionDecisionManager().record(SourceMapTerminalReviewActionDecisionSpec.from_context(dict(context))).descriptor
+
+        self.assertEqual(first["status"], "recorded")
+        self.assertEqual(first["source_descriptor_kind"], "source-map-terminal-review-closure-checkpoint")
+        self.assertEqual(first["selected_action"], "approve_followup")
+        self.assertEqual(first["decision_id"], second["decision_id"])
+        self.assertEqual(first["idempotency_key"], second["idempotency_key"])
+        self.assertEqual(first["decision_digest_sha256"], second["decision_digest_sha256"])
+
 
 
 class SourceMapFollowthroughChainReadinessManagerTests(unittest.TestCase):
