@@ -1188,14 +1188,15 @@ legacy MCP 运行时依赖 `http://127.0.0.1:9222` 这类 Chrome DevTools 端口
 
 可调环境变量：
 
-- `CHROME_PATH`，默认 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
-- `DEBUG_PORT`，默认 `9222`
+- `CHROME_PATH`，默认 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`；用于 executable existence check，确认本机 Chrome 可执行文件存在且可执行
+- `CHROME_APP_NAME`，默认 `Google Chrome`；macOS 启动仍通过 `open -na "$CHROME_APP_NAME"` 完成，保持 app-name launch 兼容语义
+- `DEBUG_PORT`，默认 `9222`；必须是 `1..65535` 范围内的整数，脚本会在调用 `lsof`、写 PID 文件或拼接 Chrome 参数前校验
 - `DEBUG_ADDRESS`，默认 `127.0.0.1`
 - `USER_DATA_DIR`，默认 `~/.codex/browser-profiles/chrome-jsreverser`
 - `STATE_DIR`，默认 `~/.codex/run/reverse-deepagent`
 - `START_URL`，默认 `about:blank`
-- `WAIT_SECONDS`，默认 `10`
-- `EXTRA_CHROME_ARGS`，默认空
+- `WAIT_SECONDS`，默认 `10`；必须是非负整数，避免 shell arithmetic expansion 在等待循环前异常
+- `EXTRA_CHROME_ARGS`，默认空；保持简单 whitespace split contract，不支持 shell quote parser，也不会使用 `eval`
 
 示例：
 
