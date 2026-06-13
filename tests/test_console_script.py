@@ -41,6 +41,7 @@ class ConsoleScriptTests(unittest.TestCase):
         stderr = StringIO()
         with patch("reverse_deepagent.cli.run_reverse_pipeline", return_value=FakeOutput()) as run_pipeline:
             with redirect_stdout(stdout), redirect_stderr(stderr):
+                # Deprecated alias string kept only to verify compatibility warning behavior.
                 exit_code = main_demo(["--runtime", "mcp", "--artifact-root", str(REPO_ROOT / "artifacts/deprecated-mcp-alias-test")])
 
         self.assertEqual(exit_code, 0)
