@@ -21,7 +21,7 @@ S1 decomposition have disjoint write sets and separate validation gates.
 
 | Worker | Branch | Scope | Owned files / areas | PR status |
 | --- | --- | --- | --- | --- |
-| A | `codex/rollout11-chrome-launcher-hardening` | P1 Chrome launcher hardening | `scripts/start_chrome_debug.sh`, packaged Chrome scripts, `tests/test_chrome_launcher.py`, focused README launcher docs | Dispatched |
+| A | `codex/rollout11-chrome-launcher-hardening` | P1 Chrome launcher hardening | `scripts/start_chrome_debug.sh`, packaged Chrome scripts, `tests/test_chrome_launcher.py`, focused README launcher docs | Merged in [#45](https://github.com/Facetomyself/reverse-deepagent/pull/45) / `e5da9240` |
 | B | `codex/rollout11-legacy-alias-docs` | P2 active-doc legacy alias cleanup | README / active runtime docs / alias-warning test comments only | Dispatched |
 | C | `codex/rollout11-source-dispatch-s1` | P1 `_dispatch_source(...)` S1 minimal decomposition | `native_web.py`, optional source-dispatch helper module, focused native-web / source-map tests | Dispatched |
 
@@ -37,6 +37,29 @@ S1 decomposition have disjoint write sets and separate validation gates.
   script into a broad launcher framework.
 - Validation includes shell syntax checks and focused Chrome launcher lifecycle tests
   without starting real Chrome.
+
+## Worker A result
+
+Worker A is complete and merged through PR [#45](https://github.com/Facetomyself/reverse-deepagent/pull/45).
+
+Merge commit: `e5da9240fae9a22ddc09eed7612fd29c43fdac63`.
+
+Main-agent review verified that the PR touched only the Chrome launcher write set:
+
+- `README.md` launcher parameter documentation;
+- root and packaged Chrome start / stop scripts;
+- `tests/test_chrome_launcher.py`.
+
+Validation reported before merge:
+
+```bash
+bash -n scripts/start_chrome_debug.sh scripts/stop_chrome_debug.sh src/reverse_deepagent/scripts/start_chrome_debug.sh src/reverse_deepagent/scripts/stop_chrome_debug.sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m unittest tests.test_chrome_launcher tests.test_run_demo_chrome_lifecycle -v
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /Users/mengma/reverse/reverse_agent/.venv/bin/python -m compileall -q src/reverse_deepagent tests
+git diff --check
+```
+
+Observed locally: all commands passed; no real Chrome launch was performed.
 
 ## Worker B acceptance criteria
 
