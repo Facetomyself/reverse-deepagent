@@ -14,7 +14,7 @@ DeepAgents coordinator / subagents
         -> BrowserProvider registry
         -> native collectors / hooks / artifact exporters
       -> legacy backend adapters
-        -> MCP stdio, CLI, CDP, mobile tooling, ...
+        -> legacy MCP stdio compatibility, CLI, CDP, mobile tooling, ...
 ```
 
 Backend direction:
@@ -23,7 +23,7 @@ Backend direction:
 | --- | --- | --- | --- |
 | `mock` | `in-process` | `in-process` | Deterministic public CI and local demo backend. |
 | `native-web` | `web`, `browser-native` | `browser-provider` | Target Web runtime with project-owned collectors and replaceable browser providers. |
-| `legacy-mcp` | `mcp`, `jsreverser-mcp` | `mcp-stdio` | Compatibility backend for JSReverser MCP + Chrome DevTools while native parity is built. |
+| `legacy-mcp` | Deprecated: `mcp`, `jsreverser-mcp` | `mcp-stdio` | Compatibility backend for JSReverser MCP + Chrome DevTools while native parity is built; new examples should use `legacy-mcp` or `native-web`. |
 
 The backend registry is exposed through:
 

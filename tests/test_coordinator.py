@@ -3017,10 +3017,12 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn("reverse-deepagent-legacy-mcp", str(ctx.exception))
         self.assertIn("native-web", str(ctx.exception))
 
+        # Deprecated alias string kept here only to assert backward-compatible warning / guidance behavior.
         with self.assertRaisesRegex(LegacyMcpPluginUnavailableError, "reverse-deepagent-legacy-mcp"):
             build_runtime("mcp", browser_url="http://127.0.0.1:9555", mcp_command="/tmp/jsreverser-mcp")
 
     def test_legacy_mcp_alias_warning_only_targets_deprecated_aliases(self) -> None:
+        # Old alias values are compatibility-test inputs, not recommended runtime usage.
         self.assertIsNone(legacy_mcp_alias_warning("legacy-mcp"))
         self.assertIsNone(legacy_mcp_alias_warning("native-web"))
         self.assertIn("legacy-mcp", legacy_mcp_alias_warning("mcp") or "")
