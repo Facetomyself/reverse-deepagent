@@ -7,6 +7,7 @@ from typing import Any
 
 import reverse_deepagent.adapters.native_web as native_web_adapter
 from reverse_deepagent.adapters.native_web import NativeWebRuntime
+from reverse_deepagent.adapters.native_web_source_dispatch import dispatch_source_map_review_evidence
 from reverse_deepagent.browser import BrowserPageRef, BrowserProviderCapabilities, PlaywrightBrowserPageAdapter
 from reverse_deepagent.browser.hooks import BreakpointManager, ClosureWrapperReplacementExecutionManager, HookInstallResult, HookSnapshot
 from reverse_deepagent.browser.source_maps import (
@@ -7220,6 +7221,155 @@ class NativeWebRuntimeTests(unittest.TestCase):
         self.assertFalse(result.artifacts[0].metadata["preview_exported"])
         self.assertFalse(result.artifacts[0].metadata["fetch_source_map"])
         self.assertFalse(result.artifacts[0].metadata["browser_started"])
+
+    def test_source_dispatch_review_evidence_helper_routes_lookup_shape_without_session(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = dispatch_source_map_review_evidence(
+            runtime,
+            "source-map-lookup",
+            {
+                "source_map": {
+                    "version": 3,
+                    "sourceRoot": "webpack://demo",
+                    "sources": ["./src/sign.ts"],
+                    "names": ["buildSign"],
+                    "mappings": "AAAAA",
+                },
+                "generated_line": 0,
+                "generated_column": 0,
+            },
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(runtime._session)
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_lookup"])
+        self.assertEqual(result.next_action, "review_source_map_lookup_before_debugger_or_hook_use")
+        self.assertEqual(len(result.artifacts), 1)
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-lookup.json")
+        self.assertEqual(result.artifacts[0].kind.value, "json")
+        self.assertEqual(
+            result.artifacts[0].description,
+            "Native Web runtime review-only Source Map lookup descriptor.",
+        )
+        self.assertEqual(
+            result.artifacts[0].metadata,
+            {
+                "status": "ready_for_review",
+                "lookup_direction": "generated_to_original",
+                "mapping_found": True,
+                "strategy": "source_map_generated_exact",
+                "review_only": True,
+                "fetch_source_map": False,
+                "browser_started": False,
+                "cdp_command_sent": False,
+                "runtime_evaluated": False,
+            },
+        )
+        self.assertIn("source_map_lookup_calls_mcp=False", result.verification)
+        self.assertIn("source_map_lookup_mobile_runtime_used=False", result.verification)
+
+    def test_source_dispatch_review_evidence_helper_routes_source_content_shape_without_session(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = dispatch_source_map_review_evidence(
+            runtime,
+            "source-map-source-content",
+            {
+                "source_map": {
+                    "version": 3,
+                    "sourceRoot": "webpack://demo",
+                    "sources": ["./src/sign.ts"],
+                    "sourcesContent": ["export function buildSign(){ return 'x'; }\n"],
+                    "names": ["buildSign"],
+                    "mappings": "AAAAA",
+                },
+                "original_source": "webpack://demo/src/sign.ts",
+                "include_source_preview": True,
+            },
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(runtime._session)
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_source_map_source_content"])
+        self.assertEqual(result.next_action, "review_source_content_availability_before_debugger_or_rebuild")
+        self.assertEqual(len(result.artifacts), 1)
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/source-map-source-content.json")
+        self.assertEqual(result.artifacts[0].kind.value, "json")
+        self.assertEqual(
+            result.artifacts[0].description,
+            "Native Web runtime review-only Source Map sourcesContent availability descriptor.",
+        )
+        self.assertEqual(result.artifacts[0].metadata["status"], "ready_for_review")
+        self.assertTrue(result.artifacts[0].metadata["source_content_available"])
+        self.assertEqual(result.artifacts[0].metadata["original_source"], "webpack://demo/src/sign.ts")
+        self.assertTrue(result.artifacts[0].metadata["sha256"])
+        self.assertTrue(result.artifacts[0].metadata["review_only"])
+        self.assertFalse(result.artifacts[0].metadata["raw_source_content_exported"])
+        self.assertFalse(result.artifacts[0].metadata["preview_exported"])
+        self.assertFalse(result.artifacts[0].metadata["fetch_source_map"])
+        self.assertFalse(result.artifacts[0].metadata["browser_started"])
+        self.assertFalse(result.artifacts[0].metadata["cdp_command_sent"])
+        self.assertFalse(result.artifacts[0].metadata["runtime_evaluated"])
+        self.assertIn("source_map_source_content_calls_mcp=False", result.verification)
+        self.assertIn("source_map_source_content_mobile_runtime_used=False", result.verification)
+
+    def test_source_dispatch_review_evidence_helper_routes_bundler_symbol_scope_shape_without_session(self) -> None:
+        provider = FakeProvider()
+        runtime = NativeWebRuntime(browser_provider=provider)
+        result = dispatch_source_map_review_evidence(
+            runtime,
+            "bundler-symbol-scope",
+            {
+                "source_map": {
+                    "version": 3,
+                    "sourceRoot": "webpack://demo",
+                    "sources": ["./src/sign.ts"],
+                    "names": ["buildSign"],
+                    "mappings": "AAAAA",
+                },
+                "script_url": "https://example.test/assets/app.js",
+                "script_source": "var __webpack_require__ = {};",
+                "symbol_name": "buildSign",
+                "original_source": "webpack://demo/src/sign.ts",
+                "original_line": 0,
+                "original_column": 0,
+            },
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(runtime._session)
+        self.assertEqual(provider.started, 0)
+        self.assertEqual(result.status.value, "success")
+        self.assertEqual(result.applied_actions, ["review_bundler_symbol_scope"])
+        self.assertEqual(result.next_action, "review_symbol_scope_before_source_logpoint_or_hook")
+        self.assertEqual(len(result.artifacts), 1)
+        self.assertEqual(result.artifacts[0].path, "virtual://workspace/bundler-symbol-scope.json")
+        self.assertEqual(result.artifacts[0].kind.value, "json")
+        self.assertEqual(
+            result.artifacts[0].description,
+            "Native Web runtime review-only bundler symbol scope descriptor.",
+        )
+        self.assertEqual(
+            result.artifacts[0].metadata,
+            {
+                "status": "ready_for_review",
+                "bundler_kind": "webpack",
+                "confidence": "high",
+                "symbol_name": "buildSign",
+                "scope_candidate_count": 1,
+                "review_only": True,
+                "fetch_source_map": False,
+                "logpoint_installed": False,
+            },
+        )
+        self.assertIn("bundler_symbol_scope_cdp_command_sent=False", result.verification)
+        self.assertIn("bundler_symbol_scope_calls_mcp=False", result.verification)
+        self.assertIn("bundler_symbol_scope_mobile_runtime_used=False", result.verification)
 
     def test_native_web_runtime_reviews_source_map_consumer_action_plan_without_starting_browser(self) -> None:
         provider = FakeProvider()
