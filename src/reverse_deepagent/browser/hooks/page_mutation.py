@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 from reverse_deepagent.browser.base import BrowserPage
 
@@ -1664,7 +1667,8 @@ class HeapSnapshotCollectManager:
         if hasattr(cdp, "on"):
             try:
                 cdp.on("HeapProfiler.addHeapSnapshotChunk", lambda payload: chunks.append(str((payload or {}).get("chunk", ""))))
-            except Exception:
+            except Exception as e:
+                _logger.debug("Failed to subscribe to heap snapshot chunk events: %s", e, exc_info=True)
                 warnings.append("heap_snapshot_chunk_subscription_failed")
 
         commands_sent: list[str] = []
@@ -1695,7 +1699,8 @@ class HeapSnapshotCollectManager:
                 try:
                     cdp.send("HeapProfiler.disable")
                     commands_sent.append("HeapProfiler.disable")
-                except Exception:
+                except Exception as e:
+                    _logger.debug("Failed to disable HeapProfiler: %s", e, exc_info=True)
                     warnings.append("heap_profiler_disable_failed")
 
         snapshot_metadata = self._snapshot_metadata(chunks=chunks, result=result, max_snapshot_bytes=spec.max_snapshot_bytes)
@@ -3905,7 +3910,8 @@ class HeapSnapshotDiffFollowupCheckpointManager:
                 continue
             try:
                 delta = int(item.get("delta") or 0)
-            except Exception:
+            except Exception as e:
+                _logger.debug("Failed to parse delta value from heap diff row: %s", e, exc_info=True)
                 delta = 0
             if delta > 0:
                 normalized.append({"name": str(item.get("name") or "unknown"), "before": int(item.get("before") or 0), "after": int(item.get("after") or 0), "delta": delta})
@@ -4411,7 +4417,8 @@ class HeapSnapshotConstructorGrowthDrilldownManager:
                 before = int(item.get("before") or 0)
                 after = int(item.get("after") or 0)
                 delta = int(item.get("delta") or 0)
-            except Exception:
+            except Exception as e:
+                _logger.debug("Failed to parse growth sample fields (before/after/delta): %s", e, exc_info=True)
                 before = after = delta = 0
             if delta < min_delta:
                 continue
@@ -6558,8 +6565,9 @@ class HeapSnapshotDiffExecutorManager:
             if self_size_idx >= 0:
                 try:
                     self_size_total += int(nodes[offset + self_size_idx] or 0)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _logger.debug("Failed to accumulate self_size for node: %s", e, exc_info=True)
+                    pass  # noqa: intentional — some nodes have non-numeric self_size; safe to skip since total is approximate
             if name_idx >= 0 and node_type in {"object", "closure", "native", "synthetic", "code"}:
                 name = self._string_at(strings, nodes[offset + name_idx] if offset + name_idx < len(nodes) else None)
                 name = self._redact_name(name or "<anonymous>")
@@ -6638,7 +6646,8 @@ class HeapSnapshotDiffExecutorManager:
             type_index = int(values[index])
             if 0 <= type_index < len(names):
                 return str(names[type_index])
-        except Exception:
+        except Exception as e:
+            _logger.debug("Failed to resolve typed name at index in _typed_name: %s", e, exc_info=True)
             return default
         return default
 
@@ -6648,7 +6657,8 @@ class HeapSnapshotDiffExecutorManager:
             idx = int(index)
             if 0 <= idx < len(strings):
                 return str(strings[idx])
-        except Exception:
+        except Exception as e:
+            _logger.debug("Failed to resolve string at index in _string_at: %s", e, exc_info=True)
             return ""
         return ""
 
@@ -7137,7 +7147,8 @@ class HeapSnapshotRetainedSizeExecutorManager:
             type_index = int(values[index])
             if 0 <= type_index < len(names):
                 return str(names[type_index])
-        except Exception:
+        except Exception as e:
+            _logger.debug("Failed to resolve typed name at index in _typed_name: %s", e, exc_info=True)
             return default
         return default
 
@@ -7145,7 +7156,8 @@ class HeapSnapshotRetainedSizeExecutorManager:
     def _int_at(values: list[Any], index: int) -> int:
         try:
             return int(values[index] or 0)
-        except Exception:
+        except Exception as e:
+            _logger.debug("Failed to parse int value at index in _int_at: %s", e, exc_info=True)
             return 0
 
     @staticmethod
@@ -7154,7 +7166,8 @@ class HeapSnapshotRetainedSizeExecutorManager:
             idx = int(index)
             if 0 <= idx < len(strings):
                 return str(strings[idx])
-        except Exception:
+        except Exception as e:
+            _logger.debug("Failed to resolve string at index in _string_at: %s", e, exc_info=True)
             return ""
         return ""
 
@@ -7960,7 +7973,8 @@ class HeapSnapshotConstructorGrowthDrilldownExecutorManager:
     def _int(value: Any) -> int:
         try:
             return int(value or 0)
-        except Exception:
+        except Exception as e:
+            _logger.debug("Failed to parse int value in _int: %s", e, exc_info=True)
             return 0
 
     @staticmethod
